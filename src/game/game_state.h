@@ -4,13 +4,16 @@
 #include "player.h"
 #include "supply.h"
 
+#include <functional>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
 enum class Phase {
     ACTION,
+    TREASURE,
     BUY,
+    NIGHT,
     CLEANUP,
     GAME_OVER
 };
@@ -20,8 +23,6 @@ public:
     GameState(int num_players);
 
     // --- Card ID system ---
-    // Every physical card in the game gets a unique int ID.
-    // This is the only way to create cards — supply, starting decks, everything goes through here.
     int create_card(const std::string& card_name);
     const std::string& card_name(int card_id) const;
     const Card* card_def(int card_id) const;
@@ -38,6 +39,7 @@ public:
 
     // --- Turn state ---
     Phase current_phase() const;
+    void set_phase(Phase phase);
     int actions() const;
     int buys() const;
     int coins() const;
@@ -48,44 +50,61 @@ public:
     void add_coins(int n);
 
     // --- Game actions ---
-    // Gain a card from supply to a player's discard pile. Returns the card_id, or -1 if pile empty.
     int gain_card(int player_id, const std::string& pile_name);
-
-    // Gain a card to a specific zone
     int gain_card_to_hand(int player_id, const std::string& pile_name);
     int gain_card_to_deck_top(int player_id, const std::string& pile_name);
 
-    // Trash a card (from anywhere — caller removes it from its current zone first)
     void trash_card(int card_id);
     const std::vector<int>& get_trash() const;
+
+    // Play a card from hand: moves to in_play, calls on_play. Returns card_id.
+    int play_card_from_hand(int player_id, int hand_index, DecisionFn decide);
+
+    // Play a card's on_play by card_id (for Throne Room — card already in play).
+    void play_card_effect(int card_id, int player_id, DecisionFn decide);
+
+    // Attack resolution: iterates opponents in turn order with reaction windows.
+    void resolve_attack(
+        int attacker_id,
+        std::function<void(GameState&, int target_id, DecisionFn)> attack_effect,
+        DecisionFn decide);
+
+    // Supply queries
+    std::vector<std::string> gainable_piles(int max_cost) const;
+    std::vector<std::string> gainable_piles(int max_cost, CardType required_type) const;
+    int effective_cost(const std::string& card_name) const;
+    int total_cards_owned(int player_id) const;
 
     // --- Turn lifecycle ---
     void start_game();
     void start_turn();
-    void advance_phase();  // ACTION -> BUY -> CLEANUP -> next player's ACTION
+    void advance_phase();
 
     // --- Game end ---
     bool is_game_over() const;
     std::vector<int> calculate_scores() const;
-    int winner() const;  // returns player_id of winner (-1 if tie)
+    int winner() const;
+
+    // --- Turn flags (for cards like Merchant) ---
+    int get_turn_flag(const std::string& key) const;
+    void set_turn_flag(const std::string& key, int value);
 
 private:
-    // Players
     std::vector<Player> players_;
     int current_player_;
 
-    // Supply and trash
     Supply supply_;
     std::vector<int> trash_;
 
-    // Turn state
     Phase phase_;
     int actions_;
     int buys_;
     int coins_;
     int turn_number_;
+    std::vector<int> turns_taken_;  // per-player turn count for tiebreaker
 
-    // Card ID tracking
     int next_card_id_;
-    std::unordered_map<int, std::string> card_names_;  // card_id -> card_name
+    std::unordered_map<int, std::string> card_names_;
+
+    std::unordered_map<std::string, int> turn_flags_;
 };

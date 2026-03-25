@@ -1,0 +1,316 @@
+#include "game_runner.h"
+#include "rules.h"
+
+#include <algorithm>
+#include <sstream>
+
+// --- RandomAgent ---
+
+RandomAgent::RandomAgent(uint64_t seed) : rng_(seed) {}
+
+std::vector<int> RandomAgent::decide(const DecisionPoint& dp, const GameState& /*state*/) {
+    if (dp.options.empty()) return {};
+    std::uniform_int_distribution<int> dist(0, static_cast<int>(dp.options.size()) - 1);
+    return {dist(rng_)};
+}
+
+// --- BigMoneyAgent ---
+
+std::vector<int> BigMoneyAgent::decide(const DecisionPoint& dp, const GameState& state) {
+    if (dp.options.empty()) return {};
+
+    switch (dp.type) {
+        case DecisionType::PLAY_ACTION: {
+            for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
+                if (dp.options[i].is_pass) return {i};
+            }
+            return {static_cast<int>(dp.options.size()) - 1};
+        }
+        case DecisionType::PLAY_TREASURE: {
+            for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
+                if (dp.options[i].label == "Play all Treasures") return {i};
+            }
+            for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
+                if (!dp.options[i].is_pass) return {i};
+            }
+            return {static_cast<int>(dp.options.size()) - 1};
+        }
+        case DecisionType::BUY_CARD: {
+            int provinces_left = state.get_supply().count("Province");
+            int coins = state.coins();
+
+            auto find_option = [&](const std::string& name) -> int {
+                for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
+                    if (dp.options[i].card_name == name) return i;
+                }
+                return -1;
+            };
+
+            if (coins >= 8) {
+                int idx = find_option("Province");
+                if (idx >= 0) return {idx};
+            }
+            if (coins >= 6) {
+                int idx = find_option("Gold");
+                if (idx >= 0) return {idx};
+            }
+            if (coins >= 5 && provinces_left <= 4) {
+                int idx = find_option("Duchy");
+                if (idx >= 0) return {idx};
+            }
+            if (coins >= 3) {
+                int idx = find_option("Silver");
+                if (idx >= 0) return {idx};
+            }
+            for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
+                if (dp.options[i].is_pass) return {i};
+            }
+            return {static_cast<int>(dp.options.size()) - 1};
+        }
+        default: {
+            // Multi-select: return the first min_choices options
+            std::vector<int> result;
+            int needed = std::max(1, dp.min_choices);
+            for (int i = 0; i < static_cast<int>(dp.options.size()) && static_cast<int>(result.size()) < needed; i++) {
+                if (!dp.options[i].is_pass) result.push_back(i);
+            }
+            if (result.empty()) return {0};
+            return result;
+        }
+    }
+}
+
+// --- GameRunner ---
+
+GameRunner::GameRunner(int num_players, const std::vector<std::string>& kingdom_cards)
+    : state_(num_players)
+    , kingdom_cards_(kingdom_cards)
+    , total_decisions_(0)
+{
+}
+
+const GameState& GameRunner::state() const { return state_; }
+
+void GameRunner::set_observer(GameObserver observer) {
+    observer_ = std::move(observer);
+}
+
+void GameRunner::observe(const std::string& msg) {
+    if (observer_) observer_(msg);
+}
+
+DecisionFn GameRunner::make_decision_fn() {
+    return [this](int player_id, ChoiceType choice_type,
+                  const std::vector<int>& options,
+                  int min_choices, int max_choices) -> std::vector<int> {
+        DecisionPoint dp;
+        dp.player_id = player_id;
+        dp.type = DecisionType::CHOOSE_CARDS_IN_HAND;
+        dp.sub_choice_type = choice_type;
+        dp.min_choices = min_choices;
+        dp.max_choices = max_choices;
+
+        // Card callbacks pass hand indices for DISCARD/TRASH/TOPDECK/PLAY_CARD/REVEAL.
+        // Translate to actual card IDs so agents can display card names.
+        bool is_hand_index = (choice_type == ChoiceType::DISCARD ||
+                              choice_type == ChoiceType::TRASH ||
+                              choice_type == ChoiceType::TOPDECK ||
+                              choice_type == ChoiceType::PLAY_CARD ||
+                              choice_type == ChoiceType::REVEAL ||
+                              choice_type == ChoiceType::SELECT_FROM_DISCARD);
+
+        const Player& player = state_.get_player(player_id);
+        const auto& hand = player.get_hand();
+        const auto& discard = player.get_discard();
+
+        for (int i = 0; i < static_cast<int>(options.size()); i++) {
+            ActionOption opt;
+            opt.local_id = i;
+            opt.is_pass = false;
+
+            if (is_hand_index && choice_type == ChoiceType::SELECT_FROM_DISCARD) {
+                int idx = options[i];
+                opt.card_id = (idx < static_cast<int>(discard.size())) ? discard[idx] : -1;
+            } else if (is_hand_index) {
+                int idx = options[i];
+                opt.card_id = (idx < static_cast<int>(hand.size())) ? hand[idx] : -1;
+            } else {
+                opt.card_id = options[i];
+            }
+
+            dp.options.push_back(opt);
+        }
+
+        total_decisions_++;
+        return agents_[player_id]->decide(dp, state_);
+    };
+}
+
+GameResult GameRunner::run(std::vector<Agent*> agents) {
+    agents_ = agents;
+    BaseCards::register_all();
+    BaseKingdom::register_all();
+    BaseCards::setup_supply(state_, kingdom_cards_);
+    BaseCards::setup_starting_decks(state_);
+    state_.start_game();
+    total_decisions_ = 0;
+
+    while (!state_.is_game_over()) {
+        int pid = state_.current_player_id();
+        observe("--- Player " + std::to_string(pid) + "'s turn (Turn " +
+                std::to_string(state_.turn_number()) + ") ---");
+        run_turn(pid);
+    }
+
+    agents_ = {};
+    return {
+        state_.calculate_scores(),
+        state_.winner(),
+        state_.turn_number(),
+        total_decisions_
+    };
+}
+
+void GameRunner::run_turn(int pid) {
+    state_.start_turn();
+    run_action_phase(pid);
+    run_treasure_phase(pid);
+    run_buy_phase(pid);
+    state_.set_phase(Phase::CLEANUP);
+    state_.advance_phase();
+}
+
+void GameRunner::run_action_phase(int pid) {
+    Agent* agent = agents_[pid];
+    while (state_.actions() > 0) {
+        auto playable = Rules::playable_actions(state_, pid);
+        if (playable.empty()) break;
+
+        DecisionPoint dp = build_action_decision(state_);
+        auto choice = agent->decide(dp, state_);
+        total_decisions_++;
+        if (choice.empty()) break;
+
+        int chosen_idx = choice[0];
+        if (chosen_idx >= static_cast<int>(dp.options.size()) || dp.options[chosen_idx].is_pass) break;
+
+        int card_id = dp.options[chosen_idx].card_id;
+        Player& player = state_.get_player(pid);
+        int hand_idx = player.find_in_hand(card_id);
+        if (hand_idx == -1) break;
+
+        observe("  Player " + std::to_string(pid) + " plays " +
+                dp.options[chosen_idx].card_name);
+
+        state_.add_actions(-1);
+        DecisionFn decide_fn = make_decision_fn();
+        state_.play_card_from_hand(pid, hand_idx, decide_fn);
+    }
+}
+
+void GameRunner::run_treasure_phase(int pid) {
+    Agent* agent = agents_[pid];
+    while (true) {
+        auto treasures = Rules::playable_treasures(state_, pid);
+        if (treasures.empty()) break;
+
+        DecisionPoint dp = build_treasure_decision(state_);
+        auto choice = agent->decide(dp, state_);
+        total_decisions_++;
+        if (choice.empty()) break;
+
+        int chosen_idx = choice[0];
+        if (chosen_idx >= static_cast<int>(dp.options.size()) || dp.options[chosen_idx].is_pass) break;
+
+        // "Play all Treasures" shortcut
+        if (dp.options[chosen_idx].label == "Play all Treasures") {
+            Player& player = state_.get_player(pid);
+            DecisionFn decide_fn = make_decision_fn();
+
+            std::vector<int> treasure_indices;
+            for (int i = 0; i < player.hand_size(); i++) {
+                const Card* card = state_.card_def(player.get_hand()[i]);
+                if (card && card->is_treasure()) treasure_indices.push_back(i);
+            }
+
+            // Build narration
+            std::ostringstream oss;
+            oss << "  Player " << pid << " plays all Treasures:";
+            for (int i : treasure_indices) {
+                oss << " " << state_.card_name(player.get_hand()[i]);
+            }
+            observe(oss.str());
+
+            std::sort(treasure_indices.begin(), treasure_indices.end(), std::greater<int>());
+
+            int merchant_count = state_.get_turn_flag("merchant_count");
+            bool silver_triggered = state_.get_turn_flag("merchant_silver_triggered") != 0;
+
+            for (int idx : treasure_indices) {
+                int cid = player.get_hand()[idx];
+                const Card* card = state_.card_def(cid);
+                player.play_from_hand(idx);
+                if (card && card->on_play) {
+                    card->on_play(state_, pid, decide_fn);
+                }
+                if (card && card->name == "Silver" && merchant_count > 0 && !silver_triggered) {
+                    state_.add_coins(merchant_count);
+                    state_.set_turn_flag("merchant_silver_triggered", 1);
+                    silver_triggered = true;
+                }
+            }
+            break;
+        }
+
+        // Play a single treasure
+        int card_id = dp.options[chosen_idx].card_id;
+        Player& player = state_.get_player(pid);
+        int hand_idx = player.find_in_hand(card_id);
+        if (hand_idx == -1) break;
+
+        const Card* card = state_.card_def(card_id);
+        observe("  Player " + std::to_string(pid) + " plays " +
+                (card ? card->name : "???"));
+
+        DecisionFn decide_fn = make_decision_fn();
+        player.play_from_hand(hand_idx);
+        if (card && card->on_play) {
+            card->on_play(state_, pid, decide_fn);
+        }
+
+        int merchant_count = state_.get_turn_flag("merchant_count");
+        bool silver_triggered = state_.get_turn_flag("merchant_silver_triggered") != 0;
+        if (card && card->name == "Silver" && merchant_count > 0 && !silver_triggered) {
+            state_.add_coins(merchant_count);
+            state_.set_turn_flag("merchant_silver_triggered", 1);
+        }
+    }
+
+    observe("  Player " + std::to_string(pid) + " has " +
+            std::to_string(state_.coins()) + " coins");
+}
+
+void GameRunner::run_buy_phase(int pid) {
+    Agent* agent = agents_[pid];
+    while (state_.buys() > 0) {
+        DecisionPoint dp = build_buy_decision(state_);
+        if (dp.options.size() <= 1) break;
+
+        auto choice = agent->decide(dp, state_);
+        total_decisions_++;
+        if (choice.empty()) break;
+
+        int chosen_idx = choice[0];
+        if (chosen_idx >= static_cast<int>(dp.options.size()) || dp.options[chosen_idx].is_pass) break;
+
+        const std::string& pile_name = dp.options[chosen_idx].card_name;
+        const Card* card = CardRegistry::get(pile_name);
+        if (!card) break;
+
+        observe("  Player " + std::to_string(pid) + " buys " + pile_name);
+
+        state_.add_coins(-card->cost);
+        state_.add_buys(-1);
+        state_.gain_card(pid, pile_name);
+    }
+}
