@@ -6,13 +6,14 @@
 #include <string>
 #include <vector>
 
-enum class AgentType { RANDOM, BIG_MONEY, HEURISTIC };
+enum class AgentType { RANDOM, BIG_MONEY, HEURISTIC, ENGINE };
 
 static std::string agent_name(AgentType t) {
     switch (t) {
         case AgentType::RANDOM:    return "Random";
         case AgentType::BIG_MONEY: return "BigMoney";
         case AgentType::HEURISTIC: return "Heuristic";
+        case AgentType::ENGINE:    return "Engine";
     }
     return "???";
 }
@@ -22,6 +23,7 @@ static std::unique_ptr<Agent> make_agent(AgentType t, uint64_t seed) {
         case AgentType::RANDOM:    return std::make_unique<RandomAgent>(seed);
         case AgentType::BIG_MONEY: return std::make_unique<BigMoneyAgent>();
         case AgentType::HEURISTIC: return std::make_unique<HeuristicAgent>();
+        case AgentType::ENGINE:    return std::make_unique<EngineBot>();
     }
     return nullptr;
 }
@@ -108,6 +110,15 @@ int main() {
 
     print_result(run_bench("BigMoney vs Heuristic", n, kingdom,
                             AgentType::BIG_MONEY, AgentType::HEURISTIC));
+
+    print_result(run_bench("Engine vs BigMoney", n, kingdom,
+                            AgentType::ENGINE, AgentType::BIG_MONEY));
+
+    print_result(run_bench("BigMoney vs Engine", n, kingdom,
+                            AgentType::BIG_MONEY, AgentType::ENGINE));
+
+    print_result(run_bench("Engine vs Heuristic", n, kingdom,
+                            AgentType::ENGINE, AgentType::HEURISTIC));
 
     print_result(run_bench("BigMoney vs Random", n, kingdom,
                             AgentType::BIG_MONEY, AgentType::RANDOM));

@@ -16,11 +16,19 @@ std::vector<int> RandomAgent::decide(const DecisionPoint& dp, const GameState& /
 
 // --- BigMoneyAgent ---
 
+// Optimized Big Money based on wiki.dominionstrategy.com/index.php/Money_strategies
+// Buy rules from "Big Money optimized" section:
+//   $8: Province (unless very early with no Gold and <5 Silvers → Gold)
+//   $6-7: Gold (unless ≤4 Provinces left → Duchy)
+//   $5: Silver (unless ≤5 Provinces left → Duchy)
+//   $3-4: Silver (unless ≤2 Provinces left → Estate)
+//   $2: Estate only if ≤3 Provinces left, else nothing
 std::vector<int> BigMoneyAgent::decide(const DecisionPoint& dp, const GameState& state) {
     if (dp.options.empty()) return {};
 
     switch (dp.type) {
         case DecisionType::PLAY_ACTION: {
+            // Pure Big Money: skip all actions
             for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
                 if (dp.options[i].is_pass) return {i};
             }
@@ -46,29 +54,66 @@ std::vector<int> BigMoneyAgent::decide(const DecisionPoint& dp, const GameState&
                 return -1;
             };
 
+            // Count Golds and Silvers the player owns (all zones)
+            int pid = state.current_player_id();
+            auto all = state.get_player(pid).all_cards();
+            int gold_count = 0, silver_count = 0;
+            for (int cid : all) {
+                const std::string& n = state.card_name(cid);
+                if (n == "Gold") gold_count++;
+                else if (n == "Silver") silver_count++;
+            }
+
             if (coins >= 8) {
+                // Early game exception: if no Gold and <5 Silvers, buy Gold instead
+                if (gold_count == 0 && silver_count < 5) {
+                    int idx = find_option("Gold");
+                    if (idx >= 0) return {idx};
+                }
                 int idx = find_option("Province");
                 if (idx >= 0) return {idx};
             }
             if (coins >= 6) {
+                // Endgame: Duchy if ≤4 Provinces left
+                if (provinces_left <= 4) {
+                    int idx = find_option("Duchy");
+                    if (idx >= 0) return {idx};
+                }
                 int idx = find_option("Gold");
                 if (idx >= 0) return {idx};
             }
-            if (coins >= 5 && provinces_left <= 4) {
-                int idx = find_option("Duchy");
-                if (idx >= 0) return {idx};
-            }
-            if (coins >= 3) {
+            if (coins == 5) {
+                // Endgame: Duchy if ≤5 Provinces left
+                if (provinces_left <= 5) {
+                    int idx = find_option("Duchy");
+                    if (idx >= 0) return {idx};
+                }
                 int idx = find_option("Silver");
                 if (idx >= 0) return {idx};
             }
+            if (coins >= 3) {
+                // Endgame: Estate if ≤2 Provinces left
+                if (provinces_left <= 2) {
+                    int idx = find_option("Estate");
+                    if (idx >= 0) return {idx};
+                }
+                int idx = find_option("Silver");
+                if (idx >= 0) return {idx};
+            }
+            if (coins == 2) {
+                // Estate only if ≤3 Provinces left
+                if (provinces_left <= 3) {
+                    int idx = find_option("Estate");
+                    if (idx >= 0) return {idx};
+                }
+            }
+            // $0-1 or nothing worth buying: pass
             for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
                 if (dp.options[i].is_pass) return {i};
             }
             return {static_cast<int>(dp.options.size()) - 1};
         }
         default: {
-            // Multi-select: return the first min_choices options
             std::vector<int> result;
             int needed = std::max(1, dp.min_choices);
             for (int i = 0; i < static_cast<int>(dp.options.size()) && static_cast<int>(result.size()) < needed; i++) {
@@ -372,6 +417,364 @@ std::vector<int> HeuristicAgent::decide(const DecisionPoint& dp, const GameState
                          static_cast<int>(result.size()) < needed; i++) {
                         result.push_back(i);
                     }
+                    return result;
+                }
+            }
+        }
+    }
+}
+
+// --- EngineBot ---
+// Build phase: buy engine components, avoid VP/Gold.
+// Green phase: switch to aggressive VP buying.
+// Transition when engine is "ready" (has components + thin deck or enough draw).
+
+// Engine buy priority during build phase (lower = buy first)
+static int engine_build_priority(const std::string& name) {
+    // Trashing — top priority early
+    if (name == "Chapel")       return 0;
+
+    // Cantrip draw — always safe, no terminal collision
+    if (name == "Laboratory")   return 10;
+    if (name == "Market")       return 11;
+    if (name == "Festival")     return 12;
+    if (name == "Sentry")       return 13;
+    if (name == "Merchant")     return 14;
+
+    // Villages — needed to support terminals
+    if (name == "Village")      return 20;
+
+    // Terminal draw / attacks
+    if (name == "Witch")        return 30;
+    if (name == "Smithy")       return 31;
+    if (name == "Council Room") return 32;
+    if (name == "Militia")      return 33;
+    if (name == "Moat")         return 34;
+
+    // Utility
+    if (name == "Cellar")       return 40;
+    if (name == "Harbinger")    return 41;
+    if (name == "Throne Room")  return 42;
+    if (name == "Remodel")      return 43;
+    if (name == "Poacher")      return 44;
+    if (name == "Workshop")     return 45;
+    if (name == "Artisan")      return 46;
+    if (name == "Mine")         return 47;
+    if (name == "Library")      return 48;
+    if (name == "Vassal")       return 49;
+    if (name == "Moneylender")  return 50;
+    if (name == "Bandit")       return 51;
+    if (name == "Bureaucrat")   return 52;
+
+    // Treasure — only as fallback
+    if (name == "Silver")       return 80;
+    if (name == "Gold")         return 81;
+
+    // Never during build
+    if (name == "Province")     return 900;
+    if (name == "Duchy")        return 901;
+    if (name == "Estate")       return 902;
+    if (name == "Gardens")      return 903;
+    if (name == "Curse")        return 999;
+    if (name == "Copper")       return 999;
+
+    return 100;
+}
+
+struct DeckProfile {
+    int villages;       // Village, Festival
+    int terminal_draw;  // Smithy, Council Room, Witch, Moat, Library
+    int cantrips;       // Laboratory, Market, Sentry, Merchant, Harbinger, Poacher, Cellar
+    int chapels;
+    int total_actions;
+    int total_cards;
+    int treasures;      // Copper + Silver + Gold
+    int junk;           // Estate + Curse + Copper
+};
+
+static DeckProfile analyze_deck(const GameState& state, int pid) {
+    DeckProfile p = {};
+    auto all = state.get_player(pid).all_cards();
+    p.total_cards = static_cast<int>(all.size());
+    for (int cid : all) {
+        const std::string& name = state.card_name(cid);
+        const Card* card = state.card_def(cid);
+        if (!card) continue;
+
+        if (card->is_action()) p.total_actions++;
+        if (card->is_treasure()) p.treasures++;
+
+        if (name == "Village" || name == "Festival") p.villages++;
+        if (name == "Smithy" || name == "Council Room" || name == "Witch" ||
+            name == "Moat" || name == "Library") p.terminal_draw++;
+        if (name == "Laboratory" || name == "Market" || name == "Sentry" ||
+            name == "Merchant" || name == "Harbinger" || name == "Poacher" ||
+            name == "Cellar") p.cantrips++;
+        if (name == "Chapel") p.chapels++;
+        if (name == "Copper" || name == "Estate" || name == "Curse") p.junk++;
+    }
+    return p;
+}
+
+static bool should_green(const GameState& state, int pid, int turn) {
+    auto prof = analyze_deck(state, pid);
+
+    // Failsafe: don't build forever
+    if (turn > 12) return true;
+
+    // Have Chapel and deck is thin (few junk cards left)
+    if (prof.chapels >= 1 && prof.junk <= 3 && prof.total_actions >= 2) return true;
+
+    // Have enough village + draw to reliably hit $8
+    if (prof.villages >= 2 && prof.terminal_draw >= 2) return true;
+    if (prof.villages >= 1 && prof.terminal_draw >= 1 && prof.cantrips >= 2) return true;
+
+    // Lots of cantrips can substitute for village+draw
+    if (prof.cantrips >= 4) return true;
+
+    return false;
+}
+
+std::vector<int> EngineBot::decide(const DecisionPoint& dp, const GameState& state) {
+    if (dp.options.empty()) return {};
+
+    int pid = dp.player_id;
+    int provinces_left = state.get_supply().count("Province");
+
+    switch (dp.type) {
+        case DecisionType::PLAY_ACTION: {
+            // Same play priority as HeuristicAgent: villages → cantrips → terminals
+            int best_idx = -1;
+            int best_prio = 999;
+            for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
+                if (dp.options[i].is_pass) continue;
+                int prio = action_priority(dp.options[i].card_name);
+                if (prio < best_prio) {
+                    best_prio = prio;
+                    best_idx = i;
+                }
+            }
+            if (best_idx >= 0) return {best_idx};
+            for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
+                if (dp.options[i].is_pass) return {i};
+            }
+            return {static_cast<int>(dp.options.size()) - 1};
+        }
+
+        case DecisionType::PLAY_TREASURE: {
+            for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
+                if (dp.options[i].label == "Play all Treasures") return {i};
+            }
+            for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
+                if (!dp.options[i].is_pass) return {i};
+            }
+            return {static_cast<int>(dp.options.size()) - 1};
+        }
+
+        case DecisionType::BUY_CARD: {
+            int coins = state.coins();
+            int turn = state.turn_number();
+            bool greening = should_green(state, pid, turn);
+
+            auto find_option = [&](const std::string& name) -> int {
+                for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
+                    if (dp.options[i].card_name == name) return i;
+                }
+                return -1;
+            };
+
+            if (greening) {
+                // --- GREEN PHASE: same as optimized Big Money ---
+                auto all = state.get_player(pid).all_cards();
+                int gold_count = 0, silver_count = 0;
+                for (int cid : all) {
+                    const std::string& n = state.card_name(cid);
+                    if (n == "Gold") gold_count++;
+                    else if (n == "Silver") silver_count++;
+                }
+
+                if (coins >= 8) {
+                    if (gold_count == 0 && silver_count < 5) {
+                        int idx = find_option("Gold");
+                        if (idx >= 0) return {idx};
+                    }
+                    int idx = find_option("Province");
+                    if (idx >= 0) return {idx};
+                }
+                if (coins >= 6) {
+                    if (provinces_left <= 4) {
+                        int idx = find_option("Duchy");
+                        if (idx >= 0) return {idx};
+                    }
+                    int idx = find_option("Gold");
+                    if (idx >= 0) return {idx};
+                }
+                if (coins == 5) {
+                    if (provinces_left <= 5) {
+                        int idx = find_option("Duchy");
+                        if (idx >= 0) return {idx};
+                    }
+                    // Still buy a Lab/Market if available during green (keep engine running)
+                    for (auto& name : {"Laboratory", "Market", "Festival"}) {
+                        int idx = find_option(name);
+                        if (idx >= 0) return {idx};
+                    }
+                    int idx = find_option("Silver");
+                    if (idx >= 0) return {idx};
+                }
+                if (coins >= 3) {
+                    if (provinces_left <= 2) {
+                        int idx = find_option("Estate");
+                        if (idx >= 0) return {idx};
+                    }
+                    int idx = find_option("Silver");
+                    if (idx >= 0) return {idx};
+                }
+                if (coins == 2 && provinces_left <= 3) {
+                    int idx = find_option("Estate");
+                    if (idx >= 0) return {idx};
+                }
+            } else {
+                // --- BUILD PHASE: buy engine components ---
+                auto prof = analyze_deck(state, pid);
+
+                // Component limits
+                auto is_limited = [&](const std::string& name) -> bool {
+                    if (name == "Chapel" && prof.chapels >= 1) return true;
+                    if ((name == "Smithy" || name == "Council Room" || name == "Witch" ||
+                         name == "Moat" || name == "Library") && prof.terminal_draw >= 2) return true;
+                    if ((name == "Village" || name == "Festival") && prof.villages >= 3) return true;
+                    return false;
+                };
+
+                // Pick the best available engine component by priority
+                int best_idx = -1;
+                int best_prio = 999;
+                for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
+                    if (dp.options[i].is_pass) continue;
+                    const std::string& name = dp.options[i].card_name;
+                    if (name.empty()) continue;
+
+                    // Never buy VP or junk during build
+                    if (name == "Province" || name == "Duchy" || name == "Estate" ||
+                        name == "Gardens" || name == "Curse" || name == "Copper") continue;
+
+                    // Respect component limits
+                    if (is_limited(name)) continue;
+
+                    // Don't buy Gold during build (prefer actions)
+                    // Exception: if nothing else is available
+                    int prio = engine_build_priority(name);
+
+                    // If we have no village yet but have terminals, boost Village priority
+                    if ((name == "Village" || name == "Festival") &&
+                        prof.villages == 0 && prof.terminal_draw >= 1) {
+                        prio = 5; // urgent
+                    }
+
+                    // If we have village but no terminal draw, boost draw priority
+                    if ((name == "Smithy" || name == "Witch" || name == "Council Room") &&
+                        prof.terminal_draw == 0 && prof.villages >= 1) {
+                        prio = 5; // urgent
+                    }
+
+                    if (prio < best_prio) {
+                        best_prio = prio;
+                        best_idx = i;
+                    }
+                }
+                if (best_idx >= 0) return {best_idx};
+            }
+
+            // Pass
+            for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
+                if (dp.options[i].is_pass) return {i};
+            }
+            return {static_cast<int>(dp.options.size()) - 1};
+        }
+
+        default: {
+            // Sub-decisions: same heuristics as HeuristicAgent
+            switch (dp.sub_choice_type) {
+                case ChoiceType::DISCARD: {
+                    std::vector<std::pair<int, int>> scored;
+                    for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
+                        const Card* card = state.card_def(dp.options[i].card_id);
+                        scored.push_back({discard_priority(card), i});
+                    }
+                    std::sort(scored.begin(), scored.end());
+                    std::vector<int> result;
+                    int needed = std::max(1, dp.min_choices);
+                    for (int i = 0; i < needed && i < static_cast<int>(scored.size()); i++)
+                        result.push_back(scored[i].second);
+                    return result;
+                }
+
+                case ChoiceType::TRASH: {
+                    // Engine bot trashes MORE aggressively: trash all junk up to max
+                    std::vector<std::pair<int, int>> scored;
+                    for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
+                        const Card* card = state.card_def(dp.options[i].card_id);
+                        scored.push_back({trash_priority(card), i});
+                    }
+                    std::sort(scored.begin(), scored.end());
+                    std::vector<int> result;
+                    int limit = dp.max_choices;
+                    for (int i = 0; i < limit && i < static_cast<int>(scored.size()); i++) {
+                        if (scored[i].first < 50 || static_cast<int>(result.size()) < dp.min_choices)
+                            result.push_back(scored[i].second);
+                    }
+                    while (static_cast<int>(result.size()) < dp.min_choices &&
+                           static_cast<int>(result.size()) < static_cast<int>(dp.options.size())) {
+                        for (int i = 0; i < static_cast<int>(scored.size()); i++) {
+                            bool already = false;
+                            for (int r : result) if (r == scored[i].second) { already = true; break; }
+                            if (!already) { result.push_back(scored[i].second); break; }
+                        }
+                    }
+                    return result;
+                }
+
+                case ChoiceType::GAIN: {
+                    // Gain the most expensive option
+                    int best_idx = 0;
+                    int best_cost = -1;
+                    for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
+                        const Card* card = state.card_def(dp.options[i].card_id);
+                        int cost = card ? card->cost : 0;
+                        if (cost > best_cost) { best_cost = cost; best_idx = i; }
+                    }
+                    return {best_idx};
+                }
+
+                case ChoiceType::YES_NO: {
+                    // Always yes (reveal Moat, trash Copper, etc.)
+                    for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
+                        if (dp.options[i].label == "Yes") return {i};
+                    }
+                    return {static_cast<int>(dp.options.size()) - 1};
+                }
+
+                case ChoiceType::PLAY_CARD: {
+                    // Throne Room: pick best action by priority
+                    int best_idx = 0;
+                    int best_prio = 999;
+                    for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
+                        const Card* card = state.card_def(dp.options[i].card_id);
+                        if (card) {
+                            int prio = action_priority(card->name);
+                            if (prio < best_prio) { best_prio = prio; best_idx = i; }
+                        }
+                    }
+                    return {best_idx};
+                }
+
+                default: {
+                    std::vector<int> result;
+                    int needed = std::max(1, dp.min_choices);
+                    for (int i = 0; i < static_cast<int>(dp.options.size()) &&
+                         static_cast<int>(result.size()) < needed; i++)
+                        result.push_back(i);
                     return result;
                 }
             }

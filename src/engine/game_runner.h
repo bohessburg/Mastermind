@@ -38,6 +38,14 @@ public:
     std::vector<int> decide(const DecisionPoint& dp, const GameState& state) override;
 };
 
+// Engine builder: buys engine components first (Chapel, Village, Smithy, Lab, Witch),
+// avoids VP and Gold during build phase, then transitions to aggressive greening.
+// Based on wiki.dominionstrategy.com engine strategy article.
+class EngineBot : public Agent {
+public:
+    std::vector<int> decide(const DecisionPoint& dp, const GameState& state) override;
+};
+
 struct GameResult {
     std::vector<int> scores;
     int winner;
