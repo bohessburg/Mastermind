@@ -110,15 +110,6 @@ DecisionFn GameRunner::make_decision_fn() {
         dp.min_choices = min_choices;
         dp.max_choices = max_choices;
 
-        // Card callbacks pass hand indices for DISCARD/TRASH/TOPDECK/PLAY_CARD/REVEAL.
-        // Translate to actual card IDs so agents can display card names.
-        bool is_hand_index = (choice_type == ChoiceType::DISCARD ||
-                              choice_type == ChoiceType::TRASH ||
-                              choice_type == ChoiceType::TOPDECK ||
-                              choice_type == ChoiceType::PLAY_CARD ||
-                              choice_type == ChoiceType::REVEAL ||
-                              choice_type == ChoiceType::SELECT_FROM_DISCARD);
-
         const Player& player = state_.get_player(player_id);
         const auto& hand = player.get_hand();
         const auto& discard = player.get_discard();
@@ -126,16 +117,56 @@ DecisionFn GameRunner::make_decision_fn() {
         for (int i = 0; i < static_cast<int>(options.size()); i++) {
             ActionOption opt;
             opt.local_id = i;
+            opt.card_id = -1;
             opt.is_pass = false;
 
-            if (is_hand_index && choice_type == ChoiceType::SELECT_FROM_DISCARD) {
-                int idx = options[i];
-                opt.card_id = (idx < static_cast<int>(discard.size())) ? discard[idx] : -1;
-            } else if (is_hand_index) {
-                int idx = options[i];
-                opt.card_id = (idx < static_cast<int>(hand.size())) ? hand[idx] : -1;
-            } else {
-                opt.card_id = options[i];
+            switch (choice_type) {
+                // These pass hand indices — translate to card IDs
+                case ChoiceType::DISCARD:
+                case ChoiceType::TRASH:
+                case ChoiceType::TOPDECK:
+                case ChoiceType::PLAY_CARD:
+                case ChoiceType::REVEAL: {
+                    int idx = options[i];
+                    opt.card_id = (idx < static_cast<int>(hand.size())) ? hand[idx] : -1;
+                    break;
+                }
+                // Discard pile indices
+                case ChoiceType::SELECT_FROM_DISCARD: {
+                    int idx = options[i];
+                    opt.card_id = (idx < static_cast<int>(discard.size())) ? discard[idx] : -1;
+                    break;
+                }
+                // Supply pile indices — translate via gainable_piles context
+                case ChoiceType::GAIN: {
+                    // options[i] is an index into a pile list built by the card.
+                    // We can't recover the pile name here, so pass the raw index.
+                    // The card_id stays -1; agents see the index.
+                    opt.label = "Option " + std::to_string(options[i]);
+                    break;
+                }
+                // Binary choice
+                case ChoiceType::YES_NO: {
+                    opt.label = (options[i] == 0) ? "No" : "Yes";
+                    break;
+                }
+                // Per-card fate
+                case ChoiceType::MULTI_FATE: {
+                    if (options[i] == 0) opt.label = "Keep (put back on deck)";
+                    else if (options[i] == 1) opt.label = "Discard";
+                    else if (options[i] == 2) opt.label = "Trash";
+                    else opt.label = "Option " + std::to_string(options[i]);
+                    break;
+                }
+                // Ordering
+                case ChoiceType::ORDER: {
+                    opt.label = "Position " + std::to_string(options[i]);
+                    break;
+                }
+                default: {
+                    opt.card_id = options[i];
+                    break;
+                }
             }
 
             dp.options.push_back(opt);

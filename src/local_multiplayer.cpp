@@ -13,7 +13,7 @@ static void print_divider() {
 }
 
 static void print_supply(const GameState& state) {
-    std::cout << "\n  SUPPLY\n";
+    std::cout << "  SUPPLY\n";
     std::cout << "  Treasures: ";
     for (auto& n : {"Copper", "Silver", "Gold"})
         std::cout << n << "(" << state.get_supply().count(n) << ") ";
@@ -39,10 +39,10 @@ static void print_supply(const GameState& state) {
     std::cout << "\n";
 }
 
-static void print_hand(const GameState& state, int pid) {
+static void print_hand(const GameState& state, int pid, const std::string& label) {
     const Player& player = state.get_player(pid);
     const auto& hand = player.get_hand();
-    std::cout << "  HAND [" << hand.size() << "]: ";
+    std::cout << "  " << label << " hand [" << hand.size() << "]: ";
     for (int i = 0; i < static_cast<int>(hand.size()); i++) {
         const Card* card = state.card_def(hand[i]);
         std::string name = card ? card->name : "???";
@@ -62,16 +62,10 @@ static void print_hand(const GameState& state, int pid) {
     std::cout << "\n";
 }
 
-static void print_status(const GameState& state, int pid) {
-    std::cout << "  Actions: " << state.actions()
-              << "  Buys: " << state.buys()
-              << "  Coins: " << state.coins()
-              << "  |  Deck: " << state.get_player(pid).deck_size()
-              << "  Discard: " << state.get_player(pid).discard_size() << "\n";
-
+static void print_in_play(const GameState& state, int pid, const std::string& label) {
     const auto& in_play = state.get_player(pid).get_in_play();
     if (!in_play.empty()) {
-        std::cout << "  In Play: ";
+        std::cout << "  " << label << " in play: ";
         for (int i = 0; i < static_cast<int>(in_play.size()); i++) {
             std::cout << state.card_name(in_play[i]);
             if (i < static_cast<int>(in_play.size()) - 1) std::cout << ", ";
@@ -80,14 +74,47 @@ static void print_status(const GameState& state, int pid) {
     }
 }
 
-static void print_opponent_summary(const GameState& state, int my_pid) {
-    for (int i = 0; i < state.num_players(); i++) {
-        if (i == my_pid) continue;
-        const Player& opp = state.get_player(i);
-        std::cout << "  Player " << i << ": Hand(" << opp.hand_size()
-                  << ") Deck(" << opp.deck_size()
-                  << ") Discard(" << opp.discard_size() << ")\n";
+static void print_status(const GameState& state, int pid) {
+    std::cout << "  Actions: " << state.actions()
+              << "  Buys: " << state.buys()
+              << "  Coins: " << state.coins()
+              << "  |  Deck: " << state.get_player(pid).deck_size()
+              << "  Discard: " << state.get_player(pid).discard_size() << "\n";
+}
+
+static void print_trash(const GameState& state) {
+    const auto& trash = state.get_trash();
+    if (!trash.empty()) {
+        std::cout << "  Trash [" << trash.size() << "]: ";
+        for (int i = 0; i < static_cast<int>(trash.size()); i++) {
+            std::cout << state.card_name(trash[i]);
+            if (i < static_cast<int>(trash.size()) - 1) std::cout << ", ";
+        }
+        std::cout << "\n";
     }
+}
+
+static void print_full_state(const GameState& state, int active_pid,
+                              const std::string& p1_name, const std::string& p2_name) {
+    std::cout << "\n";
+    print_divider();
+    print_supply(state);
+    print_trash(state);
+    std::cout << "\n";
+    const std::string& name0 = (0 == active_pid) ? (">> " + p1_name) : p1_name;
+    const std::string& name1 = (1 == active_pid) ? (">> " + p2_name) : p2_name;
+    print_hand(state, 0, name0);
+    print_in_play(state, 0, p1_name);
+    std::cout << "  " << p1_name << ": Deck(" << state.get_player(0).deck_size()
+              << ") Discard(" << state.get_player(0).discard_size() << ")\n";
+    std::cout << "\n";
+    print_hand(state, 1, name1);
+    print_in_play(state, 1, p2_name);
+    std::cout << "  " << p2_name << ": Deck(" << state.get_player(1).deck_size()
+              << ") Discard(" << state.get_player(1).discard_size() << ")\n";
+    std::cout << "\n";
+    print_status(state, active_pid);
+    print_divider();
 }
 
 static int prompt_choice(const std::string& prompt, int min_val, int max_val) {
@@ -111,6 +138,8 @@ static int prompt_choice(const std::string& prompt, int min_val, int max_val) {
 
 // ─── HumanAgent ─────────────────────────────────────────────────────
 
+static std::string g_player_names[2] = {"Player 1", "Player 2"};
+
 class HumanAgent : public Agent {
 public:
     explicit HumanAgent(int player_id, const std::string& name)
@@ -119,12 +148,15 @@ public:
     const std::string& name() const { return name_; }
 
     std::vector<int> decide(const DecisionPoint& dp, const GameState& state) override {
+        // Always show full state before any decision
+        print_full_state(state, dp.player_id, g_player_names[0], g_player_names[1]);
+
         // Sub-decisions during card resolution
         if (dp.type == DecisionType::CHOOSE_CARDS_IN_HAND ||
             dp.type == DecisionType::CHOOSE_OPTION ||
             dp.type == DecisionType::REACT) {
 
-            std::cout << "\n  [" << name_ << "] ";
+            std::cout << "  [" << name_ << "] ";
 
             switch (dp.sub_choice_type) {
                 case ChoiceType::DISCARD:
@@ -140,7 +172,7 @@ public:
                     std::cout << "Choose card to put on top of DECK";
                     break;
                 case ChoiceType::YES_NO:
-                    std::cout << "YES (1) or NO (0)?";
+                    std::cout << "Choose";
                     break;
                 case ChoiceType::PLAY_CARD:
                     std::cout << "Choose a card to PLAY";
@@ -149,7 +181,7 @@ public:
                     std::cout << "Choose a card to REVEAL";
                     break;
                 case ChoiceType::MULTI_FATE:
-                    std::cout << "Choose: 0=keep on deck, 1=discard, 2=trash";
+                    std::cout << "Choose fate for this card";
                     break;
                 case ChoiceType::ORDER:
                     std::cout << "Choose which card goes on TOP";
@@ -212,16 +244,7 @@ public:
         }
 
         // Top-level phase decisions
-        std::cout << "\n";
-        print_divider();
         std::cout << "  " << name_ << "'s TURN  |  Turn " << state.turn_number() << "\n";
-        print_supply(state);
-        std::cout << "\n";
-        print_opponent_summary(state, pid_);
-        std::cout << "\n";
-        print_hand(state, pid_);
-        print_status(state, pid_);
-        print_divider();
 
         switch (dp.type) {
             case DecisionType::PLAY_ACTION:
@@ -285,9 +308,10 @@ int main() {
 
     HumanAgent player1(0, "Player 1");
     HumanAgent player2(1, "Player 2");
+    g_player_names[0] = "Player 1";
+    g_player_names[1] = "Player 2";
     std::vector<Agent*> agents = {&player1, &player2};
 
-    // Observer: narrate card effects between decisions
     runner.set_observer([](const std::string& msg) {
         std::cout << msg << "\n";
     });
