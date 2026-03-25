@@ -30,6 +30,14 @@ public:
     std::vector<int> decide(const DecisionPoint& dp, const GameState& state) override;
 };
 
+// Plays all actions by priority (villages first, then cantrips, then terminals).
+// Buys the most expensive card it can afford (Province > other).
+// Makes reasonable sub-decisions (trash junk, discard victory cards, etc.)
+class HeuristicAgent : public Agent {
+public:
+    std::vector<int> decide(const DecisionPoint& dp, const GameState& state) override;
+};
+
 struct GameResult {
     std::vector<int> scores;
     int winner;

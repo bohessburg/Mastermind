@@ -80,6 +80,305 @@ std::vector<int> BigMoneyAgent::decide(const DecisionPoint& dp, const GameState&
     }
 }
 
+// --- HeuristicAgent ---
+
+// Action play priority: villages first (need +Actions to play more cards),
+// then cantrips (+1 Action, safe to chain), then strong terminals.
+static int action_priority(const std::string& name) {
+    // Tier 0: Villages — give +2 Actions, play these first
+    if (name == "Village")    return 0;
+    if (name == "Festival")   return 1;
+
+    // Tier 1: Cantrips — give +1 Action, safe to chain
+    if (name == "Laboratory") return 10;
+    if (name == "Market")     return 11;
+    if (name == "Sentry")     return 12;
+    if (name == "Poacher")    return 13;
+    if (name == "Merchant")   return 14;
+    if (name == "Harbinger")  return 15;
+    if (name == "Cellar")     return 16;
+
+    // Tier 2: Throne Room — play before a terminal to double it
+    if (name == "Throne Room") return 20;
+
+    // Tier 3: Terminals — these consume your last action
+    if (name == "Witch")       return 30; // strong attack + draw
+    if (name == "Council Room") return 31;
+    if (name == "Smithy")      return 32;
+    if (name == "Militia")     return 33;
+    if (name == "Library")     return 34;
+    if (name == "Mine")        return 35;
+    if (name == "Remodel")     return 36;
+    if (name == "Moneylender") return 37;
+    if (name == "Chapel")      return 38;
+    if (name == "Artisan")     return 39;
+    if (name == "Bandit")      return 40;
+    if (name == "Bureaucrat")  return 41;
+    if (name == "Workshop")    return 42;
+    if (name == "Moat")        return 43;
+    if (name == "Vassal")      return 44;
+
+    return 50; // unknown cards
+}
+
+// Buy priority: lower = buy first when costs are equal.
+// Treasures are inserted at reasonable positions among the actions.
+static int buy_priority(const std::string& name) {
+    // $8
+    if (name == "Province")    return 0;
+
+    // $6
+    if (name == "Gold")        return 10;
+    if (name == "Artisan")     return 11;
+
+    // $5 actions
+    if (name == "Witch")        return 20;
+    if (name == "Laboratory")   return 21;
+    if (name == "Festival")     return 22;
+    if (name == "Market")       return 23;
+    if (name == "Sentry")       return 24;
+    if (name == "Council Room") return 25;
+    if (name == "Mine")         return 26;
+    if (name == "Library")      return 27;
+    if (name == "Duchy")        return 28; // late game only (filtered separately)
+
+    // $4
+    if (name == "Militia")      return 30;
+    if (name == "Smithy")       return 31;
+    if (name == "Throne Room")  return 32;
+    if (name == "Remodel")      return 33;
+    if (name == "Moneylender")  return 34;
+    if (name == "Poacher")      return 35;
+    if (name == "Bureaucrat")   return 36;
+    if (name == "Gardens")      return 37;
+
+    // $3
+    if (name == "Silver")       return 40;
+    if (name == "Village")      return 41;
+    if (name == "Merchant")     return 42;
+    if (name == "Workshop")     return 43;
+    if (name == "Harbinger")    return 44;
+    if (name == "Vassal")       return 45;
+
+    // $2
+    if (name == "Chapel")       return 50;
+    if (name == "Moat")         return 51;
+    if (name == "Cellar")       return 52;
+    if (name == "Estate")       return 53; // late game only (filtered separately)
+
+    // Never buy
+    if (name == "Copper")       return 900;
+    if (name == "Curse")        return 999;
+
+    return 100; // unknown cards
+}
+
+// For discard decisions: prefer discarding junk (victory, curse) over useful cards
+static int discard_priority(const Card* card) {
+    if (!card) return 50;
+    if (card->is_curse()) return 0;     // discard curses first
+    if (card->name == "Estate") return 1;
+    if (card->name == "Duchy") return 2;
+    if (card->name == "Province") return 3; // keep provinces if possible but still victory
+    if (card->name == "Copper") return 10;
+    if (card->is_victory()) return 5;    // other victory cards
+    if (card->is_treasure()) return 20;  // keep treasures
+    if (card->is_action()) return 15;    // keep actions
+    return 25;
+}
+
+// For trash decisions: prefer trashing junk
+static int trash_priority(const Card* card) {
+    if (!card) return 50;
+    if (card->is_curse()) return 0;
+    if (card->name == "Estate") return 1;
+    if (card->name == "Copper") return 2;
+    return 50; // don't want to trash other stuff
+}
+
+std::vector<int> HeuristicAgent::decide(const DecisionPoint& dp, const GameState& state) {
+    if (dp.options.empty()) return {};
+
+    switch (dp.type) {
+        case DecisionType::PLAY_ACTION: {
+            // Pick the highest-priority action card
+            int best_idx = -1;
+            int best_prio = 999;
+            for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
+                if (dp.options[i].is_pass) continue;
+                int prio = action_priority(dp.options[i].card_name);
+                if (prio < best_prio) {
+                    best_prio = prio;
+                    best_idx = i;
+                }
+            }
+            if (best_idx >= 0) return {best_idx};
+            // Pass if nothing to play
+            for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
+                if (dp.options[i].is_pass) return {i};
+            }
+            return {static_cast<int>(dp.options.size()) - 1};
+        }
+
+        case DecisionType::PLAY_TREASURE: {
+            // Play all treasures
+            for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
+                if (dp.options[i].label == "Play all Treasures") return {i};
+            }
+            for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
+                if (!dp.options[i].is_pass) return {i};
+            }
+            return {static_cast<int>(dp.options.size()) - 1};
+        }
+
+        case DecisionType::BUY_CARD: {
+            // Buy the most expensive card, breaking ties by buy_priority.
+            int provinces_left = state.get_supply().count("Province");
+            int best_idx = -1;
+            int best_cost = -1;
+            int best_prio = 999;
+
+            for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
+                if (dp.options[i].is_pass) continue;
+                const std::string& name = dp.options[i].card_name;
+                const Card* card = CardRegistry::get(name);
+                if (!card) continue;
+                // Never buy Curse or Copper
+                if (name == "Curse" || name == "Copper") continue;
+                // Only buy Estate late game
+                if (name == "Estate" && provinces_left > 2) continue;
+                // Only buy Duchy when provinces running low
+                if (name == "Duchy" && provinces_left > 5) continue;
+
+                int cost = card->cost;
+                int prio = buy_priority(name);
+                if (cost > best_cost || (cost == best_cost && prio < best_prio)) {
+                    best_cost = cost;
+                    best_prio = prio;
+                    best_idx = i;
+                }
+            }
+            if (best_idx >= 0) return {best_idx};
+            // Pass
+            for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
+                if (dp.options[i].is_pass) return {i};
+            }
+            return {static_cast<int>(dp.options.size()) - 1};
+        }
+
+        default: {
+            // Sub-decisions: use heuristics based on choice type
+            switch (dp.sub_choice_type) {
+                case ChoiceType::DISCARD: {
+                    // Discard the worst cards (victory, curse, copper)
+                    std::vector<std::pair<int, int>> scored; // (priority, index)
+                    for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
+                        const Card* card = state.card_def(dp.options[i].card_id);
+                        scored.push_back({discard_priority(card), i});
+                    }
+                    std::sort(scored.begin(), scored.end());
+                    std::vector<int> result;
+                    int needed = std::max(1, dp.min_choices);
+                    for (int i = 0; i < needed && i < static_cast<int>(scored.size()); i++) {
+                        result.push_back(scored[i].second);
+                    }
+                    return result;
+                }
+
+                case ChoiceType::TRASH: {
+                    // Trash the worst cards, but only if they're actually junk
+                    std::vector<std::pair<int, int>> scored;
+                    for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
+                        const Card* card = state.card_def(dp.options[i].card_id);
+                        scored.push_back({trash_priority(card), i});
+                    }
+                    std::sort(scored.begin(), scored.end());
+                    std::vector<int> result;
+                    int limit = dp.max_choices;
+                    for (int i = 0; i < limit && i < static_cast<int>(scored.size()); i++) {
+                        // Only trash if priority < 50 (actual junk)
+                        if (scored[i].first < 50 || static_cast<int>(result.size()) < dp.min_choices) {
+                            result.push_back(scored[i].second);
+                        }
+                    }
+                    // Ensure minimum
+                    while (static_cast<int>(result.size()) < dp.min_choices &&
+                           static_cast<int>(result.size()) < static_cast<int>(dp.options.size())) {
+                        bool found = false;
+                        for (int i = 0; i < static_cast<int>(scored.size()); i++) {
+                            bool already = false;
+                            for (int r : result) if (r == scored[i].second) { already = true; break; }
+                            if (!already) { result.push_back(scored[i].second); found = true; break; }
+                        }
+                        if (!found) break;
+                    }
+                    return result;
+                }
+
+                case ChoiceType::GAIN: {
+                    // Gain the most expensive option
+                    int best_idx = 0;
+                    int best_cost = -1;
+                    for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
+                        const Card* card = state.card_def(dp.options[i].card_id);
+                        int cost = card ? card->cost : 0;
+                        if (cost > best_cost) {
+                            best_cost = cost;
+                            best_idx = i;
+                        }
+                    }
+                    return {best_idx};
+                }
+
+                case ChoiceType::YES_NO: {
+                    // Generally say yes (reveal Moat, trash Copper with Moneylender, etc.)
+                    for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
+                        if (dp.options[i].label == "Yes") return {i};
+                    }
+                    return {static_cast<int>(dp.options.size()) - 1};
+                }
+
+                case ChoiceType::PLAY_CARD: {
+                    // Throne Room: pick the best action by priority
+                    int best_idx = 0;
+                    int best_prio = 999;
+                    for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
+                        const Card* card = state.card_def(dp.options[i].card_id);
+                        if (card) {
+                            int prio = action_priority(card->name);
+                            if (prio < best_prio) {
+                                best_prio = prio;
+                                best_idx = i;
+                            }
+                        }
+                    }
+                    return {best_idx};
+                }
+
+                case ChoiceType::MULTI_FATE: {
+                    // Sentry: trash curses/estates/coppers, keep everything else
+                    // Options: 0=keep, 1=discard, 2=trash
+                    // The card_id in the DecisionPoint won't help here since
+                    // MULTI_FATE options are {0,1,2} not card references.
+                    // Default: keep (0)
+                    return {0};
+                }
+
+                default: {
+                    // Fallback: pick first min_choices options
+                    std::vector<int> result;
+                    int needed = std::max(1, dp.min_choices);
+                    for (int i = 0; i < static_cast<int>(dp.options.size()) &&
+                         static_cast<int>(result.size()) < needed; i++) {
+                        result.push_back(i);
+                    }
+                    return result;
+                }
+            }
+        }
+    }
+}
+
 // --- GameRunner ---
 
 GameRunner::GameRunner(int num_players, const std::vector<std::string>& kingdom_cards)
@@ -137,12 +436,9 @@ DecisionFn GameRunner::make_decision_fn() {
                     opt.card_id = (idx < static_cast<int>(discard.size())) ? discard[idx] : -1;
                     break;
                 }
-                // Supply pile indices — translate via gainable_piles context
+                // GAIN options are now top-card IDs from supply piles
                 case ChoiceType::GAIN: {
-                    // options[i] is an index into a pile list built by the card.
-                    // We can't recover the pile name here, so pass the raw index.
-                    // The card_id stays -1; agents see the index.
-                    opt.label = "Option " + std::to_string(options[i]);
+                    opt.card_id = options[i];
                     break;
                 }
                 // Binary choice

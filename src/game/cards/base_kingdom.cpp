@@ -145,7 +145,7 @@ void register_all() {
             if (piles.empty()) return;
 
             std::vector<int> options;
-            for (int i = 0; i < static_cast<int>(piles.size()); i++) options.push_back(i);
+            for (const auto& p : piles) options.push_back(state.get_supply().top_card(p));
 
             auto chosen = decide(pid, ChoiceType::GAIN, options, 1, 1);
             if (!chosen.empty()) {
@@ -305,7 +305,7 @@ void register_all() {
             if (piles.empty()) return;
 
             std::vector<int> gain_options;
-            for (int i = 0; i < static_cast<int>(piles.size()); i++) gain_options.push_back(i);
+            for (const auto& p : piles) gain_options.push_back(state.get_supply().top_card(p));
 
             auto gain_chosen = decide(pid, ChoiceType::GAIN, gain_options, 1, 1);
             if (!gain_chosen.empty()) {
@@ -347,7 +347,7 @@ void register_all() {
             if (piles.empty()) return;
 
             std::vector<int> gain_options;
-            for (int i = 0; i < static_cast<int>(piles.size()); i++) gain_options.push_back(i);
+            for (const auto& p : piles) gain_options.push_back(state.get_supply().top_card(p));
 
             auto gain_chosen = decide(pid, ChoiceType::GAIN, gain_options, 1, 1);
             if (!gain_chosen.empty()) {
@@ -368,7 +368,7 @@ void register_all() {
             auto piles = state.gainable_piles(5);
             if (!piles.empty()) {
                 std::vector<int> gain_opts;
-                for (int i = 0; i < static_cast<int>(piles.size()); i++) gain_opts.push_back(i);
+                for (const auto& p : piles) gain_opts.push_back(state.get_supply().top_card(p));
                 auto chosen = decide(pid, ChoiceType::GAIN, gain_opts, 1, 1);
                 if (!chosen.empty()) state.gain_card_to_hand(pid, piles[chosen[0]]);
             }
@@ -648,7 +648,8 @@ void register_all() {
             auto chosen = decide(pid, ChoiceType::PLAY_CARD, action_indices, 0, 1);
             if (chosen.empty()) return;
 
-            int hand_idx = chosen[0];
+            // chosen[0] is an index into action_indices, not a hand index
+            int hand_idx = action_indices[chosen[0]];
             int card_id = player.get_hand()[hand_idx];
             player.play_from_hand(hand_idx);
 

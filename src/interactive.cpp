@@ -1,10 +1,12 @@
 #include "engine/game_runner.h"
 #include "engine/action_space.h"
 
+#include <algorithm>
+#include <chrono>
 #include <iostream>
+#include <random>
 #include <sstream>
 #include <string>
-#include <algorithm>
 
 // ─── Display helpers ────────────────────────────────────────────────
 
@@ -279,17 +281,29 @@ int main() {
     std::cout << R"(
   ╔══════════════════════════════════════╗
   ║       DOMINION  —  Base Set         ║
-  ║     You (P0) vs. Big Money (P1)     ║
+  ║    You (P0) vs. Heuristic Bot (P1)  ║
   ╚══════════════════════════════════════╝
 )" << "\n";
 
-    std::vector<std::string> kingdom = {
-        "Smithy", "Village", "Market", "Laboratory", "Festival",
-        "Cellar", "Chapel", "Workshop", "Moat", "Militia"
+    // All 26 base kingdom cards
+    std::vector<std::string> all_kingdom = {
+        "Cellar", "Chapel", "Moat", "Harbinger", "Merchant",
+        "Vassal", "Village", "Workshop", "Bureaucrat", "Gardens",
+        "Laboratory", "Market", "Militia", "Moneylender", "Poacher",
+        "Remodel", "Smithy", "Throne Room", "Bandit", "Council Room",
+        "Festival", "Library", "Mine", "Sentry", "Witch", "Artisan"
     };
 
+    // Shuffle and pick 10
+    auto seed = static_cast<unsigned>(
+        std::chrono::steady_clock::now().time_since_epoch().count());
+    std::mt19937 rng(seed);
+    std::shuffle(all_kingdom.begin(), all_kingdom.end(), rng);
+    std::vector<std::string> kingdom(all_kingdom.begin(), all_kingdom.begin() + 10);
+    std::sort(kingdom.begin(), kingdom.end());
+
     std::cout << "  Kingdom: ";
-    for (const auto& k : kingdom) std::cout << k << " ";
+    for (const auto& k : kingdom) std::cout << k << "  ";
     std::cout << "\n\n";
 
     GameRunner runner(2, kingdom);
@@ -299,7 +313,7 @@ int main() {
     });
 
     HumanAgent human(0);
-    BigMoneyAgent bot;
+    HeuristicAgent bot;
     std::vector<Agent*> agents = {&human, &bot};
 
     auto result = runner.run(agents);
@@ -307,10 +321,10 @@ int main() {
     std::cout << "\n";
     print_divider();
     std::cout << "  GAME OVER!\n\n";
-    std::cout << "  You:  " << result.scores[0] << " VP\n";
-    std::cout << "  Bot:  " << result.scores[1] << " VP\n\n";
+    std::cout << "  You:           " << result.scores[0] << " VP\n";
+    std::cout << "  Heuristic Bot: " << result.scores[1] << " VP\n\n";
     if (result.winner == 0) std::cout << "  >>> YOU WIN! <<<\n";
-    else if (result.winner == 1) std::cout << "  Bot wins.\n";
+    else if (result.winner == 1) std::cout << "  Heuristic Bot wins.\n";
     else std::cout << "  It's a tie!\n";
     std::cout << "  Total turns: " << result.total_turns << "\n";
     print_divider();
