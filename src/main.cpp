@@ -1,6 +1,7 @@
 #include "engine/game_runner.h"
 
 #include <chrono>
+#include <future>
 #include <iostream>
 #include <memory>
 #include <string>
@@ -78,50 +79,56 @@ static BenchResult run_bench(const std::string& label, int max_games,
 }
 
 static void print_result(const BenchResult& r) {
-    std::cout << "\n  " << r.label << "\n";
-    std::cout << "  " << r.num_games << " games in " << r.elapsed << "s ("
+    std::cout << "  " << r.label << "\n";
+    std::cout << "    " << r.num_games << " games in " << r.elapsed << "s ("
               << static_cast<int>(r.num_games / r.elapsed) << " games/sec)\n";
-    std::cout << "  P1 wins: " << r.p1_wins
+    std::cout << "    P1 wins: " << r.p1_wins
               << "  P2 wins: " << r.p2_wins
               << "  Ties: " << r.ties << "\n";
-    std::cout << "  Avg score: P1=" << r.avg_score_p1
+    std::cout << "    Avg score: P1=" << r.avg_score_p1
               << "  P2=" << r.avg_score_p2 << "\n";
-    std::cout << "  Avg turns: " << r.avg_turns << "\n";
+    std::cout << "    Avg turns: " << r.avg_turns << "\n\n";
 }
 
 int main() {
+    // Cards must be registered on the main thread before launching workers,
+    // since CardRegistry is a shared static.
+    BaseCards::register_all();
+    BaseKingdom::register_all();
+
     std::vector<std::string> kingdom = {
         "Smithy", "Village", "Market", "Laboratory", "Festival",
         "Cellar", "Chapel", "Workshop", "Moat", "Militia"
     };
 
-    int n = 100000; // cap, actual count limited by 10s timeout per matchup
+    int n = 100000;
 
     std::cout << "Kingdom: ";
     for (const auto& k : kingdom) std::cout << k << " ";
     std::cout << "\n";
-    std::cout << "(Each matchup runs for up to " << BENCH_TIMEOUT_SEC << "s)\n";
+    std::cout << "(Each matchup runs for up to " << BENCH_TIMEOUT_SEC << "s, all in parallel)\n\n";
 
-    print_result(run_bench("BigMoney vs BigMoney", n, kingdom,
-                            AgentType::BIG_MONEY, AgentType::BIG_MONEY));
+    // Launch all matchups in parallel
+    auto f1 = std::async(std::launch::async, run_bench,
+        "BigMoney vs BigMoney", n, kingdom, AgentType::BIG_MONEY, AgentType::BIG_MONEY);
+    auto f2 = std::async(std::launch::async, run_bench,
+        "Heuristic vs BigMoney", n, kingdom, AgentType::HEURISTIC, AgentType::BIG_MONEY);
+    auto f3 = std::async(std::launch::async, run_bench,
+        "BigMoney vs Heuristic", n, kingdom, AgentType::BIG_MONEY, AgentType::HEURISTIC);
+    auto f4 = std::async(std::launch::async, run_bench,
+        "Engine vs BigMoney", n, kingdom, AgentType::ENGINE, AgentType::BIG_MONEY);
+    auto f5 = std::async(std::launch::async, run_bench,
+        "BigMoney vs Engine", n, kingdom, AgentType::BIG_MONEY, AgentType::ENGINE);
+    auto f6 = std::async(std::launch::async, run_bench,
+        "BigMoney vs Random", n, kingdom, AgentType::BIG_MONEY, AgentType::RANDOM);
 
-    print_result(run_bench("Heuristic vs BigMoney", n, kingdom,
-                            AgentType::HEURISTIC, AgentType::BIG_MONEY));
-
-    print_result(run_bench("BigMoney vs Heuristic", n, kingdom,
-                            AgentType::BIG_MONEY, AgentType::HEURISTIC));
-
-    print_result(run_bench("Engine vs BigMoney", n, kingdom,
-                            AgentType::ENGINE, AgentType::BIG_MONEY));
-
-    print_result(run_bench("BigMoney vs Engine", n, kingdom,
-                            AgentType::BIG_MONEY, AgentType::ENGINE));
-
-    print_result(run_bench("Engine vs Heuristic", n, kingdom,
-                            AgentType::ENGINE, AgentType::HEURISTIC));
-
-    print_result(run_bench("BigMoney vs Random", n, kingdom,
-                            AgentType::BIG_MONEY, AgentType::RANDOM));
+    // Collect and print
+    print_result(f1.get());
+    print_result(f2.get());
+    print_result(f3.get());
+    print_result(f4.get());
+    print_result(f5.get());
+    print_result(f6.get());
 
     return 0;
 }

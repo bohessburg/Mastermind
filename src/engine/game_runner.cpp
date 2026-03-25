@@ -516,21 +516,24 @@ static DeckProfile analyze_deck(const GameState& state, int pid) {
     return p;
 }
 
-static bool should_green(const GameState& state, int pid, int turn) {
+static bool should_green(const GameState& state, int pid) {
     auto prof = analyze_deck(state, pid);
+    int my_turns = (state.turn_number() + 1) / state.num_players();
 
-    // Failsafe: don't build forever
-    if (turn > 12) return true;
+    // Failsafe: don't build past turn 6 per player
+    if (my_turns > 6) return true;
 
-    // Have Chapel and deck is thin (few junk cards left)
-    if (prof.chapels >= 1 && prof.junk <= 3 && prof.total_actions >= 2) return true;
+    // Have Chapel and deck is thin
+    if (prof.chapels >= 1 && prof.junk <= 2) return true;
 
-    // Have enough village + draw to reliably hit $8
-    if (prof.villages >= 2 && prof.terminal_draw >= 2) return true;
-    if (prof.villages >= 1 && prof.terminal_draw >= 1 && prof.cantrips >= 2) return true;
+    // Have a village + draw combo
+    if (prof.villages >= 1 && prof.terminal_draw >= 1) return true;
 
-    // Lots of cantrips can substitute for village+draw
-    if (prof.cantrips >= 4) return true;
+    // Have cantrip draw
+    if (prof.cantrips >= 3) return true;
+
+    // Have at least 2 action cards and it's turn 4+
+    if (prof.total_actions >= 2 && my_turns >= 4) return true;
 
     return false;
 }
@@ -573,8 +576,7 @@ std::vector<int> EngineBot::decide(const DecisionPoint& dp, const GameState& sta
 
         case DecisionType::BUY_CARD: {
             int coins = state.coins();
-            int turn = state.turn_number();
-            bool greening = should_green(state, pid, turn);
+            bool greening = should_green(state, pid);
 
             auto find_option = [&](const std::string& name) -> int {
                 for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
@@ -635,7 +637,7 @@ std::vector<int> EngineBot::decide(const DecisionPoint& dp, const GameState& sta
                     if (idx >= 0) return {idx};
                 }
             } else {
-                // --- BUILD PHASE: buy engine components ---
+                // --- BUILD PHASE: buy engine components + economy ---
                 auto prof = analyze_deck(state, pid);
 
                 // Component limits
@@ -646,6 +648,12 @@ std::vector<int> EngineBot::decide(const DecisionPoint& dp, const GameState& sta
                     if ((name == "Village" || name == "Festival") && prof.villages >= 3) return true;
                     return false;
                 };
+
+                // At $6-7 with key components already bought, buy Gold for economy
+                if (coins >= 6 && prof.total_actions >= 2) {
+                    int idx = find_option("Gold");
+                    if (idx >= 0) return {idx};
+                }
 
                 // Pick the best available engine component by priority
                 int best_idx = -1;
@@ -662,20 +670,24 @@ std::vector<int> EngineBot::decide(const DecisionPoint& dp, const GameState& sta
                     // Respect component limits
                     if (is_limited(name)) continue;
 
-                    // Don't buy Gold during build (prefer actions)
-                    // Exception: if nothing else is available
                     int prio = engine_build_priority(name);
 
                     // If we have no village yet but have terminals, boost Village priority
                     if ((name == "Village" || name == "Festival") &&
                         prof.villages == 0 && prof.terminal_draw >= 1) {
-                        prio = 5; // urgent
+                        prio = 5;
                     }
 
                     // If we have village but no terminal draw, boost draw priority
                     if ((name == "Smithy" || name == "Witch" || name == "Council Room") &&
                         prof.terminal_draw == 0 && prof.villages >= 1) {
-                        prio = 5; // urgent
+                        prio = 5;
+                    }
+
+                    // Buy Silver at $3-4 if we already have our key action cards
+                    // (don't starve the deck of money)
+                    if (name == "Silver" && prof.total_actions >= 2 && coins <= 4) {
+                        prio = 15; // elevated from 80
                     }
 
                     if (prio < best_prio) {
@@ -911,8 +923,12 @@ DecisionFn GameRunner::make_decision_fn() {
 
 GameResult GameRunner::run(std::vector<Agent*> agents) {
     agents_ = agents;
-    BaseCards::register_all();
-    BaseKingdom::register_all();
+    // Cards should be registered before calling run().
+    // Register here as fallback for single-threaded usage.
+    if (CardRegistry::all_names().empty()) {
+        BaseCards::register_all();
+        BaseKingdom::register_all();
+    }
     BaseCards::setup_supply(state_, kingdom_cards_);
     BaseCards::setup_starting_decks(state_);
     state_.start_game();
