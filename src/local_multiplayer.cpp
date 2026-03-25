@@ -162,7 +162,9 @@ public:
                     break;
             }
 
-            if (dp.min_choices != dp.max_choices) {
+            if (dp.min_choices == dp.max_choices && dp.min_choices > 1) {
+                std::cout << " (pick exactly " << dp.min_choices << ")";
+            } else if (dp.min_choices != dp.max_choices) {
                 std::cout << " (pick " << dp.min_choices << "-" << dp.max_choices << ")";
             }
             std::cout << "\n";
@@ -186,17 +188,26 @@ public:
                 int choice = prompt_choice("  >", 0, static_cast<int>(dp.options.size()) - 1);
                 return {choice};
             } else {
-                std::cout << "  Enter indices separated by spaces (or empty for none): ";
-                std::string line;
-                if (!std::getline(std::cin, line)) return {};
-                std::vector<int> result;
-                std::istringstream iss(line);
-                int val;
-                while (iss >> val) {
-                    if (val >= 0 && val < static_cast<int>(dp.options.size()))
-                        result.push_back(val);
+                while (true) {
+                    std::cout << "  Enter " << dp.min_choices << " indices separated by spaces: ";
+                    std::string line;
+                    if (!std::getline(std::cin, line)) return {};
+                    std::vector<int> result;
+                    std::istringstream iss(line);
+                    int val;
+                    while (iss >> val) {
+                        if (val >= 0 && val < static_cast<int>(dp.options.size()))
+                            result.push_back(val);
+                    }
+                    int n = static_cast<int>(result.size());
+                    if (n >= dp.min_choices && n <= dp.max_choices) return result;
+                    std::cout << "  Must pick ";
+                    if (dp.min_choices == dp.max_choices)
+                        std::cout << "exactly " << dp.min_choices;
+                    else
+                        std::cout << dp.min_choices << "-" << dp.max_choices;
+                    std::cout << " (you picked " << n << ").\n";
                 }
-                return result;
             }
         }
 

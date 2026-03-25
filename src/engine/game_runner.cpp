@@ -142,7 +142,40 @@ DecisionFn GameRunner::make_decision_fn() {
         }
 
         total_decisions_++;
-        return agents_[player_id]->decide(dp, state_);
+
+        // Ask the agent, then enforce the rules. Re-ask on violation.
+        int num_opts = static_cast<int>(dp.options.size());
+        while (true) {
+            auto result = agents_[player_id]->decide(dp, state_);
+            int n = static_cast<int>(result.size());
+
+            // Validate count
+            if (n < min_choices || n > max_choices) {
+                observe("  [engine] Invalid: need " + std::to_string(min_choices) +
+                        "-" + std::to_string(max_choices) + " choices, got " +
+                        std::to_string(n) + ". Retrying.");
+                continue;
+            }
+
+            // Validate indices in range and no duplicates
+            bool valid = true;
+            for (int idx : result) {
+                if (idx < 0 || idx >= num_opts) { valid = false; break; }
+            }
+            if (valid) {
+                for (int i = 0; i < n && valid; i++) {
+                    for (int j = i + 1; j < n && valid; j++) {
+                        if (result[i] == result[j]) valid = false;
+                    }
+                }
+            }
+            if (!valid) {
+                observe("  [engine] Invalid indices. Retrying.");
+                continue;
+            }
+
+            return result;
+        }
     };
 }
 
