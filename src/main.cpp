@@ -127,7 +127,7 @@ static void print_result(const BenchResult& r) {
 
 int main() {
     BaseCards::register_all();
-    BaseKingdom::register_all();
+    Level1Cards::register_all();
 
     int n = 5000;
 

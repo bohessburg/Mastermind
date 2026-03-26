@@ -332,7 +332,7 @@ int main() {
     std::cout << "\n\n";
 
     BaseCards::register_all();
-    BaseKingdom::register_all();
+    Level1Cards::register_all();
     GameRunner runner(2, kingdom);
 
     HumanAgent player1(0, "Player 1");

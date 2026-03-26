@@ -1,10 +1,10 @@
-#include "base_kingdom.h"
+#include "level_1_cards.h"
 #include "../card.h"
 #include "../game_state.h"
 
 #include <algorithm>
 
-namespace BaseKingdom {
+namespace Level1Cards {
 
 void register_all() {
     // Wave 1: Simple effects (no decisions)
@@ -703,4 +703,4 @@ void register_all() {
     });
 }
 
-} // namespace BaseKingdom
+} // namespace Level1Cards
