@@ -483,9 +483,11 @@ static KingdomAnalysis analyze_kingdom(const GameState& state) {
 }
 
 static EngineStrategy pick_strategy(const KingdomAnalysis& k) {
-    // Full engine: need villages + some form of draw
-    if (k.has_village && (k.has_terminal_draw || k.has_cantrip_draw)) return EngineStrategy::FULL_ENGINE;
-    // BM+X: has a good terminal or Chapel, but no village for full engine
+    // Full engine ONLY with Chapel to thin the deck. Without trashing,
+    // Village/Smithy engines get bloated and lose to pure money.
+    if (k.has_village && k.has_terminal_draw && k.has_chapel)
+        return EngineStrategy::FULL_ENGINE;
+    // BM+X: has a good terminal, chapel, or cantrip draw
     if (k.has_terminal_draw || k.has_chapel || k.has_cantrip_draw) return EngineStrategy::BM_PLUS_X;
     // Nothing useful
     return EngineStrategy::PURE_BM;

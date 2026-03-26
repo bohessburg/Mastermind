@@ -406,6 +406,8 @@ void register_all() {
             // For each card: 0=put back, 1=discard, 2=trash
             std::vector<int> keep_cards;
             for (int card_id : top_cards) {
+                // Stash which card we're deciding on so the UI can display it
+                state.set_turn_flag("sentry_card_id", card_id);
                 auto chosen = decide(pid, ChoiceType::MULTI_FATE, {0, 1, 2}, 1, 1);
                 int fate = chosen.empty() ? 0 : chosen[0];
                 if (fate == 1) {

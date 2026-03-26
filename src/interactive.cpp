@@ -281,7 +281,7 @@ int main() {
     std::cout << R"(
   ╔══════════════════════════════════════╗
   ║       DOMINION  —  Base Set         ║
-  ║    You (P0) vs. Heuristic Bot (P1)  ║
+  ║    You (P0) vs. Engine Bot (P1)      ║
   ╚══════════════════════════════════════╝
 )" << "\n";
 
@@ -315,7 +315,7 @@ int main() {
     });
 
     HumanAgent human(0);
-    HeuristicAgent bot;
+    EngineBot bot;
     std::vector<Agent*> agents = {&human, &bot};
 
     auto result = runner.run(agents);
@@ -323,10 +323,10 @@ int main() {
     std::cout << "\n";
     print_divider();
     std::cout << "  GAME OVER!\n\n";
-    std::cout << "  You:           " << result.scores[0] << " VP\n";
-    std::cout << "  Heuristic Bot: " << result.scores[1] << " VP\n\n";
+    std::cout << "  You:        " << result.scores[0] << " VP\n";
+    std::cout << "  Engine Bot: " << result.scores[1] << " VP\n\n";
     if (result.winner == 0) std::cout << "  >>> YOU WIN! <<<\n";
-    else if (result.winner == 1) std::cout << "  Heuristic Bot wins.\n";
+    else if (result.winner == 1) std::cout << "  Engine Bot wins.\n";
     else std::cout << "  It's a tie!\n";
     std::cout << "  Total turns: " << result.total_turns << "\n";
     print_divider();
