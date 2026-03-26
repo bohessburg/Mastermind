@@ -70,10 +70,11 @@ DecisionPoint build_buy_decision(const GameState& state) {
     int coins = state.coins();
     int idx = 0;
 
-    for (const auto& pile_name : state.get_supply().all_pile_names()) {
-        if (state.get_supply().is_pile_empty(pile_name)) continue;
-        int top_id = state.get_supply().top_card(pile_name);
-        if (top_id == -1) continue;
+    // Iterate piles directly instead of allocating all_pile_names()
+    const auto& piles = state.get_supply().piles();
+    for (int i = 0; i < static_cast<int>(piles.size()); i++) {
+        if (piles[i].card_ids.empty()) continue;
+        int top_id = piles[i].card_ids.back();
         const Card* card = state.card_def(top_id);
         if (card && card->cost <= coins) {
             dp.options.push_back({idx++, top_id, card->name, "Buy " + card->name, false});

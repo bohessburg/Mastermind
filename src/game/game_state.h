@@ -57,13 +57,9 @@ public:
     void trash_card(int card_id);
     const std::vector<int>& get_trash() const;
 
-    // Play a card from hand: moves to in_play, calls on_play. Returns card_id.
     int play_card_from_hand(int player_id, int hand_index, DecisionFn decide);
-
-    // Play a card's on_play by card_id (for Throne Room — card already in play).
     void play_card_effect(int card_id, int player_id, DecisionFn decide);
 
-    // Attack resolution: iterates opponents in turn order with reaction windows.
     void resolve_attack(
         int attacker_id,
         std::function<void(GameState&, int target_id, DecisionFn)> attack_effect,
@@ -101,10 +97,12 @@ private:
     int buys_;
     int coins_;
     int turn_number_;
-    std::vector<int> turns_taken_;  // per-player turn count for tiebreaker
+    std::vector<int> turns_taken_;
 
+    // Card ID system: sequential IDs, vector-indexed for O(1) lookup
     int next_card_id_;
-    std::unordered_map<int, std::string> card_names_;
+    std::vector<std::string> card_names_;       // card_id → card_name
+    std::vector<const Card*> card_defs_;        // card_id → cached Card*
 
     std::unordered_map<std::string, int> turn_flags_;
 };

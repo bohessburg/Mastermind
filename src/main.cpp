@@ -68,9 +68,6 @@ static BenchResult run_bench(const std::string& label, int max_games,
     auto start = std::chrono::high_resolution_clock::now();
 
     for (int g = 0; g < max_games; g++) {
-        auto now = std::chrono::high_resolution_clock::now();
-        if (std::chrono::duration<double>(now - start).count() >= BENCH_TIMEOUT_SEC) break;
-
         auto kingdom = random_kingdom(kingdom_rng);
         GameRunner runner(2, kingdom);
         auto a1 = make_agent(t1, g * 2);
@@ -123,10 +120,10 @@ int main() {
     BaseCards::register_all();
     BaseKingdom::register_all();
 
-    int n = 100000;
+    int n = 5000;
 
     std::cout << "Random kingdoms (10 of 26 base cards per game)\n";
-    std::cout << "(Each matchup runs for up to " << BENCH_TIMEOUT_SEC << "s)\n\n" << std::flush;
+    std::cout << n << " games per matchup\n\n" << std::flush;
 
     print_result(run_bench("BigMoney vs BigMoney", n, AgentType::BIG_MONEY, AgentType::BIG_MONEY));
     print_result(run_bench("Heuristic vs BigMoney", n, AgentType::HEURISTIC, AgentType::BIG_MONEY));

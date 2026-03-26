@@ -15,26 +15,27 @@ GameState::GameState(int num_players)
         players_.emplace_back(i);
     }
     turns_taken_.resize(num_players, 0);
+    card_names_.reserve(256);  // typical game has ~200 cards
+    card_defs_.reserve(256);
 }
 
 // --- Card ID system ---
 
 int GameState::create_card(const std::string& card_name) {
     int id = next_card_id_++;
-    card_names_[id] = card_name;
+    card_names_.push_back(card_name);
+    card_defs_.push_back(CardRegistry::get(card_name));
     return id;
 }
 
 const std::string& GameState::card_name(int card_id) const {
-    auto it = card_names_.find(card_id);
-    if (it == card_names_.end()) return UNKNOWN_CARD;
-    return it->second;
+    if (card_id < 0 || card_id >= next_card_id_) return UNKNOWN_CARD;
+    return card_names_[card_id];
 }
 
 const Card* GameState::card_def(int card_id) const {
-    auto it = card_names_.find(card_id);
-    if (it == card_names_.end()) return nullptr;
-    return CardRegistry::get(it->second);
+    if (card_id < 0 || card_id >= next_card_id_) return nullptr;
+    return card_defs_[card_id];
 }
 
 // --- Players ---
@@ -132,8 +133,6 @@ void GameState::resolve_attack(
         int target_id = (attacker_id + i) % num_players();
         bool blocked = false;
 
-        // Check for Reaction cards in target's hand.
-        // Snapshot the hand size since reactions could theoretically change it.
         const auto& hand = get_player(target_id).get_hand();
         for (int h = 0; h < static_cast<int>(hand.size()); h++) {
             const Card* card = card_def(hand[h]);
@@ -153,13 +152,12 @@ void GameState::resolve_attack(
 
 std::vector<std::string> GameState::gainable_piles(int max_cost) const {
     std::vector<std::string> result;
-    for (const auto& pile_name : supply_.all_pile_names()) {
-        if (supply_.is_pile_empty(pile_name)) continue;
-        int top_id = supply_.top_card(pile_name);
-        if (top_id == -1) continue;
-        const Card* card = card_def(top_id);
+    const auto& piles = supply_.piles();
+    for (int i = 0; i < static_cast<int>(piles.size()); i++) {
+        if (piles[i].card_ids.empty()) continue;
+        const Card* card = card_def(piles[i].card_ids.back());
         if (card && card->cost <= max_cost) {
-            result.push_back(pile_name);
+            result.push_back(piles[i].pile_name);
         }
     }
     return result;
@@ -167,13 +165,12 @@ std::vector<std::string> GameState::gainable_piles(int max_cost) const {
 
 std::vector<std::string> GameState::gainable_piles(int max_cost, CardType required_type) const {
     std::vector<std::string> result;
-    for (const auto& pile_name : supply_.all_pile_names()) {
-        if (supply_.is_pile_empty(pile_name)) continue;
-        int top_id = supply_.top_card(pile_name);
-        if (top_id == -1) continue;
-        const Card* card = card_def(top_id);
+    const auto& piles = supply_.piles();
+    for (int i = 0; i < static_cast<int>(piles.size()); i++) {
+        if (piles[i].card_ids.empty()) continue;
+        const Card* card = card_def(piles[i].card_ids.back());
         if (card && card->cost <= max_cost && has_type(card->types, required_type)) {
-            result.push_back(pile_name);
+            result.push_back(piles[i].pile_name);
         }
     }
     return result;
@@ -182,7 +179,7 @@ std::vector<std::string> GameState::gainable_piles(int max_cost, CardType requir
 int GameState::effective_cost(const std::string& card_name_str) const {
     const Card* card = CardRegistry::get(card_name_str);
     if (!card) return 0;
-    return card->cost;  // Future: apply cost reductions
+    return card->cost;
 }
 
 int GameState::total_cards_owned(int player_id) const {
@@ -250,7 +247,6 @@ std::vector<int> GameState::calculate_scores() const {
     std::vector<int> scores(num_players(), 0);
     for (int p = 0; p < num_players(); p++) {
         const Player& player = players_[p];
-
         std::vector<int> owned = player.all_cards();
 
         for (int card_id : owned) {
@@ -285,7 +281,6 @@ int GameState::winner() const {
 
     if (!tie) return best_player;
 
-    // Tiebreaker: fewer turns wins
     int best_turns = turns_taken_[best_player];
     best_player = -1;
     tie = false;

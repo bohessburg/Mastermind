@@ -50,12 +50,11 @@ std::vector<std::string> buyable_piles(const GameState& state, int /*player_id*/
     std::vector<std::string> result;
     if (state.buys() <= 0) return result;
     int coins = state.coins();
-    for (const auto& name : state.get_supply().all_pile_names()) {
-        if (state.get_supply().is_pile_empty(name)) continue;
-        int top_id = state.get_supply().top_card(name);
-        if (top_id == -1) continue;
-        const Card* card = state.card_def(top_id);
-        if (card && card->cost <= coins) result.push_back(name);
+    const auto& piles = state.get_supply().piles();
+    for (const auto& pile : piles) {
+        if (pile.card_ids.empty()) continue;
+        const Card* card = state.card_def(pile.card_ids.back());
+        if (card && card->cost <= coins) result.push_back(pile.pile_name);
     }
     return result;
 }
