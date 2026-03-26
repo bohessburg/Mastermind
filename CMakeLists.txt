@@ -46,6 +46,23 @@ target_link_libraries(dominion_2p PRIVATE dominion_engine)
 add_executable(dominion_stress src/stress_test.cpp)
 target_link_libraries(dominion_stress PRIVATE dominion_engine)
 
+# --- GUI (requires raylib) ---
+find_package(PkgConfig QUIET)
+if(PkgConfig_FOUND)
+    pkg_check_modules(RAYLIB QUIET raylib)
+endif()
+if(RAYLIB_FOUND)
+    add_executable(dominion_gui
+        src/gui/gui_main.cpp
+        src/gui/gui_agent.cpp
+    )
+    target_include_directories(dominion_gui PRIVATE ${RAYLIB_INCLUDE_DIRS})
+    target_link_directories(dominion_gui PRIVATE ${RAYLIB_LIBRARY_DIRS})
+    target_link_libraries(dominion_gui PRIVATE dominion_engine ${RAYLIB_LIBRARIES})
+else()
+    message(STATUS "raylib not found — skipping GUI build (install with: brew install raylib)")
+endif()
+
 # --- Tests ---
 option(BUILD_TESTS "Build test suite" ON)
 if(BUILD_TESTS)
