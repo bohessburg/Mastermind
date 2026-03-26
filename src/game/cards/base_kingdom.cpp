@@ -258,11 +258,12 @@ void register_all() {
 
             Player& player = state.get_player(pid);
             const auto& discard = player.get_discard();
-            if (discard.empty()) return;
+            if (discard.empty()) return; // nothing in discard to look at
 
             std::vector<int> options;
             for (int i = 0; i < static_cast<int>(discard.size()); i++) options.push_back(i);
 
+            // min=0 means player can choose nothing (skip topdecking)
             auto chosen = decide(pid, ChoiceType::SELECT_FROM_DISCARD, options, 0, 1);
             if (!chosen.empty()) {
                 int discard_idx = chosen[0];

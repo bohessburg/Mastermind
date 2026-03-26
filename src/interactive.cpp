@@ -212,6 +212,22 @@ public:
             }
 
             if (dp.max_choices <= 1) {
+                if (dp.min_choices == 0) {
+                    // Optional single-select: add a skip option
+                    std::cout << "    s) Skip\n";
+                    while (true) {
+                        std::cout << "  > [0-" << dp.options.size() - 1 << " or s]: ";
+                        std::string line;
+                        if (!std::getline(std::cin, line)) return {};
+                        if (line == "s" || line == "S") return {};
+                        try {
+                            int val = std::stoi(line);
+                            if (val >= 0 && val < static_cast<int>(dp.options.size()))
+                                return {val};
+                        } catch (...) {}
+                        std::cout << "  Invalid input.\n";
+                    }
+                }
                 int choice = prompt_choice("  >", 0, static_cast<int>(dp.options.size()) - 1);
                 return {choice};
             } else {
