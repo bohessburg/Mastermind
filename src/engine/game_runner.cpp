@@ -14,6 +14,61 @@ std::vector<int> RandomAgent::decide(const DecisionPoint& dp, const GameState& /
     return {dist(rng_)};
 }
 
+// ---BetterRandomAgent ---
+
+// Play's randomly but filters moves to eliminate completely unreasonable turn ending, and buys provinces if possible.
+
+BetterRandomAgent::BetterRandomAgent(uint64_t seed) : rng_(seed) {}
+
+std::vector<int> BetterRandomAgent::decide(const DecisionPoint& dp, const GameState& /*state*/) {
+    if (dp.options.empty()) return {};
+
+    // Play all treasures at once when available
+    if (dp.type == DecisionType::PLAY_TREASURE) {
+        for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
+            if (dp.options[i].label == "Play all Treasures") return {i};
+        }
+    }
+
+    // During buy phase, always buy Province if we can afford it, otherwise buy random
+    if (dp.type == DecisionType::BUY_CARD) {
+        for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
+            if (dp.options[i].card_name == "Province") return {i};
+        }
+    }
+
+    // Multi-choice sub-decisions (e.g. "discard 2 cards"): pick min_choices random options
+    if (dp.min_choices > 1) {
+        std::vector<int> all_indices;
+        for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
+            all_indices.push_back(i);
+        }
+        std::shuffle(all_indices.begin(), all_indices.end(), rng_);
+        int pick = std::min(dp.min_choices, static_cast<int>(all_indices.size()));
+        return {all_indices.begin(), all_indices.begin() + pick};
+    }
+
+    // Collect non-pass options
+    std::vector<int> candidates;
+    for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
+        if (!dp.options[i].is_pass) {
+            candidates.push_back(i);
+        }
+    }
+
+    // If everything is a pass, just pass
+    if (candidates.empty()) {
+        for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
+            if (dp.options[i].is_pass) return {i};
+        }
+        return {0};
+    }
+
+    // Pick randomly among non-pass options
+    std::uniform_int_distribution<int> dist(0, static_cast<int>(candidates.size()) - 1);
+    return {candidates[dist(rng_)]};
+}
+
 // --- BigMoneyAgent ---
 
 // Big Money: build treasure base first, then green.

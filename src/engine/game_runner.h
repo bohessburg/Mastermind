@@ -25,6 +25,14 @@ private:
     std::mt19937 rng_;
 };
 
+class BetterRandomAgent : public Agent {
+    public:
+        explicit BetterRandomAgent(uint64_t seed = 42);
+        std::vector<int> decide(const DecisionPoint& dp, const GameState& state) override;
+    private:
+        std::mt19937 rng_;
+};
+
 class BigMoneyAgent : public Agent {
 public:
     std::vector<int> decide(const DecisionPoint& dp, const GameState& state) override;

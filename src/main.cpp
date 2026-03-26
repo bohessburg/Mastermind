@@ -8,24 +8,26 @@
 #include <string>
 #include <vector>
 
-enum class AgentType { RANDOM, BIG_MONEY, HEURISTIC, ENGINE };
+enum class AgentType { RANDOM, BETTER_RANDOM, BIG_MONEY, HEURISTIC, ENGINE };
 
 static std::string agent_name(AgentType t) {
     switch (t) {
-        case AgentType::RANDOM:    return "Random";
-        case AgentType::BIG_MONEY: return "BigMoney";
-        case AgentType::HEURISTIC: return "Heuristic";
-        case AgentType::ENGINE:    return "Engine";
+        case AgentType::RANDOM:        return "Random";
+        case AgentType::BETTER_RANDOM: return "BetterRandom";
+        case AgentType::BIG_MONEY:     return "BigMoney";
+        case AgentType::HEURISTIC:     return "Heuristic";
+        case AgentType::ENGINE:        return "Engine";
     }
     return "???";
 }
 
 static std::unique_ptr<Agent> make_agent(AgentType t, uint64_t seed) {
     switch (t) {
-        case AgentType::RANDOM:    return std::make_unique<RandomAgent>(seed);
-        case AgentType::BIG_MONEY: return std::make_unique<BigMoneyAgent>();
-        case AgentType::HEURISTIC: return std::make_unique<HeuristicAgent>();
-        case AgentType::ENGINE:    return std::make_unique<EngineBot>();
+        case AgentType::RANDOM:        return std::make_unique<RandomAgent>(seed);
+        case AgentType::BETTER_RANDOM: return std::make_unique<BetterRandomAgent>(seed);
+        case AgentType::BIG_MONEY:     return std::make_unique<BigMoneyAgent>();
+        case AgentType::HEURISTIC:     return std::make_unique<HeuristicAgent>();
+        case AgentType::ENGINE:        return std::make_unique<EngineBot>();
     }
     return nullptr;
 }
@@ -65,6 +67,8 @@ static BenchResult run_bench(const std::string& label, int max_games,
     int skipped = 0;
     std::mt19937 kingdom_rng(std::hash<std::string>{}(label));
 
+    std::cout << "  " << label << " " << std::flush;
+
     auto start = std::chrono::high_resolution_clock::now();
 
     for (int g = 0; g < max_games; g++) {
@@ -89,7 +93,12 @@ static BenchResult run_bench(const std::string& label, int max_games,
         total_score_p1 += result.scores[0];
         total_score_p2 += result.scores[1];
         games_played++;
+
+        if ((g + 1) % 500 == 0) {
+            std::cout << "." << std::flush;
+        }
     }
+    std::cout << "\n";
 
     auto end = std::chrono::high_resolution_clock::now();
     double elapsed = std::chrono::duration<double>(end - start).count();
@@ -125,6 +134,7 @@ int main() {
     std::cout << "Random kingdoms (10 of 26 base cards per game)\n";
     std::cout << n << " games per matchup\n\n" << std::flush;
 
+    print_result(run_bench("BetterRandom vs BigMoney", n, AgentType::BETTER_RANDOM, AgentType::BIG_MONEY));
     print_result(run_bench("BigMoney vs BigMoney", n, AgentType::BIG_MONEY, AgentType::BIG_MONEY));
     print_result(run_bench("Heuristic vs BigMoney", n, AgentType::HEURISTIC, AgentType::BIG_MONEY));
     print_result(run_bench("BigMoney vs Heuristic", n, AgentType::BIG_MONEY, AgentType::HEURISTIC));
@@ -134,6 +144,7 @@ int main() {
     print_result(run_bench("Heuristic vs Engine", n, AgentType::HEURISTIC, AgentType::ENGINE));
     print_result(run_bench("Heuristic vs Heuristic", n, AgentType::HEURISTIC, AgentType::HEURISTIC));
     print_result(run_bench("Engine vs Engine", n, AgentType::ENGINE, AgentType::ENGINE));
+    print_result(run_bench("Engine vs BetterRandom", n, AgentType::ENGINE, AgentType::BETTER_RANDOM));
 
     return 0;
 }
