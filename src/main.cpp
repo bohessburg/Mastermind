@@ -105,11 +105,12 @@ static BenchResult run_bench(const std::string& label, int max_games,
 }
 
 static void print_result(const BenchResult& r) {
+    int total = r.num_games + r.skipped;
     std::cout << "  " << r.label << "\n";
-    std::cout << "    " << r.num_games << " games in " << r.elapsed << "s ("
-              << static_cast<int>(r.num_games / r.elapsed) << " games/sec)";
-    if (r.skipped > 0) std::cout << " [" << r.skipped << " skipped]";
-    std::cout << "\n";
+    std::cout << "    Total: " << total << " games ("
+              << r.num_games << " completed, " << r.skipped << " timed out)\n";
+    std::cout << "    " << r.elapsed << "s ("
+              << static_cast<int>(total / r.elapsed) << " games/sec)\n";
     std::cout << "    P1 wins: " << r.p1_wins
               << "  P2 wins: " << r.p2_wins
               << "  Ties: " << r.ties << "\n";
@@ -131,7 +132,11 @@ int main() {
     print_result(run_bench("Heuristic vs BigMoney", n, AgentType::HEURISTIC, AgentType::BIG_MONEY));
     print_result(run_bench("BigMoney vs Heuristic", n, AgentType::BIG_MONEY, AgentType::HEURISTIC));
     print_result(run_bench("Engine vs BigMoney", n, AgentType::ENGINE, AgentType::BIG_MONEY));
+    print_result(run_bench("BigMoney vs Engine", n, AgentType::BIG_MONEY, AgentType::ENGINE));
     print_result(run_bench("Engine vs Heuristic", n, AgentType::ENGINE, AgentType::HEURISTIC));
+    print_result(run_bench("Heuristic vs Engine", n, AgentType::HEURISTIC, AgentType::ENGINE));
+    print_result(run_bench("Heuristic vs Heuristic", n, AgentType::HEURISTIC, AgentType::HEURISTIC));
+    print_result(run_bench("Engine vs Engine", n, AgentType::ENGINE, AgentType::ENGINE));
 
     return 0;
 }
