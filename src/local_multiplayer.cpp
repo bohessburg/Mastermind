@@ -304,6 +304,8 @@ int main() {
     for (const auto& k : kingdom) std::cout << k << " ";
     std::cout << "\n\n";
 
+    BaseCards::register_all();
+    BaseKingdom::register_all();
     GameRunner runner(2, kingdom);
 
     HumanAgent player1(0, "Player 1");

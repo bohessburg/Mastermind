@@ -520,8 +520,8 @@ static bool should_green(const GameState& state, int pid) {
     auto prof = analyze_deck(state, pid);
     int my_turns = (state.turn_number() + 1) / state.num_players();
 
-    // Failsafe: don't build past turn 6 per player
-    if (my_turns > 6) return true;
+    // Failsafe: don't build past turn 4 per player
+    if (my_turns > 4) return true;
 
     // Have Chapel and deck is thin
     if (prof.chapels >= 1 && prof.junk <= 2) return true;
@@ -923,18 +923,16 @@ DecisionFn GameRunner::make_decision_fn() {
 
 GameResult GameRunner::run(std::vector<Agent*> agents) {
     agents_ = agents;
-    // Cards should be registered before calling run().
-    // Register here as fallback for single-threaded usage.
-    if (CardRegistry::all_names().empty()) {
-        BaseCards::register_all();
-        BaseKingdom::register_all();
-    }
     BaseCards::setup_supply(state_, kingdom_cards_);
     BaseCards::setup_starting_decks(state_);
     state_.start_game();
     total_decisions_ = 0;
 
-    while (!state_.is_game_over()) {
+    static constexpr int MAX_TURNS = 80;
+    static constexpr int MAX_DECISIONS = 5000;
+
+    while (!state_.is_game_over() && state_.turn_number() < MAX_TURNS
+           && total_decisions_ < MAX_DECISIONS) {
         int pid = state_.current_player_id();
         observe("--- Player " + std::to_string(pid) + "'s turn (Turn " +
                 std::to_string(state_.turn_number()) + ") ---");

@@ -1,9 +1,10 @@
 #include "engine/game_runner.h"
 
+#include <algorithm>
 #include <chrono>
-#include <future>
 #include <iostream>
 #include <memory>
+#include <random>
 #include <string>
 #include <vector>
 
@@ -36,17 +37,33 @@ struct BenchResult {
     double elapsed;
     double avg_turns;
     double avg_score_p1, avg_score_p2;
+    int skipped;
 };
 
 static constexpr double BENCH_TIMEOUT_SEC = 10.0;
 
+static const std::vector<std::string> ALL_KINGDOM = {
+    "Cellar", "Chapel", "Moat", "Harbinger", "Merchant",
+    "Vassal", "Village", "Workshop", "Bureaucrat", "Gardens",
+    "Laboratory", "Market", "Militia", "Moneylender", "Poacher",
+    "Remodel", "Smithy", "Throne Room", "Bandit", "Council Room",
+    "Festival", "Library", "Mine", "Sentry", "Witch", "Artisan"
+};
+
+static std::vector<std::string> random_kingdom(std::mt19937& rng) {
+    auto shuffled = ALL_KINGDOM;
+    std::shuffle(shuffled.begin(), shuffled.end(), rng);
+    return {shuffled.begin(), shuffled.begin() + 10};
+}
+
 static BenchResult run_bench(const std::string& label, int max_games,
-                              const std::vector<std::string>& kingdom,
                               AgentType t1, AgentType t2) {
     int p1_wins = 0, p2_wins = 0, ties = 0;
     long total_turns = 0;
     long total_score_p1 = 0, total_score_p2 = 0;
     int games_played = 0;
+    int skipped = 0;
+    std::mt19937 kingdom_rng(std::hash<std::string>{}(label));
 
     auto start = std::chrono::high_resolution_clock::now();
 
@@ -54,12 +71,20 @@ static BenchResult run_bench(const std::string& label, int max_games,
         auto now = std::chrono::high_resolution_clock::now();
         if (std::chrono::duration<double>(now - start).count() >= BENCH_TIMEOUT_SEC) break;
 
+        auto kingdom = random_kingdom(kingdom_rng);
         GameRunner runner(2, kingdom);
         auto a1 = make_agent(t1, g * 2);
         auto a2 = make_agent(t2, g * 2 + 1);
         std::vector<Agent*> agents = {a1.get(), a2.get()};
 
         auto result = runner.run(agents);
+
+        // Skip games that hit the turn/decision cap
+        if (result.total_turns >= 79) {
+            skipped++;
+            continue;
+        }
+
         if (result.winner == 0) p1_wins++;
         else if (result.winner == 1) p2_wins++;
         else ties++;
@@ -75,60 +100,38 @@ static BenchResult run_bench(const std::string& label, int max_games,
     return {label, games_played, p1_wins, p2_wins, ties, elapsed,
             games_played ? static_cast<double>(total_turns) / games_played : 0,
             games_played ? static_cast<double>(total_score_p1) / games_played : 0,
-            games_played ? static_cast<double>(total_score_p2) / games_played : 0};
+            games_played ? static_cast<double>(total_score_p2) / games_played : 0,
+            skipped};
 }
 
 static void print_result(const BenchResult& r) {
     std::cout << "  " << r.label << "\n";
     std::cout << "    " << r.num_games << " games in " << r.elapsed << "s ("
-              << static_cast<int>(r.num_games / r.elapsed) << " games/sec)\n";
+              << static_cast<int>(r.num_games / r.elapsed) << " games/sec)";
+    if (r.skipped > 0) std::cout << " [" << r.skipped << " skipped]";
+    std::cout << "\n";
     std::cout << "    P1 wins: " << r.p1_wins
               << "  P2 wins: " << r.p2_wins
               << "  Ties: " << r.ties << "\n";
     std::cout << "    Avg score: P1=" << r.avg_score_p1
               << "  P2=" << r.avg_score_p2 << "\n";
-    std::cout << "    Avg turns: " << r.avg_turns << "\n\n";
+    std::cout << "    Avg turns: " << r.avg_turns << "\n\n" << std::flush;
 }
 
 int main() {
-    // Cards must be registered on the main thread before launching workers,
-    // since CardRegistry is a shared static.
     BaseCards::register_all();
     BaseKingdom::register_all();
 
-    std::vector<std::string> kingdom = {
-        "Smithy", "Village", "Market", "Laboratory", "Festival",
-        "Cellar", "Chapel", "Workshop", "Moat", "Militia"
-    };
-
     int n = 100000;
 
-    std::cout << "Kingdom: ";
-    for (const auto& k : kingdom) std::cout << k << " ";
-    std::cout << "\n";
-    std::cout << "(Each matchup runs for up to " << BENCH_TIMEOUT_SEC << "s, all in parallel)\n\n";
+    std::cout << "Random kingdoms (10 of 26 base cards per game)\n";
+    std::cout << "(Each matchup runs for up to " << BENCH_TIMEOUT_SEC << "s)\n\n" << std::flush;
 
-    // Launch all matchups in parallel
-    auto f1 = std::async(std::launch::async, run_bench,
-        "BigMoney vs BigMoney", n, kingdom, AgentType::BIG_MONEY, AgentType::BIG_MONEY);
-    auto f2 = std::async(std::launch::async, run_bench,
-        "Heuristic vs BigMoney", n, kingdom, AgentType::HEURISTIC, AgentType::BIG_MONEY);
-    auto f3 = std::async(std::launch::async, run_bench,
-        "BigMoney vs Heuristic", n, kingdom, AgentType::BIG_MONEY, AgentType::HEURISTIC);
-    auto f4 = std::async(std::launch::async, run_bench,
-        "Engine vs BigMoney", n, kingdom, AgentType::ENGINE, AgentType::BIG_MONEY);
-    auto f5 = std::async(std::launch::async, run_bench,
-        "BigMoney vs Engine", n, kingdom, AgentType::BIG_MONEY, AgentType::ENGINE);
-    auto f6 = std::async(std::launch::async, run_bench,
-        "BigMoney vs Random", n, kingdom, AgentType::BIG_MONEY, AgentType::RANDOM);
-
-    // Collect and print
-    print_result(f1.get());
-    print_result(f2.get());
-    print_result(f3.get());
-    print_result(f4.get());
-    print_result(f5.get());
-    print_result(f6.get());
+    print_result(run_bench("BigMoney vs BigMoney", n, AgentType::BIG_MONEY, AgentType::BIG_MONEY));
+    print_result(run_bench("Heuristic vs BigMoney", n, AgentType::HEURISTIC, AgentType::BIG_MONEY));
+    print_result(run_bench("BigMoney vs Heuristic", n, AgentType::BIG_MONEY, AgentType::HEURISTIC));
+    print_result(run_bench("Engine vs BigMoney", n, AgentType::ENGINE, AgentType::BIG_MONEY));
+    print_result(run_bench("BigMoney vs Random", n, AgentType::BIG_MONEY, AgentType::RANDOM));
 
     return 0;
 }

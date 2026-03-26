@@ -306,6 +306,8 @@ int main() {
     for (const auto& k : kingdom) std::cout << k << "  ";
     std::cout << "\n\n";
 
+    BaseCards::register_all();
+    BaseKingdom::register_all();
     GameRunner runner(2, kingdom);
 
     runner.set_observer([](const std::string& msg) {
