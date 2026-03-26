@@ -1,8 +1,4 @@
----
-name: Engine benchmark results and performance data
-description: Bot win rates, games/sec performance, optimization history, and build configuration notes
-type: reference
----
+# Engine Benchmarks and Performance
 
 ## Build Configuration
 
