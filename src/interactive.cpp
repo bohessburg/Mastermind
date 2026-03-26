@@ -172,10 +172,14 @@ public:
                     std::cout << "  Choose a card to REVEAL";
                     break;
                 case ChoiceType::MULTI_FATE:
-                    std::cout << "  Choose fate for this card";
+                    std::cout << "  Choose fate for ";
+                    if (!dp.source_card.empty())
+                        std::cout << dp.source_card;
+                    else
+                        std::cout << "this card";
                     break;
                 case ChoiceType::ORDER:
-                    std::cout << "  Choose which card goes on TOP";
+                    std::cout << "  Choose which card to put on TOP of your deck";
                     break;
                 case ChoiceType::SELECT_FROM_DISCARD:
                     std::cout << "  Choose a card from your discard pile";

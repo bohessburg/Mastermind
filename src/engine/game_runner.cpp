@@ -878,6 +878,14 @@ DecisionFn GameRunner::make_decision_fn() {
         dp.min_choices = min_choices;
         dp.max_choices = max_choices;
 
+        // For MULTI_FATE (Sentry), read the stashed card_id so UI can show it
+        if (choice_type == ChoiceType::MULTI_FATE) {
+            int sentry_cid = state_.get_turn_flag("sentry_card_id");
+            if (sentry_cid > 0) {
+                dp.source_card = state_.card_name(sentry_cid);
+            }
+        }
+
         const Player& player = state_.get_player(player_id);
         const auto& hand = player.get_hand();
         const auto& discard = player.get_discard();
@@ -925,7 +933,15 @@ DecisionFn GameRunner::make_decision_fn() {
                 }
                 // Ordering
                 case ChoiceType::ORDER: {
-                    opt.label = "Position " + std::to_string(options[i]);
+                    // Read stashed card IDs from Sentry
+                    std::string flag_key = "sentry_order_card_" + std::to_string(options[i]);
+                    int order_cid = state_.get_turn_flag(flag_key);
+                    if (order_cid > 0) {
+                        opt.label = state_.card_name(order_cid);
+                        opt.card_id = order_cid;
+                    } else {
+                        opt.label = "Position " + std::to_string(options[i]);
+                    }
                     break;
                 }
                 default: {

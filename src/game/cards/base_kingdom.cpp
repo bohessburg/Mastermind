@@ -421,6 +421,9 @@ void register_all() {
 
             // Put back kept cards. If >1, ask for order.
             if (keep_cards.size() == 2) {
+                // Stash card IDs so the UI can display names
+                state.set_turn_flag("sentry_order_card_0", keep_cards[0]);
+                state.set_turn_flag("sentry_order_card_1", keep_cards[1]);
                 // options: 0 = first on top, 1 = second on top
                 auto chosen = decide(pid, ChoiceType::ORDER, {0, 1}, 1, 1);
                 int top_pick = chosen.empty() ? 0 : chosen[0];
