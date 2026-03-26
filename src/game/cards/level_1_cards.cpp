@@ -491,6 +491,7 @@ void register_all() {
                     if (c && c->is_victory()) victory_indices.push_back(i);
                 }
 
+                //TODO: revealing mechanic
                 if (victory_indices.empty()) return;
 
                 if (victory_indices.size() == 1) {
@@ -659,11 +660,8 @@ void register_all() {
             int card_id = player.get_hand()[hand_idx];
             player.play_from_hand(hand_idx);
 
-            const Card* target = state.card_def(card_id);
-            if (target && target->on_play) {
-                target->on_play(state, pid, decide);
-                target->on_play(state, pid, decide);
-            }
+            state.play_card_effect(card_id, pid, decide);
+            state.play_card_effect(card_id, pid, decide);
         },
     });
 

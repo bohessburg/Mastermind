@@ -3,6 +3,7 @@
 #include "../game_state.h"
 
 #include <algorithm>
+#include <set>
 
 namespace Level2Cards {
 
@@ -228,6 +229,85 @@ void register_all() {
         },
     });
 
+    CardRegistry::register_card({
+        .name = "Menagerie",
+        .cost = 3,
+        .types = CardType::Action,
+        .text = "+1 Action. Reveal your hand. If the revealed cards all have different names, +3 Cards. Otherwise, +1 Card.",   
+        .victory_points = 0,
+        .coin_value = 0,
+        .tags = {},
+        .on_play = [](GameState& state, int pid, DecisionFn) {
+            state.add_actions(1);
+            Player& player = state.get_player(pid);
+            std::set<std::string> seen;
+            bool all_different = true;
+            for (int card_id : player.get_hand()) {
+                if (!seen.insert(state.card_name(card_id)).second) {
+                    all_different = false;
+                    break;
+                }
+            }
+            player.draw_cards(all_different ? 3 : 1);
+        },
+    });
+
+    CardRegistry::register_card({
+        .name = "Oasis",
+        .cost = 3,
+        .types = CardType::Action,
+        .text = "+1 Card, +1 Action, +1 Coin. Discard a card.",   
+        .victory_points = 0,
+        .coin_value = 0,
+        .tags = {},
+        .on_play = [](GameState& state, int pid, DecisionFn decide) {
+            Player& player = state.get_player(pid);
+            player.draw_cards(1);
+            state.add_actions(1);
+            state.add_coins(1);
+
+            if (player.hand_size() == 0) return;
+            std::vector<int> options;
+            for (int i = 0; i < player.hand_size(); i++) options.push_back(i);
+            auto chosen = decide(pid, ChoiceType::DISCARD, options, 1, 1);
+            if (!chosen.empty()) {
+                player.discard_from_hand(chosen[0]);
+            }
+        },
+    });
+
+    CardRegistry::register_card({
+        .name = "King's Court",
+        .cost = 7,
+        .types = CardType::Action,
+        .text = "You may play an Action card from your hand three times.",
+        .victory_points = 0,
+        .coin_value = 0,
+        .tags = {},
+        .on_play = [](GameState& state, int pid, DecisionFn decide) {
+            Player& player = state.get_player(pid);
+
+            std::vector<int> action_indices;
+            for (int i = 0; i < player.hand_size(); i++) {
+                const Card* card = state.card_def(player.get_hand()[i]);
+                if (card && card->is_action()) action_indices.push_back(i);
+            }
+
+            if (action_indices.empty()) return;
+
+            auto chosen = decide(pid, ChoiceType::PLAY_CARD, action_indices, 0, 1);
+            if (chosen.empty()) return;
+
+            // chosen[0] is an index into action_indices, not a hand index
+            int hand_idx = action_indices[chosen[0]];
+            int card_id = player.get_hand()[hand_idx];
+            player.play_from_hand(hand_idx);
+
+            state.play_card_effect(card_id, pid, decide);
+            state.play_card_effect(card_id, pid, decide);
+            state.play_card_effect(card_id, pid, decide);
+        },
+    });
 }
 
 
