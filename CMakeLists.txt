@@ -15,6 +15,7 @@ add_library(dominion_engine
     src/game/cards/base_kingdom.cpp
     src/engine/action_space.cpp
     src/engine/rules.cpp
+    src/engine/agents.cpp
     src/engine/game_runner.cpp
 )
 target_include_directories(dominion_engine PUBLIC src)
@@ -31,6 +32,10 @@ target_link_libraries(dominion_play PRIVATE dominion_engine)
 # --- Local 2-player ---
 add_executable(dominion_2p src/local_multiplayer.cpp)
 target_link_libraries(dominion_2p PRIVATE dominion_engine)
+
+# --- Stress test ---
+add_executable(dominion_stress src/stress_test.cpp)
+target_link_libraries(dominion_stress PRIVATE dominion_engine)
 
 # --- Tests ---
 option(BUILD_TESTS "Build test suite" ON)
