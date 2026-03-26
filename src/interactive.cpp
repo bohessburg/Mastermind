@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <iomanip>
 #include <iostream>
 #include <random>
 #include <sstream>
@@ -314,20 +315,59 @@ int main() {
         "Festival", "Library", "Mine", "Sentry", "Witch", "Artisan"
     };
 
-    // Shuffle and pick 10
-    auto seed = static_cast<unsigned>(
-        std::chrono::steady_clock::now().time_since_epoch().count());
-    std::mt19937 rng(seed);
-    std::shuffle(all_kingdom.begin(), all_kingdom.end(), rng);
-    std::vector<std::string> kingdom(all_kingdom.begin(), all_kingdom.begin() + 10);
-    std::sort(kingdom.begin(), kingdom.end());
+    BaseCards::register_all();
+    BaseKingdom::register_all();
 
-    std::cout << "  Kingdom: ";
+    // Kingdom selection
+    std::cout << "  Kingdom setup:\n";
+    std::cout << "    r) Random 10 cards\n";
+    std::cout << "    p) Pick cards manually\n";
+    std::cout << "    a) Use all 26 cards (NOT standard Dominion)\n";
+    std::cout << "  > ";
+
+    std::vector<std::string> kingdom;
+    std::string mode;
+    std::getline(std::cin, mode);
+
+    if (mode == "a" || mode == "A") {
+        kingdom = all_kingdom;
+    } else if (mode == "p" || mode == "P") {
+        std::cout << "\n  Available cards:\n";
+        for (int i = 0; i < static_cast<int>(all_kingdom.size()); i++) {
+            const Card* card = CardRegistry::get(all_kingdom[i]);
+            std::cout << "    " << std::setw(2) << i << ") " << all_kingdom[i];
+            if (card) std::cout << " (" << card->cost << "$ | " << card->text << ")";
+            std::cout << "\n";
+        }
+        std::cout << "\n  Enter card numbers separated by spaces (pick 10):\n  > ";
+        std::string line;
+        std::getline(std::cin, line);
+        std::istringstream iss(line);
+        int val;
+        while (iss >> val) {
+            if (val >= 0 && val < static_cast<int>(all_kingdom.size())) {
+                kingdom.push_back(all_kingdom[val]);
+            }
+        }
+        if (kingdom.empty()) {
+            std::cout << "  No valid cards selected, using random.\n";
+            mode = "r";
+        }
+    }
+
+    if (mode == "r" || mode == "R" || kingdom.empty()) {
+        auto seed = static_cast<unsigned>(
+            std::chrono::steady_clock::now().time_since_epoch().count());
+        std::mt19937 rng(seed);
+        std::shuffle(all_kingdom.begin(), all_kingdom.end(), rng);
+        kingdom.assign(all_kingdom.begin(), all_kingdom.begin() + 10);
+    }
+
+    std::sort(kingdom.begin(), kingdom.end());
+    std::cout << "\n  Kingdom: ";
     for (const auto& k : kingdom) std::cout << k << "  ";
     std::cout << "\n\n";
 
-    BaseCards::register_all();
-    BaseKingdom::register_all();
     GameRunner runner(2, kingdom);
 
     runner.set_observer([](const std::string& msg) {
