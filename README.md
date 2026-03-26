@@ -15,6 +15,7 @@ AlphaZero was designed for perfect-information, fixed-action-space games like Ch
 - **Combinatorial card interactions.** With 500+ unique kingdom cards across expansions, the number of possible game setups is enormous. Each card introduces new mechanics, and cards interact in unpredictable ways. Training a policy network on all of these combinations is clearly intractable, so there needs to be some clever solution to the problem generalizing the strategy of a game which often reveals never before considered interactions and brand new strategic insights in new games.
 - **Variable action spaces.** The set of legal actions changes drastically from turn to turn and phase to phase: buying, playing actions, reacting to attacks, and making forced decisions mid-resolution are all structurally different. Not to mention entirely new mechanics are introduced in expansions, and sometimes these mechanics interact with unexpected edge cases. This makes implementing the base game logic alone hard enough.
 - **Player interaction.** Attack cards, reactions, and shared supply piles create strategic dependencies between players that a single-agent model can't fully capture on its own.
+- **Actions don't always advance game state** One of the biggest hurdles to implementing Monte Carlo Simulations is that random actions in Dominion will usually never lead to actually reaching an end-game state. Therefore some heuristics must be hard-coded for random playouts, which raises the challenge of performance/accuracy trade-offs.
 
 ## Research directions
 

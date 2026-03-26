@@ -42,7 +42,13 @@ enum class ChoiceType {
     TRASH,
     GAIN,
     TOPDECK,
-    EXILE
+    EXILE,
+    PLAY_CARD,          // Choose a card to play (Throne Room)
+    YES_NO,             // Binary choice (reveal Moat? set aside with Library?)
+    REVEAL,             // Reveal from hand (Bureaucrat defense)
+    MULTI_FATE,         // Per-card trash/discard/keep (Sentry)
+    ORDER,              // Choose ordering (topdeck order for Sentry put-back)
+    SELECT_FROM_DISCARD // Choose card from own discard (Harbinger)
 };
 
 // Callback for player decisions during card resolution
@@ -62,8 +68,27 @@ struct Card {
     std::string text;
     int victory_points;
     int coin_value;
-    std::unordered_set<std::string> tags;  // Types that don't really alter game mechanics: "Knight", "Looter", "Spirit", etc.
+    std::unordered_set<std::string> tags;  // "Knight", "Looter", "Spirit", etc.
+
+    // Play ability: resolved when card is played
     std::function<void(GameState&, int, DecisionFn)> on_play;
+
+    // Reaction ability: called when an Attack targets this player and they have
+    // this card in hand. Returns true if the attack is blocked for this player.
+    std::function<bool(GameState&, int player_id, int attacker_id, DecisionFn)> on_react;
+
+    // Dynamic VP calculation (e.g. Gardens = cards_owned / 10).
+    // If set, called during scoring instead of using static victory_points.
+    std::function<int(const GameState&, int player_id)> vp_fn;
+
+    // When-gain trigger: called when this card is gained by a player
+    std::function<void(GameState&, int player_id, DecisionFn)> on_gain;
+
+    // When-trash trigger: called when this card is trashed
+    std::function<void(GameState&, int player_id, DecisionFn)> on_trash;
+
+    // Duration next-turn effect: called at start of owning player's next turn
+    std::function<void(GameState&, int player_id, DecisionFn)> on_duration;
 
     bool is_action() const   { return has_type(types, CardType::Action); }
     bool is_treasure() const { return has_type(types, CardType::Treasure); }
@@ -82,4 +107,4 @@ namespace CardRegistry {
     void register_card(const Card& card);
     const Card* get(const std::string& name);
     std::vector<std::string> all_names();
-};
+}

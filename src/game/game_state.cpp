@@ -14,26 +14,28 @@ GameState::GameState(int num_players)
     for (int i = 0; i < num_players; i++) {
         players_.emplace_back(i);
     }
+    turns_taken_.resize(num_players, 0);
+    card_names_.reserve(256);  // typical game has ~200 cards
+    card_defs_.reserve(256);
 }
 
 // --- Card ID system ---
 
 int GameState::create_card(const std::string& card_name) {
     int id = next_card_id_++;
-    card_names_[id] = card_name;
+    card_names_.push_back(card_name);
+    card_defs_.push_back(CardRegistry::get(card_name));
     return id;
 }
 
 const std::string& GameState::card_name(int card_id) const {
-    auto it = card_names_.find(card_id);
-    if (it == card_names_.end()) return UNKNOWN_CARD;
-    return it->second;
+    if (card_id < 0 || card_id >= next_card_id_) return UNKNOWN_CARD;
+    return card_names_[card_id];
 }
 
 const Card* GameState::card_def(int card_id) const {
-    auto it = card_names_.find(card_id);
-    if (it == card_names_.end()) return nullptr;
-    return CardRegistry::get(it->second);
+    if (card_id < 0 || card_id >= next_card_id_) return nullptr;
+    return card_defs_[card_id];
 }
 
 // --- Players ---
@@ -62,6 +64,7 @@ const Supply& GameState::get_supply() const { return supply_; }
 // --- Turn state ---
 
 Phase GameState::current_phase() const { return phase_; }
+void GameState::set_phase(Phase phase) { phase_ = phase; }
 int GameState::actions() const { return actions_; }
 int GameState::buys() const { return buys_; }
 int GameState::coins() const { return coins_; }
@@ -102,6 +105,87 @@ const std::vector<int>& GameState::get_trash() const {
     return trash_;
 }
 
+int GameState::play_card_from_hand(int player_id, int hand_index, DecisionFn decide) {
+    Player& player = get_player(player_id);
+    int card_id = player.get_hand()[hand_index];
+    player.play_from_hand(hand_index);
+
+    const Card* card = card_def(card_id);
+    if (card && card->on_play) {
+        card->on_play(*this, player_id, decide);
+    }
+    return card_id;
+}
+
+void GameState::play_card_effect(int card_id, int player_id, DecisionFn decide) {
+    const Card* card = card_def(card_id);
+    if (card && card->on_play) {
+        card->on_play(*this, player_id, decide);
+    }
+}
+
+void GameState::resolve_attack(
+    int attacker_id,
+    std::function<void(GameState&, int target_id, DecisionFn)> attack_effect,
+    DecisionFn decide)
+{
+    for (int i = 1; i < num_players(); i++) {
+        int target_id = (attacker_id + i) % num_players();
+        bool blocked = false;
+
+        const auto& hand = get_player(target_id).get_hand();
+        for (int h = 0; h < static_cast<int>(hand.size()); h++) {
+            const Card* card = card_def(hand[h]);
+            if (card && card->is_reaction() && card->on_react) {
+                if (card->on_react(*this, target_id, attacker_id, decide)) {
+                    blocked = true;
+                    break;
+                }
+            }
+        }
+
+        if (!blocked) {
+            attack_effect(*this, target_id, decide);
+        }
+    }
+}
+
+std::vector<std::string> GameState::gainable_piles(int max_cost) const {
+    std::vector<std::string> result;
+    const auto& piles = supply_.piles();
+    for (int i = 0; i < static_cast<int>(piles.size()); i++) {
+        if (piles[i].card_ids.empty()) continue;
+        const Card* card = card_def(piles[i].card_ids.back());
+        if (card && card->cost <= max_cost) {
+            result.push_back(piles[i].pile_name);
+        }
+    }
+    return result;
+}
+
+std::vector<std::string> GameState::gainable_piles(int max_cost, CardType required_type) const {
+    std::vector<std::string> result;
+    const auto& piles = supply_.piles();
+    for (int i = 0; i < static_cast<int>(piles.size()); i++) {
+        if (piles[i].card_ids.empty()) continue;
+        const Card* card = card_def(piles[i].card_ids.back());
+        if (card && card->cost <= max_cost && has_type(card->types, required_type)) {
+            result.push_back(piles[i].pile_name);
+        }
+    }
+    return result;
+}
+
+int GameState::effective_cost(const std::string& card_name_str) const {
+    const Card* card = CardRegistry::get(card_name_str);
+    if (!card) return 0;
+    return card->cost;
+}
+
+int GameState::total_cards_owned(int player_id) const {
+    return static_cast<int>(players_[player_id].all_cards().size());
+}
+
 // --- Turn lifecycle ---
 
 void GameState::start_game() {
@@ -111,6 +195,8 @@ void GameState::start_game() {
     actions_ = 1;
     buys_ = 1;
     coins_ = 0;
+    turn_flags_.clear();
+    std::fill(turns_taken_.begin(), turns_taken_.end(), 0);
 }
 
 void GameState::start_turn() {
@@ -118,19 +204,26 @@ void GameState::start_turn() {
     actions_ = 1;
     buys_ = 1;
     coins_ = 0;
+    turn_flags_.clear();
 }
 
 void GameState::advance_phase() {
     switch (phase_) {
         case Phase::ACTION:
+            phase_ = Phase::TREASURE;
+            break;
+        case Phase::TREASURE:
             phase_ = Phase::BUY;
             break;
         case Phase::BUY:
             phase_ = Phase::CLEANUP;
             break;
+        case Phase::NIGHT:
+            phase_ = Phase::CLEANUP;
+            break;
         case Phase::CLEANUP:
             players_[current_player_].cleanup();
-            // Move to next player
+            turns_taken_[current_player_]++;
             current_player_ = (current_player_ + 1) % num_players();
             turn_number_++;
             if (supply_.is_game_over()) {
@@ -154,30 +247,16 @@ std::vector<int> GameState::calculate_scores() const {
     std::vector<int> scores(num_players(), 0);
     for (int p = 0; p < num_players(); p++) {
         const Player& player = players_[p];
+        std::vector<int> owned = player.all_cards();
 
-        // Collect all cards the player owns (hand, deck, discard, in-play, set-aside, mats)
-        std::vector<int> all_cards;
-        auto append = [&all_cards](const std::vector<int>& cards) {
-            all_cards.insert(all_cards.end(), cards.begin(), cards.end());
-        };
-
-        append(player.get_hand());
-        append(player.get_deck());
-        append(player.get_discard());
-        append(player.get_in_play());
-
-        for (const auto& [source, cards] : player.get_set_aside()) {
-            append(cards);
-        }
-        for (const auto& [mat_name, cards] : player.get_mats()) {
-            append(cards);
-        }
-
-        // Sum up victory points from all owned cards
-        for (int card_id : all_cards) {
+        for (int card_id : owned) {
             const Card* card = card_def(card_id);
             if (card) {
-                scores[p] += card->victory_points;
+                if (card->vp_fn) {
+                    scores[p] += card->vp_fn(*this, p);
+                } else {
+                    scores[p] += card->victory_points;
+                }
             }
         }
     }
@@ -200,5 +279,34 @@ int GameState::winner() const {
         }
     }
 
+    if (!tie) return best_player;
+
+    int best_turns = turns_taken_[best_player];
+    best_player = -1;
+    tie = false;
+
+    for (int i = 0; i < num_players(); i++) {
+        if (scores[i] != best_score) continue;
+        if (best_player == -1 || turns_taken_[i] < best_turns) {
+            best_turns = turns_taken_[i];
+            best_player = i;
+            tie = false;
+        } else if (turns_taken_[i] == best_turns) {
+            tie = true;
+        }
+    }
+
     return tie ? -1 : best_player;
+}
+
+// --- Turn flags ---
+
+int GameState::get_turn_flag(const std::string& key) const {
+    auto it = turn_flags_.find(key);
+    if (it == turn_flags_.end()) return 0;
+    return it->second;
+}
+
+void GameState::set_turn_flag(const std::string& key, int value) {
+    turn_flags_[key] = value;
 }

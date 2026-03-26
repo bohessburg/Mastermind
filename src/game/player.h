@@ -13,6 +13,7 @@ public:
     int get_id() const;
     int hand_size() const;
     int deck_size() const;
+    int discard_size() const;
 
     const std::vector<int>& get_hand() const;
     const std::vector<int>& get_deck() const;
@@ -30,11 +31,27 @@ public:
     void discard_from_hand(int hand_index);
     void discard_hand();
     void trash_from_hand(int hand_index);
+    int trash_from_hand_return(int hand_index);
     void add_to_hand(int card_id);
     void add_to_discard(int card_id);
     void add_to_deck_top(int card_id);
     void play_from_hand(int hand_index);
+    void topdeck_from_hand(int hand_index);
     void cleanup();
+
+    // Deck inspection
+    std::vector<int> peek_deck(int count);
+    int remove_deck_top();
+
+    // Hand search
+    int find_in_hand(int card_id) const;
+
+    // Discard manipulation
+    bool remove_from_discard(int card_id);
+    int remove_from_discard_by_index(int idx);
+
+    // All cards in all zones
+    std::vector<int> all_cards() const;
 
     // Set-aside and mat manipulation
     void set_aside(int card_id, const std::string& source);

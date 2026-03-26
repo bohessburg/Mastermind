@@ -15,35 +15,36 @@ public:
     // Add a new pile to the supply
     void add_pile(const std::string& pile_name, std::vector<int> card_ids);
 
-    // Gain the top card from a pile, returns card_id (-1 if empty)
+    // --- String-based API (convenience, used by card code) ---
     int gain_from(const std::string& pile_name);
-
-    // Look at the top card without removing it (-1 if empty)
     int top_card(const std::string& pile_name) const;
-
-    // How many cards remain in a pile
     int count(const std::string& pile_name) const;
-
-    // Is a specific pile empty?
     bool is_pile_empty(const std::string& pile_name) const;
-
-    // All pile names that still have cards
-    std::vector<std::string> available_piles() const;
-
-    // All pile names (including empty ones)
-    std::vector<std::string> all_pile_names() const;
-
-    // How many piles are empty
-    int empty_pile_count() const;
-
-    // Standard Dominion end condition: Province pile empty OR 3+ piles empty
-    bool is_game_over() const;
-
-    // Direct pile access (for rotating split piles, inspecting contents, etc.)
     SupplyPile* get_pile(const std::string& pile_name);
     const SupplyPile* get_pile(const std::string& pile_name) const;
 
+    // --- Index-based API (fast, used by engine hot path) ---
+    int num_piles() const;
+    const SupplyPile& pile_at(int index) const;
+    int gain_from_index(int index);
+    int top_card_index(int index) const;
+    int count_index(int index) const;
+    bool is_pile_empty_index(int index) const;
+    int pile_index_of(const std::string& pile_name) const;  // -1 if not found
+
+    // --- Allocation-free iteration ---
+    const std::vector<SupplyPile>& piles() const;
+
+    // --- Legacy API (allocates, avoid on hot path) ---
+    std::vector<std::string> available_piles() const;
+    std::vector<std::string> all_pile_names() const;
+
+    // Aggregate queries
+    int empty_pile_count() const;
+    bool is_game_over() const;
+
 private:
     std::vector<SupplyPile> piles_;
-    std::unordered_map<std::string, int> pile_index_;  // pile_name -> index into piles_
+    std::unordered_map<std::string, int> pile_index_;
+    int province_pile_idx_ = -1;  // cached for fast game-over check
 };
