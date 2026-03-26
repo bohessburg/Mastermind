@@ -9,6 +9,7 @@ GameState::GameState(int num_players)
     , buys_(1)
     , coins_(0)
     , turn_number_(1)
+    , actions_played_(0)
     , next_card_id_(0)
 {
     for (int i = 0; i < num_players; i++) {
@@ -69,6 +70,7 @@ int GameState::actions() const { return actions_; }
 int GameState::buys() const { return buys_; }
 int GameState::coins() const { return coins_; }
 int GameState::turn_number() const { return turn_number_; }
+int GameState::actions_played() const { return actions_played_; }
 
 void GameState::add_actions(int n) { actions_ += n; }
 void GameState::add_buys(int n) { buys_ += n; }
@@ -111,6 +113,9 @@ int GameState::play_card_from_hand(int player_id, int hand_index, DecisionFn dec
     player.play_from_hand(hand_index);
 
     const Card* card = card_def(card_id);
+    if (card && card->is_action()) {
+        actions_played_++;
+    }
     if (card && card->on_play) {
         card->on_play(*this, player_id, decide);
     }
@@ -119,6 +124,9 @@ int GameState::play_card_from_hand(int player_id, int hand_index, DecisionFn dec
 
 void GameState::play_card_effect(int card_id, int player_id, DecisionFn decide) {
     const Card* card = card_def(card_id);
+    if (card && card->is_action()) {
+        actions_played_++;
+    }
     if (card && card->on_play) {
         card->on_play(*this, player_id, decide);
     }
@@ -204,6 +212,7 @@ void GameState::start_turn() {
     actions_ = 1;
     buys_ = 1;
     coins_ = 0;
+    actions_played_ = 0;
     turn_flags_.clear();
 }
 

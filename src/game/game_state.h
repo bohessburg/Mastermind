@@ -44,6 +44,7 @@ public:
     int buys() const;
     int coins() const;
     int turn_number() const;
+    int actions_played() const;
 
     void add_actions(int n);
     void add_buys(int n);
@@ -97,6 +98,7 @@ private:
     int buys_;
     int coins_;
     int turn_number_;
+    int actions_played_;
     std::vector<int> turns_taken_;
 
     // Card ID system: sequential IDs, vector-indexed for O(1) lookup

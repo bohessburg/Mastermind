@@ -174,6 +174,61 @@ void register_all() {
         },
     });
 
+    CardRegistry::register_card({
+        .name = "Storeroom",
+        .cost = 3,
+        .types = CardType::Action,
+        .text = "+1 Buy. Discard any number of cards, then draw that many. Discard any number of cards for +1 Coin each.",   
+        .victory_points = 0,
+        .coin_value = 0,
+        .tags = {},
+        .on_play = [](GameState& state, int pid, DecisionFn decide) {
+            Player& player = state.get_player(pid);
+            state.add_buys(1);
+            if (player.hand_size() == 0) return;
+
+            //First discard then redraw like cellar
+            std::vector<int> options;
+            for (int i = 0; i < player.hand_size(); i++) options.push_back(i);
+
+            auto chosen = decide(pid, ChoiceType::DISCARD, options, 0, player.hand_size());
+            std::sort(chosen.begin(), chosen.end(), std::greater<int>());
+            int count = static_cast<int>(chosen.size());
+            for (int idx : chosen) player.discard_from_hand(idx);
+            player.draw_cards(count);
+
+            if (player.hand_size() == 0) return;
+            //next discard again for Coins
+            std::vector<int> options2;
+            for (int i = 0; i < player.hand_size(); i++) options2.push_back(i);
+
+            auto chosen2 = decide(pid, ChoiceType::DISCARD, options2, 0, player.hand_size());
+            std::sort(chosen2.begin(), chosen2.end(), std::greater<int>());
+            int count2 = static_cast<int>(chosen2.size());
+            for (int idx : chosen2) player.discard_from_hand(idx);
+            state.add_coins(count2);
+
+        },
+    });
+
+    CardRegistry::register_card({
+        .name = "Conspirator",
+        .cost = 4,
+        .types = CardType::Action,
+        .text = "+2 Coins. If you've played 3 or more Actions this turn (counting this), +1 Card and +1 Action.",   
+        .victory_points = 0,
+        .coin_value = 0,
+        .tags = {},
+        .on_play = [](GameState& state, int pid, DecisionFn) {
+            state.add_coins(2);
+            if (state.actions_played() >= 3) {
+                state.get_player(pid).draw_cards(1);
+                state.add_actions(1);
+            }
+        },
+    });
+
 }
+
 
 } // namespace Level2Cards
