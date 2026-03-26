@@ -5,6 +5,7 @@
 #include "../game/game_state.h"
 #include "../game/cards/base_cards.h"
 #include "../game/cards/level_1_cards.h"
+#include "../game/cards/level_2_cards.h"
 
 #include <functional>
 #include <string>

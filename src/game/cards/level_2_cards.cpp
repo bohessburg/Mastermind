@@ -96,19 +96,21 @@ void register_all() {
             for (int i = 0; i < num_peeked; i++) player.remove_deck_top();
             if (num_peeked == 0) return;
 
-            // Trash one
+            // Trash one (decide returns an index into top_cards)
             auto trash_chosen = decide(pid, ChoiceType::TRASH, top_cards, 1, 1);
             if (!trash_chosen.empty()) {
-                state.trash_card(trash_chosen[0]);
-                top_cards.erase(std::find(top_cards.begin(), top_cards.end(), trash_chosen[0]));
+                int trashed_id = top_cards[trash_chosen[0]];
+                state.trash_card(trashed_id);
+                top_cards.erase(std::find(top_cards.begin(), top_cards.end(), trashed_id));
             }
 
             // Discard one (if 2+ remain)
             if (top_cards.size() >= 2) {
                 auto disc_chosen = decide(pid, ChoiceType::DISCARD, top_cards, 1, 1);
                 if (!disc_chosen.empty()) {
-                    player.add_to_discard(disc_chosen[0]);
-                    top_cards.erase(std::find(top_cards.begin(), top_cards.end(), disc_chosen[0]));
+                    int discarded_id = top_cards[disc_chosen[0]];
+                    player.add_to_discard(discarded_id);
+                    top_cards.erase(std::find(top_cards.begin(), top_cards.end(), discarded_id));
                 }
             }
 

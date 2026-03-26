@@ -11,8 +11,9 @@
 // then cantrips (+1 Action, safe to chain), then strong terminals.
 int action_priority(const std::string& name) {
     // Tier 0: Villages — give +2 Actions, play these first
-    if (name == "Village")    return 0;
-    if (name == "Festival")   return 1;
+    if (name == "Village")          return 0;
+    if (name == "Festival")         return 1;
+    if (name == "Worker's Village") return 2;
 
     // Tier 1: Cantrips — give +1 Action, safe to chain
     if (name == "Laboratory") return 10;
@@ -22,62 +23,79 @@ int action_priority(const std::string& name) {
     if (name == "Merchant")   return 14;
     if (name == "Harbinger")  return 15;
     if (name == "Cellar")     return 16;
+    if (name == "Hamlet")     return 17;
+    if (name == "Lookout")    return 18;
 
     // Tier 2: Throne Room — play before a terminal to double it
     if (name == "Throne Room") return 20;
 
     // Tier 3: Terminals — these consume your last action
     if (name == "Witch")       return 30;
-    if (name == "Council Room") return 31;
-    if (name == "Smithy")      return 32;
-    if (name == "Militia")     return 33;
-    if (name == "Library")     return 34;
-    if (name == "Mine")        return 35;
-    if (name == "Remodel")     return 36;
-    if (name == "Moneylender") return 37;
-    if (name == "Chapel")      return 38;
-    if (name == "Artisan")     return 39;
-    if (name == "Bandit")      return 40;
-    if (name == "Bureaucrat")  return 41;
-    if (name == "Workshop")    return 42;
-    if (name == "Moat")        return 43;
-    if (name == "Vassal")      return 44;
+    if (name == "Scholar")     return 31;
+    if (name == "Council Room") return 32;
+    if (name == "Smithy")      return 33;
+    if (name == "Courtyard")   return 34;
+    if (name == "Militia")     return 35;
+    if (name == "Swindler")    return 36;
+    if (name == "Library")     return 37;
+    if (name == "Mine")        return 38;
+    if (name == "Remodel")     return 39;
+    if (name == "Moneylender") return 40;
+    if (name == "Chapel")      return 41;
+    if (name == "Artisan")     return 42;
+    if (name == "Bandit")      return 43;
+    if (name == "Bureaucrat")  return 44;
+    if (name == "Workshop")    return 45;
+    if (name == "Moat")        return 46;
+    if (name == "Vassal")      return 47;
 
     return 50; // unknown cards
 }
 
 // Buy priority: lower = buy first when costs are equal.
 static int buy_priority(const std::string& name) {
+    // $8
     if (name == "Province")    return 0;
+    // $6
     if (name == "Gold")        return 10;
     if (name == "Artisan")     return 11;
+    // $5
     if (name == "Witch")        return 20;
-    if (name == "Laboratory")   return 21;
-    if (name == "Festival")     return 22;
-    if (name == "Market")       return 23;
-    if (name == "Sentry")       return 24;
-    if (name == "Council Room") return 25;
-    if (name == "Mine")         return 26;
-    if (name == "Library")      return 27;
-    if (name == "Duchy")        return 28;
-    if (name == "Militia")      return 30;
-    if (name == "Smithy")       return 31;
-    if (name == "Throne Room")  return 32;
-    if (name == "Remodel")      return 33;
-    if (name == "Moneylender")  return 34;
-    if (name == "Poacher")      return 35;
-    if (name == "Bureaucrat")   return 36;
-    if (name == "Gardens")      return 37;
+    if (name == "Scholar")      return 21;
+    if (name == "Laboratory")   return 22;
+    if (name == "Festival")     return 23;
+    if (name == "Market")       return 24;
+    if (name == "Sentry")       return 25;
+    if (name == "Council Room") return 26;
+    if (name == "Mine")         return 27;
+    if (name == "Library")      return 28;
+    if (name == "Duchy")        return 29;
+    // $4
+    if (name == "Militia")           return 30;
+    if (name == "Smithy")            return 31;
+    if (name == "Worker's Village")  return 32;
+    if (name == "Throne Room")       return 33;
+    if (name == "Remodel")           return 34;
+    if (name == "Moneylender")       return 35;
+    if (name == "Poacher")           return 36;
+    if (name == "Bureaucrat")        return 37;
+    if (name == "Gardens")           return 38;
+    // $3
     if (name == "Silver")       return 40;
     if (name == "Village")      return 41;
-    if (name == "Merchant")     return 42;
-    if (name == "Workshop")     return 43;
-    if (name == "Harbinger")    return 44;
-    if (name == "Vassal")       return 45;
+    if (name == "Swindler")     return 42;
+    if (name == "Lookout")      return 43;
+    if (name == "Merchant")     return 44;
+    if (name == "Workshop")     return 45;
+    if (name == "Harbinger")    return 46;
+    if (name == "Vassal")       return 47;
+    // $2
     if (name == "Chapel")       return 50;
-    if (name == "Moat")         return 51;
-    if (name == "Cellar")       return 52;
-    if (name == "Estate")       return 53;
+    if (name == "Hamlet")       return 51;
+    if (name == "Courtyard")    return 52;
+    if (name == "Moat")         return 53;
+    if (name == "Cellar")       return 54;
+    if (name == "Estate")       return 55;
     if (name == "Copper")       return 900;
     if (name == "Curse")        return 999;
     return 100;
@@ -108,33 +126,45 @@ static int trash_priority(const Card* card) {
 
 // Engine build priority (lower = buy first)
 static int engine_build_priority(const std::string& name) {
-    if (name == "Chapel")       return 0;
-    if (name == "Laboratory")   return 10;
-    if (name == "Market")       return 11;
-    if (name == "Festival")     return 12;
-    if (name == "Sentry")       return 13;
-    if (name == "Merchant")     return 14;
-    if (name == "Village")      return 20;
-    if (name == "Witch")        return 30;
-    if (name == "Smithy")       return 31;
-    if (name == "Council Room") return 32;
-    if (name == "Militia")      return 33;
-    if (name == "Moat")         return 34;
-    if (name == "Cellar")       return 40;
-    if (name == "Harbinger")    return 41;
-    if (name == "Throne Room")  return 42;
-    if (name == "Remodel")      return 43;
-    if (name == "Poacher")      return 44;
-    if (name == "Workshop")     return 45;
-    if (name == "Artisan")      return 46;
-    if (name == "Mine")         return 47;
-    if (name == "Library")      return 48;
-    if (name == "Vassal")       return 49;
-    if (name == "Moneylender")  return 50;
-    if (name == "Bandit")       return 51;
-    if (name == "Bureaucrat")   return 52;
-    if (name == "Silver")       return 80;
-    if (name == "Gold")         return 81;
+    // Trashing
+    if (name == "Chapel")            return 0;
+    if (name == "Lookout")           return 1;
+    // Cantrip draw
+    if (name == "Laboratory")        return 10;
+    if (name == "Market")            return 11;
+    if (name == "Festival")          return 12;
+    if (name == "Sentry")            return 13;
+    if (name == "Merchant")          return 14;
+    if (name == "Hamlet")            return 15;
+    // Villages
+    if (name == "Village")           return 20;
+    if (name == "Worker's Village")  return 21;
+    // Terminal draw / attacks
+    if (name == "Witch")             return 30;
+    if (name == "Scholar")           return 31;
+    if (name == "Smithy")            return 32;
+    if (name == "Courtyard")         return 33;
+    if (name == "Council Room")      return 34;
+    if (name == "Swindler")          return 35;
+    if (name == "Militia")           return 36;
+    if (name == "Moat")              return 37;
+    // Utility
+    if (name == "Cellar")            return 40;
+    if (name == "Harbinger")         return 41;
+    if (name == "Throne Room")       return 42;
+    if (name == "Remodel")           return 43;
+    if (name == "Poacher")           return 44;
+    if (name == "Workshop")          return 45;
+    if (name == "Artisan")           return 46;
+    if (name == "Mine")              return 47;
+    if (name == "Library")           return 48;
+    if (name == "Vassal")            return 49;
+    if (name == "Moneylender")       return 50;
+    if (name == "Bandit")            return 51;
+    if (name == "Bureaucrat")        return 52;
+    // Treasure
+    if (name == "Silver")            return 80;
+    if (name == "Gold")              return 81;
     return 100;
 }
 
@@ -498,14 +528,14 @@ static KingdomAnalysis analyze_kingdom(const GameState& state) {
     for (const auto& pile : state.get_supply().piles()) {
         if (pile.card_ids.empty()) continue;
         const auto& name = pile.pile_name;
-        if (name == "Village" || name == "Festival") k.has_village = true;
-        if (name == "Chapel") k.has_chapel = true;
+        if (name == "Village" || name == "Festival" || name == "Worker's Village") k.has_village = true;
+        if (name == "Chapel" || name == "Lookout") k.has_chapel = true;
         if (name == "Witch") { k.has_witch = true; k.has_terminal_draw = true; }
         if (name == "Smithy" || name == "Council Room" || name == "Library" ||
-            name == "Moat") k.has_terminal_draw = true;
+            name == "Moat" || name == "Scholar" || name == "Courtyard") k.has_terminal_draw = true;
         if (name == "Laboratory" || name == "Market") k.has_cantrip_draw = true;
     }
-    for (auto& t : {"Witch", "Smithy", "Council Room", "Moat", "Library"}) {
+    for (auto& t : {"Witch", "Scholar", "Smithy", "Courtyard", "Council Room", "Moat", "Library"}) {
         if (!state.get_supply().is_pile_empty(t)) { k.best_terminal = t; break; }
     }
     return k;
@@ -538,12 +568,13 @@ static DeckProfile analyze_deck(const GameState& state, int pid) {
         p.counts[name]++;
         if (card->is_action()) p.total_actions++;
         if (card->is_treasure()) { p.treasures++; p.total_money += card->coin_value; }
-        if (name == "Village" || name == "Festival") p.villages++;
+        if (name == "Village" || name == "Festival" || name == "Worker's Village") p.villages++;
         if (name == "Smithy" || name == "Council Room" || name == "Witch" ||
-            name == "Moat" || name == "Library") p.terminal_draw++;
+            name == "Moat" || name == "Library" || name == "Scholar" ||
+            name == "Courtyard") p.terminal_draw++;
         if (name == "Laboratory" || name == "Market" || name == "Sentry" ||
             name == "Merchant" || name == "Harbinger" || name == "Poacher" ||
-            name == "Cellar") p.cantrips++;
+            name == "Cellar" || name == "Hamlet" || name == "Lookout") p.cantrips++;
         if (name == "Chapel") p.chapels++;
         if (name == "Copper" || name == "Estate" || name == "Curse") p.junk++;
     }
@@ -785,10 +816,12 @@ std::vector<int> EngineBot::decide(const DecisionPoint& dp, const GameState& sta
     }
 
     auto is_limited = [&](const std::string& name) -> bool {
-        if (name == "Chapel" && prof.chapels >= 1) return true;
+        if ((name == "Chapel" || name == "Lookout") && prof.chapels >= 1) return true;
         if ((name == "Smithy" || name == "Council Room" || name == "Witch" ||
-             name == "Moat" || name == "Library") && prof.terminal_draw >= 2) return true;
-        if ((name == "Village" || name == "Festival") && prof.villages >= 3) return true;
+             name == "Moat" || name == "Library" || name == "Scholar" ||
+             name == "Courtyard") && prof.terminal_draw >= 2) return true;
+        if ((name == "Village" || name == "Festival" || name == "Worker's Village")
+            && prof.villages >= 3) return true;
         return false;
     };
 
@@ -803,9 +836,10 @@ std::vector<int> EngineBot::decide(const DecisionPoint& dp, const GameState& sta
 
         int prio = engine_build_priority(name);
 
-        if ((name == "Village" || name == "Festival") &&
+        if ((name == "Village" || name == "Festival" || name == "Worker's Village") &&
             prof.villages == 0 && prof.terminal_draw >= 1) prio = 5;
-        if ((name == "Smithy" || name == "Witch" || name == "Council Room") &&
+        if ((name == "Smithy" || name == "Witch" || name == "Council Room" ||
+             name == "Scholar" || name == "Courtyard") &&
             prof.terminal_draw == 0 && prof.villages >= 1) prio = 5;
         if (name == "Silver" && prof.total_actions >= 2 && coins <= 4) prio = 15;
 

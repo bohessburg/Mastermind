@@ -8,14 +8,12 @@
 #include <string>
 #include <vector>
 
-enum class AgentType { RANDOM, BETTER_RANDOM, BIG_MONEY, HEURISTIC, ENGINE };
+enum class AgentType { BETTER_RANDOM, BIG_MONEY, ENGINE };
 
 static std::string agent_name(AgentType t) {
     switch (t) {
-        case AgentType::RANDOM:        return "Random";
         case AgentType::BETTER_RANDOM: return "BetterRandom";
         case AgentType::BIG_MONEY:     return "BigMoney";
-        case AgentType::HEURISTIC:     return "Heuristic";
         case AgentType::ENGINE:        return "Engine";
     }
     return "???";
@@ -23,10 +21,8 @@ static std::string agent_name(AgentType t) {
 
 static std::unique_ptr<Agent> make_agent(AgentType t, uint64_t seed) {
     switch (t) {
-        case AgentType::RANDOM:        return std::make_unique<RandomAgent>(seed);
         case AgentType::BETTER_RANDOM: return std::make_unique<BetterRandomAgent>(seed);
         case AgentType::BIG_MONEY:     return std::make_unique<BigMoneyAgent>();
-        case AgentType::HEURISTIC:     return std::make_unique<HeuristicAgent>();
         case AgentType::ENGINE:        return std::make_unique<EngineBot>();
     }
     return nullptr;
@@ -45,11 +41,14 @@ struct BenchResult {
 static constexpr double BENCH_TIMEOUT_SEC = 10.0;
 
 static const std::vector<std::string> ALL_KINGDOM = {
+    // Level 1 (Base Set)
     "Cellar", "Chapel", "Moat", "Harbinger", "Merchant",
     "Vassal", "Village", "Workshop", "Bureaucrat", "Gardens",
     "Laboratory", "Market", "Militia", "Moneylender", "Poacher",
     "Remodel", "Smithy", "Throne Room", "Bandit", "Council Room",
-    "Festival", "Library", "Mine", "Sentry", "Witch", "Artisan"
+    "Festival", "Library", "Mine", "Sentry", "Witch", "Artisan",
+    // Level 2
+    "Worker's Village", "Courtyard", "Hamlet", "Lookout", "Swindler", "Scholar"
 };
 
 static std::vector<std::string> random_kingdom(std::mt19937& rng) {
@@ -128,23 +127,23 @@ static void print_result(const BenchResult& r) {
 int main() {
     BaseCards::register_all();
     Level1Cards::register_all();
+    Level2Cards::register_all();
 
     int n = 5000;
 
     std::cout << "Random kingdoms (10 of 26 base cards per game)\n";
     std::cout << n << " games per matchup\n\n" << std::flush;
 
-    print_result(run_bench("BetterRandom vs BigMoney", n, AgentType::BETTER_RANDOM, AgentType::BIG_MONEY));
-    print_result(run_bench("BigMoney vs BigMoney", n, AgentType::BIG_MONEY, AgentType::BIG_MONEY));
-    print_result(run_bench("Heuristic vs BigMoney", n, AgentType::HEURISTIC, AgentType::BIG_MONEY));
-    print_result(run_bench("BigMoney vs Heuristic", n, AgentType::BIG_MONEY, AgentType::HEURISTIC));
+    // All matchups: Engine, BigMoney, BetterRandom (both seats)
     print_result(run_bench("Engine vs BigMoney", n, AgentType::ENGINE, AgentType::BIG_MONEY));
     print_result(run_bench("BigMoney vs Engine", n, AgentType::BIG_MONEY, AgentType::ENGINE));
-    print_result(run_bench("Engine vs Heuristic", n, AgentType::ENGINE, AgentType::HEURISTIC));
-    print_result(run_bench("Heuristic vs Engine", n, AgentType::HEURISTIC, AgentType::ENGINE));
-    print_result(run_bench("Heuristic vs Heuristic", n, AgentType::HEURISTIC, AgentType::HEURISTIC));
-    print_result(run_bench("Engine vs Engine", n, AgentType::ENGINE, AgentType::ENGINE));
     print_result(run_bench("Engine vs BetterRandom", n, AgentType::ENGINE, AgentType::BETTER_RANDOM));
+    print_result(run_bench("BetterRandom vs Engine", n, AgentType::BETTER_RANDOM, AgentType::ENGINE));
+    print_result(run_bench("BigMoney vs BetterRandom", n, AgentType::BIG_MONEY, AgentType::BETTER_RANDOM));
+    print_result(run_bench("BetterRandom vs BigMoney", n, AgentType::BETTER_RANDOM, AgentType::BIG_MONEY));
+    print_result(run_bench("Engine vs Engine", n, AgentType::ENGINE, AgentType::ENGINE));
+    print_result(run_bench("BigMoney vs BigMoney", n, AgentType::BIG_MONEY, AgentType::BIG_MONEY));
+    print_result(run_bench("BetterRandom vs BetterRandom", n, AgentType::BETTER_RANDOM, AgentType::BETTER_RANDOM));
 
     return 0;
 }

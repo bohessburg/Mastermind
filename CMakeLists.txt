@@ -67,11 +67,12 @@ if(BUILD_TESTS)
         tests/test_attack_reactions.cpp
         tests/test_action_space.cpp
         tests/test_invariants.cpp
+        tests/test_cards_level2.cpp
     )
     target_link_libraries(dominion_tests PRIVATE dominion_engine Catch2::Catch2WithMain)
     target_compile_options(dominion_tests PRIVATE -Wall -Wextra)
 
     include(CTest)
     include(Catch)
-    catch_discover_tests(dominion_tests)
+    catch_discover_tests(dominion_tests PROPERTIES TIMEOUT 10)
 endif()
