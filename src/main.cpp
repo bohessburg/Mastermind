@@ -131,7 +131,7 @@ int main() {
     print_result(run_bench("Heuristic vs BigMoney", n, AgentType::HEURISTIC, AgentType::BIG_MONEY));
     print_result(run_bench("BigMoney vs Heuristic", n, AgentType::BIG_MONEY, AgentType::HEURISTIC));
     print_result(run_bench("Engine vs BigMoney", n, AgentType::ENGINE, AgentType::BIG_MONEY));
-    print_result(run_bench("BigMoney vs Random", n, AgentType::BIG_MONEY, AgentType::RANDOM));
+    print_result(run_bench("Engine vs Heuristic", n, AgentType::ENGINE, AgentType::HEURISTIC));
 
     return 0;
 }

@@ -16,19 +16,16 @@ std::vector<int> RandomAgent::decide(const DecisionPoint& dp, const GameState& /
 
 // --- BigMoneyAgent ---
 
-// Optimized Big Money based on wiki.dominionstrategy.com/index.php/Money_strategies
-// Buy rules from "Big Money optimized" section:
-//   $8: Province (unless very early with no Gold and <5 Silvers → Gold)
-//   $6-7: Gold (unless ≤4 Provinces left → Duchy)
-//   $5: Silver (unless ≤5 Provinces left → Duchy)
-//   $3-4: Silver (unless ≤2 Provinces left → Estate)
-//   $2: Estate only if ≤3 Provinces left, else nothing
+// Big Money: build treasure base first, then green.
+// Phase 1 (building): Buy only money until total money value >= 16
+//   (7 Copper + 3 Silver + 1 Gold = 7+6+3 = 16)
+// Phase 2 (greening): Buy Province at $8, Gold at $6-7, Silver at $3-5.
+//   Endgame duchy/estate dancing when provinces running low.
 std::vector<int> BigMoneyAgent::decide(const DecisionPoint& dp, const GameState& state) {
     if (dp.options.empty()) return {};
 
     switch (dp.type) {
         case DecisionType::PLAY_ACTION: {
-            // Pure Big Money: skip all actions
             for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
                 if (dp.options[i].is_pass) return {i};
             }
@@ -54,42 +51,49 @@ std::vector<int> BigMoneyAgent::decide(const DecisionPoint& dp, const GameState&
                 return -1;
             };
 
-            // Count Golds and Silvers the player owns (all zones)
+            // Count total money value in deck
             int pid = state.current_player_id();
             auto all = state.get_player(pid).all_cards();
-            int gold_count = 0, silver_count = 0;
+            int total_money = 0;
             for (int cid : all) {
-                const std::string& n = state.card_name(cid);
-                if (n == "Gold") gold_count++;
-                else if (n == "Silver") silver_count++;
+                const Card* c = state.card_def(cid);
+                if (c && c->is_treasure()) total_money += c->coin_value;
             }
 
-            if (coins >= 8) {
-                // Early game exception: if no Gold and <5 Silvers, buy Gold instead
-                if (gold_count == 0 && silver_count < 5) {
+            bool greening = (total_money >= 16);
+
+            if (greening) {
+                // --- GREENING PHASE ---
+                if (coins >= 8) {
+                    int idx = find_option("Province");
+                    if (idx >= 0) return {idx};
+                }
+                if (coins >= 6) {
+                    if (provinces_left <= 4) {
+                        int idx = find_option("Duchy");
+                        if (idx >= 0) return {idx};
+                    }
                     int idx = find_option("Gold");
                     if (idx >= 0) return {idx};
                 }
-                int idx = find_option("Province");
-                if (idx >= 0) return {idx};
-            }
-            if (coins >= 6) {
-                // Endgame: Duchy if ≤4 Provinces left
-                if (provinces_left <= 4) {
-                    int idx = find_option("Duchy");
+                if (coins == 5) {
+                    if (provinces_left <= 5) {
+                        int idx = find_option("Duchy");
+                        if (idx >= 0) return {idx};
+                    }
+                    int idx = find_option("Silver");
                     if (idx >= 0) return {idx};
                 }
-                int idx = find_option("Gold");
-                if (idx >= 0) return {idx};
-            }
-            if (coins == 5) {
-                // Endgame: Duchy if ≤5 Provinces left
-                if (provinces_left <= 5) {
-                    int idx = find_option("Duchy");
+            } else {
+                // --- BUILDING PHASE: only buy money ---
+                if (coins >= 6) {
+                    int idx = find_option("Gold");
                     if (idx >= 0) return {idx};
                 }
-                int idx = find_option("Silver");
-                if (idx >= 0) return {idx};
+                if (coins >= 3) {
+                    int idx = find_option("Silver");
+                    if (idx >= 0) return {idx};
+                }
             }
             if (coins >= 3) {
                 // Endgame: Estate if ≤2 Provinces left

@@ -3,6 +3,9 @@
 #include "engine/game_runner.h"
 
 TEST_CASE("Full game completes without crash", "[invariant]") {
+    BaseCards::register_all();
+    BaseKingdom::register_all();
+
     std::vector<std::string> kingdom = {
         "Smithy", "Village", "Market", "Laboratory", "Festival",
         "Cellar", "Chapel", "Workshop", "Moat", "Militia"
@@ -21,6 +24,8 @@ TEST_CASE("Full game completes without crash", "[invariant]") {
 }
 
 TEST_CASE("Random agent game completes", "[invariant]") {
+    BaseCards::register_all();
+    BaseKingdom::register_all();
     std::vector<std::string> kingdom = {
         "Smithy", "Village", "Market", "Laboratory", "Festival",
         "Cellar", "Chapel", "Workshop", "Moat", "Militia"
@@ -40,6 +45,8 @@ TEST_CASE("Random agent game completes", "[invariant]") {
 TEST_CASE("Scores are deterministic with same seed", "[invariant]") {
     std::vector<std::string> kingdom = {};
 
+    BaseCards::register_all();
+    BaseKingdom::register_all();
     auto run_game = [&]() {
         GameRunner runner(2, kingdom);
         BigMoneyAgent agent1;
