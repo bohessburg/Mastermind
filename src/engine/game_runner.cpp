@@ -145,7 +145,7 @@ GameResult GameRunner::run(std::vector<Agent*> agents) {
     state_.start_game();
     total_decisions_ = 0;
 
-    static constexpr int MAX_TURNS = 80;
+    static constexpr int MAX_TURNS = 120;
     static constexpr int MAX_DECISIONS = 5000;
 
     while (!state_.is_game_over() && state_.turn_number() < MAX_TURNS

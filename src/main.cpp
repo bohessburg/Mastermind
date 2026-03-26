@@ -81,7 +81,7 @@ static BenchResult run_bench(const std::string& label, int max_games,
         auto result = runner.run(agents);
 
         // Skip games that hit the turn/decision cap
-        if (result.total_turns >= 79) {
+        if (result.total_turns >= 119) {
             skipped++;
             continue;
         }

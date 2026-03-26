@@ -18,8 +18,14 @@ static const std::vector<std::string> ALL_KINGDOM = {
 struct ThreadStats {
     int completed = 0;
     int timed_out = 0;
+    int p1_wins = 0;
+    int p2_wins = 0;
+    int ties = 0;
     long total_turns = 0;
     long total_decisions = 0;
+    long total_score_p1 = 0;
+    long total_score_p2 = 0;
+    std::vector<int> turn_counts;
 };
 
 static void run_batch(int start_game, int num_games, ThreadStats& stats) {
@@ -35,12 +41,18 @@ static void run_batch(int start_game, int num_games, ThreadStats& stats) {
         std::vector<Agent*> agents = {&a1, &a2};
         auto result = runner.run(agents);
 
-        if (result.total_turns >= 79) {
+        if (result.total_turns >= 119) {
             stats.timed_out++;
         } else {
             stats.completed++;
             stats.total_turns += result.total_turns;
             stats.total_decisions += result.total_decisions;
+            stats.total_score_p1 += result.scores[0];
+            stats.total_score_p2 += result.scores[1];
+            stats.turn_counts.push_back(result.total_turns);
+            if (result.winner == 0) stats.p1_wins++;
+            else if (result.winner == 1) stats.p2_wins++;
+            else stats.ties++;
         }
     }
 }
@@ -76,13 +88,18 @@ int main() {
     double elapsed = std::chrono::duration<double>(end - start).count();
 
     // Aggregate
-    int completed = 0, timed_out = 0;
-    long total_turns = 0, total_decisions = 0;
+    int completed = 0, timed_out = 0, p1_wins = 0, p2_wins = 0, ties = 0;
+    long total_turns = 0, total_decisions = 0, total_score_p1 = 0, total_score_p2 = 0;
     for (const auto& s : stats) {
         completed += s.completed;
         timed_out += s.timed_out;
+        p1_wins += s.p1_wins;
+        p2_wins += s.p2_wins;
+        ties += s.ties;
         total_turns += s.total_turns;
         total_decisions += s.total_decisions;
+        total_score_p1 += s.total_score_p1;
+        total_score_p2 += s.total_score_p2;
     }
 
     std::cout << "\n=== Results ===\n";
@@ -90,8 +107,24 @@ int main() {
               << static_cast<int>(NUM_GAMES / elapsed) << " games/sec)\n";
     std::cout << "Completed: " << completed << "  Timed out: " << timed_out << "\n";
     if (completed > 0) {
+        std::cout << "P1 wins: " << p1_wins << "  P2 wins: " << p2_wins
+                  << "  Ties: " << ties << "\n";
+        std::cout << "Avg score: P1=" << static_cast<double>(total_score_p1) / completed
+                  << "  P2=" << static_cast<double>(total_score_p2) / completed << "\n";
         std::cout << "Avg turns: " << static_cast<double>(total_turns) / completed << "\n";
         std::cout << "Avg decisions: " << static_cast<double>(total_decisions) / completed << "\n";
+
+        // Collect all turn counts and compute percentiles
+        std::vector<int> all_turns;
+        for (const auto& s : stats) {
+            all_turns.insert(all_turns.end(), s.turn_counts.begin(), s.turn_counts.end());
+        }
+        std::sort(all_turns.begin(), all_turns.end());
+        int n = static_cast<int>(all_turns.size());
+        auto pct = [&](int p) { return all_turns[std::min(n - 1, n * p / 100)]; };
+        std::cout << "Turn percentiles: p5=" << pct(5) << " p10=" << pct(10)
+                  << " p50=" << pct(50) << " p90=" << pct(90)
+                  << " p99=" << pct(99) << "\n";
     }
 
     return 0;
