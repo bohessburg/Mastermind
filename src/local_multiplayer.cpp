@@ -103,15 +103,23 @@ static void print_full_state(const GameState& state, int active_pid,
     std::cout << "\n";
     const std::string& name0 = (0 == active_pid) ? (">> " + p1_name) : p1_name;
     const std::string& name1 = (1 == active_pid) ? (">> " + p2_name) : p2_name;
+    auto discard_top = [&](int pid) -> std::string {
+        const auto& d = state.get_player(pid).get_discard();
+        if (d.empty()) return "empty";
+        return state.card_name(d.back());
+    };
+
     print_hand(state, 0, name0);
     print_in_play(state, 0, p1_name);
     std::cout << "  " << p1_name << ": Deck(" << state.get_player(0).deck_size()
-              << ") Discard(" << state.get_player(0).discard_size() << ")\n";
+              << ") Discard(" << state.get_player(0).discard_size()
+              << ", top: " << discard_top(0) << ")\n";
     std::cout << "\n";
     print_hand(state, 1, name1);
     print_in_play(state, 1, p2_name);
     std::cout << "  " << p2_name << ": Deck(" << state.get_player(1).deck_size()
-              << ") Discard(" << state.get_player(1).discard_size() << ")\n";
+              << ") Discard(" << state.get_player(1).discard_size()
+              << ", top: " << discard_top(1) << ")\n";
     std::cout << "\n";
     print_status(state, active_pid);
     print_divider();

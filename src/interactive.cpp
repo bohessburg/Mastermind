@@ -96,17 +96,25 @@ static void print_full_state(const GameState& state, int active_pid) {
     print_trash(state);
     std::cout << "\n";
 
+    auto discard_top = [&](int pid) -> std::string {
+        const auto& d = state.get_player(pid).get_discard();
+        if (d.empty()) return "empty";
+        return state.card_name(d.back());
+    };
+
     // Your hand (full)
     print_hand(state, 0, "Your");
     print_in_play(state, 0, "Your");
     std::cout << "  You: Deck(" << state.get_player(0).deck_size()
-              << ") Discard(" << state.get_player(0).discard_size() << ")\n";
+              << ") Discard(" << state.get_player(0).discard_size()
+              << ", top: " << discard_top(0) << ")\n";
 
     // Bot summary
     const Player& bot = state.get_player(1);
     std::cout << "  Bot: Hand(" << bot.hand_size()
               << ") Deck(" << bot.deck_size()
-              << ") Discard(" << bot.discard_size() << ")\n";
+              << ") Discard(" << bot.discard_size()
+              << ", top: " << discard_top(1) << ")\n";
     print_in_play(state, 1, "Bot");
 
     std::cout << "\n";
