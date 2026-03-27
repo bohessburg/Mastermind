@@ -251,6 +251,12 @@ std::vector<int> BigMoneyAgent::decide(const DecisionPoint& dp, const GameState&
             return {static_cast<int>(dp.options.size()) - 1};
         }
         case DecisionType::BUY_CARD: {
+            // Optimized Big Money from wiki.dominionstrategy.com:
+            // $8: Province (unless early: no Gold and <5 Silvers → Gold)
+            // $6-7: Gold (unless ≤4 Provinces → Duchy)
+            // $5: Silver (unless ≤5 Provinces → Duchy)
+            // $3-4: Silver (unless ≤2 Provinces → Estate)
+            // $2: Estate only if ≤3 Provinces
             int provinces_left = state.get_supply().count("Province");
             int coins = state.coins();
 
@@ -261,46 +267,38 @@ std::vector<int> BigMoneyAgent::decide(const DecisionPoint& dp, const GameState&
                 return -1;
             };
 
-            int pid = state.current_player_id();
-            auto all = state.get_player(pid).all_cards();
-            int total_money = 0;
-            for (int cid : all) {
-                const Card* c = state.card_def(cid);
-                if (c && c->is_treasure()) total_money += c->coin_value;
+            if (coins >= 8) {
+                // Early game exception: no Gold and <5 Silvers → buy Gold instead
+                int pid = state.current_player_id();
+                auto all = state.get_player(pid).all_cards();
+                int gold_count = 0, silver_count = 0;
+                for (int cid : all) {
+                    const std::string& n = state.card_name(cid);
+                    if (n == "Gold") gold_count++;
+                    else if (n == "Silver") silver_count++;
+                }
+                if (gold_count == 0 && silver_count < 5) {
+                    int idx = find_option("Gold");
+                    if (idx >= 0) return {idx};
+                }
+                int idx = find_option("Province");
+                if (idx >= 0) return {idx};
             }
-
-            bool greening = (total_money >= 16);
-
-            if (greening) {
-                if (coins >= 8) {
-                    int idx = find_option("Province");
+            if (coins >= 6) {
+                if (provinces_left <= 4) {
+                    int idx = find_option("Duchy");
                     if (idx >= 0) return {idx};
                 }
-                if (coins >= 6) {
-                    if (provinces_left <= 4) {
-                        int idx = find_option("Duchy");
-                        if (idx >= 0) return {idx};
-                    }
-                    int idx = find_option("Gold");
+                int idx = find_option("Gold");
+                if (idx >= 0) return {idx};
+            }
+            if (coins == 5) {
+                if (provinces_left <= 5) {
+                    int idx = find_option("Duchy");
                     if (idx >= 0) return {idx};
                 }
-                if (coins == 5) {
-                    if (provinces_left <= 5) {
-                        int idx = find_option("Duchy");
-                        if (idx >= 0) return {idx};
-                    }
-                    int idx = find_option("Silver");
-                    if (idx >= 0) return {idx};
-                }
-            } else {
-                if (coins >= 6) {
-                    int idx = find_option("Gold");
-                    if (idx >= 0) return {idx};
-                }
-                if (coins >= 3) {
-                    int idx = find_option("Silver");
-                    if (idx >= 0) return {idx};
-                }
+                int idx = find_option("Silver");
+                if (idx >= 0) return {idx};
             }
             if (coins >= 3) {
                 if (provinces_left <= 2) {
@@ -316,6 +314,7 @@ std::vector<int> BigMoneyAgent::decide(const DecisionPoint& dp, const GameState&
                     if (idx >= 0) return {idx};
                 }
             }
+            // $0-1 or nothing worth buying: pass
             for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
                 if (dp.options[i].is_pass) return {i};
             }

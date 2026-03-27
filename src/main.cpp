@@ -78,7 +78,7 @@ static BenchResult run_bench(const std::string& label, int max_games,
 
         auto result = runner.run(agents);
 
-        if (result.total_turns >= 119) {
+        if (result.total_turns >= 79) {
             skipped++;
             continue;
         }

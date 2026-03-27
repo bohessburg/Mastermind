@@ -140,12 +140,14 @@ DecisionFn GameRunner::make_decision_fn() {
 
 GameResult GameRunner::run(std::vector<Agent*> agents) {
     agents_ = agents;
+    // Route card-level logs through the observer
+    state_.set_log([this](const std::string& msg) { observe(msg); });
     BaseCards::setup_supply(state_, kingdom_cards_);
     BaseCards::setup_starting_decks(state_);
     state_.start_game();
     total_decisions_ = 0;
 
-    static constexpr int MAX_TURNS = 120;
+    static constexpr int MAX_TURNS = 80;
     static constexpr int MAX_DECISIONS = 5000;
 
     while (!state_.is_game_over() && state_.turn_number() < MAX_TURNS

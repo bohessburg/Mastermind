@@ -45,7 +45,7 @@ static void run_batch(int start_game, int num_games, ThreadStats& stats) {
         std::vector<Agent*> agents = {&a1, &a2};
         auto result = runner.run(agents);
 
-        if (result.total_turns >= 119) {
+        if (result.total_turns >= 79) {
             stats.timed_out++;
         } else {
             stats.completed++;

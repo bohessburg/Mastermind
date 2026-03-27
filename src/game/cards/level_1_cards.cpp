@@ -226,12 +226,13 @@ void register_all() {
             if (card_id == -1) return;
 
             player.add_to_discard(card_id);
+            state.log("    Vassal reveals " + state.card_name(card_id));
 
             const Card* card = state.card_def(card_id);
             if (card && card->is_action()) {
                 auto chosen = decide(pid, ChoiceType::YES_NO, {0, 1}, 1, 1);
                 if (!chosen.empty() && chosen[0] == 1) {
-                    // Move from discard to in_play, then execute
+                    state.log("    Plays " + card->name + " from discard");
                     player.remove_from_discard(card_id);
                     player.add_to_hand(card_id);
                     int hidx = player.find_in_hand(card_id);
@@ -546,7 +547,12 @@ void register_all() {
 
                 auto chosen = dec(target, ChoiceType::DISCARD, options, must_discard, must_discard);
                 std::sort(chosen.begin(), chosen.end(), std::greater<int>());
-                for (int idx : chosen) p.discard_from_hand(idx);
+                std::string disc_str = "    P" + std::to_string(target + 1) + " discards:";
+                for (int idx : chosen) {
+                    disc_str += " " + st.card_name(p.get_hand()[idx]);
+                    p.discard_from_hand(idx);
+                }
+                st.log(disc_str);
             }, decide);
         },
     });
@@ -568,7 +574,10 @@ void register_all() {
                 int num_revealed = static_cast<int>(revealed.size());
                 for (int i = 0; i < num_revealed; i++) p.remove_deck_top();
 
-                // Find trashable treasures (non-Copper Treasures)
+                std::string reveal_str = "    P" + std::to_string(target + 1) + " reveals:";
+                for (int i = 0; i < num_revealed; i++) reveal_str += " " + st.card_name(revealed[i]);
+                st.log(reveal_str);
+
                 std::vector<int> trashable;
                 for (int i = 0; i < num_revealed; i++) {
                     const Card* c = st.card_def(revealed[i]);
@@ -590,6 +599,7 @@ void register_all() {
                         st.trash_card(revealed[i]);
                     } else {
                         p.add_to_discard(revealed[i]);
+                        st.log("    P" + std::to_string(target + 1) + " discards " + st.card_name(revealed[i]));
                     }
                 }
             }, decide);

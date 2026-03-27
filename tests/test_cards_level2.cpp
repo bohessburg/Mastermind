@@ -98,13 +98,24 @@ TEST_CASE("Hamlet: +1 Card +1 Action, optional discards for +Action/+Buy", "[car
         CHECK(game.state().get_player(0).hand_size() == 3);
     }
 
+    SECTION("discard for +Buy only (skip +Action)") {
+        auto decide = TestGame::scripted_decisions({{}, {0}}); // skip action, discard for buy
+        game.play_card(0, "Hamlet", decide);
+
+        CHECK(game.state().actions() == 2); // 1 + 1 (base only, no action discard)
+        CHECK(game.state().buys() == 2);    // 1 + 1 (buy discard)
+        CHECK(game.state().get_player(0).hand_size() == 3); // 3 after Hamlet + 1 drawn - 1 discarded
+        CHECK(game.state().get_player(0).discard_size() == 1);
+    }
+
     SECTION("skip both discards") {
         auto decide = TestGame::scripted_decisions({{}, {}});
         game.play_card(0, "Hamlet", decide);
 
         CHECK(game.state().actions() == 2); // 1 + 1 (base only)
-        CHECK(game.state().buys() == 1);
+        CHECK(game.state().buys() == 1);    // no buy discard
         CHECK(game.state().get_player(0).hand_size() == 4); // 3 original + 1 drawn
+        CHECK(game.state().get_player(0).discard_size() == 0);
     }
 
     SECTION("empty hand after Hamlet, no discard offered") {
