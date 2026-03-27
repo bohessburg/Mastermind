@@ -4,7 +4,7 @@
 
 TEST_CASE("Full game completes without crash", "[invariant]") {
     BaseCards::register_all();
-    BaseKingdom::register_all();
+    Level1Cards::register_all();
 
     std::vector<std::string> kingdom = {
         "Smithy", "Village", "Market", "Laboratory", "Festival",
@@ -25,15 +25,15 @@ TEST_CASE("Full game completes without crash", "[invariant]") {
 
 TEST_CASE("Random agent game completes", "[invariant]") {
     BaseCards::register_all();
-    BaseKingdom::register_all();
+    Level1Cards::register_all();
     std::vector<std::string> kingdom = {
         "Smithy", "Village", "Market", "Laboratory", "Festival",
         "Cellar", "Chapel", "Workshop", "Moat", "Militia"
     };
 
     GameRunner runner(2, kingdom);
-    RandomAgent agent1(123);
-    RandomAgent agent2(456);
+    BetterRandomAgent agent1(123);
+    BetterRandomAgent agent2(456);
     std::vector<Agent*> agents = {&agent1, &agent2};
 
     auto result = runner.run(agents);
@@ -46,7 +46,7 @@ TEST_CASE("Scores are deterministic with same seed", "[invariant]") {
     std::vector<std::string> kingdom = {};
 
     BaseCards::register_all();
-    BaseKingdom::register_all();
+    Level1Cards::register_all();
     auto run_game = [&]() {
         GameRunner runner(2, kingdom);
         BigMoneyAgent agent1;

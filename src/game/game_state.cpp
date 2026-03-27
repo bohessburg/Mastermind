@@ -9,6 +9,7 @@ GameState::GameState(int num_players)
     , buys_(1)
     , coins_(0)
     , turn_number_(1)
+    , actions_played_(0)
     , next_card_id_(0)
 {
     for (int i = 0; i < num_players; i++) {
@@ -69,6 +70,7 @@ int GameState::actions() const { return actions_; }
 int GameState::buys() const { return buys_; }
 int GameState::coins() const { return coins_; }
 int GameState::turn_number() const { return turn_number_; }
+int GameState::actions_played() const { return actions_played_; }
 
 void GameState::add_actions(int n) { actions_ += n; }
 void GameState::add_buys(int n) { buys_ += n; }
@@ -80,6 +82,7 @@ int GameState::gain_card(int player_id, const std::string& pile_name) {
     int card_id = supply_.gain_from(pile_name);
     if (card_id == -1) return -1;
     players_[player_id].add_to_discard(card_id);
+    log("    P" + std::to_string(player_id + 1) + " gains " + pile_name + " to discard");
     return card_id;
 }
 
@@ -87,6 +90,7 @@ int GameState::gain_card_to_hand(int player_id, const std::string& pile_name) {
     int card_id = supply_.gain_from(pile_name);
     if (card_id == -1) return -1;
     players_[player_id].add_to_hand(card_id);
+    log("    P" + std::to_string(player_id + 1) + " gains " + pile_name + " to hand");
     return card_id;
 }
 
@@ -94,11 +98,13 @@ int GameState::gain_card_to_deck_top(int player_id, const std::string& pile_name
     int card_id = supply_.gain_from(pile_name);
     if (card_id == -1) return -1;
     players_[player_id].add_to_deck_top(card_id);
+    log("    P" + std::to_string(player_id + 1) + " gains " + pile_name + " to deck top");
     return card_id;
 }
 
 void GameState::trash_card(int card_id) {
     trash_.push_back(card_id);
+    log("    Trashed " + card_name(card_id));
 }
 
 const std::vector<int>& GameState::get_trash() const {
@@ -111,6 +117,10 @@ int GameState::play_card_from_hand(int player_id, int hand_index, DecisionFn dec
     player.play_from_hand(hand_index);
 
     const Card* card = card_def(card_id);
+    if (card && card->is_action()) {
+        actions_played_++;
+    }
+    log("  P" + std::to_string(player_id + 1) + " plays " + card_name(card_id));
     if (card && card->on_play) {
         card->on_play(*this, player_id, decide);
     }
@@ -119,6 +129,10 @@ int GameState::play_card_from_hand(int player_id, int hand_index, DecisionFn dec
 
 void GameState::play_card_effect(int card_id, int player_id, DecisionFn decide) {
     const Card* card = card_def(card_id);
+    if (card && card->is_action()) {
+        actions_played_++;
+    }
+    log("    P" + std::to_string(player_id + 1) + " plays " + card_name(card_id) + " again");
     if (card && card->on_play) {
         card->on_play(*this, player_id, decide);
     }
@@ -138,6 +152,8 @@ void GameState::resolve_attack(
             const Card* card = card_def(hand[h]);
             if (card && card->is_reaction() && card->on_react) {
                 if (card->on_react(*this, target_id, attacker_id, decide)) {
+                    log("    P" + std::to_string(target_id + 1) + " reveals " +
+                        card->name + " — blocks the attack!");
                     blocked = true;
                     break;
                 }
@@ -145,6 +161,7 @@ void GameState::resolve_attack(
         }
 
         if (!blocked) {
+            log("    Attack hits P" + std::to_string(target_id + 1));
             attack_effect(*this, target_id, decide);
         }
     }
@@ -204,6 +221,7 @@ void GameState::start_turn() {
     actions_ = 1;
     buys_ = 1;
     coins_ = 0;
+    actions_played_ = 0;
     turn_flags_.clear();
 }
 
@@ -309,4 +327,12 @@ int GameState::get_turn_flag(const std::string& key) const {
 
 void GameState::set_turn_flag(const std::string& key, int value) {
     turn_flags_[key] = value;
+}
+
+void GameState::set_log(LogFn fn) {
+    log_fn_ = std::move(fn);
+}
+
+void GameState::log(const std::string& msg) const {
+    if (log_fn_) log_fn_(msg);
 }

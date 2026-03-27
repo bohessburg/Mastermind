@@ -2,20 +2,19 @@
 
 #include <algorithm>
 #include <chrono>
+#include <future>
 #include <iostream>
 #include <memory>
 #include <random>
 #include <string>
 #include <vector>
 
-enum class AgentType { RANDOM, BETTER_RANDOM, BIG_MONEY, HEURISTIC, ENGINE };
+enum class AgentType { BETTER_RANDOM, BIG_MONEY, ENGINE };
 
 static std::string agent_name(AgentType t) {
     switch (t) {
-        case AgentType::RANDOM:        return "Random";
         case AgentType::BETTER_RANDOM: return "BetterRandom";
         case AgentType::BIG_MONEY:     return "BigMoney";
-        case AgentType::HEURISTIC:     return "Heuristic";
         case AgentType::ENGINE:        return "Engine";
     }
     return "???";
@@ -23,10 +22,8 @@ static std::string agent_name(AgentType t) {
 
 static std::unique_ptr<Agent> make_agent(AgentType t, uint64_t seed) {
     switch (t) {
-        case AgentType::RANDOM:        return std::make_unique<RandomAgent>(seed);
         case AgentType::BETTER_RANDOM: return std::make_unique<BetterRandomAgent>(seed);
         case AgentType::BIG_MONEY:     return std::make_unique<BigMoneyAgent>();
-        case AgentType::HEURISTIC:     return std::make_unique<HeuristicAgent>();
         case AgentType::ENGINE:        return std::make_unique<EngineBot>();
     }
     return nullptr;
@@ -45,11 +42,14 @@ struct BenchResult {
 static constexpr double BENCH_TIMEOUT_SEC = 10.0;
 
 static const std::vector<std::string> ALL_KINGDOM = {
+    // Level 1 (Base Set)
     "Cellar", "Chapel", "Moat", "Harbinger", "Merchant",
     "Vassal", "Village", "Workshop", "Bureaucrat", "Gardens",
     "Laboratory", "Market", "Militia", "Moneylender", "Poacher",
     "Remodel", "Smithy", "Throne Room", "Bandit", "Council Room",
-    "Festival", "Library", "Mine", "Sentry", "Witch", "Artisan"
+    "Festival", "Library", "Mine", "Sentry", "Witch", "Artisan",
+    // Level 2
+    "Worker's Village", "Courtyard", "Hamlet", "Lookout", "Swindler", "Scholar"
 };
 
 static std::vector<std::string> random_kingdom(std::mt19937& rng) {
@@ -67,8 +67,6 @@ static BenchResult run_bench(const std::string& label, int max_games,
     int skipped = 0;
     std::mt19937 kingdom_rng(std::hash<std::string>{}(label));
 
-    std::cout << "  " << label << " " << std::flush;
-
     auto start = std::chrono::high_resolution_clock::now();
 
     for (int g = 0; g < max_games; g++) {
@@ -80,7 +78,6 @@ static BenchResult run_bench(const std::string& label, int max_games,
 
         auto result = runner.run(agents);
 
-        // Skip games that hit the turn/decision cap
         if (result.total_turns >= 79) {
             skipped++;
             continue;
@@ -93,12 +90,7 @@ static BenchResult run_bench(const std::string& label, int max_games,
         total_score_p1 += result.scores[0];
         total_score_p2 += result.scores[1];
         games_played++;
-
-        if ((g + 1) % 500 == 0) {
-            std::cout << "." << std::flush;
-        }
     }
-    std::cout << "\n";
 
     auto end = std::chrono::high_resolution_clock::now();
     double elapsed = std::chrono::duration<double>(end - start).count();
@@ -127,24 +119,33 @@ static void print_result(const BenchResult& r) {
 
 int main() {
     BaseCards::register_all();
-    BaseKingdom::register_all();
+    Level1Cards::register_all();
+    Level2Cards::register_all();
 
     int n = 5000;
 
-    std::cout << "Random kingdoms (10 of 26 base cards per game)\n";
-    std::cout << n << " games per matchup\n\n" << std::flush;
+    std::cout << "Random kingdoms (10 of 32 cards per game)\n";
+    std::cout << n << " games per matchup, all in parallel\n\n" << std::flush;
 
-    print_result(run_bench("BetterRandom vs BigMoney", n, AgentType::BETTER_RANDOM, AgentType::BIG_MONEY));
-    print_result(run_bench("BigMoney vs BigMoney", n, AgentType::BIG_MONEY, AgentType::BIG_MONEY));
-    print_result(run_bench("Heuristic vs BigMoney", n, AgentType::HEURISTIC, AgentType::BIG_MONEY));
-    print_result(run_bench("BigMoney vs Heuristic", n, AgentType::BIG_MONEY, AgentType::HEURISTIC));
-    print_result(run_bench("Engine vs BigMoney", n, AgentType::ENGINE, AgentType::BIG_MONEY));
-    print_result(run_bench("BigMoney vs Engine", n, AgentType::BIG_MONEY, AgentType::ENGINE));
-    print_result(run_bench("Engine vs Heuristic", n, AgentType::ENGINE, AgentType::HEURISTIC));
-    print_result(run_bench("Heuristic vs Engine", n, AgentType::HEURISTIC, AgentType::ENGINE));
-    print_result(run_bench("Heuristic vs Heuristic", n, AgentType::HEURISTIC, AgentType::HEURISTIC));
-    print_result(run_bench("Engine vs Engine", n, AgentType::ENGINE, AgentType::ENGINE));
-    print_result(run_bench("Engine vs BetterRandom", n, AgentType::ENGINE, AgentType::BETTER_RANDOM));
+    auto f1 = std::async(std::launch::async, run_bench, "Engine vs BigMoney", n, AgentType::ENGINE, AgentType::BIG_MONEY);
+    auto f2 = std::async(std::launch::async, run_bench, "BigMoney vs Engine", n, AgentType::BIG_MONEY, AgentType::ENGINE);
+    auto f3 = std::async(std::launch::async, run_bench, "Engine vs BetterRandom", n, AgentType::ENGINE, AgentType::BETTER_RANDOM);
+    auto f4 = std::async(std::launch::async, run_bench, "BetterRandom vs Engine", n, AgentType::BETTER_RANDOM, AgentType::ENGINE);
+    auto f5 = std::async(std::launch::async, run_bench, "BigMoney vs BetterRandom", n, AgentType::BIG_MONEY, AgentType::BETTER_RANDOM);
+    auto f6 = std::async(std::launch::async, run_bench, "BetterRandom vs BigMoney", n, AgentType::BETTER_RANDOM, AgentType::BIG_MONEY);
+    auto f7 = std::async(std::launch::async, run_bench, "Engine vs Engine", n, AgentType::ENGINE, AgentType::ENGINE);
+    auto f8 = std::async(std::launch::async, run_bench, "BigMoney vs BigMoney", n, AgentType::BIG_MONEY, AgentType::BIG_MONEY);
+    auto f9 = std::async(std::launch::async, run_bench, "BetterRandom vs BetterRandom", n, AgentType::BETTER_RANDOM, AgentType::BETTER_RANDOM);
+
+    print_result(f1.get());
+    print_result(f2.get());
+    print_result(f3.get());
+    print_result(f4.get());
+    print_result(f5.get());
+    print_result(f6.get());
+    print_result(f7.get());
+    print_result(f8.get());
+    print_result(f9.get());
 
     return 0;
 }

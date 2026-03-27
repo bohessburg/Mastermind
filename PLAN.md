@@ -2034,3 +2034,30 @@ For Throne Room / King's Court type cards, sub-decisions happen mid-card-resolut
 4. **DecisionFn captures:** When lambdas passed as `DecisionFn` capture references/pointers, be careful about object lifetimes, especially with `resolve_attack` which creates nested lambdas.
 
 5. **Turn count tracking:** Current code increments `turn_number_` globally. For tiebreaker, need per-player turn tracking. `turn_number_` currently means "total half-turns across all players" — make sure the semantics are clear.
+
+---
+
+## Future Performance Concerns
+
+Issues to address before AlphaZero training at scale. Not blocking now, but worth tracking.
+
+### String-based turn flags
+`set_turn_flag` / `get_turn_flag` uses `std::unordered_map<std::string, int>` — string hashing on every call. Options:
+- **Enum keys** with `std::unordered_map<TurnFlag, int>`
+- **Flat array** with `constexpr int` indices — fastest, zero overhead
+- **Eliminate entirely** — encode context into the `DecisionFn` signature or options vector instead of stashing in shared state
+
+### Conditional tracking counters
+Counters like `actions_played_` are only needed when specific cards are in the kingdom (e.g., Conspirator). Options:
+- **Tracking bitfield** — each card declares what counters it needs at registration, game setup ORs them together, increment is guarded by a single bitwise AND
+- **Do nothing** — integer increments are single instructions, unlikely to matter vs allocations and string ops. Profile first.
+
+### Reveal / public information system
+Currently no mechanism for agents to know what opponents have revealed. For imperfect-information training this matters. Options:
+- **Per-turn event log** on GameState — `std::vector<GameEvent>` with type (REVEAL, GAIN, TRASH), player, and card IDs. Agents query for public info.
+- **Retrofit later** — add `state.log_reveal(pid, card_ids)` calls into existing lambdas. No card logic changes needed.
+
+### String-based card names in supply/registry
+`CardRegistry::get(name)` and supply pile lookups use string keys throughout. For millions of simulations this adds up. Options:
+- **Integer card type IDs** — assign each card definition a numeric ID at registration, use that for all lookups
+- **Interned strings** — guarantee pointer equality so comparisons are O(1)

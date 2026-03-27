@@ -1,0 +1,136 @@
+#include "engine/game_runner.h"
+#include "game/cards/level_1_cards.h"
+#include "game/cards/level_2_cards.h"
+
+#include <algorithm>
+#include <chrono>
+#include <iostream>
+#include <random>
+#include <thread>
+
+static const std::vector<std::string> ALL_KINGDOM = {
+    // Level 1 (Base Set)
+    "Cellar", "Chapel", "Moat", "Harbinger", "Merchant",
+    "Vassal", "Village", "Workshop", "Bureaucrat", "Gardens",
+    "Laboratory", "Market", "Militia", "Moneylender", "Poacher",
+    "Remodel", "Smithy", "Throne Room", "Bandit", "Council Room",
+    "Festival", "Library", "Mine", "Sentry", "Witch", "Artisan",
+    // Level 2
+    "Worker's Village", "Courtyard", "Hamlet", "Lookout", "Swindler", "Scholar"
+};
+
+struct ThreadStats {
+    int completed = 0;
+    int timed_out = 0;
+    int p1_wins = 0;
+    int p2_wins = 0;
+    int ties = 0;
+    long total_turns = 0;
+    long total_decisions = 0;
+    long total_score_p1 = 0;
+    long total_score_p2 = 0;
+    std::vector<int> turn_counts;
+};
+
+static void run_batch(int start_game, int num_games, ThreadStats& stats) {
+    std::mt19937 kingdom_rng(42 + start_game);
+
+    for (int g = 0; g < num_games; g++) {
+        auto shuffled = ALL_KINGDOM;
+        std::shuffle(shuffled.begin(), shuffled.end(), kingdom_rng);
+        std::vector<std::string> kingdom(shuffled.begin(), shuffled.begin() + 10);
+
+        GameRunner runner(2, kingdom);
+        EngineBot a1, a2;
+        std::vector<Agent*> agents = {&a1, &a2};
+        auto result = runner.run(agents);
+
+        if (result.total_turns >= 79) {
+            stats.timed_out++;
+        } else {
+            stats.completed++;
+            stats.total_turns += result.total_turns;
+            stats.total_decisions += result.total_decisions;
+            stats.total_score_p1 += result.scores[0];
+            stats.total_score_p2 += result.scores[1];
+            stats.turn_counts.push_back(result.total_turns);
+            if (result.winner == 0) stats.p1_wins++;
+            else if (result.winner == 1) stats.p2_wins++;
+            else stats.ties++;
+        }
+    }
+}
+
+int main() {
+    BaseCards::register_all();
+    Level1Cards::register_all();
+    Level2Cards::register_all();
+
+    constexpr int NUM_GAMES = 100000;
+    int num_threads = static_cast<int>(std::thread::hardware_concurrency());
+    if (num_threads < 1) num_threads = 4;
+
+    std::cout << "Engine vs Engine: " << NUM_GAMES << " games on "
+              << num_threads << " threads\n" << std::flush;
+
+    int games_per_thread = NUM_GAMES / num_threads;
+    int remainder = NUM_GAMES % num_threads;
+
+    std::vector<std::thread> threads;
+    std::vector<ThreadStats> stats(num_threads);
+
+    auto start = std::chrono::high_resolution_clock::now();
+
+    for (int t = 0; t < num_threads; t++) {
+        int batch_size = games_per_thread + (t < remainder ? 1 : 0);
+        int start_game = t * games_per_thread + std::min(t, remainder);
+        threads.emplace_back(run_batch, start_game, batch_size, std::ref(stats[t]));
+    }
+
+    for (auto& t : threads) t.join();
+
+    auto end = std::chrono::high_resolution_clock::now();
+    double elapsed = std::chrono::duration<double>(end - start).count();
+
+    // Aggregate
+    int completed = 0, timed_out = 0, p1_wins = 0, p2_wins = 0, ties = 0;
+    long total_turns = 0, total_decisions = 0, total_score_p1 = 0, total_score_p2 = 0;
+    for (const auto& s : stats) {
+        completed += s.completed;
+        timed_out += s.timed_out;
+        p1_wins += s.p1_wins;
+        p2_wins += s.p2_wins;
+        ties += s.ties;
+        total_turns += s.total_turns;
+        total_decisions += s.total_decisions;
+        total_score_p1 += s.total_score_p1;
+        total_score_p2 += s.total_score_p2;
+    }
+
+    std::cout << "\n=== Results ===\n";
+    std::cout << NUM_GAMES << " games in " << elapsed << "s ("
+              << static_cast<int>(NUM_GAMES / elapsed) << " games/sec)\n";
+    std::cout << "Completed: " << completed << "  Timed out: " << timed_out << "\n";
+    if (completed > 0) {
+        std::cout << "P1 wins: " << p1_wins << "  P2 wins: " << p2_wins
+                  << "  Ties: " << ties << "\n";
+        std::cout << "Avg score: P1=" << static_cast<double>(total_score_p1) / completed
+                  << "  P2=" << static_cast<double>(total_score_p2) / completed << "\n";
+        std::cout << "Avg turns: " << static_cast<double>(total_turns) / completed << "\n";
+        std::cout << "Avg decisions: " << static_cast<double>(total_decisions) / completed << "\n";
+
+        // Collect all turn counts and compute percentiles
+        std::vector<int> all_turns;
+        for (const auto& s : stats) {
+            all_turns.insert(all_turns.end(), s.turn_counts.begin(), s.turn_counts.end());
+        }
+        std::sort(all_turns.begin(), all_turns.end());
+        int n = static_cast<int>(all_turns.size());
+        auto pct = [&](int p) { return all_turns[std::min(n - 1, n * p / 100)]; };
+        std::cout << "Turn percentiles: p5=" << pct(5) << " p10=" << pct(10)
+                  << " p50=" << pct(50) << " p90=" << pct(90)
+                  << " p99=" << pct(99) << "\n";
+    }
+
+    return 0;
+}

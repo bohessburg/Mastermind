@@ -12,9 +12,19 @@ add_library(dominion_engine
     src/game/supply.cpp
     src/game/game_state.cpp
     src/game/cards/base_cards.cpp
-    src/game/cards/base_kingdom.cpp
+    src/game/cards/level_1_cards.cpp
+    src/game/cards/level_2_cards.cpp
+    src/game/cards/level_3_cards.cpp
+    src/game/cards/level_4_cards.cpp
+    src/game/cards/level_5_cards.cpp
+    src/game/cards/level_6_cards.cpp
+    src/game/cards/level_7_cards.cpp
+    src/game/cards/level_8_cards.cpp
+    src/game/cards/level_9_cards.cpp
+    src/game/cards/level_10_cards.cpp
     src/engine/action_space.cpp
     src/engine/rules.cpp
+    src/engine/agents.cpp
     src/engine/game_runner.cpp
 )
 target_include_directories(dominion_engine PUBLIC src)
@@ -31,6 +41,27 @@ target_link_libraries(dominion_play PRIVATE dominion_engine)
 # --- Local 2-player ---
 add_executable(dominion_2p src/local_multiplayer.cpp)
 target_link_libraries(dominion_2p PRIVATE dominion_engine)
+
+# --- Stress test ---
+add_executable(dominion_stress src/stress_test.cpp)
+target_link_libraries(dominion_stress PRIVATE dominion_engine)
+
+# --- GUI (requires raylib) ---
+find_package(PkgConfig QUIET)
+if(PkgConfig_FOUND)
+    pkg_check_modules(RAYLIB QUIET raylib)
+endif()
+if(RAYLIB_FOUND)
+    add_executable(dominion_gui
+        src/gui/gui_main.cpp
+        src/gui/gui_agent.cpp
+    )
+    target_include_directories(dominion_gui PRIVATE ${RAYLIB_INCLUDE_DIRS})
+    target_link_directories(dominion_gui PRIVATE ${RAYLIB_LIBRARY_DIRS})
+    target_link_libraries(dominion_gui PRIVATE dominion_engine ${RAYLIB_LIBRARIES})
+else()
+    message(STATUS "raylib not found — skipping GUI build (install with: brew install raylib)")
+endif()
 
 # --- Tests ---
 option(BUILD_TESTS "Build test suite" ON)
@@ -53,11 +84,12 @@ if(BUILD_TESTS)
         tests/test_attack_reactions.cpp
         tests/test_action_space.cpp
         tests/test_invariants.cpp
+        tests/test_cards_level2.cpp
     )
     target_link_libraries(dominion_tests PRIVATE dominion_engine Catch2::Catch2WithMain)
     target_compile_options(dominion_tests PRIVATE -Wall -Wextra)
 
     include(CTest)
     include(Catch)
-    catch_discover_tests(dominion_tests)
+    catch_discover_tests(dominion_tests PROPERTIES TIMEOUT 10)
 endif()

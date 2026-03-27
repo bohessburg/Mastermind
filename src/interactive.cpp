@@ -316,15 +316,19 @@ int main() {
 
     // All 26 base kingdom cards
     std::vector<std::string> all_kingdom = {
+        // Level 1 (Base Set)
         "Cellar", "Chapel", "Moat", "Harbinger", "Merchant",
         "Vassal", "Village", "Workshop", "Bureaucrat", "Gardens",
         "Laboratory", "Market", "Militia", "Moneylender", "Poacher",
         "Remodel", "Smithy", "Throne Room", "Bandit", "Council Room",
-        "Festival", "Library", "Mine", "Sentry", "Witch", "Artisan"
+        "Festival", "Library", "Mine", "Sentry", "Witch", "Artisan",
+        // Level 2
+        "Worker's Village", "Courtyard", "Hamlet", "Lookout", "Swindler", "Scholar"
     };
 
     BaseCards::register_all();
-    BaseKingdom::register_all();
+    Level1Cards::register_all();
+    Level2Cards::register_all();
 
     // Kingdom selection
     std::cout << "  Kingdom setup:\n";

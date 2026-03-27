@@ -44,6 +44,7 @@ public:
     int buys() const;
     int coins() const;
     int turn_number() const;
+    int actions_played() const;
 
     void add_actions(int n);
     void add_buys(int n);
@@ -85,6 +86,11 @@ public:
     int get_turn_flag(const std::string& key) const;
     void set_turn_flag(const std::string& key, int value);
 
+    // --- Game log (cards can emit events) ---
+    using LogFn = std::function<void(const std::string&)>;
+    void set_log(LogFn fn);
+    void log(const std::string& msg) const;
+
 private:
     std::vector<Player> players_;
     int current_player_;
@@ -97,6 +103,7 @@ private:
     int buys_;
     int coins_;
     int turn_number_;
+    int actions_played_;
     std::vector<int> turns_taken_;
 
     // Card ID system: sequential IDs, vector-indexed for O(1) lookup
@@ -105,4 +112,5 @@ private:
     std::vector<const Card*> card_defs_;        // card_id → cached Card*
 
     std::unordered_map<std::string, int> turn_flags_;
+    LogFn log_fn_;
 };
