@@ -120,17 +120,28 @@ static std::vector<SupplySlot> draw_supply(const GameState& state) {
         x += CARD_W + CARD_PAD;
     }
 
-    x = 10;
+    // Collect kingdom piles and sort by cost then name
+    struct KingdomPile { std::string name; int cost; int count; };
+    std::vector<KingdomPile> kingdom_piles;
     for (const auto& pile : state.get_supply().piles()) {
         const auto& pile_name = pile.pile_name;
         if (pile_name == "Copper" || pile_name == "Silver" || pile_name == "Gold" ||
             pile_name == "Estate" || pile_name == "Duchy" || pile_name == "Province" ||
             pile_name == "Curse") continue;
-
         const Card* card = CardRegistry::get(pile_name);
-        int cnt = static_cast<int>(pile.card_ids.size());
-        auto rect = draw_card(x, SUPPLY_Y + SUPPLY_ROW_H, pile_name, cnt, card, false, false);
-        slots.push_back({pile_name, rect});
+        int cost = card ? card->cost : 0;
+        kingdom_piles.push_back({pile_name, cost, static_cast<int>(pile.card_ids.size())});
+    }
+    std::sort(kingdom_piles.begin(), kingdom_piles.end(), [](const KingdomPile& a, const KingdomPile& b) {
+        if (a.cost != b.cost) return a.cost < b.cost;
+        return a.name < b.name;
+    });
+
+    x = 10;
+    for (const auto& kp : kingdom_piles) {
+        const Card* card = CardRegistry::get(kp.name);
+        auto rect = draw_card(x, SUPPLY_Y + SUPPLY_ROW_H, kp.name, kp.count, card, false, false);
+        slots.push_back({kp.name, rect});
         x += CARD_W + CARD_PAD;
     }
 
@@ -260,6 +271,11 @@ static std::vector<ButtonSlot> draw_decision_panel(const DecisionPoint& dp,
         const auto& opt = dp.options[i];
 
         std::string label = opt.label.empty() ? opt.card_name : opt.label;
+        if (label.empty() && opt.card_id >= 0) {
+            const Card* c = state.card_def(opt.card_id);
+            if (c) label = c->name + " ($" + std::to_string(c->cost) + ")";
+            else label = state.card_name(opt.card_id);
+        }
         if (label.empty()) label = "Option " + std::to_string(i);
 
         int btn_w = MeasureText(label.c_str(), 14) + 20;
@@ -380,10 +396,17 @@ static void draw_game_over(const GameResult& result) {
 
 // ─── Kingdom selection screen ────────────────────────────────────
 
-enum class SetupMode { CHOOSING, PICKING, READY };
+enum class SetupMode { CHOOSING, PICKING, MODE_SELECT, READY };
+enum class GameMode { LOCAL_2P, VS_ENGINE };
 
-static std::vector<std::string> run_kingdom_selection() {
+struct SetupResult {
+    std::vector<std::string> kingdom;
+    GameMode game_mode;
+};
+
+static SetupResult run_setup() {
     SetupMode mode = SetupMode::CHOOSING;
+    GameMode game_mode = GameMode::LOCAL_2P;
     std::vector<bool> selected(ALL_KINGDOM.size(), false);
     std::vector<std::string> kingdom;
 
@@ -420,7 +443,7 @@ static std::vector<std::string> run_kingdom_selection() {
                 std::shuffle(shuffled.begin(), shuffled.end(), rng);
                 kingdom.assign(shuffled.begin(), shuffled.begin() + 10);
                 std::sort(kingdom.begin(), kingdom.end());
-                mode = SetupMode::READY;
+                mode = SetupMode::MODE_SELECT;
             }
             if (clicked && pick_hover) {
                 mode = SetupMode::PICKING;
@@ -480,10 +503,41 @@ static std::vector<std::string> run_kingdom_selection() {
                         if (selected[i]) kingdom.push_back(ALL_KINGDOM[i]);
                     }
                     std::sort(kingdom.begin(), kingdom.end());
-                    mode = SetupMode::READY;
+                    mode = SetupMode::MODE_SELECT;
                 }
             }
 
+        } else if (mode == SetupMode::MODE_SELECT) {
+            DrawText("DOMINION", SCREEN_W / 2 - 80, 40, 32, GOLD);
+            DrawText("Game Mode", SCREEN_W / 2 - 55, 80, 20, WHITE);
+
+            // Show selected kingdom
+            std::string k_str = "Kingdom: ";
+            for (const auto& k : kingdom) k_str += k + "  ";
+            DrawText(k_str.c_str(), 30, 120, 12, GRAY);
+
+            // 2-Player Local button
+            Rectangle local_btn = {(float)(SCREEN_W / 2 - 150), 160, 300, 50};
+            bool local_hover = CheckCollisionPointRec(mouse, local_btn);
+            DrawRectangleRec(local_btn, local_hover ? Color{80, 110, 160, 255} : Color{60, 80, 120, 255});
+            DrawRectangleLinesEx(local_btn, 1, WHITE);
+            DrawText("2-Player Local (pass & play)", (int)local_btn.x + 30, (int)local_btn.y + 16, 18, WHITE);
+
+            // vs Engine Bot button
+            Rectangle engine_btn = {(float)(SCREEN_W / 2 - 150), 230, 300, 50};
+            bool engine_hover = CheckCollisionPointRec(mouse, engine_btn);
+            DrawRectangleRec(engine_btn, engine_hover ? Color{110, 80, 60, 255} : Color{80, 60, 40, 255});
+            DrawRectangleLinesEx(engine_btn, 1, WHITE);
+            DrawText("You vs Engine Bot", (int)engine_btn.x + 60, (int)engine_btn.y + 16, 18, WHITE);
+
+            if (clicked && local_hover) {
+                game_mode = GameMode::LOCAL_2P;
+                mode = SetupMode::READY;
+            }
+            if (clicked && engine_hover) {
+                game_mode = GameMode::VS_ENGINE;
+                mode = SetupMode::READY;
+            }
         }
 
         EndDrawing();
@@ -491,7 +545,7 @@ static std::vector<std::string> run_kingdom_selection() {
         if (mode == SetupMode::READY) break;
     }
 
-    return kingdom;
+    return {kingdom, game_mode};
 }
 
 // ─── Main ─────────────────────────────────────────────────────────
@@ -506,27 +560,36 @@ int main() {
     InitWindow(SCREEN_W, SCREEN_H, "Dominion");
     SetTargetFPS(60);
 
-    // --- Kingdom selection ---
-    auto kingdom = run_kingdom_selection();
-    if (kingdom.empty() || WindowShouldClose()) {
+    // --- Setup ---
+    auto setup = run_setup();
+    if (setup.kingdom.empty() || WindowShouldClose()) {
         CloseWindow();
         return 0;
     }
 
     // --- Game setup ---
-    GuiAgent player1(0);
-    GuiAgent player2(1);
+    GuiAgent gui_player1(0);
+    GuiAgent gui_player2(1);
+    EngineBot engine_bot;
     GameLog game_log;
     GameResult final_result = {};
     std::atomic<bool> game_over{false};
 
-    GameRunner runner(2, kingdom);
+    // Wire agents based on game mode
+    std::vector<Agent*> agents;
+    if (setup.game_mode == GameMode::VS_ENGINE) {
+        agents = {&gui_player1, &engine_bot};
+    } else {
+        agents = {&gui_player1, &gui_player2};
+    }
+
+    GameRunner runner(2, setup.kingdom);
     runner.set_observer([&game_log](const std::string& msg) {
         game_log.push(msg);
     });
 
     std::thread game_thread([&]() {
-        auto result = runner.run({&player1, &player2});
+        auto result = runner.run(agents);
         final_result = result;
         game_over.store(true);
     });
@@ -538,8 +601,9 @@ int main() {
         Vector2 mouse = GetMousePosition();
 
         GuiAgent* active_agent = nullptr;
-        if (player1.has_pending()) active_agent = &player1;
-        else if (player2.has_pending()) active_agent = &player2;
+        if (gui_player1.has_pending()) active_agent = &gui_player1;
+        else if (setup.game_mode == GameMode::LOCAL_2P && gui_player2.has_pending())
+            active_agent = &gui_player2;
 
         BeginDrawing();
         ClearBackground({25, 25, 35, 255});
@@ -675,8 +739,8 @@ int main() {
         EndDrawing();
     }
 
-    player1.cancel();
-    player2.cancel();
+    gui_player1.cancel();
+    gui_player2.cancel();
     if (game_thread.joinable()) game_thread.join();
     CloseWindow();
 
