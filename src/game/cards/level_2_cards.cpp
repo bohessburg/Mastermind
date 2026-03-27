@@ -308,6 +308,32 @@ void register_all() {
             state.play_card_effect(card_id, pid, decide);
         },
     });
+
+    CardRegistry::register_card({
+        .name = "Courier",
+        .cost = 4,
+        .types = CardType::Action,
+        .text = "+1 Coin. Discard the top card of your deck. Look through your discard pile; you may play an Action or Treasure from it.",
+        .victory_points = 0,
+        .coin_value = 0,
+        .tags = {},
+        .on_play = [](GameState& state, int pid, DecisionFn decide) {
+            Player& player = state.get_player(pid);
+            state.add_coins(1);
+            int card_id = player.remove_deck_top();
+            if (card_id != -1) {
+                player.add_to_discard(card_id);
+            }
+            std::vector<int> play_choices = player.get_discard();
+            auto chosen = decide(pid, ChoiceType::PLAY_CARD, play_choices, 0, 1);
+            if (!chosen.empty()) {
+                int play_id = chosen[0];
+                player.add_to_in_play(play_id);
+                state.play_card_effect(play_id, pid, decide);
+            }
+        },
+    });
+
 }
 
 

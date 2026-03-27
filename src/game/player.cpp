@@ -85,6 +85,10 @@ void Player::play_from_hand(int hand_index) {
     hand_.erase(hand_.begin() + hand_index);
 }
 
+void Player::add_to_in_play(int card_id) {
+    in_play_.push_back(card_id);
+}
+
 void Player::topdeck_from_hand(int hand_index) {
     int card_id = hand_[hand_index];
     hand_.erase(hand_.begin() + hand_index);
