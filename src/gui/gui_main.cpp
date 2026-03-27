@@ -414,7 +414,7 @@ static void draw_game_over(const GameResult& result) {
 // ─── Kingdom selection screen ────────────────────────────────────
 
 enum class SetupMode { CHOOSING, PICKING, MODE_SELECT, READY };
-enum class GameMode { LOCAL_2P, VS_ENGINE };
+enum class GameMode { LOCAL_2P, VS_ENGINE, VS_BIGMONEY };
 
 struct SetupResult {
     std::vector<std::string> kingdom;
@@ -547,12 +547,23 @@ static SetupResult run_setup() {
             DrawRectangleLinesEx(engine_btn, 1, WHITE);
             DrawText("You vs Engine Bot", (int)engine_btn.x + 60, (int)engine_btn.y + 16, 18, WHITE);
 
+            // vs BigMoney Bot button
+            Rectangle bm_btn = {(float)(SCREEN_W / 2 - 150), 300, 300, 50};
+            bool bm_hover = CheckCollisionPointRec(mouse, bm_btn);
+            DrawRectangleRec(bm_btn, bm_hover ? Color{60, 110, 60, 255} : Color{40, 80, 40, 255});
+            DrawRectangleLinesEx(bm_btn, 1, WHITE);
+            DrawText("You vs Big Money Bot", (int)bm_btn.x + 45, (int)bm_btn.y + 16, 18, WHITE);
+
             if (clicked && local_hover) {
                 game_mode = GameMode::LOCAL_2P;
                 mode = SetupMode::READY;
             }
             if (clicked && engine_hover) {
                 game_mode = GameMode::VS_ENGINE;
+                mode = SetupMode::READY;
+            }
+            if (clicked && bm_hover) {
+                game_mode = GameMode::VS_BIGMONEY;
                 mode = SetupMode::READY;
             }
         }
@@ -588,6 +599,7 @@ int main() {
     GuiAgent gui_player1(0);
     GuiAgent gui_player2(1);
     EngineBot engine_bot;
+    BigMoneyAgent bigmoney_bot;
     GameLog game_log;
     GameResult final_result = {};
     std::atomic<bool> game_over{false};
@@ -596,6 +608,8 @@ int main() {
     std::vector<Agent*> agents;
     if (setup.game_mode == GameMode::VS_ENGINE) {
         agents = {&gui_player1, &engine_bot};
+    } else if (setup.game_mode == GameMode::VS_BIGMONEY) {
+        agents = {&gui_player1, &bigmoney_bot};
     } else {
         agents = {&gui_player1, &gui_player2};
     }

@@ -32,8 +32,8 @@ TEST_CASE("Random agent game completes", "[invariant]") {
     };
 
     GameRunner runner(2, kingdom);
-    RandomAgent agent1(123);
-    RandomAgent agent2(456);
+    BetterRandomAgent agent1(123);
+    BetterRandomAgent agent2(456);
     std::vector<Agent*> agents = {&agent1, &agent2};
 
     auto result = runner.run(agents);

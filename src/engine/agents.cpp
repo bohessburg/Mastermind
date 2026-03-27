@@ -3,6 +3,9 @@
 #include <algorithm>
 #include <unordered_map>
 
+// Forward declarations
+static std::vector<int> sentry_fate_decide(const DecisionPoint& dp, const GameState& state);
+
 // ═══════════════════════════════════════════════════════════════════
 // Shared priority functions used by multiple agents
 // ═══════════════════════════════════════════════════════════════════
@@ -124,21 +127,76 @@ static int trash_priority(const Card* card) {
     return 50;
 }
 
+// Trash decision with money floor protection.
+// Never trash Coppers if it would bring total deck money below 4.
+static std::vector<int> smart_trash(const DecisionPoint& dp, const GameState& state) {
+    // Count total money in deck
+    int pid = dp.player_id;
+    auto all = state.get_player(pid).all_cards();
+    int total_money = 0;
+    for (int cid : all) {
+        const Card* c = state.card_def(cid);
+        if (c && c->is_treasure()) total_money += c->coin_value;
+    }
+
+    std::vector<std::pair<int, int>> scored; // (priority, option_index)
+    for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
+        const Card* card = state.card_def(dp.options[i].card_id);
+        scored.push_back({trash_priority(card), i});
+    }
+    std::sort(scored.begin(), scored.end());
+
+    std::vector<int> result;
+    int money_after_trash = total_money;
+
+    for (int i = 0; i < dp.max_choices && i < static_cast<int>(scored.size()); i++) {
+        if (scored[i].first >= 50 && static_cast<int>(result.size()) >= dp.min_choices)
+            break; // don't trash non-junk beyond minimum
+
+        // Check money floor for Coppers
+        const Card* card = state.card_def(dp.options[scored[i].second].card_id);
+        if (card && card->is_treasure()) {
+            if (money_after_trash - card->coin_value < 4 &&
+                static_cast<int>(result.size()) >= dp.min_choices) {
+                continue; // skip this Copper to protect money floor
+            }
+            money_after_trash -= card->coin_value;
+        }
+
+        result.push_back(scored[i].second);
+    }
+
+    // Ensure minimum (forced trash even if it breaks the floor)
+    if (static_cast<int>(result.size()) < dp.min_choices) {
+        for (int i = 0; i < static_cast<int>(scored.size()) &&
+             static_cast<int>(result.size()) < dp.min_choices; i++) {
+            bool already = false;
+            for (int r : result) if (r == scored[i].second) { already = true; break; }
+            if (!already) result.push_back(scored[i].second);
+        }
+    }
+
+    return result;
+}
+
 // Engine build priority (lower = buy first)
 static int engine_build_priority(const std::string& name) {
-    // Trashing
+    // Tier 0: Trashing — thin the deck ASAP
     if (name == "Chapel")            return 0;
     if (name == "Lookout")           return 1;
+    if (name == "Sentry")            return 2;
+
     // Cantrip draw
     if (name == "Laboratory")        return 10;
     if (name == "Market")            return 11;
     if (name == "Festival")          return 12;
-    if (name == "Sentry")            return 13;
     if (name == "Merchant")          return 14;
     if (name == "Hamlet")            return 15;
+
     // Villages
     if (name == "Village")           return 20;
     if (name == "Worker's Village")  return 21;
+
     // Terminal draw / attacks
     if (name == "Witch")             return 30;
     if (name == "Scholar")           return 31;
@@ -148,21 +206,28 @@ static int engine_build_priority(const std::string& name) {
     if (name == "Swindler")          return 35;
     if (name == "Militia")           return 36;
     if (name == "Moat")              return 37;
+
     // Utility
     if (name == "Cellar")            return 40;
     if (name == "Harbinger")         return 41;
     if (name == "Throne Room")       return 42;
-    if (name == "Remodel")           return 43;
-    if (name == "Poacher")           return 44;
-    if (name == "Workshop")          return 45;
-    if (name == "Artisan")           return 46;
-    if (name == "Mine")              return 47;
-    if (name == "Library")           return 48;
-    if (name == "Vassal")            return 49;
-    if (name == "Moneylender")       return 50;
-    if (name == "Bandit")            return 51;
-    if (name == "Bureaucrat")        return 52;
-    // Treasure
+    if (name == "King's Court")      return 43;
+    if (name == "Remodel")           return 44;
+    if (name == "Poacher")           return 45;
+    if (name == "Workshop")          return 46;
+    if (name == "Artisan")           return 47;
+    if (name == "Mine")              return 48;
+    if (name == "Library")           return 49;
+    if (name == "Vassal")            return 50;
+    if (name == "Moneylender")       return 51;
+    if (name == "Bandit")            return 52;
+    if (name == "Bureaucrat")        return 53;
+    if (name == "Storeroom")         return 54;
+    if (name == "Oasis")             return 55;
+    if (name == "Menagerie")         return 56;
+    if (name == "Conspirator")       return 57;
+
+    // Treasure — fallback
     if (name == "Silver")            return 80;
     if (name == "Gold")              return 81;
     return 100;
@@ -431,30 +496,7 @@ std::vector<int> HeuristicAgent::decide(const DecisionPoint& dp, const GameState
                     return result;
                 }
                 case ChoiceType::TRASH: {
-                    std::vector<std::pair<int, int>> scored;
-                    for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
-                        const Card* card = state.card_def(dp.options[i].card_id);
-                        scored.push_back({trash_priority(card), i});
-                    }
-                    std::sort(scored.begin(), scored.end());
-                    std::vector<int> result;
-                    int limit = dp.max_choices;
-                    for (int i = 0; i < limit && i < static_cast<int>(scored.size()); i++) {
-                        if (scored[i].first < 50 || static_cast<int>(result.size()) < dp.min_choices) {
-                            result.push_back(scored[i].second);
-                        }
-                    }
-                    while (static_cast<int>(result.size()) < dp.min_choices &&
-                           static_cast<int>(result.size()) < static_cast<int>(dp.options.size())) {
-                        bool found = false;
-                        for (int i = 0; i < static_cast<int>(scored.size()); i++) {
-                            bool already = false;
-                            for (int r : result) if (r == scored[i].second) { already = true; break; }
-                            if (!already) { result.push_back(scored[i].second); found = true; break; }
-                        }
-                        if (!found) break;
-                    }
-                    return result;
+                    return smart_trash(dp, state);
                 }
                 case ChoiceType::GAIN: {
                     int best_idx = 0;
@@ -491,7 +533,7 @@ std::vector<int> HeuristicAgent::decide(const DecisionPoint& dp, const GameState
                     return {best_idx};
                 }
                 case ChoiceType::MULTI_FATE: {
-                    return {0};
+                    return sentry_fate_decide(dp, state);
                 }
                 default: {
                     std::vector<int> result;
@@ -528,7 +570,7 @@ static KingdomAnalysis analyze_kingdom(const GameState& state) {
         if (pile.card_ids.empty()) continue;
         const auto& name = pile.pile_name;
         if (name == "Village" || name == "Festival" || name == "Worker's Village") k.has_village = true;
-        if (name == "Chapel" || name == "Lookout") k.has_chapel = true;
+        if (name == "Chapel" || name == "Lookout" || name == "Sentry") k.has_chapel = true;
         if (name == "Witch") { k.has_witch = true; k.has_terminal_draw = true; }
         if (name == "Smithy" || name == "Council Room" || name == "Library" ||
             name == "Moat" || name == "Scholar" || name == "Courtyard") k.has_terminal_draw = true;
@@ -550,22 +592,79 @@ static EngineStrategy pick_strategy(const KingdomAnalysis& k) {
 
 struct DeckProfile {
     int villages, terminal_draw, cantrips, chapels;
-    int total_actions, total_cards, treasures, junk;
-    int total_money;
+    int total_action_cards, deck_size, treasures, junk;
+    int total_money;          // sum of coin_value of treasures
+    int total_plus_actions;   // sum of +Actions from all action cards
+    int total_plus_cards;     // sum of +Cards from all action cards
+    int total_plus_coins;     // sum of +Coins from all action cards
     std::unordered_map<std::string, int> counts;
 };
+
+// +Actions, +Cards, +Coins each card provides when played
+struct CardYield { int actions; int cards; int coins; };
+static CardYield card_yield(const std::string& name) {
+    // Villages
+    if (name == "Village")           return {2, 1, 0};
+    if (name == "Festival")          return {2, 0, 2};
+    if (name == "Worker's Village")  return {2, 1, 1};
+    // Cantrips
+    if (name == "Laboratory")        return {1, 2, 0};
+    if (name == "Market")            return {1, 1, 1};
+    if (name == "Sentry")            return {1, 1, 0};
+    if (name == "Poacher")           return {1, 1, 1};
+    if (name == "Merchant")          return {1, 1, 0};
+    if (name == "Harbinger")         return {1, 1, 0};
+    if (name == "Cellar")            return {1, 0, 0}; // draw depends on discard
+    if (name == "Hamlet")            return {1, 1, 0}; // base only, discards are optional
+    if (name == "Lookout")           return {1, 0, 0};
+    if (name == "Oasis")             return {1, 1, 1};
+    if (name == "Menagerie")         return {1, 1, 0}; // conservative (could be 3)
+    if (name == "Conspirator")       return {0, 0, 2}; // conditional +1 Card +1 Action
+    // Terminal draw
+    if (name == "Smithy")            return {0, 3, 0};
+    if (name == "Witch")             return {0, 2, 0};
+    if (name == "Council Room")      return {0, 4, 0};
+    if (name == "Moat")              return {0, 2, 0};
+    if (name == "Scholar")           return {0, 7, 0}; // net depends on hand, but huge draw
+    if (name == "Courtyard")         return {0, 3, 0}; // net +2 (topdecks 1)
+    if (name == "Library")           return {0, 2, 0}; // draws to 7, estimate +2
+    // Terminal utility
+    if (name == "Militia")           return {0, 0, 2};
+    if (name == "Swindler")          return {0, 0, 2};
+    // TR/KC multiply another card — only count a small bonus since they need
+    // a target to be useful. The real value is in the build priority, not the yield.
+    if (name == "Throne Room")       return {0, 0, 0}; // multiplier, no standalone yield
+    if (name == "King's Court")      return {0, 0, 0};
+    if (name == "Chapel")            return {0, 0, 0};
+    if (name == "Remodel")           return {0, 0, 0};
+    if (name == "Mine")              return {0, 0, 0};
+    if (name == "Moneylender")       return {0, 0, 3}; // if trashing Copper
+    if (name == "Workshop")          return {0, 0, 0};
+    if (name == "Artisan")           return {0, 0, 0};
+    if (name == "Bandit")            return {0, 0, 0};
+    if (name == "Bureaucrat")        return {0, 0, 0};
+    if (name == "Vassal")            return {0, 0, 2};
+    if (name == "Storeroom")         return {0, 0, 0};
+    return {0, 0, 0};
+}
 
 static DeckProfile analyze_deck(const GameState& state, int pid) {
     DeckProfile p = {};
     auto all = state.get_player(pid).all_cards();
-    p.total_cards = static_cast<int>(all.size());
+    p.deck_size = static_cast<int>(all.size());
     for (int cid : all) {
         const std::string& name = state.card_name(cid);
         const Card* card = state.card_def(cid);
         if (!card) continue;
 
         p.counts[name]++;
-        if (card->is_action()) p.total_actions++;
+        if (card->is_action()) {
+            p.total_action_cards++;
+            auto y = card_yield(name);
+            p.total_plus_actions += y.actions;
+            p.total_plus_cards += y.cards;
+            p.total_plus_coins += y.coins;
+        }
         if (card->is_treasure()) { p.treasures++; p.total_money += card->coin_value; }
         if (name == "Village" || name == "Festival" || name == "Worker's Village") p.villages++;
         if (name == "Smithy" || name == "Council Room" || name == "Witch" ||
@@ -612,6 +711,31 @@ static int engine_green_buy(const DecisionPoint& dp, const GameState& state, int
     return -1;
 }
 
+static std::vector<int> sentry_fate_decide(const DecisionPoint& dp, const GameState& state) {
+    int sentry_cid = state.get_turn_flag("sentry_card_id");
+    if (sentry_cid > 0) {
+        const Card* card = state.card_def(sentry_cid);
+        if (card) {
+            if (card->is_curse()) return {2};       // trash
+            if (card->name == "Estate") return {2};  // trash
+            if (card->name == "Copper") {
+                int pid_s = dp.player_id;
+                auto all = state.get_player(pid_s).all_cards();
+                int total_money = 0;
+                for (int cid : all) {
+                    const Card* c = state.card_def(cid);
+                    if (c && c->is_treasure()) total_money += c->coin_value;
+                }
+                // Higher floor than Chapel — Sentry trashes 1 at a time so be conservative
+                if (total_money > 6) return {2};      // trash
+                if (total_money > 4) return {1};      // discard (keep it, just get rid of it this shuffle)
+                return {0};                            // keep (need the money)
+            }
+        }
+    }
+    return {0}; // keep
+}
+
 static std::vector<int> engine_sub_decide(const DecisionPoint& dp, const GameState& state) {
     switch (dp.sub_choice_type) {
         case ChoiceType::DISCARD: {
@@ -628,26 +752,7 @@ static std::vector<int> engine_sub_decide(const DecisionPoint& dp, const GameSta
             return result;
         }
         case ChoiceType::TRASH: {
-            std::vector<std::pair<int, int>> scored;
-            for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
-                const Card* card = state.card_def(dp.options[i].card_id);
-                scored.push_back({trash_priority(card), i});
-            }
-            std::sort(scored.begin(), scored.end());
-            std::vector<int> result;
-            for (int i = 0; i < dp.max_choices && i < static_cast<int>(scored.size()); i++) {
-                if (scored[i].first < 50 || static_cast<int>(result.size()) < dp.min_choices)
-                    result.push_back(scored[i].second);
-            }
-            while (static_cast<int>(result.size()) < dp.min_choices) {
-                for (int i = 0; i < static_cast<int>(scored.size()); i++) {
-                    bool already = false;
-                    for (int r : result) if (r == scored[i].second) { already = true; break; }
-                    if (!already) { result.push_back(scored[i].second); break; }
-                }
-                break;
-            }
-            return result;
+            return smart_trash(dp, state);
         }
         case ChoiceType::GAIN: {
             int best_idx = 0, best_cost = -1;
@@ -673,6 +778,9 @@ static std::vector<int> engine_sub_decide(const DecisionPoint& dp, const GameSta
                 }
             }
             return {best_idx};
+        }
+        case ChoiceType::MULTI_FATE: {
+            return sentry_fate_decide(dp, state);
         }
         default: {
             std::vector<int> result;
@@ -741,15 +849,42 @@ std::vector<int> EngineBot::decide(const DecisionPoint& dp, const GameState& sta
         return {static_cast<int>(dp.options.size()) - 1};
     };
 
-    // PURE_BM
+    // PURE_BM — exact wiki Big Money optimized strategy
     if (strategy == EngineStrategy::PURE_BM) {
-        bool greening = (prof.total_money >= 16);
-        if (greening) {
-            int idx = engine_green_buy(dp, state, pid);
+        int provinces_left = state.get_supply().count("Province");
+
+        if (coins >= 8) {
+            // Early game exception: no Gold and <5 Silvers → buy Gold
+            int gold_count = 0, silver_count = 0;
+            for (int cid : state.get_player(pid).all_cards()) {
+                const std::string& n = state.card_name(cid);
+                if (n == "Gold") gold_count++;
+                else if (n == "Silver") silver_count++;
+            }
+            if (gold_count == 0 && silver_count < 5) {
+                int idx = find("Gold");
+                if (idx >= 0) return {idx};
+            }
+            int idx = find("Province");
             if (idx >= 0) return {idx};
-        } else {
-            if (coins >= 6) { int idx = find("Gold"); if (idx >= 0) return {idx}; }
-            if (coins >= 3) { int idx = find("Silver"); if (idx >= 0) return {idx}; }
+        }
+        if (coins >= 6) {
+            if (provinces_left <= 4) { int idx = find("Duchy"); if (idx >= 0) return {idx}; }
+            int idx = find("Gold");
+            if (idx >= 0) return {idx};
+        }
+        if (coins == 5) {
+            if (provinces_left <= 5) { int idx = find("Duchy"); if (idx >= 0) return {idx}; }
+            int idx = find("Silver");
+            if (idx >= 0) return {idx};
+        }
+        if (coins >= 3) {
+            if (provinces_left <= 2) { int idx = find("Estate"); if (idx >= 0) return {idx}; }
+            int idx = find("Silver");
+            if (idx >= 0) return {idx};
+        }
+        if (coins == 2) {
+            if (provinces_left <= 3) { int idx = find("Estate"); if (idx >= 0) return {idx}; }
         }
         return pass();
     }
@@ -789,14 +924,37 @@ std::vector<int> EngineBot::decide(const DecisionPoint& dp, const GameState& sta
         return pass();
     }
 
-    // FULL_ENGINE
-    bool greening = false;
+    // ==================== FULL_ENGINE ====================
+    // Green when the engine can reliably draw most of the deck and produce $8.
+    // Three metrics (all relative to deck size):
+    //   draw_ratio: total +Cards / deck_size — can we draw our deck?
+    //   action_ratio: total +Actions / deck_size — can we chain?
+    //   money_density: (treasure_money + action_coins) / deck_size — can we buy Province?
+    //
+    // Build phase: buy whichever metric is the bottleneck.
+
     int my_turns = (state.turn_number() + 1) / state.num_players();
-    if (my_turns > 5) greening = true;
-    if (prof.chapels >= 1 && prof.junk <= 2) greening = true;
-    if (prof.villages >= 1 && prof.terminal_draw >= 1) greening = true;
-    if (prof.cantrips >= 3) greening = true;
-    if (prof.total_actions >= 3 && my_turns >= 4) greening = true;
+    double ds = static_cast<double>(prof.deck_size);
+    double draw_ratio = prof.total_plus_cards / ds;
+    double action_ratio = prof.total_plus_actions / ds;
+    double money_density = (prof.total_money + prof.total_plus_coins) / ds;
+
+    // P2 needs to green earlier to avoid falling behind on tempo.
+    // P1 can afford to build one more turn.
+    bool is_p2 = (pid == 1);
+    // Tuned via parameter sweep (best of 30+ configs tested)
+    double draw_thresh    = is_p2 ? 0.3  : 0.45;
+    double action_thresh  = is_p2 ? 0.15 : 0.25;
+    double money_thresh   = is_p2 ? 1.0  : 1.2;
+    int failsafe_turn     = is_p2 ? 4    : 5;
+
+    bool greening = false;
+    if (my_turns > failsafe_turn) greening = true;
+    if (draw_ratio >= draw_thresh && action_ratio >= action_thresh &&
+        money_density >= money_thresh) greening = true;
+    // Chapel-thinned deck: green early if lean enough
+    if (prof.chapels >= 1 && prof.junk <= 1 && prof.deck_size <= 10 &&
+        money_density >= 1.0) greening = true;
 
     if (greening) {
         int idx = engine_green_buy(dp, state, pid);
@@ -804,26 +962,40 @@ std::vector<int> EngineBot::decide(const DecisionPoint& dp, const GameState& sta
         return pass();
     }
 
+    // --- BUILD PHASE: buy whichever metric is the bottleneck ---
+
+    // Always buy Chapel first if we don't have one (trashing is #1 priority)
     if (kingdom.has_chapel && prof.chapels == 0) {
         int idx = find("Chapel");
         if (idx >= 0) return {idx};
     }
 
-    if (coins >= 6 && prof.total_actions >= 2) {
-        int idx = find("Gold");
-        if (idx >= 0) return {idx};
+    // Determine the bottleneck
+    enum class Bottleneck { ACTIONS, DRAW, MONEY, BALANCED };
+    Bottleneck bottleneck = Bottleneck::BALANCED;
+
+    if (action_ratio < 0.15 && prof.total_action_cards >= 1) {
+        bottleneck = Bottleneck::ACTIONS;  // need villages
+    } else if (draw_ratio < 0.3) {
+        bottleneck = Bottleneck::DRAW;     // need draw cards
+    } else if (money_density < 0.8) {
+        bottleneck = Bottleneck::MONEY;    // need treasure/coin-producing actions
     }
 
+    // Component limits
     auto is_limited = [&](const std::string& name) -> bool {
         if ((name == "Chapel" || name == "Lookout") && prof.chapels >= 1) return true;
+        if (name == "Sentry" && prof.chapels >= 1) return true; // don't need Sentry + Chapel
         if ((name == "Smithy" || name == "Council Room" || name == "Witch" ||
              name == "Moat" || name == "Library" || name == "Scholar" ||
              name == "Courtyard") && prof.terminal_draw >= 2) return true;
+        // TR/KC are never limited — always good to buy more
         if ((name == "Village" || name == "Festival" || name == "Worker's Village")
             && prof.villages >= 3) return true;
         return false;
     };
 
+    // Bottleneck-driven priority adjustments
     int best_idx = -1, best_prio = 999;
     for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
         if (dp.options[i].is_pass) continue;
@@ -834,13 +1006,21 @@ std::vector<int> EngineBot::decide(const DecisionPoint& dp, const GameState& sta
         if (is_limited(name)) continue;
 
         int prio = engine_build_priority(name);
+        auto y = card_yield(name);
 
-        if ((name == "Village" || name == "Festival" || name == "Worker's Village") &&
-            prof.villages == 0 && prof.terminal_draw >= 1) prio = 5;
-        if ((name == "Smithy" || name == "Witch" || name == "Council Room" ||
-             name == "Scholar" || name == "Courtyard") &&
-            prof.terminal_draw == 0 && prof.villages >= 1) prio = 5;
-        if (name == "Silver" && prof.total_actions >= 2 && coins <= 4) prio = 15;
+        // Boost cards that address the bottleneck
+        if (bottleneck == Bottleneck::ACTIONS && y.actions >= 2) {
+            prio = std::min(prio, 3); // urgent: need villages
+        } else if (bottleneck == Bottleneck::DRAW && y.cards >= 2) {
+            prio = std::min(prio, 5); // urgent: need draw
+        } else if (bottleneck == Bottleneck::MONEY) {
+            if (name == "Gold" && coins >= 6) prio = 2;
+            else if (name == "Silver" && coins >= 3) prio = 8;
+            else if (y.coins >= 2) prio = std::min(prio, 10); // Festival, Militia, etc.
+        }
+
+        // Witch is always high priority if available (attack + draw)
+        if (name == "Witch" && prof.terminal_draw < 2) prio = std::min(prio, 15);
 
         if (prio < best_prio) { best_prio = prio; best_idx = i; }
     }
