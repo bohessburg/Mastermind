@@ -256,11 +256,13 @@ static std::vector<ButtonSlot> draw_decision_panel(const DecisionPoint& dp,
             case ChoiceType::SELECT_FROM_DISCARD: prompt = "Choose from discard"; break;
             default: prompt = "Make a choice"; break;
         }
-        if (dp.min_choices > 1 || dp.max_choices > 1) {
-            prompt += " (pick " + std::to_string(dp.min_choices);
-            if (dp.min_choices != dp.max_choices)
-                prompt += "-" + std::to_string(dp.max_choices);
-            prompt += ")";
+        if (dp.min_choices == 0 && dp.max_choices == 1) {
+            prompt += " (optional)";
+        } else if (dp.min_choices == dp.max_choices && dp.min_choices > 1) {
+            prompt += " (pick exactly " + std::to_string(dp.min_choices) + ")";
+        } else if (dp.min_choices != dp.max_choices) {
+            prompt += " (pick " + std::to_string(dp.min_choices) +
+                      "-" + std::to_string(dp.max_choices) + ")";
         }
         DrawText(prompt.c_str(), x, y, 14, RAYWHITE);
         y += 20;
@@ -302,6 +304,21 @@ static std::vector<ButtonSlot> draw_decision_panel(const DecisionPoint& dp,
         DrawText(label.c_str(), x + 10, y + 7, 14, text_col);
 
         buttons.push_back({i, rect});
+        x += btn_w + 6;
+    }
+
+    // Add Skip button for optional choices (min_choices == 0)
+    if (dp.min_choices == 0 && dp.max_choices <= 1) {
+        int btn_w = 80;
+        int btn_h = 28;
+        if (x + btn_w > LOG_X - 20) { x = 10; y += btn_h + 4; }
+        Rectangle rect = {(float)x, (float)y, (float)btn_w, (float)btn_h};
+        bool hover = CheckCollisionPointRec(GetMousePosition(), rect);
+        DrawRectangleRec(rect, hover ? Color{140, 100, 100, 255} : Color{100, 70, 70, 255});
+        DrawRectangleLinesEx(rect, 1, WHITE);
+        DrawText("Skip", x + 25, y + 7, 14, WHITE);
+        // Use -1 as a sentinel for "skip" — handled in click logic
+        buttons.push_back({-1, rect});
         x += btn_w + 6;
     }
 
@@ -675,7 +692,12 @@ int main() {
                                     selected_options.push_back(btn.option_index);
                                 }
                             } else {
-                                active_agent->submit_answer({btn.option_index});
+                                if (btn.option_index == -1) {
+                                    // Skip button
+                                    active_agent->submit_answer({});
+                                } else {
+                                    active_agent->submit_answer({btn.option_index});
+                                }
                                 selected_options.clear();
                             }
                             handled = true;
