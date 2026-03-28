@@ -29,8 +29,9 @@ int action_priority(const std::string& name) {
     if (name == "Hamlet")     return 17;
     if (name == "Lookout")    return 18;
 
-    // Tier 2: Throne Room — play before a terminal to double it
-    if (name == "Throne Room") return 20;
+    // Tier 0: Throne Room / King's Court — play first to double villages, cantrips, or terminals
+    if (name == "Throne Room") return 0;
+    if (name == "King's Court") return 0;
 
     // Tier 3: Terminals — these consume your last action
     if (name == "Witch")       return 30;
@@ -156,7 +157,7 @@ static std::vector<int> smart_trash(const DecisionPoint& dp, const GameState& st
         // Check money floor for Coppers
         const Card* card = state.card_def(dp.options[scored[i].second].card_id);
         if (card && card->is_treasure()) {
-            if (money_after_trash - card->coin_value < 4 &&
+            if (money_after_trash - card->coin_value < 3 &&
                 static_cast<int>(result.size()) >= dp.min_choices) {
                 continue; // skip this Copper to protect money floor
             }
@@ -557,11 +558,17 @@ enum class EngineStrategy { FULL_ENGINE, BM_PLUS_X, PURE_BM };
 
 struct KingdomAnalysis {
     bool has_village;
-    bool has_chapel;
+    bool has_chapel;            // any trasher (Chapel, Lookout, Sentry)
+    bool has_fast_trasher;      // Chapel specifically (trashes up to 4 per play)
     bool has_terminal_draw;
+    bool has_strong_draw;       // Witch, Smithy, Scholar, Council Room (draw 3+)
     bool has_cantrip_draw;
+    bool has_lab;
     bool has_witch;
+    bool has_good_action;       // any action worth splashing into BM
+    bool has_attack;            // Witch, Militia, Bandit, Swindler, Bureaucrat
     std::string best_terminal;
+    std::string best_action;    // best single action to buy for BM+X
 };
 
 static KingdomAnalysis analyze_kingdom(const GameState& state) {
@@ -571,22 +578,42 @@ static KingdomAnalysis analyze_kingdom(const GameState& state) {
         const auto& name = pile.pile_name;
         if (name == "Village" || name == "Festival" || name == "Worker's Village") k.has_village = true;
         if (name == "Chapel" || name == "Lookout" || name == "Sentry") k.has_chapel = true;
-        if (name == "Witch") { k.has_witch = true; k.has_terminal_draw = true; }
+        if (name == "Chapel") k.has_fast_trasher = true;
+        if (name == "Witch") { k.has_witch = true; k.has_terminal_draw = true; k.has_strong_draw = true; }
         if (name == "Smithy" || name == "Council Room" || name == "Library" ||
             name == "Moat" || name == "Scholar" || name == "Courtyard") k.has_terminal_draw = true;
+        if (name == "Smithy" || name == "Scholar" || name == "Council Room") k.has_strong_draw = true;
         if (name == "Laboratory" || name == "Market") k.has_cantrip_draw = true;
+        if (name == "Laboratory") k.has_lab = true;
+        if (name == "Witch" || name == "Militia" || name == "Bandit") k.has_attack = true;
     }
     for (auto& t : {"Witch", "Scholar", "Smithy", "Courtyard", "Council Room", "Moat", "Library"}) {
         if (!state.get_supply().is_pile_empty(t)) { k.best_terminal = t; break; }
+    }
+    // Best action to splash into a money deck (ordered by strength for BM+X)
+    for (auto& a : {"Witch", "Bandit", "Militia", "Laboratory",
+                     "Smithy", "Council Room", "Festival",
+                     "Market", "Swindler", "Courtyard", "Library", "Moat",
+                     "Scholar", "Moneylender"}) {
+        if (!state.get_supply().is_pile_empty(a)) {
+            k.has_good_action = true;
+            if (k.best_action.empty()) k.best_action = a;
+        }
     }
     return k;
 }
 
 static EngineStrategy pick_strategy(const KingdomAnalysis& k) {
-    if (k.has_village && k.has_terminal_draw && k.has_chapel)
-        return EngineStrategy::FULL_ENGINE;
-    if (k.has_terminal_draw || k.has_chapel || k.has_cantrip_draw)
+    // FULL_ENGINE disabled — BM_PLUS_X outperforms on all tested boards
+    // if (k.has_village && k.has_strong_draw && k.has_fast_trasher)
+    //     return EngineStrategy::FULL_ENGINE;
+    // Don't enter BM_PLUS_X just for Chapel/Sentry alone — trashing without
+    // a good action to pair it with loses to pure BigMoney.
+    if (k.has_good_action || k.has_terminal_draw || k.has_cantrip_draw)
         return EngineStrategy::BM_PLUS_X;
+    // Chapel alone with no good actions → play pure money
+    if (k.has_chapel)
+        return EngineStrategy::PURE_BM;
     return EngineStrategy::PURE_BM;
 }
 
@@ -716,24 +743,18 @@ static std::vector<int> sentry_fate_decide(const DecisionPoint& dp, const GameSt
     if (sentry_cid > 0) {
         const Card* card = state.card_def(sentry_cid);
         if (card) {
-            if (card->is_curse()) return {2};       // trash
-            if (card->name == "Estate") return {2};  // trash
-            if (card->name == "Copper") {
-                int pid_s = dp.player_id;
-                auto all = state.get_player(pid_s).all_cards();
-                int total_money = 0;
-                for (int cid : all) {
-                    const Card* c = state.card_def(cid);
-                    if (c && c->is_treasure()) total_money += c->coin_value;
-                }
-                // Higher floor than Chapel — Sentry trashes 1 at a time so be conservative
-                if (total_money > 6) return {2};      // trash
-                if (total_money > 4) return {1};      // discard (keep it, just get rid of it this shuffle)
-                return {0};                            // keep (need the money)
-            }
+            // Always trash Estates, Coppers, and Curses
+            if (card->is_curse()) return {2};
+            if (card->name == "Estate") return {2};
+            if (card->name == "Copper") return {2};
+            // Always discard Duchies and Provinces (don't trash VP we bought)
+            if (card->name == "Duchy") return {1};
+            if (card->name == "Province") return {1};
+            // Keep everything else
+            return {0};
         }
     }
-    return {0}; // keep
+    return {0};
 }
 
 static std::vector<int> engine_sub_decide(const DecisionPoint& dp, const GameState& state) {
@@ -755,6 +776,69 @@ static std::vector<int> engine_sub_decide(const DecisionPoint& dp, const GameSta
             return smart_trash(dp, state);
         }
         case ChoiceType::GAIN: {
+            // Check if this is a Swindler gain (attacker choosing for opponent).
+            // Swindler: all options have the same cost. Self-gain cards (Workshop etc)
+            // offer different costs, so same-cost options means Swindler.
+            bool all_same_cost = true;
+            int first_cost = -1;
+            for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
+                const Card* card = state.card_def(dp.options[i].card_id);
+                int c = card ? card->cost : 0;
+                if (first_cost < 0) first_cost = c;
+                else if (c != first_cost) { all_same_cost = false; break; }
+            }
+
+            if (all_same_cost && dp.options.size() > 1) {
+                // Swindler: give opponent the worst card at this cost
+                int cost = first_cost;
+
+                // Cost 0: always Curse
+                if (cost == 0) {
+                    for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
+                        const Card* card = state.card_def(dp.options[i].card_id);
+                        if (card && card->name == "Curse") return {i};
+                    }
+                }
+                // Cost 2: always Estate
+                if (cost == 2) {
+                    for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
+                        const Card* card = state.card_def(dp.options[i].card_id);
+                        if (card && card->name == "Estate") return {i};
+                    }
+                }
+                // Cost 3-5: give worst action (reverse of best_action ranking)
+                if (cost >= 3 && cost <= 5) {
+                    // Worst actions first (reverse of BM+X best_action ranking)
+                    static const std::vector<std::string> worst_first = {
+                        "Moneylender", "Scholar", "Library", "Moat", "Festival",
+                        "Swindler", "Market", "Courtyard", "Sentry", "Council Room",
+                        "Militia", "Laboratory", "Smithy", "Bandit", "Witch"
+                    };
+                    // Pick worst action available, never give them a treasure
+                    for (const auto& worst : worst_first) {
+                        for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
+                            const Card* card = state.card_def(dp.options[i].card_id);
+                            if (card && card->name == worst) return {i};
+                        }
+                    }
+                    // No action found — pick any non-treasure (Victory card)
+                    for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
+                        const Card* card = state.card_def(dp.options[i].card_id);
+                        if (card && !card->is_treasure()) return {i};
+                    }
+                }
+                // Cost 6: give action if available, otherwise Gold
+                if (cost == 6) {
+                    for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
+                        const Card* card = state.card_def(dp.options[i].card_id);
+                        if (card && card->is_action()) return {i};
+                    }
+                }
+                // Cost 7+: just give them the same type of card (first option)
+                return {0};
+            }
+
+            // Normal self-gain: pick most expensive
             int best_idx = 0, best_cost = -1;
             for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
                 const Card* card = state.card_def(dp.options[i].card_id);
@@ -769,10 +853,12 @@ static std::vector<int> engine_sub_decide(const DecisionPoint& dp, const GameSta
             return {static_cast<int>(dp.options.size()) - 1};
         }
         case ChoiceType::PLAY_CARD: {
+            // TR/KC target selection: pick best action but never throne Chapel
             int best_idx = 0, best_prio = 999;
             for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
                 const Card* card = state.card_def(dp.options[i].card_id);
                 if (card) {
+                    if (card->name == "Chapel") continue; // never throne Chapel
                     int prio = action_priority(card->name);
                     if (prio < best_prio) { best_prio = prio; best_idx = i; }
                 }
@@ -781,6 +867,20 @@ static std::vector<int> engine_sub_decide(const DecisionPoint& dp, const GameSta
         }
         case ChoiceType::MULTI_FATE: {
             return sentry_fate_decide(dp, state);
+        }
+        case ChoiceType::ORDER: {
+            // Sentry: choose which kept card goes on top of deck.
+            // Prefer actions on top (we can play them), treasures below.
+            int cid0 = state.get_turn_flag("sentry_order_card_0");
+            int cid1 = state.get_turn_flag("sentry_order_card_1");
+            const Card* c0 = (cid0 > 0) ? state.card_def(cid0) : nullptr;
+            const Card* c1 = (cid1 > 0) ? state.card_def(cid1) : nullptr;
+            bool c0_action = c0 && c0->is_action();
+            bool c1_action = c1 && c1->is_action();
+            // If one is action and other isn't, put action on top
+            if (c0_action && !c1_action) return {0};
+            if (c1_action && !c0_action) return {1};
+            return {0}; // tie: keep original order
         }
         default: {
             std::vector<int> result;
@@ -792,6 +892,161 @@ static std::vector<int> engine_sub_decide(const DecisionPoint& dp, const GameSta
         }
     }
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// Sentry-Vassal strategy: when both are in the kingdom, build a
+// deck of Sentries + Vassals. Sentry trashes junk and topdecks
+// Vassals; Vassal chains off the top of deck for free +$2 each.
+// ═══════════════════════════════════════════════════════════════════
+
+static bool has_sentry_vassal(const GameState& state) {
+    bool has_sentry = false, has_vassal = false;
+    for (const auto& pile : state.get_supply().piles()) {
+        if (pile.pile_name == "Sentry") has_sentry = true;
+        if (pile.pile_name == "Vassal") has_vassal = true;
+    }
+    return has_sentry && has_vassal;
+}
+
+std::vector<int> EngineBot::sentry_vassal_decide(
+    const DecisionPoint& dp, const GameState& state) {
+
+    int pid = dp.player_id;
+
+    auto find = [&](const std::string& name) -> int {
+        for (int i = 0; i < static_cast<int>(dp.options.size()); i++)
+            if (dp.options[i].card_name == name) return i;
+        return -1;
+    };
+    auto pass = [&]() -> std::vector<int> {
+        for (int i = 0; i < static_cast<int>(dp.options.size()); i++)
+            if (dp.options[i].is_pass) return {i};
+        return {static_cast<int>(dp.options.size()) - 1};
+    };
+
+    // Count Vassals and Sentries in deck
+    int vassal_count = 0, sentry_count = 0;
+    for (int cid : state.get_player(pid).all_cards()) {
+        const std::string& name = state.card_name(cid);
+        if (name == "Vassal") vassal_count++;
+        if (name == "Sentry") sentry_count++;
+    }
+
+    // PLAY_ACTION: Sentry first (sets up deck), then Vassal chains
+    if (dp.type == DecisionType::PLAY_ACTION) {
+        // Priority: Sentry > Vassal > other actions > pass
+        for (auto& want : {"Sentry", "Vassal"}) {
+            for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
+                if (dp.options[i].card_name == want) return {i};
+            }
+        }
+        // Play any other non-pass action
+        for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
+            if (!dp.options[i].is_pass) return {i};
+        }
+        return pass();
+    }
+
+    // PLAY_TREASURE
+    if (dp.type == DecisionType::PLAY_TREASURE) {
+        for (int i = 0; i < static_cast<int>(dp.options.size()); i++)
+            if (dp.options[i].label == "Play all Treasures") return {i};
+        for (int i = 0; i < static_cast<int>(dp.options.size()); i++)
+            if (!dp.options[i].is_pass) return {i};
+        return pass();
+    }
+
+    // BUY_CARD
+    if (dp.type == DecisionType::BUY_CARD) {
+        int coins = state.coins();
+        int provinces_left = state.get_supply().count("Province");
+
+        // Green when we have enough Vassals to chain $8
+        bool greening = (vassal_count >= 4);
+
+        if (greening) {
+            // Province at $8+
+            if (coins >= 8) {
+                int idx = find("Province");
+                if (idx >= 0) return {idx};
+            }
+            // Late game VP
+            if (coins >= 5 && provinces_left <= 4) {
+                int idx = find("Duchy");
+                if (idx >= 0) return {idx};
+            }
+            if (coins >= 2 && provinces_left <= 2) {
+                int idx = find("Estate");
+                if (idx >= 0) return {idx};
+            }
+        }
+
+        // Build: Sentry at $5+, Vassal at $3-4
+        if (coins >= 5) {
+            int idx = find("Sentry");
+            if (idx >= 0) return {idx};
+        }
+        if (coins >= 3) {
+            int idx = find("Vassal");
+            if (idx >= 0) return {idx};
+        }
+
+        // Nothing useful affordable — pass (don't buy Copper/Silver/Gold)
+        return pass();
+    }
+
+    // SUB-DECISIONS
+    // Sentry MULTI_FATE: trash Copper/Estate, discard Duchy/Province, keep rest
+    if (dp.sub_choice_type == ChoiceType::MULTI_FATE) {
+        int sentry_cid = state.get_turn_flag("sentry_card_id");
+        if (sentry_cid > 0) {
+            const Card* card = state.card_def(sentry_cid);
+            if (card) {
+                if (card->name == "Copper") return {2};   // trash
+                if (card->name == "Estate") return {2};    // trash
+                if (card->is_curse()) return {2};          // trash
+                if (card->name == "Duchy") return {1};     // discard
+                if (card->name == "Province") return {1};  // discard
+                return {0};                                 // keep (Vassal, Sentry, Gold, etc.)
+            }
+        }
+        return {0};
+    }
+
+    // Sentry ORDER: when keeping 2 cards, put Vassal on top > Sentry > other action > treasure
+    if (dp.sub_choice_type == ChoiceType::ORDER) {
+        int cid0 = state.get_turn_flag("sentry_order_card_0");
+        int cid1 = state.get_turn_flag("sentry_order_card_1");
+        const Card* c0 = (cid0 > 0) ? state.card_def(cid0) : nullptr;
+        const Card* c1 = (cid1 > 0) ? state.card_def(cid1) : nullptr;
+
+        auto order_prio = [](const Card* c) -> int {
+            if (!c) return 99;
+            if (c->name == "Vassal") return 0;    // Vassal on top (chains)
+            if (c->name == "Sentry") return 1;    // Sentry next
+            if (c->is_action()) return 2;          // other actions
+            return 10;                              // treasures last
+        };
+
+        int p0 = order_prio(c0);
+        int p1 = order_prio(c1);
+        return {(p0 <= p1) ? 0 : 1};  // lower prio = goes on top
+    }
+
+    // Vassal YES/NO (play revealed action?): always yes
+    if (dp.sub_choice_type == ChoiceType::YES_NO) {
+        for (int i = 0; i < static_cast<int>(dp.options.size()); i++)
+            if (dp.options[i].label == "Yes") return {i};
+        return {static_cast<int>(dp.options.size()) - 1};
+    }
+
+    // Default: first non-pass option
+    for (int i = 0; i < static_cast<int>(dp.options.size()); i++)
+        if (!dp.options[i].is_pass) return {i};
+    return {0};
+}
+
+// ═══════════════════════════════════════════════════════════════════
 
 std::vector<int> EngineBot::decide(const DecisionPoint& dp, const GameState& state) {
     if (dp.options.empty()) return {};
@@ -807,12 +1062,30 @@ std::vector<int> EngineBot::decide(const DecisionPoint& dp, const GameState& sta
                 if (dp.options[i].is_pass) return {i};
             return {static_cast<int>(dp.options.size()) - 1};
         }
+        // After first Chapel play, only play it if it's the only terminal available.
+        bool has_other_terminal = false;
+        if (chapel_plays_ >= 1) {
+            for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
+                if (dp.options[i].is_pass) continue;
+                const std::string& n = dp.options[i].card_name;
+                if (n == "Chapel") continue;
+                auto y = card_yield(n);
+                if (y.actions == 0) { has_other_terminal = true; break; }
+            }
+        }
+
         int best_idx = -1, best_prio = 999;
         for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
             if (dp.options[i].is_pass) continue;
+            // After first play, skip Chapel if another terminal is available
+            if (dp.options[i].card_name == "Chapel" && chapel_plays_ >= 1 && has_other_terminal)
+                continue;
             int prio = action_priority(dp.options[i].card_name);
             if (prio < best_prio) { best_prio = prio; best_idx = i; }
         }
+        // Track Chapel plays
+        if (best_idx >= 0 && dp.options[best_idx].card_name == "Chapel")
+            chapel_plays_++;
         if (best_idx >= 0) return {best_idx};
         for (int i = 0; i < static_cast<int>(dp.options.size()); i++)
             if (dp.options[i].is_pass) return {i};
@@ -830,6 +1103,43 @@ std::vector<int> EngineBot::decide(const DecisionPoint& dp, const GameState& sta
 
     // SUB-DECISIONS
     if (dp.type != DecisionType::BUY_CARD) {
+        // Chapel-specific trash logic: max_choices == 4 is Chapel's signature.
+        // First play: trash all junk aggressively with no money floor.
+        // Subsequent plays: preserve $3 in hand for buying.
+        if (dp.sub_choice_type == ChoiceType::TRASH && dp.max_choices == 4) {
+            bool first_play = (chapel_plays_ <= 1);
+
+            int hand_money = 0;
+            for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
+                const Card* c = state.card_def(dp.options[i].card_id);
+                if (c && c->is_treasure()) hand_money += c->coin_value;
+            }
+
+            std::vector<std::pair<int, int>> scored;
+            for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
+                const Card* c = state.card_def(dp.options[i].card_id);
+                scored.push_back({trash_priority(c), i});
+            }
+            std::sort(scored.begin(), scored.end());
+
+            std::vector<int> result;
+            int money_left = hand_money;
+
+            for (int i = 0; i < dp.max_choices && i < static_cast<int>(scored.size()); i++) {
+                if (scored[i].first >= 50) break;
+
+                const Card* c = state.card_def(dp.options[scored[i].second].card_id);
+
+                if (!first_play && c && c->is_treasure()) {
+                    if (money_left - c->coin_value < 3)
+                        continue;
+                    money_left -= c->coin_value;
+                }
+
+                result.push_back(scored[i].second);
+            }
+            return result;
+        }
         return engine_sub_decide(dp, state);
     }
 
@@ -891,8 +1201,17 @@ std::vector<int> EngineBot::decide(const DecisionPoint& dp, const GameState& sta
 
     // BM_PLUS_X
     if (strategy == EngineStrategy::BM_PLUS_X) {
-        bool greening = (prof.total_money >= 16) || (prof.chapels >= 1 && prof.junk <= 2);
+        double ds = static_cast<double>(prof.deck_size);
+        double money_density = (prof.total_money + prof.total_plus_coins) / ds;
         int my_turns = (state.turn_number() + 1) / state.num_players();
+        int sentry_count = prof.counts.count("Sentry") ? prof.counts.at("Sentry") : 0;
+        bool has_trasher = (prof.chapels >= 1 || sentry_count >= 1);
+
+        // Green when we have enough buying power or have thinned the deck.
+        // P2 greens earlier to compensate for tempo disadvantage.
+        bool is_p2 = (pid == 1);
+        double money_thresh = is_p2 ? 1.1 : 1.2;
+        bool greening = (money_density >= money_thresh);
         if (my_turns > 5) greening = true;
 
         if (greening) {
@@ -901,22 +1220,64 @@ std::vector<int> EngineBot::decide(const DecisionPoint& dp, const GameState& sta
             return pass();
         }
 
-        if (kingdom.has_chapel && prof.chapels == 0 && coins >= 2) {
-            int idx = find("Chapel");
+        // Count terminals and total actions in deck for density limits
+        int terminal_count = 0;
+        int total_action_count = 0;
+        for (int cid : state.get_player(pid).all_cards()) {
+            const Card* c = state.card_def(cid);
+            if (!c || !c->is_action()) continue;
+            const std::string& n = c->name;
+            if (n == "Chapel" || n == "Sentry") continue; // trashers, not actions we're limiting
+            if (n == "Throne Room" || n == "King's Court") continue; // multipliers, don't count
+            total_action_count++;
+            auto y = card_yield(n);
+            if (y.actions == 0) terminal_count++;
+        }
+        double terminal_density = terminal_count / ds;
+        double action_density = total_action_count / ds;
+        // Buy Chapel only with Militia or Bandit — attacks benefit most from
+        // a thin deck (draw them more often + opponent is disrupted).
+        bool has_militia_or_bandit = false;
+        for (const auto& pile : state.get_supply().piles()) {
+            if (pile.card_ids.empty()) continue;
+            if (pile.pile_name == "Militia" || pile.pile_name == "Bandit")
+                has_militia_or_bandit = true;
+        }
+        if (kingdom.has_chapel && !has_trasher && has_militia_or_bandit) {
+            if (my_turns <= 2 && (coins == 2 || coins == 3)) {
+                int idx = find("Chapel");
+                if (idx >= 0) return {idx};
+            }
+            int idx = find("Sentry");
             if (idx >= 0) return {idx};
         }
-        if (!kingdom.best_terminal.empty()) {
-            int owned = prof.counts.count(kingdom.best_terminal) ?
-                        prof.counts.at(kingdom.best_terminal) : 0;
-            if (owned < 2) {
-                int idx = find(kingdom.best_terminal);
+        // Buy the best action in the kingdom (not necessarily affordable this turn —
+        // saving the terminal slot for the strongest card is worth buying Silver now).
+        const std::string& best = kingdom.best_action.empty() ?
+                                  kingdom.best_terminal : kingdom.best_action;
+        if (!best.empty() && best != "Sentry") {
+            auto by = card_yield(best);
+            bool is_terminal = (by.actions == 0);
+            // Witch gets a special exemption: always buy up to 2 copies.
+            // Double Witch wins 96% vs Big Money — Curses are devastating.
+            bool under_limit;
+            if (best == "Witch") {
+                int witch_count = prof.counts.count("Witch") ? prof.counts.at("Witch") : 0;
+                under_limit = (witch_count < 2);
+            } else {
+                under_limit = is_terminal
+                    ? (terminal_density < EngineBot::terminal_density_limit)
+                    : (action_density < EngineBot::action_density_limit);
+            }
+            if (under_limit) {
+                int idx = find(best);
                 if (idx >= 0) return {idx};
             }
         }
-        if (coins >= 5) {
+        // Buy cantrips if under total action density limit
+        if (coins >= 5 && action_density < EngineBot::action_density_limit) {
             for (auto& n : {"Laboratory", "Market"}) {
-                int owned = prof.counts.count(n) ? prof.counts.at(n) : 0;
-                if (owned < 2) { int idx = find(n); if (idx >= 0) return {idx}; }
+                int idx = find(n); if (idx >= 0) return {idx};
             }
         }
         if (coins >= 6) { int idx = find("Gold"); if (idx >= 0) return {idx}; }
@@ -1026,4 +1387,32 @@ std::vector<int> EngineBot::decide(const DecisionPoint& dp, const GameState& sta
     }
     if (best_idx >= 0) return {best_idx};
     return pass();
+}
+
+std::string EngineBot::strategy_for(const std::vector<std::string>& kingdom) {
+    KingdomAnalysis k = {};
+    for (const auto& name : kingdom) {
+        if (name == "Village" || name == "Festival" || name == "Worker's Village") k.has_village = true;
+        if (name == "Chapel" || name == "Lookout" || name == "Sentry") k.has_chapel = true;
+        if (name == "Chapel") k.has_fast_trasher = true;
+        if (name == "Witch") { k.has_witch = true; k.has_terminal_draw = true; k.has_strong_draw = true; }
+        if (name == "Smithy" || name == "Council Room" || name == "Library" ||
+            name == "Moat" || name == "Scholar" || name == "Courtyard") k.has_terminal_draw = true;
+        if (name == "Smithy" || name == "Scholar" || name == "Council Room") k.has_strong_draw = true;
+        if (name == "Laboratory" || name == "Market") k.has_cantrip_draw = true;
+        if (name == "Laboratory") k.has_lab = true;
+        if (name == "Witch" || name == "Militia" || name == "Bandit") k.has_attack = true;
+        for (auto& a : {"Witch", "Scholar", "Smithy", "Laboratory", "Bandit",
+                         "Council Room", "Militia", "Sentry", "Courtyard", "Market",
+                         "Swindler", "Festival", "Moat", "Library", "Moneylender"}) {
+            if (name == a) k.has_good_action = true;
+        }
+    }
+    auto s = pick_strategy(k);
+    switch (s) {
+        case EngineStrategy::FULL_ENGINE: return "FULL_ENGINE";
+        case EngineStrategy::BM_PLUS_X:  return "BM_PLUS_X";
+        case EngineStrategy::PURE_BM:    return "PURE_BM";
+    }
+    return "???";
 }
