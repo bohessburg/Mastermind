@@ -36,6 +36,7 @@ public:
     void add_to_discard(int card_id);
     void add_to_deck_top(int card_id);
     void play_from_hand(int hand_index);
+    void add_to_in_play(int card_id);
     void topdeck_from_hand(int hand_index);
     void cleanup();
 

@@ -308,6 +308,72 @@ void register_all() {
             state.play_card_effect(card_id, pid, decide);
         },
     });
+
+    CardRegistry::register_card({
+        .name = "Courier",
+        .cost = 4,
+        .types = CardType::Action,
+        .text = "+1 Coin. Discard the top card of your deck. Look through your discard pile; you may play an Action or Treasure from it.",
+        .victory_points = 0,
+        .coin_value = 0,
+        .tags = {},
+        .on_play = [](GameState& state, int pid, DecisionFn decide) {
+            Player& player = state.get_player(pid);
+            state.add_coins(1);
+            int card_id = player.remove_deck_top();
+            if (card_id != -1) {
+                player.add_to_discard(card_id);
+            }
+            std::vector<int> play_choices = player.get_discard();
+            auto chosen = decide(pid, ChoiceType::PLAY_CARD, play_choices, 0, 1);
+            if (!chosen.empty()) {
+                int play_id = chosen[0];
+                player.add_to_in_play(play_id);
+                state.play_card_effect(play_id, pid, decide);
+            }
+        },
+    });
+
+    CardRegistry::register_card({
+        .name = "Sentinel",
+        .cost = 3,
+        .types = CardType::Action,
+        .text = "Look at the top 5 cards of your deck. You may trash up to 2 of them. Put the rest back in any order.",   
+        .victory_points = 0,
+        .coin_value = 0,
+        .tags = {},
+        .on_play = [](GameState& state, int pid, DecisionFn decide) {
+            Player& player = state.get_player(pid);
+            auto top_cards = player.peek_deck(5);
+            int num_peeked = static_cast<int>(top_cards.size());
+            // Remove them from deck
+            for (int i = 0; i < num_peeked; i++) player.remove_deck_top();
+            if (num_peeked == 0) return;
+
+            // Trash up to 2
+            auto trash_chosen = decide(pid, ChoiceType::TRASH, top_cards, 0, 2);
+            for (int card_id : trash_chosen) {
+                state.trash_card(card_id);
+                top_cards.erase(std::find(top_cards.begin(), top_cards.end(), card_id));
+            }
+
+            // Put the rest back in any order
+            std::vector<int> ordered;
+            while (top_cards.size() > 1) {
+                auto chosen = decide(pid, ChoiceType::ORDER, top_cards, 1, 1);
+                int pick = chosen.empty() ? top_cards[0] : chosen[0];
+                ordered.push_back(pick);
+                top_cards.erase(std::find(top_cards.begin(), top_cards.end(), pick));
+            }
+            if (!top_cards.empty()) ordered.push_back(top_cards[0]);
+
+            // First picked = top of deck, so add in reverse.
+            for (int i = static_cast<int>(ordered.size()) - 1; i >= 0; i--) {
+                player.add_to_deck_top(ordered[i]);
+            }
+        },
+    });
+
 }
 
 

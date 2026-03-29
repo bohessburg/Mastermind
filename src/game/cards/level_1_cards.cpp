@@ -408,8 +408,6 @@ void register_all() {
             // For each card: 0=put back, 1=discard, 2=trash
             std::vector<int> keep_cards;
             for (int card_id : top_cards) {
-                // Stash which card we're deciding on so the UI can display it
-                state.set_turn_flag("sentry_card_id", card_id);
                 auto chosen = decide(pid, ChoiceType::MULTI_FATE, {0, 1, 2}, 1, 1);
                 int fate = chosen.empty() ? 0 : chosen[0];
                 if (fate == 1) {
@@ -423,16 +421,11 @@ void register_all() {
 
             // Put back kept cards. If >1, ask for order.
             if (keep_cards.size() == 2) {
-                // Stash card IDs so the UI can display names
-                state.set_turn_flag("sentry_order_card_0", keep_cards[0]);
-                state.set_turn_flag("sentry_order_card_1", keep_cards[1]);
-                // options: 0 = first on top, 1 = second on top
-                auto chosen = decide(pid, ChoiceType::ORDER, {0, 1}, 1, 1);
-                int top_pick = chosen.empty() ? 0 : chosen[0];
-                // Put bottom card first, then top card
-                int bottom = (top_pick == 0) ? 1 : 0;
-                player.add_to_deck_top(keep_cards[bottom]);
-                player.add_to_deck_top(keep_cards[top_pick]);
+                auto chosen = decide(pid, ChoiceType::ORDER, keep_cards, 1, 1);
+                int top_id = chosen.empty() ? keep_cards[0] : chosen[0];
+                int bottom_id = (top_id == keep_cards[0]) ? keep_cards[1] : keep_cards[0];
+                player.add_to_deck_top(bottom_id);
+                player.add_to_deck_top(top_id);
             } else if (keep_cards.size() == 1) {
                 player.add_to_deck_top(keep_cards[0]);
             }
