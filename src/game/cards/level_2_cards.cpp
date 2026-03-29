@@ -367,7 +367,7 @@ void register_all() {
             }
             if (!top_cards.empty()) ordered.push_back(top_cards[0]);
 
-            // First picked = top of deck, so add in reverse
+            // First picked = top of deck, so add in reverse.
             for (int i = static_cast<int>(ordered.size()) - 1; i >= 0; i--) {
                 player.add_to_deck_top(ordered[i]);
             }
