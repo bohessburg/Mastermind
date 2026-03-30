@@ -1617,7 +1617,6 @@ void register_all() {
             }
         },
     });
-
 }
 
 

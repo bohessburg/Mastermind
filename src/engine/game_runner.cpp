@@ -83,13 +83,11 @@ DecisionFn GameRunner::make_decision_fn() {
                     break;
                 }
                 case ChoiceType::ORDER: {
-                    std::string flag_key = "sentry_order_card_" + std::to_string(options[i]);
-                    int order_cid = state_.get_turn_flag(flag_key);
-                    if (order_cid > 0) {
-                        opt.label = state_.card_name(order_cid);
-                        opt.card_id = order_cid;
-                    } else {
-                        opt.label = "Position " + std::to_string(options[i]);
+                    int cid = options[i];
+                    opt.card_id = cid;
+                    opt.label = state_.card_name(cid);
+                    if (opt.label.empty()) {
+                        opt.label = "Card " + std::to_string(cid);
                     }
                     break;
                 }
@@ -133,7 +131,13 @@ DecisionFn GameRunner::make_decision_fn() {
                 continue;
             }
 
-            return result;
+            // Translate agent indices back to original option values
+            // so card lambdas receive the same values they passed in
+            std::vector<int> translated;
+            for (int idx : result) {
+                translated.push_back(options[idx]);
+            }
+            return translated;
         }
     };
 }

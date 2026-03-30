@@ -6,6 +6,7 @@
 #include <iomanip>
 #include <iostream>
 #include <random>
+#include <set>
 #include <sstream>
 #include <string>
 
@@ -309,32 +310,32 @@ private:
 int main() {
     std::cout << R"(
   ╔══════════════════════════════════════╗
-  ║       DOMINION  —  Base Set         ║
+  ║       DOMINION                       ║
   ║    You (P0) vs. Engine Bot (P1)      ║
   ╚══════════════════════════════════════╝
 )" << "\n";
-
-    // All 26 base kingdom cards
-    std::vector<std::string> all_kingdom = {
-        // Level 1 (Base Set)
-        "Cellar", "Chapel", "Moat", "Harbinger", "Merchant",
-        "Vassal", "Village", "Workshop", "Bureaucrat", "Gardens",
-        "Laboratory", "Market", "Militia", "Moneylender", "Poacher",
-        "Remodel", "Smithy", "Throne Room", "Bandit", "Council Room",
-        "Festival", "Library", "Mine", "Sentry", "Witch", "Artisan",
-        // Level 2
-        "Worker's Village", "Courtyard", "Hamlet", "Lookout", "Swindler", "Scholar"
-    };
 
     BaseCards::register_all();
     Level1Cards::register_all();
     Level2Cards::register_all();
 
+    // Build kingdom list from registry (all non-base cards)
+    static const std::set<std::string> BASE_CARDS = {
+        "Copper", "Silver", "Gold", "Estate", "Duchy", "Province", "Curse"
+    };
+    std::vector<std::string> all_kingdom;
+    for (const auto& name : CardRegistry::all_names()) {
+        if (BASE_CARDS.find(name) == BASE_CARDS.end()) {
+            all_kingdom.push_back(name);
+        }
+    }
+    std::sort(all_kingdom.begin(), all_kingdom.end());
+
     // Kingdom selection
-    std::cout << "  Kingdom setup:\n";
+    std::cout << "  Kingdom setup (" << all_kingdom.size() << " cards available):\n";
     std::cout << "    r) Random 10 cards\n";
     std::cout << "    p) Pick cards manually\n";
-    std::cout << "    a) Use all 26 cards (NOT standard Dominion)\n";
+    std::cout << "    a) Use all " << all_kingdom.size() << " cards (NOT standard Dominion)\n";
     std::cout << "  > ";
 
     std::vector<std::string> kingdom;

@@ -50,7 +50,7 @@ static const std::vector<std::string> ALL_KINGDOM = {
     "Festival", "Library", "Mine", "Sentry", "Witch", "Artisan",
     // Level 2
     "Worker's Village", "Courtyard", "Hamlet", "Lookout", "Swindler", "Scholar",
-    "King's Court", ""
+    "King's Court", "Wandering Minstrel"
 };
 
 static std::vector<std::string> random_kingdom(std::mt19937& rng) {

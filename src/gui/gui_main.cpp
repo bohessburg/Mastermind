@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <set>
+#include <unordered_map>
 #include <atomic>
 #include <chrono>
 #include <random>
@@ -56,6 +57,39 @@ static const std::vector<std::string>& get_all_kingdom() {
 }
 
 #define ALL_KINGDOM get_all_kingdom()
+
+static int get_card_level(const std::string& name) {
+    static const std::unordered_map<std::string, int> CARD_LEVELS = {
+        // Level 1
+        {"Artisan", 1}, {"Bandit", 1}, {"Bureaucrat", 1}, {"Cellar", 1},
+        {"Chapel", 1}, {"Council Room", 1}, {"Festival", 1}, {"Gardens", 1},
+        {"Harbinger", 1}, {"Laboratory", 1}, {"Library", 1}, {"Market", 1},
+        {"Merchant", 1}, {"Militia", 1}, {"Mine", 1}, {"Moat", 1},
+        {"Moneylender", 1}, {"Poacher", 1}, {"Remodel", 1}, {"Sentry", 1},
+        {"Smithy", 1}, {"Throne Room", 1}, {"Vassal", 1}, {"Village", 1},
+        {"Witch", 1}, {"Workshop", 1},
+        // Level 2
+        {"Altar", 2}, {"Armory", 2}, {"Barbarian", 2}, {"Bazaar", 2},
+        {"Carnival", 2}, {"Cartographer", 2}, {"Conspirator", 2},
+        {"Courier", 2}, {"Courtyard", 2}, {"Cutpurse", 2},
+        {"Dismantle", 2}, {"Expand", 2}, {"Fortune Hunter", 2},
+        {"Hamlet", 2}, {"Hunter", 2}, {"Hunting Party", 2},
+        {"Jester", 2}, {"Junk Dealer", 2}, {"King's Court", 2},
+        {"Lookout", 2}, {"Magnate", 2}, {"Marquis", 2},
+        {"Masquerade", 2}, {"Menagerie", 2}, {"Minion", 2},
+        {"Mountain Village", 2}, {"Oasis", 2}, {"Old Witch", 2},
+        {"Patrol", 2}, {"Pilgrim", 2}, {"Remake", 2}, {"Replace", 2},
+        {"Sage", 2}, {"Salvager", 2}, {"Scavenger", 2}, {"Scholar", 2},
+        {"Sea Chart", 2}, {"Seer", 2}, {"Sentinel", 2},
+        {"Shanty Town", 2}, {"Soothsayer", 2}, {"Stables", 2},
+        {"Storeroom", 2}, {"Swindler", 2}, {"Trading Post", 2},
+        {"Tragic Hero", 2}, {"Treasure Map", 2}, {"Upgrade", 2},
+        {"Wandering Minstrel", 2}, {"Warehouse", 2}, {"Wheelwright", 2},
+        {"Witch's Hut", 2}, {"Worker's Village", 2},
+    };
+    auto it = CARD_LEVELS.find(name);
+    return it != CARD_LEVELS.end() ? it->second : 0;
+}
 
 // ─── Colors ───────────────────────────────────────────────────────
 
@@ -435,6 +469,11 @@ static SetupResult run_setup() {
     GameMode game_mode = GameMode::LOCAL_2P;
     std::vector<bool> selected(ALL_KINGDOM.size(), false);
     std::vector<std::string> kingdom;
+    int pick_page = 0;
+    int level_filter = 0;  // 0 = All, 1 = Level 1, 2 = Level 2, etc.
+    const int pick_cols = 8;
+    const int pick_rows = 5;
+    const int cards_per_page = pick_cols * pick_rows;
 
     while (!WindowShouldClose()) {
         bool clicked = IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
@@ -479,28 +518,69 @@ static SetupResult run_setup() {
             int num_selected = 0;
             for (bool s : selected) if (s) num_selected++;
 
-            DrawText("Pick 10 Kingdom Cards", SCREEN_W / 2 - 100, 20, 20, WHITE);
+            DrawText("Pick 10 Kingdom Cards", SCREEN_W / 2 - 100, 10, 20, WHITE);
             std::string count_str = std::to_string(num_selected) + " / 10 selected";
-            DrawText(count_str.c_str(), SCREEN_W / 2 - 50, 48, 16,
+            DrawText(count_str.c_str(), SCREEN_W / 2 - 50, 36, 16,
                      num_selected == 10 ? GREEN : YELLOW);
 
-            // Draw card grid
-            int cols = 8;
+            // Level filter buttons
+            const char* filter_labels[] = {"All", "Lv 1", "Lv 2"};
+            int filter_values[] = {0, 1, 2};
+            int num_filters = 3;
+            int filter_btn_w = 50;
+            int filter_total_w = num_filters * filter_btn_w + (num_filters - 1) * 6;
+            int filter_start_x = SCREEN_W / 2 - filter_total_w / 2;
+
+            for (int f = 0; f < num_filters; f++) {
+                int fx = filter_start_x + f * (filter_btn_w + 6);
+                Rectangle fb = {(float)fx, 56, (float)filter_btn_w, 24};
+                bool fhover = CheckCollisionPointRec(mouse, fb);
+                bool factive = (level_filter == filter_values[f]);
+                Color fcol = factive ? Color{80, 130, 200, 255} :
+                             (fhover ? Color{70, 90, 130, 255} : Color{50, 60, 80, 255});
+                DrawRectangleRec(fb, fcol);
+                DrawRectangleLinesEx(fb, 1, factive ? WHITE : GRAY);
+                int tw = MeasureText(filter_labels[f], 14);
+                DrawText(filter_labels[f], fx + (filter_btn_w - tw) / 2, 61, 14, WHITE);
+                if (clicked && fhover) {
+                    level_filter = filter_values[f];
+                    pick_page = 0;
+                }
+            }
+
+            // Build filtered card indices
+            std::vector<int> filtered;
+            for (int i = 0; i < static_cast<int>(ALL_KINGDOM.size()); i++) {
+                if (level_filter == 0 || get_card_level(ALL_KINGDOM[i]) == level_filter) {
+                    filtered.push_back(i);
+                }
+            }
+
+            int total_filtered = static_cast<int>(filtered.size());
+            int total_pages = std::max(1, (total_filtered + cards_per_page - 1) / cards_per_page);
+            if (pick_page >= total_pages) pick_page = total_pages - 1;
+            if (pick_page < 0) pick_page = 0;
+
+            // Draw card grid (paginated)
             int start_x = 30;
-            int start_y = 80;
+            int start_y = 88;
             int cell_w = CARD_W + CARD_PAD;
             int cell_h = CARD_H + CARD_PAD + 4;
 
-            for (int i = 0; i < static_cast<int>(ALL_KINGDOM.size()); i++) {
-                int col = i % cols;
-                int row = i / cols;
+            int page_start = pick_page * cards_per_page;
+            int page_end = std::min(page_start + cards_per_page, total_filtered);
+
+            for (int fi = page_start; fi < page_end; fi++) {
+                int i = filtered[fi];
+                int slot = fi - page_start;
+                int col = slot % pick_cols;
+                int row = slot / pick_cols;
                 int x = start_x + col * (cell_w + 4);
                 int y = start_y + row * cell_h;
 
                 const Card* card = CardRegistry::get(ALL_KINGDOM[i]);
-                bool hover_card = false;
                 Rectangle r = {(float)x, (float)y, (float)CARD_W, (float)CARD_H};
-                hover_card = CheckCollisionPointRec(mouse, r);
+                bool hover_card = CheckCollisionPointRec(mouse, r);
 
                 draw_card(x, y, ALL_KINGDOM[i], -1, card, hover_card, selected[i]);
 
@@ -513,9 +593,38 @@ static SetupResult run_setup() {
                 }
             }
 
-            // Start button (only when 10 selected)
+            // Bottom bar: page navigation on left/right, start button in center
+            int bottom_y = SCREEN_H - 55;
+            if (total_pages > 1) {
+                // Prev button
+                if (pick_page > 0) {
+                    Rectangle prev_btn = {30, (float)bottom_y, 80, 36};
+                    bool prev_hover = CheckCollisionPointRec(mouse, prev_btn);
+                    DrawRectangleRec(prev_btn, prev_hover ? Color{80, 110, 160, 255} : Color{60, 80, 120, 255});
+                    DrawRectangleLinesEx(prev_btn, 1, WHITE);
+                    DrawText("< Prev", 42, bottom_y + 10, 16, WHITE);
+                    if (clicked && prev_hover) pick_page--;
+                }
+
+                // Page indicator
+                std::string page_str = "Page " + std::to_string(pick_page + 1) + " / " + std::to_string(total_pages);
+                int page_text_w = MeasureText(page_str.c_str(), 14);
+                DrawText(page_str.c_str(), SCREEN_W / 2 - page_text_w / 2, bottom_y - 16, 14, LIGHTGRAY);
+
+                // Next button
+                if (pick_page < total_pages - 1) {
+                    Rectangle next_btn = {(float)(SCREEN_W - 110), (float)bottom_y, 80, 36};
+                    bool next_hover = CheckCollisionPointRec(mouse, next_btn);
+                    DrawRectangleRec(next_btn, next_hover ? Color{80, 110, 160, 255} : Color{60, 80, 120, 255});
+                    DrawRectangleLinesEx(next_btn, 1, WHITE);
+                    DrawText("Next >", (int)next_btn.x + 12, bottom_y + 10, 16, WHITE);
+                    if (clicked && next_hover) pick_page++;
+                }
+            }
+
+            // Start button (only when at least 1 selected)
             if (num_selected >= 1) {
-                Rectangle start_btn = {(float)(SCREEN_W / 2 - 60), (float)(SCREEN_H - 60), 120, 40};
+                Rectangle start_btn = {(float)(SCREEN_W / 2 - 60), (float)bottom_y, 120, 40};
                 bool start_hover = CheckCollisionPointRec(mouse, start_btn);
                 Color btn_col = num_selected >= 10 ? (start_hover ? GREEN : DARKGREEN) :
                                                       (start_hover ? YELLOW : Color{150, 150, 0, 255});
