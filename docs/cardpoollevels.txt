@@ -1,0 +1,187 @@
+'''Card pools''' are a feature provided by [[Dominion Online (ShuffleIt)|Dominion Online]] to allow new players to be gradually introduced to the wide range of Dominion [[card]]s and [[card-shaped thing]]s by beginning with the simplest cards, and gradually adding more complex card abilities and game mechanics to their repertoire. Players can set the card pool level they are most comfortable with, and cards belonging to a higher level will not be included in games they play using Dominion Online's Automatch feature. 
+
+The first level simply consists of the cards from the [[base set]] of Dominion; but higher card pool levels add cards based on the mechanics they use and their level of complexity, not based on what [[expansions]] they belong to. Not all cards introduced at a given pool level involve the mechanics being introduced at that level; some cards are delayed to later pools than they might be eligible for, either because they have relatively complex behavior for other reasons, or apparently merely to ensure that each pool contains a well-balanced range of cards. A few cards seem to be listed at lower levels than expected—for instance, although for the most part [[cost reduction]] doesn't appear until level 6, {{card|inventor}} can be found at level 5.
+
+===Card Pool descriptions and listings===
+
+====Level 1====
+
+Level 1 consists simply of the cards from the Dominion [[base set]].
+
+====Level 2====
+
+Level 2 adds cards with relatively simple abilities from a wide range of expansions:
+
+*{{set|Intrigue}}: {{card|Conspirator}}, {{Card|Courtyard}}, {{card|Masquerade}}, {{card|Minion}}, {{card|Patrol}}, {{card|Replace}}, {{card|Shanty Town}}, {{card|Swindler}}, {{card|Trading Post}}, {{card|Upgrade}}
+*{{set|Seaside}}: {{card|Bazaar}}, {{Card|Cutpurse}}, {{card|Lookout}}, {{card|Salvager}}, {{card|Sea Chart}}, {{card|Treasure Map}}, {{card|Warehouse}}
+*{{set|Prosperity}}: {{card|Expand}}, {{card|Magnate}}, {{card|Worker's Village}}
+*{{set|Cornucopia & Guilds}}: {{card|Carnival}}, {{card|Hamlet}}, {{card|Hunting Party}}, {{card|Jester}}, {{card|Menagerie}}, {{card|Remake}}, {{card|Soothsayer}}
+*{{set|Hinterlands}}: {{card|Cartographer}}, {{card|Oasis}}, {{card|Stables}}, {{card|Wheelwright}}, {{card|Witch's Hut}}
+*{{Set|Dark Ages}}: {{card|Altar}}, {{card|Armory}}, {{card|Junk Dealer}}, {{card|Sage}}, {{card|Scavenger}}, {{card|Storeroom}}, {{card|Wandering Minstrel}}
+*{{set|Nocturne}}: {{card|Tragic Hero}}
+*{{set|Renaissance}}: {{card|Mountain Village}}, {{card|Old Witch}}, {{card|Scholar}}, {{card|Seer}}
+*{{Set|Allies}}: {{card|Barbarian}}, {{Card|Courier}}, {{card|Hunter}}, {{card|Marquis}}, {{card|Sentinel}}
+*{{Set|Plunder}}: {{card|Fortune Hunter}}, {{card|Pilgrim}}
+*[[Promo]]: {{card|Dismantle}}
+
+====Level 3====
+
+Level 3 introduces cards that ask the players to make choices, as well as [[Duration]] cards and [[Kingdom]] [[Treasure]]s, and a handful of other cards involving more advanced gameplay than are present at levels 1 and 2. {{Card|Platinum}} and {{card|Colony}} also become available at level 3.
+
+*{{set|Intrigue}}: {{card|Baron}}, {{Card|Duke}}, {{Card|Farm}}, {{card|Mill}}, {{Card|Mining Village}}, {{card|Nobles}}, {{card|Pawn}}, {{card|Secret Passage}}, {{card|Steward}}, {{card|Torturer}}, {{card|Wishing Well}}
+*{{set|Seaside}}: {{card|Astrolabe}}, {{card|Caravan}}, {{card|Fishing Village}}, {{card|Haven}}, {{card|Merchant Ship}}, {{card|Sea Witch}}, {{card|Smugglers}}, {{card|Tactician}}, {{Card|Tide Pools}}, {{Card|Wharf}}
+*{{set|Prosperity}}: {{card|Anvil}}, {{card|Bank}}, {{Card|Crystal Ball}}, {{card|War Chest}}, plus {{card|Platinum}} and {{card|Colony}}
+*{{set|Cornucopia & Guilds}}: {{card|Advisor}}, {{card|Fairgrounds}}, {{card|Farmhands}}, {{card|Journeyman}}, {{card|Shop}}
+*{{set|Hinterlands}}: {{card|Fool's Gold}}, {{Card|Spice Merchant}}
+*{{set|Dark Ages}}: {{card|Counterfeit}}, {{card|Mystic}}
+*{{set|Adventures}}: {{card|Amulet}}, {{Card|Dungeon}}, {{card|Gear}}, {{card|Magpie}}, {{card|Treasure Trove}}
+*{{set|Empires}}: {{card|Archive}}
+*{{set|Nocturne}}: {{card|Conclave}}
+*{{set|Renaissance}}: {{card|Research}}
+*{{set|Menagerie}}: {{card|Barge}}, {{card|Hunting Lodge}}, {{card|Mastermind}}
+*{{set|Allies}}: {{card|Capital City}}, {{card|Carpenter}}, {{card|Innkeeper}}, {{Card|Modify}}, {{Card|Royal Galley}}, {{card|Specialist}}, {{card|Town}}
+*{{set|Plunder}}: {{card|Cabin Boy}}, {{card|Crew}}, {{Card|Crucible}}, {{card|Enlarge}}, {{Card|Grotto}}, {{Card|King's Cache}}, {{card|Longship}}, {{card|Rope}}, {{card|Silver Mine}}
+*{{set|Rising Sun}}: {{card|Aristocrat}}, {{card|Rice}}, {{card|Snake Witch}}
+*[[Promo]]: {{card|Envoy}}
+
+====Level 4====
+
+Level 4 introduces cards with effects that activate when they are gained or trashed, as well as [[Victory token]]s, among other new card abilities.
+
+*{{set|Intrigue}}: {{card|Ironworks}}
+*{{set|Seaside}}: {{card|Outpost}}
+*{{set|Prosperity}}: {{card|Bishop}}, {{card|Investment}}, {{card|Mint}}, {{card|Monument}}, {{card|Rabble}}
+*{{set|Hinterlands}}: {{card|Berserker}}, {{card|Border Village}}, {{card|Farmland}}, {{card|Inn}}, {{card|Margrave}}, {{card|Nomads}}
+*{{set|Dark Ages}}: {{card|Catacombs}}, {{Card|Feodum}}, {{card|Fortress}}, {{card|Hunting Grounds}}, {{card|Ironmonger}}, {{card|Market Square}}, {{card|Rats}}, {{Card|Squire}}
+*{{set|Adventures}}: {{card|Artificer}}, {{card|Lost City}}, {{card|Messenger}}, {{card|Port}}
+*{{set|Empires}}: {{card|Chariot Race}}, {{card|Farmers' Market}}, {{card|Forum}}, {{card|Groundskeeper}}, {{card|Sacrifice}}, {{card|Temple}}, {{card|Wild Hunt}}
+*{{set|Renaissance}}: {{card|Experiment}}, {{card|Hideout}}
+*{{set|Menagerie}}: {{card|Kiln}}
+*{{set|Allies}}: {{card|Galleria}}, {{card|Swap}}
+*{{set|Plunder}}: {{card|Buried Treasure}}, {{Card|Figurine}}, {{Card|First Mate}}, {{card|Gondola}}, {{card|Siren}}, {{card|Swamp Shacks}}, {{card|Tools}}
+*{{set|Rising Sun}}: {{card|Rice Broker}}
+*[[Promo]]: {{card|Church}}, {{card|Marchland}}
+
+====Level 5====
+
+At level 5, [[Coffers]], [[Villager]]s, and [[Debt]] are introduced, as well as the [[Exile]] mechanic and [[Reaction]] cards beyond the base set's {{card|Moat}}.
+
+*{{set|Intrigue}}: {{card|Diplomat}}
+*{{set|Seaside}}: {{card|Blockade}}, {{card|Corsair}}, {{Card|Monkey}}, {{card|Pirate}}
+*{{set|Prosperity}}: {{card|Charlatan}}, {{Card|City}}, {{Card|Clerk}}, {{card|Collection}}, {{card|Tiara}}, {{card|Watchtower}}
+*{{set|Hinterlands}}: {{card|Crossroads}}, {{card|Trader}}
+*{{set|Dark Ages}}: {{card|Beggar}}
+*{{set|Guilds}}: {{card|Baker}}, {{card|Butcher}}, {{card|Candlestick Maker}}, {{card|Plaza}}
+*{{Set|Adventures}}: {{card|Caravan Guard}}, {{card|Hireling}}, {{card|Raze}}
+*{{Set|Empires}}: {{card|Capital}}, {{card|Legionary}}
+*{{set|Renaissance}}: {{card|Acting Troupe}}, {{Card|Cargo Ship}}, {{card|Inventor}}, {{card|Lackeys}}, {{card|Patron}}, {{card|Priest}}, {{card|Recruiter}}, {{card|Sculptor}}, {{card|Silk Merchant}}, {{card|Spices}}, {{card|Villain}}
+*{{set|Menagerie}}: {{card|Black Cat}}, {{card|Bounty Hunter}}, {{card|Camel Train}}, {{Card|Cardinal}}, {{Card|Coven}}, {{card|Displace}}, {{card|Falconer}}, {{card|Gatekeeper}}, {{Card|Goatherd}}, {{card|Guard Dog}}, {{card|Sanctuary}}, {{card|Sheepdog}}. {{card|Snowy Village}}, {{Card|Stockpile}}
+*{{set|Allies}}: {{card|Skirmisher}}
+*{{set|Rising Sun}}: {{card|Craftsman}}, {{card|Gold Mine}}, {{card|Imperial Envoy}}, {{card|Litter}}, {{card|Root Cellar}}, {{card|Samurai}}
+*{{Set|Plunder}}: {{Card|Frigate}}, {{card|Maroon}}, {{card|Quartermaster}}, {{card|Stowaway}}
+
+====Level 6====
+
+Level 6 introduces the use of [[Favor]]s and [[cost reduction]], as well as abilities that activate when a card is discarded, cards that are sensitive to the contents of the [[Trash]], and other effects.
+
+*{{set|Intrigue}}: {{card|Bridge}}, {{card|Lurker}}
+*{{set|Seaside}}: {{card|Island}}, {{card|Lighthouse}}, {{card|Native Village}}, {{card|Treasury}}
+*{{set|Alchemy}}: {{card|Herbalist}}
+*{{set|Prosperity}}: {{card|Forge}}, {{card|Hoard}}, {{card|King's Court}}, {{card|Quarry}}, {{card|Vault}}
+*{{set|Hinterlands}}: {{card|Cauldron}}, {{card|Develop}}, {{card|Haggler}}, {{card|Highway}}, {{card|Jack of All Trades}}, {{Card|Scheme}}, {{Card|Souk}}, {{card|Trail}}, {{card|Tunnel}}, {{card|Weaver}}
+*{{set|Dark Ages}}: {{card|Count}}, {{card|Forager}}, {{card|Graverobber}}, {{card|Poor House}}, {{Card|Procession}}, {{card|Rogue}}
+*{{set|Guilds}}: {{card|Merchant Guild}}
+*{{set|Adventures}}: {{card|Bridge Troll}}, {{card|Haunted Woods}}, {{Card|Swamp Hag}}
+*{{set|Nocturne}}: {{card|Faithful Hound}}
+*{{set|Renaissance}}: {{card|Improve}}, {{Card|Scepter}}
+*{{set|Allies}}: {{card|Bauble}}, {{card|Broker}}, {{card|Contract}}, {{card|Emissary}}, {{card|Guildmaster}}, {{card|Importer}}, {{card|Merchant Camp}}, {{card|Sycophant}}, {{card|Underling}}, and all [[Ally|Allies]]
+*{{set|Plunder}}: {{card|Harbor Village}}, {{card|Mining Road}}, {{card|Trickster}}
+*[[Promo]]: {{card|Walled Village}}
+
+====Level 7====
+Level 7 features several mechanics that made their debut in {{set|Adventures}}—[[Event]]s, [[Reserve]] cards, and [[Adventures tokens]]—as well as [[Shadow]] cards from {{set|Rising Sun}}.
+
+* {{set|Intrigue}}: {{card|Courtier}}
+* {{set|Adventures}}: 
+** Cards: {{card|Coin of the Realm}}, {{Card|Distant Lands}}, {{card|Duplicate}}, {{card|Giant}}, {{card|Guide}}, {{card|Miser}}, {{Card|Ranger}}, {{Card|Ratcatcher}}, {{Card|Relic}}, {{card|Royal Carriage}}, {{card|Transmogrify}}, {{card|Wine Merchant}}
+** Events: {{event|Alms}}, {{event|Ball}}, {{event|Bonfire}}, {{event|Borrow}}, {{event|Expedition}}, {{event|Ferry}}, {{event|Lost Arts}}, {{event|Mission}}, {{event|Pathfinding}}, {{event|Pilgrimage}}, {{event|Plan}}, {{event|Quest}}, {{event|Raid}}, {{event|Save}}, {{event|Scouting Party}}, {{event|Seaway}}, {{event|Trade}}, {{event|Training}}, {{event|Travelling Fair}}
+* {{set|Empires}}: 
+** Cards: {{card|Charm}}, {{card|City Quarter}}, {{card|Engineer}}, {{card|Royal Blacksmith}}
+** Events: {{event|Advance}}, {{event|Annex}}, {{event|Banquet}}, {{event|Conquest}}, {{event|Delve}}, {{event|Dominate}}, {{event|Ritual}}, {{event|Salt the Earth}}, {{event|Triumph}}, {{event|Wedding}}, {{event|Windfall}}
+* {{Set|Menagerie}} Events: {{event|Alliance}}, {{event|Banish}}, {{event|Commerce}}, {{event|Delay}}, {{event|Desperation}}, {{event|Enclave}}, {{event|Enhance}}, {{event|Gamble}}, {{event|March}}, {{event|Populate}}, {{event|Pursue}}, {{event|Reap}}, {{event|Toil}}, {{event|Transport}}
+* {{set|Allies}}: {{card|Highwayman}}
+* {{set|Plunder}}: 
+** Cards: {{card|Abundance}}, {{card|Cage}}, {{Card|Flagship}}, {{card|Landing Party}}, {{card|Mapmaker}}, {{Card|Pendant}}, {{card|Secluded Shrine}}
+** Events: {{event|Bury}}, {{event|Maelstrom}}, {{event|Scrounge}}
+* {{set|Rising Sun}}:
+** Cards: {{card|Alley}}, {{card|Artist}}, {{card|Fishmonger}}, {{card|Ninja}}, {{card|Ronin}}, {{card|Tanuki}}
+** Events: {{event|Amass}}, {{event|Asceticism}}, {{event|Credit}}, {{event|Foresight}}, {{event|Gather}}, {{event|Kintsugi}}, {{event|Practice}}, {{event|Receive Tribute}}, {{event|Sea Trade}}
+* [[Promo]] Event: {{event|Summon}}
+
+====Level 8====
+
+At level 8, [[Night]] cards, {{Card|Loot}}, and {{Card|Horse|Horses}} are introduced, along with [[landscape]]s such as [[Landmark]]s, [[Project]]s, [[Trait]]s, and [[Prophecy|Prophecies]]. Level 8 is also the first level at which {{Card|Shelter|Shelters|file=Shelters}} can be used.
+
+*{{set|Seaside}}: {{card|Sailor}}
+*{{set|Dark Ages}}: {{card|Vagrant}}, plus {{Card|Shelter|Shelters|file=Shelters}}
+*{{set|Empires}} [[Landmark]]s: {{landmark|Aqueduct}}, {{Landmark|Arena}}, {{landmark|Bandit Fort}}, {{landmark|Basilica}}, {{landmark|Baths}}, {{landmark|Battlefield}}, {{landmark|Colonnade}}, {{landmark|Defiled Shrine}}, {{landmark|Fountain}}, {{landmark|Keep}}, {{landmark|Labyrinth}}, {{landmark|Museum}}, {{landmark|Obelisk}}, {{landmark|Orchard}}, {{landmark|Palace}}, {{landmark|Tomb}}, {{landmark|Tower}}, {{landmark|Triumphal Arch}}, {{landmark|Wall}}, {{landmark|Wolf Den}}
+*{{Set|Nocturne}}: {{card|Cobbler}}, {{card|Crypt}}, {{card|Den of Sin}}, {{card|Ghost Town}}, {{Card|Guardian}}, {{card|Monastery}},{{card|Night Watchman}}, {{card|Raider}}, {{card|Werewolf}}
+*{{set|Renaissance}}: 
+**Card: {{card|Ducat}}
+**[[Project]]s: {{project|Academy}}, {{project|Barracks}}, {{project|Canal}}, {{project|Citadel}}, {{project|City Gate}}, {{project|Crop Rotation}}, {{project|Exploration}}, {{project|Fair}}, {{project|Fleet}}, {{project|Guildhall}}, {{project|Innovation}}, {{project|Pageant}}, {{project|Piazza}}, {{project|Road Network}}, {{project|Sewers}}, {{project|Silos}}, {{project|Sinister Plot}}, {{project|Star Chart}}
+*{{set|Menagerie}}: 
+**Cards: {{card|Groom}}, {{Card|Hostelry}}, {{card|Livery}}, {{card|Paddock}}, {{card|Scrap}}, {{card|Sleigh}}, {{card|Supplies}}
+**Events: {{event|Bargain}}, {{event|Demand}}, {{event|Ride}}, {{event|Stampede}}
+*{{set|Plunder}}: 
+**Cards: {{Card|Cutthroat}}, {{Card|Jewelled Egg}}, {{card|Pickaxe}}, {{card|Sack of Loot}}, {{card|Search}}, {{card|Wealthy Village}}
+**Events: {{event|Avoid}}. {{event|Deliver}}, {{event|Foray}}, {{event|Invasion}}, {{event|Looting}}, {{event|Mirror}}, {{event|Peril}}, {{event|Prepare}}, {{event|Prosper}}, {{event|Rush}}
+**[[Trait]]s: all Traits
+*{{set|Rising Sun}}
+**Cards: {{card|Kitsune}}, {{card|Mountain Shrine}}, {{card|Poet}}, {{card|River Shrine}}, {{card|Rustic Village}}, {{card|Tea House}}
+**Prophecies: {{prophecy|Biding Time}}, {{prophecy|Bureaucracy}}, {{prophecy|Flourishing Trade}}, {{prophecy|Good Harvest}}, {{prophecy|Great Leader}}, {{prophecy|Growth}}, {{prophecy|Kind Emperor}}, {{prophecy|Panic}}, {{prophecy|Progress}}, {{prophecy|Rapid Expansion}}, {{prophecy|Sickness}}
+
+====Level 9====
+
+Level 9 introduces [[split pile]]s, [[Boon]]s, [[Hex]]es, [[Heirloom]]s, [[Artifact]]s, and a variety of [[non-Supply]] piles.
+
+*{{set|Cornucopia & Guilds}}: {{card|Ferryman}}, {{card|Footpad}}, {{card|Young Witch}}
+*{{set|Dark Ages}}: {{card|Bandit Camp}}, {{card|Cultist}}, {{card|Death Cart}}, {{card|Hermit}}, [[Knight]]s, {{card|Marauder}}, {{card|Pillage}}, {{card|Urchin}}
+*{{set|Adventures}}: {{card|Page}}, {{card|Peasant}}
+*{{set|Empires}}: {{Card|Castles}}, {{Card|Catapult/Rocks}}, {{Card|Encampment/Plunder}}, {{Card|Patrician/Emporium}}, {{Card|Settlers/Bustling Village}}
+*{{set|Nocturne}}: {{card|Bard}}, {{card|Blessed Village}}, {{card|Cemetery}}, {{card|Cursed Village}}, {{card|Devil's Workshop}}, {{card|Exorcist}}, {{card|Idol}}, {{card|Leprechaun}}, {{card|Pixie}}, {{Card|Pooka}}, {{card|Sacred Grove}}, {{card|Secret Cave}}, {{card|Shepherd}}, {{card|Skulk}}, {{card|Tormentor}}, {{card|Tracker}}
+*{{set|Renaissance}}: {{card|Border Guard}}, {{card|Flag Bearer}}, {{card|Swashbuckler}}, {{card|Treasurer}}
+*{{set|Allies}}: [[Augur]]s, [[Clash]]es, [[Fort]]s, [[Odyssey]]s, [[Townsfolk]]
+*{{set|Plunder}}: 
+**Cards: {{card|Shaman}}, {{card|Taskmaster}}
+**Event: {{event|Journey}}
+*{{set|Rising Sun}} Prophecy: {{prophecy|Approaching Army}}
+*[[Promo]]: {{Card|Sauna/Avanto}}
+
+====Level 10====
+
+Reserved for the final level are a number of complex cards and advanced mechanics such as [[Way]]s, [[Command variant]]s, [[overpay]]ing, and {{Card|Potion|Potions}}.
+
+*{{set|Alchemy}}: {{card|Alchemist}}, {{card|Apothecary}}, {{card|Apprentice}}, {{Card|Familiar}}, {{card|Golem}}, {{card|Philosopher's Stone}}, {{card|Possession}}, {{card|Scrying Pool}}, {{card|Transmute}}, {{card|University}}, {{Card|Vineyard}}
+*{{set|Prosperity}}: {{card|Grand Market}}, {{card|Peddler}}
+*{{set|Cornucopia & Guilds}}: {{card|Farrier}}, {{Card|Herald}}, {{card|Horn of Plenty}}, {{card|Infirmary}}, {{card|Joust}}, {{card|Stonemason}}
+*{{set|Dark Ages}}: {{card|Band of Misfits}}, {{card|Rebuild}}
+*{{set|Adventures}}:
+**Card: {{card|Storyteller}}
+**Event: {{event|Inheritance}}
+*{{set|Empires}}: 
+**Cards: {{card|Crown}}, {{card|Enchantress}}, {{Card|Gladiator/Fortune}}, {{card|Overlord}}, {{Card|Villa}}
+**Events: {{event|Donate}}, {{event|Tax}}
+**Landmark: {{landmark|Mountain Pass}}
+*{{set|Nocturne}}: {{card|Changeling}}, {{Card|Druid}}, {{card|Fool}}, {{card|Necromancer}}, {{Card|Vampire}}
+*{{Set|Renaissance}} Projects: {{Project|Capitalism}}, {{project|Cathedral}}
+*{{set|Menagerie}}: 
+**Cards: {{card|Animal Fair}}, {{card|Cavalry}}, {{card|Destrier}}, {{card|Fisherman}}, {{Card|Village Green}}, {{card|Wayfarer}}
+**Events: {{event|Invest}}, {{event|Seize the Day}}
+**[[Way]]s: all Ways
+*{{set|Allies}}: [[Wizard]]s
+*{{Set|Plunder}} Event: {{event|Launch}}
+*{{set|Rising Sun}}: 
+**Cards: {{card|Change}}, {{card|Daimyo}}, {{card|Riverboat}}
+**Event: {{event|Continue}}
+**Prophecies: {{prophecy|Divine Wind}}, {{prophecy|Enlightenment}}, {{prophecy|Harsh Winter}}
+*[[Promo]]: {{card|Black Market}}, {{card|Captain}}, {{card|Governor}}, {{card|Prince}}

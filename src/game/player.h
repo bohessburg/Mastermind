@@ -51,6 +51,12 @@ public:
     bool remove_from_discard(int card_id);
     int remove_from_discard_by_index(int idx);
 
+    // In-play manipulation
+    bool remove_from_in_play(int card_id);
+
+    // Deck manipulation
+    void dump_deck_to_discard();
+
     // All cards in all zones
     std::vector<int> all_cards() const;
 

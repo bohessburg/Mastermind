@@ -69,6 +69,8 @@ public:
     // Supply queries
     std::vector<std::string> gainable_piles(int max_cost) const;
     std::vector<std::string> gainable_piles(int max_cost, CardType required_type) const;
+    std::vector<std::string> gainable_piles_exact(int cost) const;
+    std::vector<std::string> gainable_piles_exact(int cost, CardType required_type) const;
     int effective_cost(const std::string& card_name) const;
     int total_cards_owned(int player_id) const;
 

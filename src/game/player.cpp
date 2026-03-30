@@ -150,6 +150,18 @@ int Player::remove_from_discard_by_index(int idx) {
     return card_id;
 }
 
+bool Player::remove_from_in_play(int card_id) {
+    auto it = std::find(in_play_.begin(), in_play_.end(), card_id);
+    if (it == in_play_.end()) return false;
+    in_play_.erase(it);
+    return true;
+}
+
+void Player::dump_deck_to_discard() {
+    discard_.insert(discard_.end(), deck_.begin(), deck_.end());
+    deck_.clear();
+}
+
 std::vector<int> Player::all_cards() const {
     std::vector<int> result;
     auto append = [&](const std::vector<int>& v) {

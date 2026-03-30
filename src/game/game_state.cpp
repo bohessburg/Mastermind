@@ -193,6 +193,32 @@ std::vector<std::string> GameState::gainable_piles(int max_cost, CardType requir
     return result;
 }
 
+std::vector<std::string> GameState::gainable_piles_exact(int cost) const {
+    std::vector<std::string> result;
+    const auto& piles = supply_.piles();
+    for (int i = 0; i < static_cast<int>(piles.size()); i++) {
+        if (piles[i].card_ids.empty()) continue;
+        const Card* card = card_def(piles[i].card_ids.back());
+        if (card && card->cost == cost) {
+            result.push_back(piles[i].pile_name);
+        }
+    }
+    return result;
+}
+
+std::vector<std::string> GameState::gainable_piles_exact(int cost, CardType required_type) const {
+    std::vector<std::string> result;
+    const auto& piles = supply_.piles();
+    for (int i = 0; i < static_cast<int>(piles.size()); i++) {
+        if (piles[i].card_ids.empty()) continue;
+        const Card* card = card_def(piles[i].card_ids.back());
+        if (card && card->cost == cost && has_type(card->types, required_type)) {
+            result.push_back(piles[i].pile_name);
+        }
+    }
+    return result;
+}
+
 int GameState::effective_cost(const std::string& card_name_str) const {
     const Card* card = CardRegistry::get(card_name_str);
     if (!card) return 0;
