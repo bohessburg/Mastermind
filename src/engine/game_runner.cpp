@@ -36,7 +36,7 @@ DecisionFn GameRunner::make_decision_fn() {
 
         // For MULTI_FATE (Sentry), read the stashed card_id so UI can show it
         if (choice_type == ChoiceType::MULTI_FATE) {
-            int sentry_cid = state_.get_turn_flag("sentry_card_id");
+            int sentry_cid = state_.get_turn_flag(TurnFlag::SentryCardId);
             if (sentry_cid > 0) {
                 dp.source_card = state_.card_name(sentry_cid);
             }
@@ -83,14 +83,9 @@ DecisionFn GameRunner::make_decision_fn() {
                     break;
                 }
                 case ChoiceType::ORDER: {
-                    std::string flag_key = "sentry_order_card_" + std::to_string(options[i]);
-                    int order_cid = state_.get_turn_flag(flag_key);
-                    if (order_cid > 0) {
-                        opt.label = state_.card_name(order_cid);
-                        opt.card_id = order_cid;
-                    } else {
-                        opt.label = "Position " + std::to_string(options[i]);
-                    }
+                    // options[i] is a card_id for ORDER
+                    opt.label = state_.card_name(options[i]);
+                    opt.card_id = options[i];
                     break;
                 }
                 default: {
@@ -206,6 +201,8 @@ void GameRunner::run_action_phase(int pid) {
 
 void GameRunner::run_treasure_phase(int pid) {
     Agent* agent = agents_[pid];
+    int silver_def = GameState::def_silver();
+
     while (true) {
         auto treasures = Rules::playable_treasures(state_, pid);
         if (treasures.empty()) break;
@@ -237,8 +234,8 @@ void GameRunner::run_treasure_phase(int pid) {
 
             std::sort(treasure_indices.begin(), treasure_indices.end(), std::greater<int>());
 
-            int merchant_count = state_.get_turn_flag("merchant_count");
-            bool silver_triggered = state_.get_turn_flag("merchant_silver_triggered") != 0;
+            int merchant_count = state_.get_turn_flag(TurnFlag::MerchantCount);
+            bool silver_triggered = state_.get_turn_flag(TurnFlag::MerchantSilverTriggered) != 0;
 
             for (int idx : treasure_indices) {
                 int cid = player.get_hand()[idx];
@@ -247,9 +244,9 @@ void GameRunner::run_treasure_phase(int pid) {
                 if (card && card->on_play) {
                     card->on_play(state_, pid, decide_fn);
                 }
-                if (card && card->name == "Silver" && merchant_count > 0 && !silver_triggered) {
+                if (card && card->def_id == silver_def && merchant_count > 0 && !silver_triggered) {
                     state_.add_coins(merchant_count);
-                    state_.set_turn_flag("merchant_silver_triggered", 1);
+                    state_.set_turn_flag(TurnFlag::MerchantSilverTriggered, 1);
                     silver_triggered = true;
                 }
             }
@@ -271,11 +268,11 @@ void GameRunner::run_treasure_phase(int pid) {
             card->on_play(state_, pid, decide_fn);
         }
 
-        int merchant_count = state_.get_turn_flag("merchant_count");
-        bool silver_triggered = state_.get_turn_flag("merchant_silver_triggered") != 0;
-        if (card && card->name == "Silver" && merchant_count > 0 && !silver_triggered) {
+        int merchant_count = state_.get_turn_flag(TurnFlag::MerchantCount);
+        bool silver_triggered = state_.get_turn_flag(TurnFlag::MerchantSilverTriggered) != 0;
+        if (card && card->def_id == silver_def && merchant_count > 0 && !silver_triggered) {
             state_.add_coins(merchant_count);
-            state_.set_turn_flag("merchant_silver_triggered", 1);
+            state_.set_turn_flag(TurnFlag::MerchantSilverTriggered, 1);
         }
     }
 
@@ -296,14 +293,14 @@ void GameRunner::run_buy_phase(int pid) {
         int chosen_idx = choice[0];
         if (chosen_idx >= static_cast<int>(dp.options.size()) || dp.options[chosen_idx].is_pass) break;
 
-        const std::string& pile_name = dp.options[chosen_idx].card_name;
-        const Card* card = CardRegistry::get(pile_name);
+        int pile_index = dp.options[chosen_idx].pile_index;
+        const Card* card = state_.card_def(dp.options[chosen_idx].card_id);
         if (!card) break;
 
-        observe("  Player " + std::to_string(pid) + " buys " + pile_name);
+        observe("  Player " + std::to_string(pid) + " buys " + card->name);
 
         state_.add_coins(-card->cost);
         state_.add_buys(-1);
-        state_.gain_card(pid, pile_name);
+        state_.gain_card(pid, pile_index);
     }
 }

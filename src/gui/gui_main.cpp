@@ -591,7 +591,6 @@ int main() {
     // --- Register cards ---
     BaseCards::register_all();
     Level1Cards::register_all();
-    Level2Cards::register_all();
 
     // --- Raylib window ---
     InitWindow(SCREEN_W, SCREEN_H, "Dominion");

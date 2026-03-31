@@ -120,7 +120,6 @@ static void print_result(const BenchResult& r) {
 int main() {
     BaseCards::register_all();
     Level1Cards::register_all();
-    Level2Cards::register_all();
 
     int n = 5000;
 

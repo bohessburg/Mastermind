@@ -17,11 +17,6 @@ void register_all() {
         .on_play = [](GameState& state, int /*player_id*/, DecisionFn) {
             state.add_coins(1);
         },
-        .on_react = nullptr,
-        .vp_fn = nullptr,
-        .on_gain = nullptr,
-        .on_trash = nullptr,
-        .on_duration = nullptr,
     });
 
     CardRegistry::register_card({
@@ -35,11 +30,6 @@ void register_all() {
         .on_play = [](GameState& state, int /*player_id*/, DecisionFn) {
             state.add_coins(2);
         },
-        .on_react = nullptr,
-        .vp_fn = nullptr,
-        .on_gain = nullptr,
-        .on_trash = nullptr,
-        .on_duration = nullptr,
     });
 
     CardRegistry::register_card({
@@ -53,11 +43,6 @@ void register_all() {
         .on_play = [](GameState& state, int /*player_id*/, DecisionFn) {
             state.add_coins(3);
         },
-        .on_react = nullptr,
-        .vp_fn = nullptr,
-        .on_gain = nullptr,
-        .on_trash = nullptr,
-        .on_duration = nullptr,
     });
 
     // --- Victory cards ---
@@ -70,12 +55,6 @@ void register_all() {
         .victory_points = 1,
         .coin_value = 0,
         .tags = {},
-        .on_play = nullptr,
-        .on_react = nullptr,
-        .vp_fn = nullptr,
-        .on_gain = nullptr,
-        .on_trash = nullptr,
-        .on_duration = nullptr,
     });
 
     CardRegistry::register_card({
@@ -86,12 +65,6 @@ void register_all() {
         .victory_points = 3,
         .coin_value = 0,
         .tags = {},
-        .on_play = nullptr,
-        .on_react = nullptr,
-        .vp_fn = nullptr,
-        .on_gain = nullptr,
-        .on_trash = nullptr,
-        .on_duration = nullptr,
     });
 
     CardRegistry::register_card({
@@ -102,12 +75,6 @@ void register_all() {
         .victory_points = 6,
         .coin_value = 0,
         .tags = {},
-        .on_play = nullptr,
-        .on_react = nullptr,
-        .vp_fn = nullptr,
-        .on_gain = nullptr,
-        .on_trash = nullptr,
-        .on_duration = nullptr,
     });
 
     // --- Curse ---
@@ -120,13 +87,10 @@ void register_all() {
         .victory_points = -1,
         .coin_value = 0,
         .tags = {},
-        .on_play = nullptr,
-        .on_react = nullptr,
-        .vp_fn = nullptr,
-        .on_gain = nullptr,
-        .on_trash = nullptr,
-        .on_duration = nullptr,
     });
+
+    // Cache well-known def IDs now that base cards are registered
+    GameState::cache_well_known_def_ids();
 }
 
 // Helper: create N cards of a given name and return their IDs
@@ -172,6 +136,9 @@ void setup_supply(GameState& state, const std::vector<std::string>& kingdom_card
 
         state.get_supply().add_pile(name, make_pile(state, name, pile_size));
     }
+
+    // Cache well-known pile indices now that supply is set up
+    state.cache_well_known_piles();
 }
 
 void setup_starting_decks(GameState& state) {

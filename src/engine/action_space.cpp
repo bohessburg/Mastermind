@@ -14,10 +14,10 @@ DecisionPoint build_action_decision(const GameState& state) {
     for (int i = 0; i < static_cast<int>(hand.size()); i++) {
         const Card* card = state.card_def(hand[i]);
         if (card && card->is_action()) {
-            dp.options.push_back({idx++, hand[i], card->name, "Play " + card->name, false});
+            dp.options.push_back({idx++, hand[i], -1, card->name, "Play " + card->name, false});
         }
     }
-    dp.options.push_back({idx, -1, "", "End Actions", true});
+    dp.options.push_back({idx, -1, -1, "", "End Actions", true});
 
     return dp;
 }
@@ -32,13 +32,18 @@ DecisionPoint build_treasure_decision(const GameState& state) {
     const Player& player = state.get_player(dp.player_id);
     const auto& hand = player.get_hand();
 
+    int copper_def = GameState::def_copper();
+    int silver_def = GameState::def_silver();
+    int gold_def = GameState::def_gold();
+
     bool all_basic = true;
     bool has_treasure = false;
     for (int card_id : hand) {
         const Card* card = state.card_def(card_id);
         if (card && card->is_treasure()) {
             has_treasure = true;
-            if (card->name != "Copper" && card->name != "Silver" && card->name != "Gold") {
+            int did = card->def_id;
+            if (did != copper_def && did != silver_def && did != gold_def) {
                 all_basic = false;
             }
         }
@@ -46,16 +51,16 @@ DecisionPoint build_treasure_decision(const GameState& state) {
 
     int idx = 0;
     if (has_treasure && all_basic) {
-        dp.options.push_back({idx++, -1, "", "Play all Treasures", false});
+        dp.options.push_back({idx++, -1, -1, "", "Play all Treasures", false});
     }
 
     for (int i = 0; i < static_cast<int>(hand.size()); i++) {
         const Card* card = state.card_def(hand[i]);
         if (card && card->is_treasure()) {
-            dp.options.push_back({idx++, hand[i], card->name, "Play " + card->name, false});
+            dp.options.push_back({idx++, hand[i], -1, card->name, "Play " + card->name, false});
         }
     }
-    dp.options.push_back({idx, -1, "", "Stop playing Treasures", true});
+    dp.options.push_back({idx, -1, -1, "", "Stop playing Treasures", true});
 
     return dp;
 }
@@ -77,10 +82,10 @@ DecisionPoint build_buy_decision(const GameState& state) {
         int top_id = piles[i].card_ids.back();
         const Card* card = state.card_def(top_id);
         if (card && card->cost <= coins) {
-            dp.options.push_back({idx++, top_id, card->name, "Buy " + card->name, false});
+            dp.options.push_back({idx++, top_id, i, card->name, "Buy " + card->name, false});
         }
     }
-    dp.options.push_back({idx, -1, "", "End Buys", true});
+    dp.options.push_back({idx, -1, -1, "", "End Buys", true});
 
     return dp;
 }

@@ -107,11 +107,12 @@ static int buy_priority(const std::string& name) {
 // For discard decisions: prefer discarding junk (victory, curse) over useful cards
 static int discard_priority(const Card* card) {
     if (!card) return 50;
+    int did = card->def_id;
     if (card->is_curse()) return 0;
-    if (card->name == "Estate") return 1;
-    if (card->name == "Duchy") return 2;
-    if (card->name == "Province") return 3;
-    if (card->name == "Copper") return 10;
+    if (did == GameState::def_estate()) return 1;
+    if (did == GameState::def_duchy()) return 2;
+    if (did == GameState::def_province()) return 3;
+    if (did == GameState::def_copper()) return 10;
     if (card->is_victory()) return 5;
     if (card->is_treasure()) return 20;
     if (card->is_action()) return 15;
@@ -121,9 +122,10 @@ static int discard_priority(const Card* card) {
 // For trash decisions: prefer trashing junk
 static int trash_priority(const Card* card) {
     if (!card) return 50;
+    int did = card->def_id;
     if (card->is_curse()) return 0;
-    if (card->name == "Estate") return 1;
-    if (card->name == "Copper") return 2;
+    if (did == GameState::def_estate()) return 1;
+    if (did == GameState::def_copper()) return 2;
     return 50;
 }
 
@@ -316,13 +318,7 @@ std::vector<int> BigMoneyAgent::decide(const DecisionPoint& dp, const GameState&
             return {static_cast<int>(dp.options.size()) - 1};
         }
         case DecisionType::BUY_CARD: {
-            // Optimized Big Money from wiki.dominionstrategy.com:
-            // $8: Province (unless early: no Gold and <5 Silvers → Gold)
-            // $6-7: Gold (unless ≤4 Provinces → Duchy)
-            // $5: Silver (unless ≤5 Provinces → Duchy)
-            // $3-4: Silver (unless ≤2 Provinces → Estate)
-            // $2: Estate only if ≤3 Provinces
-            int provinces_left = state.get_supply().count("Province");
+            int provinces_left = state.get_supply().count_index(state.pile_province());
             int coins = state.coins();
 
             auto find_option = [&](const std::string& name) -> int {
@@ -336,11 +332,13 @@ std::vector<int> BigMoneyAgent::decide(const DecisionPoint& dp, const GameState&
                 // Early game exception: no Gold and <5 Silvers → buy Gold instead
                 int pid = state.current_player_id();
                 auto all = state.get_player(pid).all_cards();
+                int gold_def = GameState::def_gold();
+                int silver_def = GameState::def_silver();
                 int gold_count = 0, silver_count = 0;
                 for (int cid : all) {
-                    const std::string& n = state.card_name(cid);
-                    if (n == "Gold") gold_count++;
-                    else if (n == "Silver") silver_count++;
+                    int did = state.card_def_id(cid);
+                    if (did == gold_def) gold_count++;
+                    else if (did == silver_def) silver_count++;
                 }
                 if (gold_count == 0 && silver_count < 5) {
                     int idx = find_option("Gold");
@@ -434,7 +432,7 @@ std::vector<int> HeuristicAgent::decide(const DecisionPoint& dp, const GameState
         }
 
         case DecisionType::BUY_CARD: {
-            int provinces_left = state.get_supply().count("Province");
+            int provinces_left = state.get_supply().count_index(state.pile_province());
             int pid = dp.player_id;
             auto all = state.get_player(pid).all_cards();
             std::unordered_map<std::string, int> owned;
@@ -449,7 +447,7 @@ std::vector<int> HeuristicAgent::decide(const DecisionPoint& dp, const GameState
             for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
                 if (dp.options[i].is_pass) continue;
                 const std::string& name = dp.options[i].card_name;
-                const Card* card = CardRegistry::get(name);
+                const Card* card = state.card_def(dp.options[i].card_id);
                 if (!card) continue;
                 if (name == "Curse" || name == "Copper") continue;
                 if (name == "Estate" && provinces_left > 2) continue;
@@ -577,7 +575,11 @@ static KingdomAnalysis analyze_kingdom(const GameState& state) {
         if (name == "Laboratory" || name == "Market") k.has_cantrip_draw = true;
     }
     for (auto& t : {"Witch", "Scholar", "Smithy", "Courtyard", "Council Room", "Moat", "Library"}) {
-        if (!state.get_supply().is_pile_empty(t)) { k.best_terminal = t; break; }
+        int pi = state.get_supply().pile_index_of(t);
+        if (pi >= 0 && !state.get_supply().is_pile_empty_index(pi)) {
+            k.best_terminal = t;
+            break;
+        }
     }
     return k;
 }
@@ -631,9 +633,7 @@ static CardYield card_yield(const std::string& name) {
     // Terminal utility
     if (name == "Militia")           return {0, 0, 2};
     if (name == "Swindler")          return {0, 0, 2};
-    // TR/KC multiply another card — only count a small bonus since they need
-    // a target to be useful. The real value is in the build priority, not the yield.
-    if (name == "Throne Room")       return {0, 0, 0}; // multiplier, no standalone yield
+    if (name == "Throne Room")       return {0, 0, 0};
     if (name == "King's Court")      return {0, 0, 0};
     if (name == "Chapel")            return {0, 0, 0};
     if (name == "Remodel")           return {0, 0, 0};
@@ -653,10 +653,10 @@ static DeckProfile analyze_deck(const GameState& state, int pid) {
     auto all = state.get_player(pid).all_cards();
     p.deck_size = static_cast<int>(all.size());
     for (int cid : all) {
-        const std::string& name = state.card_name(cid);
         const Card* card = state.card_def(cid);
         if (!card) continue;
 
+        const std::string& name = card->name;
         p.counts[name]++;
         if (card->is_action()) {
             p.total_action_cards++;
@@ -674,13 +674,15 @@ static DeckProfile analyze_deck(const GameState& state, int pid) {
             name == "Merchant" || name == "Harbinger" || name == "Poacher" ||
             name == "Cellar" || name == "Hamlet" || name == "Lookout") p.cantrips++;
         if (name == "Chapel") p.chapels++;
-        if (name == "Copper" || name == "Estate" || name == "Curse") p.junk++;
+        int did = card->def_id;
+        if (did == GameState::def_copper() || did == GameState::def_estate() ||
+            did == GameState::def_curse()) p.junk++;
     }
     return p;
 }
 
 static int engine_green_buy(const DecisionPoint& dp, const GameState& state, int /*pid*/) {
-    int provinces_left = state.get_supply().count("Province");
+    int provinces_left = state.get_supply().count_index(state.pile_province());
     int coins = state.coins();
 
     auto find = [&](const std::string& name) -> int {
@@ -712,13 +714,13 @@ static int engine_green_buy(const DecisionPoint& dp, const GameState& state, int
 }
 
 static std::vector<int> sentry_fate_decide(const DecisionPoint& dp, const GameState& state) {
-    int sentry_cid = state.get_turn_flag("sentry_card_id");
+    int sentry_cid = state.get_turn_flag(TurnFlag::SentryCardId);
     if (sentry_cid > 0) {
         const Card* card = state.card_def(sentry_cid);
         if (card) {
             if (card->is_curse()) return {2};       // trash
-            if (card->name == "Estate") return {2};  // trash
-            if (card->name == "Copper") {
+            if (card->def_id == GameState::def_estate()) return {2};  // trash
+            if (card->def_id == GameState::def_copper()) {
                 int pid_s = dp.player_id;
                 auto all = state.get_player(pid_s).all_cards();
                 int total_money = 0;
@@ -726,10 +728,9 @@ static std::vector<int> sentry_fate_decide(const DecisionPoint& dp, const GameSt
                     const Card* c = state.card_def(cid);
                     if (c && c->is_treasure()) total_money += c->coin_value;
                 }
-                // Higher floor than Chapel — Sentry trashes 1 at a time so be conservative
-                if (total_money > 6) return {2};      // trash
-                if (total_money > 4) return {1};      // discard (keep it, just get rid of it this shuffle)
-                return {0};                            // keep (need the money)
+                if (total_money > 6) return {2};
+                if (total_money > 4) return {1};
+                return {0};
             }
         }
     }
@@ -851,15 +852,17 @@ std::vector<int> EngineBot::decide(const DecisionPoint& dp, const GameState& sta
 
     // PURE_BM — exact wiki Big Money optimized strategy
     if (strategy == EngineStrategy::PURE_BM) {
-        int provinces_left = state.get_supply().count("Province");
+        int provinces_left = state.get_supply().count_index(state.pile_province());
 
         if (coins >= 8) {
             // Early game exception: no Gold and <5 Silvers → buy Gold
+            int gold_def = GameState::def_gold();
+            int silver_def = GameState::def_silver();
             int gold_count = 0, silver_count = 0;
             for (int cid : state.get_player(pid).all_cards()) {
-                const std::string& n = state.card_name(cid);
-                if (n == "Gold") gold_count++;
-                else if (n == "Silver") silver_count++;
+                int did = state.card_def_id(cid);
+                if (did == gold_def) gold_count++;
+                else if (did == silver_def) silver_count++;
             }
             if (gold_count == 0 && silver_count < 5) {
                 int idx = find("Gold");
@@ -925,24 +928,13 @@ std::vector<int> EngineBot::decide(const DecisionPoint& dp, const GameState& sta
     }
 
     // ==================== FULL_ENGINE ====================
-    // Green when the engine can reliably draw most of the deck and produce $8.
-    // Three metrics (all relative to deck size):
-    //   draw_ratio: total +Cards / deck_size — can we draw our deck?
-    //   action_ratio: total +Actions / deck_size — can we chain?
-    //   money_density: (treasure_money + action_coins) / deck_size — can we buy Province?
-    //
-    // Build phase: buy whichever metric is the bottleneck.
-
     int my_turns = (state.turn_number() + 1) / state.num_players();
     double ds = static_cast<double>(prof.deck_size);
     double draw_ratio = prof.total_plus_cards / ds;
     double action_ratio = prof.total_plus_actions / ds;
     double money_density = (prof.total_money + prof.total_plus_coins) / ds;
 
-    // P2 needs to green earlier to avoid falling behind on tempo.
-    // P1 can afford to build one more turn.
     bool is_p2 = (pid == 1);
-    // Tuned via parameter sweep (best of 30+ configs tested)
     double draw_thresh    = is_p2 ? 0.3  : 0.45;
     double action_thresh  = is_p2 ? 0.15 : 0.25;
     double money_thresh   = is_p2 ? 1.0  : 1.2;
@@ -952,7 +944,6 @@ std::vector<int> EngineBot::decide(const DecisionPoint& dp, const GameState& sta
     if (my_turns > failsafe_turn) greening = true;
     if (draw_ratio >= draw_thresh && action_ratio >= action_thresh &&
         money_density >= money_thresh) greening = true;
-    // Chapel-thinned deck: green early if lean enough
     if (prof.chapels >= 1 && prof.junk <= 1 && prof.deck_size <= 10 &&
         money_density >= 1.0) greening = true;
 
@@ -964,38 +955,33 @@ std::vector<int> EngineBot::decide(const DecisionPoint& dp, const GameState& sta
 
     // --- BUILD PHASE: buy whichever metric is the bottleneck ---
 
-    // Always buy Chapel first if we don't have one (trashing is #1 priority)
     if (kingdom.has_chapel && prof.chapels == 0) {
         int idx = find("Chapel");
         if (idx >= 0) return {idx};
     }
 
-    // Determine the bottleneck
     enum class Bottleneck { ACTIONS, DRAW, MONEY, BALANCED };
     Bottleneck bottleneck = Bottleneck::BALANCED;
 
     if (action_ratio < 0.15 && prof.total_action_cards >= 1) {
-        bottleneck = Bottleneck::ACTIONS;  // need villages
+        bottleneck = Bottleneck::ACTIONS;
     } else if (draw_ratio < 0.3) {
-        bottleneck = Bottleneck::DRAW;     // need draw cards
+        bottleneck = Bottleneck::DRAW;
     } else if (money_density < 0.8) {
-        bottleneck = Bottleneck::MONEY;    // need treasure/coin-producing actions
+        bottleneck = Bottleneck::MONEY;
     }
 
-    // Component limits
     auto is_limited = [&](const std::string& name) -> bool {
         if ((name == "Chapel" || name == "Lookout") && prof.chapels >= 1) return true;
-        if (name == "Sentry" && prof.chapels >= 1) return true; // don't need Sentry + Chapel
+        if (name == "Sentry" && prof.chapels >= 1) return true;
         if ((name == "Smithy" || name == "Council Room" || name == "Witch" ||
              name == "Moat" || name == "Library" || name == "Scholar" ||
              name == "Courtyard") && prof.terminal_draw >= 2) return true;
-        // TR/KC are never limited — always good to buy more
         if ((name == "Village" || name == "Festival" || name == "Worker's Village")
             && prof.villages >= 3) return true;
         return false;
     };
 
-    // Bottleneck-driven priority adjustments
     int best_idx = -1, best_prio = 999;
     for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
         if (dp.options[i].is_pass) continue;
@@ -1008,18 +994,16 @@ std::vector<int> EngineBot::decide(const DecisionPoint& dp, const GameState& sta
         int prio = engine_build_priority(name);
         auto y = card_yield(name);
 
-        // Boost cards that address the bottleneck
         if (bottleneck == Bottleneck::ACTIONS && y.actions >= 2) {
-            prio = std::min(prio, 3); // urgent: need villages
+            prio = std::min(prio, 3);
         } else if (bottleneck == Bottleneck::DRAW && y.cards >= 2) {
-            prio = std::min(prio, 5); // urgent: need draw
+            prio = std::min(prio, 5);
         } else if (bottleneck == Bottleneck::MONEY) {
             if (name == "Gold" && coins >= 6) prio = 2;
             else if (name == "Silver" && coins >= 3) prio = 8;
-            else if (y.coins >= 2) prio = std::min(prio, 10); // Festival, Militia, etc.
+            else if (y.coins >= 2) prio = std::min(prio, 10);
         }
 
-        // Witch is always high priority if available (attack + draw)
         if (name == "Witch" && prof.terminal_draw < 2) prio = std::min(prio, 15);
 
         if (prio < best_prio) { best_prio = prio; best_idx = i; }

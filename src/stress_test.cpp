@@ -1,6 +1,5 @@
 #include "engine/game_runner.h"
 #include "game/cards/level_1_cards.h"
-#include "game/cards/level_2_cards.h"
 
 #include <algorithm>
 #include <chrono>
@@ -64,7 +63,6 @@ static void run_batch(int start_game, int num_games, ThreadStats& stats) {
 int main() {
     BaseCards::register_all();
     Level1Cards::register_all();
-    Level2Cards::register_all();
 
     constexpr int NUM_GAMES = 100000;
     int num_threads = static_cast<int>(std::thread::hardware_concurrency());

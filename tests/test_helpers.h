@@ -4,7 +4,6 @@
 #include "game/card.h"
 #include "game/cards/base_cards.h"
 #include "game/cards/level_1_cards.h"
-#include "game/cards/level_2_cards.h"
 
 #include <memory>
 #include <queue>

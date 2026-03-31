@@ -15,11 +15,11 @@ bool can_play_treasure(const GameState& state, int /*player_id*/, int card_id) {
     return card && card->is_treasure();
 }
 
-bool can_buy(const GameState& state, int /*player_id*/, const std::string& pile_name) {
+bool can_buy(const GameState& state, int /*player_id*/, int pile_index) {
     if (state.current_phase() != Phase::BUY) return false;
     if (state.buys() <= 0) return false;
-    if (state.get_supply().is_pile_empty(pile_name)) return false;
-    int top_id = state.get_supply().top_card(pile_name);
+    if (state.get_supply().is_pile_empty_index(pile_index)) return false;
+    int top_id = state.get_supply().top_card_index(pile_index);
     if (top_id == -1) return false;
     const Card* card = state.card_def(top_id);
     return card && card->cost <= state.coins();
@@ -46,15 +46,15 @@ std::vector<int> playable_treasures(const GameState& state, int player_id) {
     return result;
 }
 
-std::vector<std::string> buyable_piles(const GameState& state, int /*player_id*/) {
-    std::vector<std::string> result;
+std::vector<int> buyable_piles(const GameState& state, int /*player_id*/) {
+    std::vector<int> result;
     if (state.buys() <= 0) return result;
     int coins = state.coins();
     const auto& piles = state.get_supply().piles();
-    for (const auto& pile : piles) {
-        if (pile.card_ids.empty()) continue;
-        const Card* card = state.card_def(pile.card_ids.back());
-        if (card && card->cost <= coins) result.push_back(pile.pile_name);
+    for (int i = 0; i < static_cast<int>(piles.size()); i++) {
+        if (piles[i].card_ids.empty()) continue;
+        const Card* card = state.card_def(piles[i].card_ids.back());
+        if (card && card->cost <= coins) result.push_back(i);
     }
     return result;
 }
