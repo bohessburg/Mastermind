@@ -271,7 +271,6 @@ static void run_sweep() {
 int main(int argc, char* argv[]) {
     BaseCards::register_all();
     Level1Cards::register_all();
-    Level2Cards::register_all();
 
     if (argc > 1 && std::string(argv[1]) == "--sweep") {
         run_sweep();

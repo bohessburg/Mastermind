@@ -739,7 +739,7 @@ static int engine_green_buy(const DecisionPoint& dp, const GameState& state, int
 }
 
 static std::vector<int> sentry_fate_decide(const DecisionPoint& dp, const GameState& state) {
-    int sentry_cid = state.get_turn_flag("sentry_card_id");
+    int sentry_cid = state.get_turn_flag(TurnFlag::SentryCardId);
     if (sentry_cid > 0) {
         const Card* card = state.card_def(sentry_cid);
         if (card) {
@@ -871,8 +871,8 @@ static std::vector<int> engine_sub_decide(const DecisionPoint& dp, const GameSta
         case ChoiceType::ORDER: {
             // Sentry: choose which kept card goes on top of deck.
             // Prefer actions on top (we can play them), treasures below.
-            int cid0 = state.get_turn_flag("sentry_order_card_0");
-            int cid1 = state.get_turn_flag("sentry_order_card_1");
+            int cid0 = state.get_turn_flag(TurnFlag::SentryOrderCard0);
+            int cid1 = state.get_turn_flag(TurnFlag::SentryOrderCard1);
             const Card* c0 = (cid0 > 0) ? state.card_def(cid0) : nullptr;
             const Card* c1 = (cid1 > 0) ? state.card_def(cid1) : nullptr;
             bool c0_action = c0 && c0->is_action();
@@ -998,7 +998,7 @@ std::vector<int> EngineBot::sentry_vassal_decide(
     // SUB-DECISIONS
     // Sentry MULTI_FATE: trash Copper/Estate, discard Duchy/Province, keep rest
     if (dp.sub_choice_type == ChoiceType::MULTI_FATE) {
-        int sentry_cid = state.get_turn_flag("sentry_card_id");
+        int sentry_cid = state.get_turn_flag(TurnFlag::SentryCardId);
         if (sentry_cid > 0) {
             const Card* card = state.card_def(sentry_cid);
             if (card) {
@@ -1015,8 +1015,8 @@ std::vector<int> EngineBot::sentry_vassal_decide(
 
     // Sentry ORDER: when keeping 2 cards, put Vassal on top > Sentry > other action > treasure
     if (dp.sub_choice_type == ChoiceType::ORDER) {
-        int cid0 = state.get_turn_flag("sentry_order_card_0");
-        int cid1 = state.get_turn_flag("sentry_order_card_1");
+        int cid0 = state.get_turn_flag(TurnFlag::SentryOrderCard0);
+        int cid1 = state.get_turn_flag(TurnFlag::SentryOrderCard1);
         const Card* c0 = (cid0 > 0) ? state.card_def(cid0) : nullptr;
         const Card* c1 = (cid1 > 0) ? state.card_def(cid1) : nullptr;
 

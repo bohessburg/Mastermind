@@ -333,7 +333,6 @@ int main() {
 
     BaseCards::register_all();
     Level1Cards::register_all();
-    Level2Cards::register_all();
     GameRunner runner(2, kingdom);
 
     HumanAgent player1(0, "Player 1");

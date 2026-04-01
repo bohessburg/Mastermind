@@ -145,7 +145,7 @@ void register_all() {
             if (piles.empty()) return;
 
             std::vector<int> options;
-            for (const auto& p : piles) options.push_back(state.get_supply().top_card(p));
+            for (int pi : piles) options.push_back(state.get_supply().top_card_index(pi));
 
             auto chosen = decide(pid, ChoiceType::GAIN, options, 1, 1);
             if (!chosen.empty()) {
@@ -164,9 +164,10 @@ void register_all() {
         .tags = {},
         .on_play = [](GameState& state, int pid, DecisionFn decide) {
             Player& player = state.get_player(pid);
+            int copper_def = GameState::def_copper();
             int copper_idx = -1;
             for (int i = 0; i < player.hand_size(); i++) {
-                if (state.card_name(player.get_hand()[i]) == "Copper") {
+                if (state.card_def_id(player.get_hand()[i]) == copper_def) {
                     copper_idx = i;
                     break;
                 }
@@ -307,7 +308,7 @@ void register_all() {
             if (piles.empty()) return;
 
             std::vector<int> gain_options;
-            for (const auto& p : piles) gain_options.push_back(state.get_supply().top_card(p));
+            for (int pi : piles) gain_options.push_back(state.get_supply().top_card_index(pi));
 
             auto gain_chosen = decide(pid, ChoiceType::GAIN, gain_options, 1, 1);
             if (!gain_chosen.empty()) {
@@ -349,7 +350,7 @@ void register_all() {
             if (piles.empty()) return;
 
             std::vector<int> gain_options;
-            for (const auto& p : piles) gain_options.push_back(state.get_supply().top_card(p));
+            for (int pi : piles) gain_options.push_back(state.get_supply().top_card_index(pi));
 
             auto gain_chosen = decide(pid, ChoiceType::GAIN, gain_options, 1, 1);
             if (!gain_chosen.empty()) {
@@ -370,7 +371,7 @@ void register_all() {
             auto piles = state.gainable_piles(5);
             if (!piles.empty()) {
                 std::vector<int> gain_opts;
-                for (const auto& p : piles) gain_opts.push_back(state.get_supply().top_card(p));
+                for (int pi : piles) gain_opts.push_back(state.get_supply().top_card_index(pi));
                 auto chosen = decide(pid, ChoiceType::GAIN, gain_opts, 1, 1);
                 if (!chosen.empty()) state.gain_card_to_hand(pid, piles[chosen[0]]);
             }
@@ -408,8 +409,6 @@ void register_all() {
             // For each card: 0=put back, 1=discard, 2=trash
             std::vector<int> keep_cards;
             for (int card_id : top_cards) {
-                // Stash which card we're deciding on so the UI can display it
-                state.set_turn_flag("sentry_card_id", card_id);
                 auto chosen = decide(pid, ChoiceType::MULTI_FATE, {0, 1, 2}, 1, 1);
                 int fate = chosen.empty() ? 0 : chosen[0];
                 if (fate == 1) {
@@ -423,16 +422,11 @@ void register_all() {
 
             // Put back kept cards. If >1, ask for order.
             if (keep_cards.size() == 2) {
-                // Stash card IDs so the UI can display names
-                state.set_turn_flag("sentry_order_card_0", keep_cards[0]);
-                state.set_turn_flag("sentry_order_card_1", keep_cards[1]);
-                // options: 0 = first on top, 1 = second on top
-                auto chosen = decide(pid, ChoiceType::ORDER, {0, 1}, 1, 1);
-                int top_pick = chosen.empty() ? 0 : chosen[0];
-                // Put bottom card first, then top card
-                int bottom = (top_pick == 0) ? 1 : 0;
-                player.add_to_deck_top(keep_cards[bottom]);
-                player.add_to_deck_top(keep_cards[top_pick]);
+                auto chosen = decide(pid, ChoiceType::ORDER, keep_cards, 1, 1);
+                int top_id = chosen.empty() ? keep_cards[0] : chosen[0];
+                int bottom_id = (top_id == keep_cards[0]) ? keep_cards[1] : keep_cards[0];
+                player.add_to_deck_top(bottom_id);
+                player.add_to_deck_top(top_id);
             } else if (keep_cards.size() == 1) {
                 player.add_to_deck_top(keep_cards[0]);
             }
@@ -481,7 +475,7 @@ void register_all() {
         .coin_value = 0,
         .tags = {},
         .on_play = [](GameState& state, int pid, DecisionFn decide) {
-            state.gain_card_to_deck_top(pid, "Silver");
+            state.gain_card_to_deck_top(pid, state.pile_silver());
 
             state.resolve_attack(pid, [](GameState& st, int target, DecisionFn dec) {
                 Player& p = st.get_player(target);
@@ -566,10 +560,11 @@ void register_all() {
         .coin_value = 0,
         .tags = {},
         .on_play = [](GameState& state, int pid, DecisionFn decide) {
-            state.gain_card(pid, "Gold");
+            state.gain_card(pid, state.pile_gold());
 
             state.resolve_attack(pid, [](GameState& st, int target, DecisionFn dec) {
                 Player& p = st.get_player(target);
+                int copper_def = GameState::def_copper();
                 auto revealed = p.peek_deck(2);
                 int num_revealed = static_cast<int>(revealed.size());
                 for (int i = 0; i < num_revealed; i++) p.remove_deck_top();
@@ -581,7 +576,7 @@ void register_all() {
                 std::vector<int> trashable;
                 for (int i = 0; i < num_revealed; i++) {
                     const Card* c = st.card_def(revealed[i]);
-                    if (c && c->is_treasure() && c->name != "Copper") {
+                    if (c && c->is_treasure() && c->def_id != copper_def) {
                         trashable.push_back(i);
                     }
                 }
@@ -618,7 +613,7 @@ void register_all() {
             state.get_player(pid).draw_cards(2);
 
             state.resolve_attack(pid, [](GameState& st, int target, DecisionFn) {
-                st.gain_card(target, "Curse");
+                st.gain_card(target, st.pile_curse());
             }, decide);
         },
     });
@@ -703,10 +698,8 @@ void register_all() {
         .on_play = [](GameState& state, int pid, DecisionFn) {
             state.get_player(pid).draw_cards(1);
             state.add_actions(1);
-            // Track that a Merchant is active. The bonus is applied when Silver
-            // is played, checked by the GameRunner or treasure-playing logic.
-            state.set_turn_flag("merchant_count",
-                state.get_turn_flag("merchant_count") + 1);
+            state.set_turn_flag(TurnFlag::MerchantCount,
+                state.get_turn_flag(TurnFlag::MerchantCount) + 1);
         },
     });
 }

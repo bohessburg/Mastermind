@@ -13,15 +13,6 @@ add_library(dominion_engine
     src/game/game_state.cpp
     src/game/cards/base_cards.cpp
     src/game/cards/level_1_cards.cpp
-    src/game/cards/level_2_cards.cpp
-    src/game/cards/level_3_cards.cpp
-    src/game/cards/level_4_cards.cpp
-    src/game/cards/level_5_cards.cpp
-    src/game/cards/level_6_cards.cpp
-    src/game/cards/level_7_cards.cpp
-    src/game/cards/level_8_cards.cpp
-    src/game/cards/level_9_cards.cpp
-    src/game/cards/level_10_cards.cpp
     src/engine/action_space.cpp
     src/engine/rules.cpp
     src/engine/agents.cpp
@@ -58,7 +49,9 @@ if(RAYLIB_FOUND)
     )
     target_include_directories(dominion_gui PRIVATE ${RAYLIB_INCLUDE_DIRS})
     target_link_directories(dominion_gui PRIVATE ${RAYLIB_LIBRARY_DIRS})
-    target_link_libraries(dominion_gui PRIVATE dominion_engine ${RAYLIB_LIBRARIES})
+    target_link_directories(dominion_gui PRIVATE /opt/homebrew/opt/glfw/lib)
+    target_link_libraries(dominion_gui PRIVATE dominion_engine ${RAYLIB_LIBRARIES}
+        glfw "-framework IOKit" "-framework Cocoa" "-framework OpenGL")
 else()
     message(STATUS "raylib not found — skipping GUI build (install with: brew install raylib)")
 endif()
@@ -84,7 +77,6 @@ if(BUILD_TESTS)
         tests/test_attack_reactions.cpp
         tests/test_action_space.cpp
         tests/test_invariants.cpp
-        tests/test_cards_level2.cpp
     )
     target_link_libraries(dominion_tests PRIVATE dominion_engine Catch2::Catch2WithMain)
     target_compile_options(dominion_tests PRIVATE -Wall -Wextra)

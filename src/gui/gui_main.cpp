@@ -5,6 +5,7 @@
 #include "raylib.h"
 
 #include <algorithm>
+#include <set>
 #include <atomic>
 #include <chrono>
 #include <random>
@@ -35,18 +36,26 @@ static constexpr int HAND_Y = DECISION_Y + DECISION_H + 10;
 static constexpr int LOG_X = 950;
 static constexpr int LOG_W = SCREEN_W - LOG_X - 10;
 
-// ─── All available kingdom cards ─────────────────────────────────
+// ─── All available kingdom cards (auto-populated from registry) ──
 
-static const std::vector<std::string> ALL_KINGDOM = {
-    // Level 1 (Base Set)
-    "Cellar", "Chapel", "Moat", "Harbinger", "Merchant",
-    "Vassal", "Village", "Workshop", "Bureaucrat", "Gardens",
-    "Laboratory", "Market", "Militia", "Moneylender", "Poacher",
-    "Remodel", "Smithy", "Throne Room", "Bandit", "Council Room",
-    "Festival", "Library", "Mine", "Sentry", "Witch", "Artisan",
-    // Level 2
-    "Worker's Village", "Courtyard", "Hamlet", "Lookout", "Swindler", "Scholar"
-};
+static const std::vector<std::string>& get_all_kingdom() {
+    static std::vector<std::string> kingdom;
+    if (kingdom.empty()) {
+        static const std::set<std::string> BASE_CARDS = {
+            "Copper", "Silver", "Gold", "Estate", "Duchy", "Province", "Curse"
+        };
+        auto all = CardRegistry::all_names();
+        for (const auto& name : all) {
+            if (BASE_CARDS.find(name) == BASE_CARDS.end()) {
+                kingdom.push_back(name);
+            }
+        }
+        std::sort(kingdom.begin(), kingdom.end());
+    }
+    return kingdom;
+}
+
+#define ALL_KINGDOM get_all_kingdom()
 
 // ─── Colors ───────────────────────────────────────────────────────
 
@@ -582,7 +591,6 @@ int main() {
     // --- Register cards ---
     BaseCards::register_all();
     Level1Cards::register_all();
-    Level2Cards::register_all();
 
     // --- Raylib window ---
     InitWindow(SCREEN_W, SCREEN_H, "Dominion");

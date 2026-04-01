@@ -63,10 +63,12 @@ TEST_CASE("GameState gainable_piles filters by cost", "[gamestate]") {
     auto piles = game.state().gainable_piles(3);
     // Should include Copper(0), Silver(3), Estate(2), Curse(0)
     // Should NOT include Gold(6), Duchy(5), Province(8)
+    int silver_pi = game.state().pile_silver();
+    int gold_pi = game.state().pile_gold();
     bool has_silver = false, has_gold = false;
-    for (const auto& p : piles) {
-        if (p == "Silver") has_silver = true;
-        if (p == "Gold") has_gold = true;
+    for (int p : piles) {
+        if (p == silver_pi) has_silver = true;
+        if (p == gold_pi) has_gold = true;
     }
     CHECK(has_silver);
     CHECK_FALSE(has_gold);
@@ -74,9 +76,9 @@ TEST_CASE("GameState gainable_piles filters by cost", "[gamestate]") {
 
 TEST_CASE("GameState turn flags", "[gamestate]") {
     TestGame game(1);
-    CHECK(game.state().get_turn_flag("foo") == 0);
-    game.state().set_turn_flag("foo", 3);
-    CHECK(game.state().get_turn_flag("foo") == 3);
+    CHECK(game.state().get_turn_flag(TurnFlag::MerchantCount) == 0);
+    game.state().set_turn_flag(TurnFlag::MerchantCount, 3);
+    CHECK(game.state().get_turn_flag(TurnFlag::MerchantCount) == 3);
     game.state().start_turn();
-    CHECK(game.state().get_turn_flag("foo") == 0);  // cleared on new turn
+    CHECK(game.state().get_turn_flag(TurnFlag::MerchantCount) == 0);  // cleared on new turn
 }

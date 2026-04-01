@@ -21,6 +21,7 @@ enum class DecisionType : uint8_t {
 struct ActionOption {
     int local_id;
     int card_id;
+    int pile_index = -1;  // for BUY_CARD decisions
     std::string card_name;
     std::string label;
     bool is_pass;

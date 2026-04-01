@@ -2,6 +2,15 @@
 
 static const std::string UNKNOWN_CARD = "???";
 
+// Static well-known def IDs
+int GameState::def_copper_   = -1;
+int GameState::def_silver_   = -1;
+int GameState::def_gold_     = -1;
+int GameState::def_estate_   = -1;
+int GameState::def_duchy_    = -1;
+int GameState::def_province_ = -1;
+int GameState::def_curse_    = -1;
+
 GameState::GameState(int num_players)
     : current_player_(0)
     , phase_(Phase::ACTION)
@@ -18,14 +27,18 @@ GameState::GameState(int num_players)
     turns_taken_.resize(num_players, 0);
     card_names_.reserve(256);  // typical game has ~200 cards
     card_defs_.reserve(256);
+    card_def_ids_.reserve(256);
+    turn_flags_.fill(0);
 }
 
 // --- Card ID system ---
 
 int GameState::create_card(const std::string& card_name) {
     int id = next_card_id_++;
+    const Card* def = CardRegistry::get(card_name);
     card_names_.push_back(card_name);
-    card_defs_.push_back(CardRegistry::get(card_name));
+    card_defs_.push_back(def);
+    card_def_ids_.push_back(def ? def->def_id : -1);
     return id;
 }
 
@@ -37,6 +50,11 @@ const std::string& GameState::card_name(int card_id) const {
 const Card* GameState::card_def(int card_id) const {
     if (card_id < 0 || card_id >= next_card_id_) return nullptr;
     return card_defs_[card_id];
+}
+
+int GameState::card_def_id(int card_id) const {
+    if (card_id < 0 || card_id >= next_card_id_) return -1;
+    return card_def_ids_[card_id];
 }
 
 // --- Players ---
@@ -76,29 +94,32 @@ void GameState::add_actions(int n) { actions_ += n; }
 void GameState::add_buys(int n) { buys_ += n; }
 void GameState::add_coins(int n) { coins_ += n; }
 
-// --- Game actions ---
+// --- Game actions (pile-index-based) ---
 
-int GameState::gain_card(int player_id, const std::string& pile_name) {
-    int card_id = supply_.gain_from(pile_name);
+int GameState::gain_card(int player_id, int pile_index) {
+    int card_id = supply_.gain_from_index(pile_index);
     if (card_id == -1) return -1;
     players_[player_id].add_to_discard(card_id);
-    log("    P" + std::to_string(player_id + 1) + " gains " + pile_name + " to discard");
+    log("    P" + std::to_string(player_id + 1) + " gains " +
+        supply_.pile_at(pile_index).pile_name + " to discard");
     return card_id;
 }
 
-int GameState::gain_card_to_hand(int player_id, const std::string& pile_name) {
-    int card_id = supply_.gain_from(pile_name);
+int GameState::gain_card_to_hand(int player_id, int pile_index) {
+    int card_id = supply_.gain_from_index(pile_index);
     if (card_id == -1) return -1;
     players_[player_id].add_to_hand(card_id);
-    log("    P" + std::to_string(player_id + 1) + " gains " + pile_name + " to hand");
+    log("    P" + std::to_string(player_id + 1) + " gains " +
+        supply_.pile_at(pile_index).pile_name + " to hand");
     return card_id;
 }
 
-int GameState::gain_card_to_deck_top(int player_id, const std::string& pile_name) {
-    int card_id = supply_.gain_from(pile_name);
+int GameState::gain_card_to_deck_top(int player_id, int pile_index) {
+    int card_id = supply_.gain_from_index(pile_index);
     if (card_id == -1) return -1;
     players_[player_id].add_to_deck_top(card_id);
-    log("    P" + std::to_string(player_id + 1) + " gains " + pile_name + " to deck top");
+    log("    P" + std::to_string(player_id + 1) + " gains " +
+        supply_.pile_at(pile_index).pile_name + " to deck top");
     return card_id;
 }
 
@@ -167,40 +188,63 @@ void GameState::resolve_attack(
     }
 }
 
-std::vector<std::string> GameState::gainable_piles(int max_cost) const {
-    std::vector<std::string> result;
+std::vector<int> GameState::gainable_piles(int max_cost) const {
+    std::vector<int> result;
     const auto& piles = supply_.piles();
     for (int i = 0; i < static_cast<int>(piles.size()); i++) {
         if (piles[i].card_ids.empty()) continue;
         const Card* card = card_def(piles[i].card_ids.back());
         if (card && card->cost <= max_cost) {
-            result.push_back(piles[i].pile_name);
+            result.push_back(i);
         }
     }
     return result;
 }
 
-std::vector<std::string> GameState::gainable_piles(int max_cost, CardType required_type) const {
-    std::vector<std::string> result;
+std::vector<int> GameState::gainable_piles(int max_cost, CardType required_type) const {
+    std::vector<int> result;
     const auto& piles = supply_.piles();
     for (int i = 0; i < static_cast<int>(piles.size()); i++) {
         if (piles[i].card_ids.empty()) continue;
         const Card* card = card_def(piles[i].card_ids.back());
         if (card && card->cost <= max_cost && has_type(card->types, required_type)) {
-            result.push_back(piles[i].pile_name);
+            result.push_back(i);
         }
     }
     return result;
 }
 
-int GameState::effective_cost(const std::string& card_name_str) const {
-    const Card* card = CardRegistry::get(card_name_str);
-    if (!card) return 0;
-    return card->cost;
+int GameState::effective_cost(int pile_index) const {
+    int top = supply_.top_card_index(pile_index);
+    if (top == -1) return 0;
+    const Card* card = card_def(top);
+    return card ? card->cost : 0;
 }
 
 int GameState::total_cards_owned(int player_id) const {
     return static_cast<int>(players_[player_id].all_cards().size());
+}
+
+// --- Well-known pile/def caching ---
+
+void GameState::cache_well_known_piles() {
+    pile_copper_   = supply_.pile_index_of("Copper");
+    pile_silver_   = supply_.pile_index_of("Silver");
+    pile_gold_     = supply_.pile_index_of("Gold");
+    pile_estate_   = supply_.pile_index_of("Estate");
+    pile_duchy_    = supply_.pile_index_of("Duchy");
+    pile_province_ = supply_.pile_index_of("Province");
+    pile_curse_    = supply_.pile_index_of("Curse");
+}
+
+void GameState::cache_well_known_def_ids() {
+    def_copper_   = CardRegistry::def_id_of("Copper");
+    def_silver_   = CardRegistry::def_id_of("Silver");
+    def_gold_     = CardRegistry::def_id_of("Gold");
+    def_estate_   = CardRegistry::def_id_of("Estate");
+    def_duchy_    = CardRegistry::def_id_of("Duchy");
+    def_province_ = CardRegistry::def_id_of("Province");
+    def_curse_    = CardRegistry::def_id_of("Curse");
 }
 
 // --- Turn lifecycle ---
@@ -212,7 +256,7 @@ void GameState::start_game() {
     actions_ = 1;
     buys_ = 1;
     coins_ = 0;
-    turn_flags_.clear();
+    turn_flags_.fill(0);
     std::fill(turns_taken_.begin(), turns_taken_.end(), 0);
 }
 
@@ -222,7 +266,7 @@ void GameState::start_turn() {
     buys_ = 1;
     coins_ = 0;
     actions_played_ = 0;
-    turn_flags_.clear();
+    turn_flags_.fill(0);
 }
 
 void GameState::advance_phase() {
@@ -319,14 +363,12 @@ int GameState::winner() const {
 
 // --- Turn flags ---
 
-int GameState::get_turn_flag(const std::string& key) const {
-    auto it = turn_flags_.find(key);
-    if (it == turn_flags_.end()) return 0;
-    return it->second;
+int GameState::get_turn_flag(TurnFlag flag) const {
+    return turn_flags_[static_cast<int>(flag)];
 }
 
-void GameState::set_turn_flag(const std::string& key, int value) {
-    turn_flags_[key] = value;
+void GameState::set_turn_flag(TurnFlag flag, int value) {
+    turn_flags_[static_cast<int>(flag)] = value;
 }
 
 void GameState::set_log(LogFn fn) {

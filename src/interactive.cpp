@@ -328,7 +328,6 @@ int main() {
 
     BaseCards::register_all();
     Level1Cards::register_all();
-    Level2Cards::register_all();
 
     // Kingdom selection
     std::cout << "  Kingdom setup:\n";

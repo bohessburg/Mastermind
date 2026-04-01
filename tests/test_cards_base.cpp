@@ -193,9 +193,10 @@ TEST_CASE("Workshop: gain card costing up to 4", "[cards][workshop]") {
     game.set_hand(0, {"Workshop"});
 
     auto piles = game.state().gainable_piles(4);
+    int silver_pi = game.state().pile_silver();
     int silver_idx = -1;
     for (int i = 0; i < static_cast<int>(piles.size()); i++) {
-        if (piles[i] == "Silver") { silver_idx = i; break; }
+        if (piles[i] == silver_pi) { silver_idx = i; break; }
     }
     REQUIRE(silver_idx >= 0);
 
@@ -367,9 +368,10 @@ TEST_CASE("Remodel: trash a card, gain one costing up to 2 more", "[cards][remod
     SECTION("trash Estate (2$), gain up to 4$") {
         game.set_hand(0, {"Remodel", "Estate"});
         auto piles = game.state().gainable_piles(4);
+        int silver_pi = game.state().pile_silver();
         int silver_idx = -1;
         for (int i = 0; i < static_cast<int>(piles.size()); i++) {
-            if (piles[i] == "Silver") { silver_idx = i; break; }
+            if (piles[i] == silver_pi) { silver_idx = i; break; }
         }
         REQUIRE(silver_idx >= 0);
 
@@ -399,9 +401,10 @@ TEST_CASE("Mine: trash Treasure, gain better Treasure to hand", "[cards][mine]")
     SECTION("upgrade Copper to Silver") {
         game.set_hand(0, {"Mine", "Copper"});
         auto piles = game.state().gainable_piles(3, CardType::Treasure);
+        int silver_pi = game.state().pile_silver();
         int silver_idx = -1;
         for (int i = 0; i < static_cast<int>(piles.size()); i++) {
-            if (piles[i] == "Silver") { silver_idx = i; break; }
+            if (piles[i] == silver_pi) { silver_idx = i; break; }
         }
         REQUIRE(silver_idx >= 0);
 
@@ -415,9 +418,10 @@ TEST_CASE("Mine: trash Treasure, gain better Treasure to hand", "[cards][mine]")
     SECTION("upgrade Silver to Gold") {
         game.set_hand(0, {"Mine", "Silver"});
         auto piles = game.state().gainable_piles(6, CardType::Treasure);
+        int gold_pi = game.state().pile_gold();
         int gold_idx = -1;
         for (int i = 0; i < static_cast<int>(piles.size()); i++) {
-            if (piles[i] == "Gold") { gold_idx = i; break; }
+            if (piles[i] == gold_pi) { gold_idx = i; break; }
         }
         REQUIRE(gold_idx >= 0);
 
@@ -444,9 +448,10 @@ TEST_CASE("Artisan: gain to hand costing <=5, topdeck a card", "[cards][artisan]
     game.set_hand(0, {"Artisan", "Copper", "Estate"});
 
     auto piles = game.state().gainable_piles(5);
+    int duchy_pi = game.state().pile_duchy();
     int duchy_idx = -1;
     for (int i = 0; i < static_cast<int>(piles.size()); i++) {
-        if (piles[i] == "Duchy") { duchy_idx = i; break; }
+        if (piles[i] == duchy_pi) { duchy_idx = i; break; }
     }
     REQUIRE(duchy_idx >= 0);
 
@@ -884,5 +889,5 @@ TEST_CASE("Merchant: +1 Card +1 Action, Silver bonus tracked", "[cards][merchant
 
     CHECK(game.state().get_player(0).hand_size() == 1);
     CHECK(game.state().actions() == 2);
-    CHECK(game.state().get_turn_flag("merchant_count") == 1);
+    CHECK(game.state().get_turn_flag(TurnFlag::MerchantCount) == 1);
 }

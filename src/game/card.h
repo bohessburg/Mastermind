@@ -61,7 +61,18 @@ using DecisionFn = std::function<std::vector<int>(
     int max_choices
 )>;
 
+// Turn flags: fixed enum keys replacing string-keyed map
+enum class TurnFlag : int {
+    MerchantCount,
+    MerchantSilverTriggered,
+    SentryCardId,
+    SentryOrderCard0,
+    SentryOrderCard1,
+    COUNT  // must be last
+};
+
 struct Card {
+    int def_id = -1;  // assigned by CardRegistry at registration time
     std::string name;
     int cost;
     CardType types;
@@ -90,6 +101,11 @@ struct Card {
     // Duration next-turn effect: called at start of owning player's next turn
     std::function<void(GameState&, int player_id, DecisionFn)> on_duration;
 
+    // Discard effect: called when a card with "when discard" is discarded
+    std::function<void(GameState&, int player_id, DecisionFn)> on_discard;
+
+    std::function<void(GameState&, int player_id, DecisionFn)> on_reveal;
+
     bool is_action() const   { return has_type(types, CardType::Action); }
     bool is_treasure() const { return has_type(types, CardType::Treasure); }
     bool is_victory() const  { return has_type(types, CardType::Victory); }
@@ -106,5 +122,8 @@ struct Card {
 namespace CardRegistry {
     void register_card(const Card& card);
     const Card* get(const std::string& name);
+    const Card* get(int def_id);
+    int def_id_of(const std::string& name);  // -1 if not found
     std::vector<std::string> all_names();
+    int count();
 }
