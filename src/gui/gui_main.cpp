@@ -1,5 +1,6 @@
 #include "gui_agent.h"
 #include "../engine/game_runner.h"
+#include "../engine/card_ids.h"
 #include "../game/card.h"
 
 #include "raylib.h"
@@ -281,13 +282,19 @@ static std::vector<ButtonSlot> draw_decision_panel(const DecisionPoint& dp,
     for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
         const auto& opt = dp.options[i];
 
-        std::string label = opt.label.empty() ? opt.card_name : opt.label;
-        if (label.empty() && opt.card_id >= 0) {
-            const Card* c = state.card_def(opt.card_id);
+        std::string label = opt.label;
+        if (label.empty() && opt.def_id >= 0) {
+            const Card* c = CardRegistry::get(opt.def_id);
             if (c) label = c->name + " ($" + std::to_string(c->cost) + ")";
-            else label = state.card_name(opt.card_id);
         }
-        if (label.empty()) label = "Option " + std::to_string(i);
+        if (label.empty() && opt.card_id >= 0) {
+            label = state.card_name(opt.card_id);
+        }
+        if (label.empty()) {
+            if (opt.is_play_all) label = "Play all Treasures";
+            else if (opt.is_pass) label = "Pass";
+            else label = "Option " + std::to_string(i);
+        }
 
         int btn_w = MeasureText(label.c_str(), 14) + 20;
         if (btn_w < 80) btn_w = 80;
@@ -591,6 +598,7 @@ int main() {
     // --- Register cards ---
     BaseCards::register_all();
     Level1Cards::register_all();
+    CardIds::init();
 
     // --- Raylib window ---
     InitWindow(SCREEN_W, SCREEN_H, "Dominion");
@@ -733,7 +741,8 @@ int main() {
                     for (const auto& slot : supply_slots) {
                         if (CheckCollisionPointRec(mouse, slot.rect)) {
                             for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
-                                if (dp.options[i].card_name == slot.pile_name) {
+                                const Card* opt_card = (dp.options[i].def_id >= 0) ? CardRegistry::get(dp.options[i].def_id) : nullptr;
+                                if (opt_card && opt_card->name == slot.pile_name) {
                                     active_agent->submit_answer({i});
                                     selected_options.clear();
                                     handled = true;

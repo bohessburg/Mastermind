@@ -54,6 +54,19 @@ public:
     // All cards in all zones
     std::vector<int> all_cards() const;
 
+    // Zero-allocation iteration over all cards in all zones
+    template<typename Fn>
+    void for_each_card(Fn fn) const {
+        for (int cid : hand_) fn(cid);
+        for (int cid : deck_) fn(cid);
+        for (int cid : discard_) fn(cid);
+        for (int cid : in_play_) fn(cid);
+        for (const auto& [_, cards] : set_aside_) for (int cid : cards) fn(cid);
+        for (const auto& [_, cards] : mats_) for (int cid : cards) fn(cid);
+    }
+
+    int total_card_count() const;
+
     // Set-aside and mat manipulation
     void set_aside(int card_id, const std::string& source);
     int remove_from_set_aside(const std::string& source, int index);

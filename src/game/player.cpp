@@ -164,6 +164,13 @@ std::vector<int> Player::all_cards() const {
     return result;
 }
 
+int Player::total_card_count() const {
+    int count = static_cast<int>(hand_.size() + deck_.size() + discard_.size() + in_play_.size());
+    for (const auto& [_, cards] : set_aside_) count += static_cast<int>(cards.size());
+    for (const auto& [_, cards] : mats_) count += static_cast<int>(cards.size());
+    return count;
+}
+
 // Set-aside
 void Player::set_aside(int card_id, const std::string& source) {
     set_aside_[source].push_back(card_id);

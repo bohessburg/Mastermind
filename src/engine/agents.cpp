@@ -1,4 +1,5 @@
 #include "agents.h"
+#include "card_ids.h"
 
 #include <algorithm>
 #include <unordered_map>
@@ -7,100 +8,100 @@
 static std::vector<int> sentry_fate_decide(const DecisionPoint& dp, const GameState& state);
 
 // ═══════════════════════════════════════════════════════════════════
-// Shared priority functions used by multiple agents
+// Shared priority functions using integer def_id comparison
 // ═══════════════════════════════════════════════════════════════════
 
 // Action play priority: villages first (need +Actions to play more cards),
 // then cantrips (+1 Action, safe to chain), then strong terminals.
-int action_priority(const std::string& name) {
+static int action_priority(int did) {
     // Tier 0: Villages — give +2 Actions, play these first
-    if (name == "Village")          return 0;
-    if (name == "Festival")         return 1;
-    if (name == "Worker's Village") return 2;
+    if (did == CardIds::Village)          return 0;
+    if (did == CardIds::Festival)         return 1;
+    if (did == CardIds::WorkersVillage)   return 2;
 
     // Tier 1: Cantrips — give +1 Action, safe to chain
-    if (name == "Laboratory") return 10;
-    if (name == "Market")     return 11;
-    if (name == "Sentry")     return 12;
-    if (name == "Poacher")    return 13;
-    if (name == "Merchant")   return 14;
-    if (name == "Harbinger")  return 15;
-    if (name == "Cellar")     return 16;
-    if (name == "Hamlet")     return 17;
-    if (name == "Lookout")    return 18;
+    if (did == CardIds::Laboratory) return 10;
+    if (did == CardIds::Market)     return 11;
+    if (did == CardIds::Sentry)     return 12;
+    if (did == CardIds::Poacher)    return 13;
+    if (did == CardIds::Merchant)   return 14;
+    if (did == CardIds::Harbinger)  return 15;
+    if (did == CardIds::Cellar)     return 16;
+    if (did == CardIds::Hamlet)     return 17;
+    if (did == CardIds::Lookout)    return 18;
 
     // Tier 2: Throne Room — play before a terminal to double it
-    if (name == "Throne Room") return 20;
+    if (did == CardIds::ThroneRoom) return 20;
 
     // Tier 3: Terminals — these consume your last action
-    if (name == "Witch")       return 30;
-    if (name == "Scholar")     return 31;
-    if (name == "Council Room") return 32;
-    if (name == "Smithy")      return 33;
-    if (name == "Courtyard")   return 34;
-    if (name == "Militia")     return 35;
-    if (name == "Swindler")    return 36;
-    if (name == "Library")     return 37;
-    if (name == "Mine")        return 38;
-    if (name == "Remodel")     return 39;
-    if (name == "Moneylender") return 40;
-    if (name == "Chapel")      return 41;
-    if (name == "Artisan")     return 42;
-    if (name == "Bandit")      return 43;
-    if (name == "Bureaucrat")  return 44;
-    if (name == "Workshop")    return 45;
-    if (name == "Moat")        return 46;
-    if (name == "Vassal")      return 47;
+    if (did == CardIds::Witch)       return 30;
+    if (did == CardIds::Scholar)     return 31;
+    if (did == CardIds::CouncilRoom) return 32;
+    if (did == CardIds::Smithy)      return 33;
+    if (did == CardIds::Courtyard)   return 34;
+    if (did == CardIds::Militia)     return 35;
+    if (did == CardIds::Swindler)    return 36;
+    if (did == CardIds::Library)     return 37;
+    if (did == CardIds::Mine)        return 38;
+    if (did == CardIds::Remodel)     return 39;
+    if (did == CardIds::Moneylender) return 40;
+    if (did == CardIds::Chapel)      return 41;
+    if (did == CardIds::Artisan)     return 42;
+    if (did == CardIds::Bandit)      return 43;
+    if (did == CardIds::Bureaucrat)  return 44;
+    if (did == CardIds::Workshop)    return 45;
+    if (did == CardIds::Moat)        return 46;
+    if (did == CardIds::Vassal)      return 47;
 
     return 50; // unknown cards
 }
 
 // Buy priority: lower = buy first when costs are equal.
-static int buy_priority(const std::string& name) {
+static int buy_priority(int did) {
     // $8
-    if (name == "Province")    return 0;
+    if (did == CardIds::Province)    return 0;
     // $6
-    if (name == "Gold")        return 10;
-    if (name == "Artisan")     return 11;
+    if (did == CardIds::Gold)        return 10;
+    if (did == CardIds::Artisan)     return 11;
     // $5
-    if (name == "Witch")        return 20;
-    if (name == "Scholar")      return 21;
-    if (name == "Laboratory")   return 22;
-    if (name == "Festival")     return 23;
-    if (name == "Market")       return 24;
-    if (name == "Sentry")       return 25;
-    if (name == "Council Room") return 26;
-    if (name == "Mine")         return 27;
-    if (name == "Library")      return 28;
-    if (name == "Duchy")        return 29;
+    if (did == CardIds::Witch)        return 20;
+    if (did == CardIds::Scholar)      return 21;
+    if (did == CardIds::Laboratory)   return 22;
+    if (did == CardIds::Festival)     return 23;
+    if (did == CardIds::Market)       return 24;
+    if (did == CardIds::Sentry)       return 25;
+    if (did == CardIds::CouncilRoom)  return 26;
+    if (did == CardIds::Mine)         return 27;
+    if (did == CardIds::Library)      return 28;
+    if (did == CardIds::Duchy)        return 29;
     // $4
-    if (name == "Militia")           return 30;
-    if (name == "Smithy")            return 31;
-    if (name == "Worker's Village")  return 32;
-    if (name == "Throne Room")       return 33;
-    if (name == "Remodel")           return 34;
-    if (name == "Moneylender")       return 35;
-    if (name == "Poacher")           return 36;
-    if (name == "Bureaucrat")        return 37;
-    if (name == "Gardens")           return 38;
+    if (did == CardIds::Militia)          return 30;
+    if (did == CardIds::Smithy)           return 31;
+    if (did == CardIds::WorkersVillage)   return 32;
+    if (did == CardIds::ThroneRoom)       return 33;
+    if (did == CardIds::Remodel)          return 34;
+    if (did == CardIds::Moneylender)      return 35;
+    if (did == CardIds::Poacher)          return 36;
+    if (did == CardIds::Bureaucrat)       return 37;
+    if (did == CardIds::Gardens)          return 38;
     // $3
-    if (name == "Silver")       return 40;
-    if (name == "Village")      return 41;
-    if (name == "Swindler")     return 42;
-    if (name == "Lookout")      return 43;
-    if (name == "Merchant")     return 44;
-    if (name == "Workshop")     return 45;
-    if (name == "Harbinger")    return 46;
-    if (name == "Vassal")       return 47;
+    if (did == CardIds::Silver)       return 40;
+    if (did == CardIds::Village)      return 41;
+    if (did == CardIds::Swindler)     return 42;
+    if (did == CardIds::Lookout)      return 43;
+    if (did == CardIds::Merchant)     return 44;
+    if (did == CardIds::Workshop)     return 45;
+    if (did == CardIds::Harbinger)    return 46;
+    if (did == CardIds::Vassal)       return 47;
     // $2
-    if (name == "Chapel")       return 50;
-    if (name == "Hamlet")       return 51;
-    if (name == "Courtyard")    return 52;
-    if (name == "Moat")         return 53;
-    if (name == "Cellar")       return 54;
-    if (name == "Estate")       return 55;
-    if (name == "Copper")       return 900;
-    if (name == "Curse")        return 999;
+    if (did == CardIds::Chapel)       return 50;
+    if (did == CardIds::Hamlet)       return 51;
+    if (did == CardIds::Courtyard)    return 52;
+    if (did == CardIds::Moat)         return 53;
+    if (did == CardIds::Cellar)       return 54;
+    if (did == CardIds::Estate)       return 55;
+    if (did == CardIds::Copper)       return 900;
+    if (did == CardIds::Curse)        return 999;
     return 100;
 }
 
@@ -134,12 +135,11 @@ static int trash_priority(const Card* card) {
 static std::vector<int> smart_trash(const DecisionPoint& dp, const GameState& state) {
     // Count total money in deck
     int pid = dp.player_id;
-    auto all = state.get_player(pid).all_cards();
     int total_money = 0;
-    for (int cid : all) {
+    state.get_player(pid).for_each_card([&](int cid) {
         const Card* c = state.card_def(cid);
         if (c && c->is_treasure()) total_money += c->coin_value;
-    }
+    });
 
     std::vector<std::pair<int, int>> scored; // (priority, option_index)
     for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
@@ -182,56 +182,56 @@ static std::vector<int> smart_trash(const DecisionPoint& dp, const GameState& st
 }
 
 // Engine build priority (lower = buy first)
-static int engine_build_priority(const std::string& name) {
+static int engine_build_priority(int did) {
     // Tier 0: Trashing — thin the deck ASAP
-    if (name == "Chapel")            return 0;
-    if (name == "Lookout")           return 1;
-    if (name == "Sentry")            return 2;
+    if (did == CardIds::Chapel)            return 0;
+    if (did == CardIds::Lookout)           return 1;
+    if (did == CardIds::Sentry)            return 2;
 
     // Cantrip draw
-    if (name == "Laboratory")        return 10;
-    if (name == "Market")            return 11;
-    if (name == "Festival")          return 12;
-    if (name == "Merchant")          return 14;
-    if (name == "Hamlet")            return 15;
+    if (did == CardIds::Laboratory)        return 10;
+    if (did == CardIds::Market)            return 11;
+    if (did == CardIds::Festival)          return 12;
+    if (did == CardIds::Merchant)          return 14;
+    if (did == CardIds::Hamlet)            return 15;
 
     // Villages
-    if (name == "Village")           return 20;
-    if (name == "Worker's Village")  return 21;
+    if (did == CardIds::Village)           return 20;
+    if (did == CardIds::WorkersVillage)    return 21;
 
     // Terminal draw / attacks
-    if (name == "Witch")             return 30;
-    if (name == "Scholar")           return 31;
-    if (name == "Smithy")            return 32;
-    if (name == "Courtyard")         return 33;
-    if (name == "Council Room")      return 34;
-    if (name == "Swindler")          return 35;
-    if (name == "Militia")           return 36;
-    if (name == "Moat")              return 37;
+    if (did == CardIds::Witch)             return 30;
+    if (did == CardIds::Scholar)           return 31;
+    if (did == CardIds::Smithy)            return 32;
+    if (did == CardIds::Courtyard)         return 33;
+    if (did == CardIds::CouncilRoom)       return 34;
+    if (did == CardIds::Swindler)          return 35;
+    if (did == CardIds::Militia)           return 36;
+    if (did == CardIds::Moat)              return 37;
 
     // Utility
-    if (name == "Cellar")            return 40;
-    if (name == "Harbinger")         return 41;
-    if (name == "Throne Room")       return 42;
-    if (name == "King's Court")      return 43;
-    if (name == "Remodel")           return 44;
-    if (name == "Poacher")           return 45;
-    if (name == "Workshop")          return 46;
-    if (name == "Artisan")           return 47;
-    if (name == "Mine")              return 48;
-    if (name == "Library")           return 49;
-    if (name == "Vassal")            return 50;
-    if (name == "Moneylender")       return 51;
-    if (name == "Bandit")            return 52;
-    if (name == "Bureaucrat")        return 53;
-    if (name == "Storeroom")         return 54;
-    if (name == "Oasis")             return 55;
-    if (name == "Menagerie")         return 56;
-    if (name == "Conspirator")       return 57;
+    if (did == CardIds::Cellar)            return 40;
+    if (did == CardIds::Harbinger)         return 41;
+    if (did == CardIds::ThroneRoom)        return 42;
+    if (did == CardIds::KingsCourt)        return 43;
+    if (did == CardIds::Remodel)           return 44;
+    if (did == CardIds::Poacher)           return 45;
+    if (did == CardIds::Workshop)          return 46;
+    if (did == CardIds::Artisan)           return 47;
+    if (did == CardIds::Mine)              return 48;
+    if (did == CardIds::Library)           return 49;
+    if (did == CardIds::Vassal)            return 50;
+    if (did == CardIds::Moneylender)       return 51;
+    if (did == CardIds::Bandit)            return 52;
+    if (did == CardIds::Bureaucrat)        return 53;
+    if (did == CardIds::Storeroom)         return 54;
+    if (did == CardIds::Oasis)             return 55;
+    if (did == CardIds::Menagerie)         return 56;
+    if (did == CardIds::Conspirator)       return 57;
 
     // Treasure — fallback
-    if (name == "Silver")            return 80;
-    if (name == "Gold")              return 81;
+    if (did == CardIds::Silver)            return 80;
+    if (did == CardIds::Gold)              return 81;
     return 100;
 }
 
@@ -258,13 +258,13 @@ std::vector<int> BetterRandomAgent::decide(const DecisionPoint& dp, const GameSt
 
     if (dp.type == DecisionType::PLAY_TREASURE) {
         for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
-            if (dp.options[i].label == "Play all Treasures") return {i};
+            if (dp.options[i].is_play_all) return {i};
         }
     }
 
     if (dp.type == DecisionType::BUY_CARD) {
         for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
-            if (dp.options[i].card_name == "Province") return {i};
+            if (dp.options[i].def_id == CardIds::Province) return {i};
         }
     }
 
@@ -310,7 +310,7 @@ std::vector<int> BigMoneyAgent::decide(const DecisionPoint& dp, const GameState&
         }
         case DecisionType::PLAY_TREASURE: {
             for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
-                if (dp.options[i].label == "Play all Treasures") return {i};
+                if (dp.options[i].is_play_all) return {i};
             }
             for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
                 if (!dp.options[i].is_pass) return {i};
@@ -321,9 +321,9 @@ std::vector<int> BigMoneyAgent::decide(const DecisionPoint& dp, const GameState&
             int provinces_left = state.get_supply().count_index(state.pile_province());
             int coins = state.coins();
 
-            auto find_option = [&](const std::string& name) -> int {
+            auto find_option = [&](int target_def_id) -> int {
                 for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
-                    if (dp.options[i].card_name == name) return i;
+                    if (dp.options[i].def_id == target_def_id) return i;
                 }
                 return -1;
             };
@@ -331,49 +331,48 @@ std::vector<int> BigMoneyAgent::decide(const DecisionPoint& dp, const GameState&
             if (coins >= 8) {
                 // Early game exception: no Gold and <5 Silvers → buy Gold instead
                 int pid = state.current_player_id();
-                auto all = state.get_player(pid).all_cards();
                 int gold_def = GameState::def_gold();
                 int silver_def = GameState::def_silver();
                 int gold_count = 0, silver_count = 0;
-                for (int cid : all) {
+                state.get_player(pid).for_each_card([&](int cid) {
                     int did = state.card_def_id(cid);
                     if (did == gold_def) gold_count++;
                     else if (did == silver_def) silver_count++;
-                }
+                });
                 if (gold_count == 0 && silver_count < 5) {
-                    int idx = find_option("Gold");
+                    int idx = find_option(CardIds::Gold);
                     if (idx >= 0) return {idx};
                 }
-                int idx = find_option("Province");
+                int idx = find_option(CardIds::Province);
                 if (idx >= 0) return {idx};
             }
             if (coins >= 6) {
                 if (provinces_left <= 4) {
-                    int idx = find_option("Duchy");
+                    int idx = find_option(CardIds::Duchy);
                     if (idx >= 0) return {idx};
                 }
-                int idx = find_option("Gold");
+                int idx = find_option(CardIds::Gold);
                 if (idx >= 0) return {idx};
             }
             if (coins == 5) {
                 if (provinces_left <= 5) {
-                    int idx = find_option("Duchy");
+                    int idx = find_option(CardIds::Duchy);
                     if (idx >= 0) return {idx};
                 }
-                int idx = find_option("Silver");
+                int idx = find_option(CardIds::Silver);
                 if (idx >= 0) return {idx};
             }
             if (coins >= 3) {
                 if (provinces_left <= 2) {
-                    int idx = find_option("Estate");
+                    int idx = find_option(CardIds::Estate);
                     if (idx >= 0) return {idx};
                 }
-                int idx = find_option("Silver");
+                int idx = find_option(CardIds::Silver);
                 if (idx >= 0) return {idx};
             }
             if (coins == 2) {
                 if (provinces_left <= 3) {
-                    int idx = find_option("Estate");
+                    int idx = find_option(CardIds::Estate);
                     if (idx >= 0) return {idx};
                 }
             }
@@ -408,7 +407,7 @@ std::vector<int> HeuristicAgent::decide(const DecisionPoint& dp, const GameState
             int best_prio = 999;
             for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
                 if (dp.options[i].is_pass) continue;
-                int prio = action_priority(dp.options[i].card_name);
+                int prio = action_priority(dp.options[i].def_id);
                 if (prio < best_prio) {
                     best_prio = prio;
                     best_idx = i;
@@ -423,7 +422,7 @@ std::vector<int> HeuristicAgent::decide(const DecisionPoint& dp, const GameState
 
         case DecisionType::PLAY_TREASURE: {
             for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
-                if (dp.options[i].label == "Play all Treasures") return {i};
+                if (dp.options[i].is_play_all) return {i};
             }
             for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
                 if (!dp.options[i].is_pass) return {i};
@@ -434,11 +433,10 @@ std::vector<int> HeuristicAgent::decide(const DecisionPoint& dp, const GameState
         case DecisionType::BUY_CARD: {
             int provinces_left = state.get_supply().count_index(state.pile_province());
             int pid = dp.player_id;
-            auto all = state.get_player(pid).all_cards();
-            std::unordered_map<std::string, int> owned;
-            for (int cid : all) {
-                owned[state.card_name(cid)]++;
-            }
+            std::unordered_map<int, int> owned;
+            state.get_player(pid).for_each_card([&](int cid) {
+                owned[state.card_def_id(cid)]++;
+            });
 
             int best_idx = -1;
             int best_cost = -1;
@@ -446,17 +444,17 @@ std::vector<int> HeuristicAgent::decide(const DecisionPoint& dp, const GameState
 
             for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
                 if (dp.options[i].is_pass) continue;
-                const std::string& name = dp.options[i].card_name;
+                int did = dp.options[i].def_id;
                 const Card* card = state.card_def(dp.options[i].card_id);
                 if (!card) continue;
-                if (name == "Curse" || name == "Copper") continue;
-                if (name == "Estate" && provinces_left > 2) continue;
-                if (name == "Duchy" && provinces_left > 5) continue;
+                if (did == CardIds::Curse || did == CardIds::Copper) continue;
+                if (did == CardIds::Estate && provinces_left > 2) continue;
+                if (did == CardIds::Duchy && provinces_left > 5) continue;
 
                 int cost = card->cost;
-                int base_prio = buy_priority(name);
+                int base_prio = buy_priority(did);
 
-                int copies = owned.count(name) ? owned[name] : 0;
+                int copies = owned.count(did) ? owned[did] : 0;
                 int prio;
                 if (card->is_treasure() || card->is_victory() || card->is_curse()) {
                     prio = base_prio;
@@ -511,7 +509,7 @@ std::vector<int> HeuristicAgent::decide(const DecisionPoint& dp, const GameState
                 }
                 case ChoiceType::YES_NO: {
                     for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
-                        if (dp.options[i].label == "Yes") return {i};
+                        if (dp.options[i].value != 0) return {i};
                     }
                     return {static_cast<int>(dp.options.size()) - 1};
                 }
@@ -519,9 +517,9 @@ std::vector<int> HeuristicAgent::decide(const DecisionPoint& dp, const GameState
                     int best_idx = 0;
                     int best_prio = 999;
                     for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
-                        const Card* card = state.card_def(dp.options[i].card_id);
-                        if (card) {
-                            int prio = action_priority(card->name);
+                        int did = dp.options[i].def_id;
+                        if (did >= 0) {
+                            int prio = action_priority(did);
                             if (prio < best_prio) {
                                 best_prio = prio;
                                 best_idx = i;
@@ -559,28 +557,45 @@ struct KingdomAnalysis {
     bool has_terminal_draw;
     bool has_cantrip_draw;
     bool has_witch;
-    std::string best_terminal;
+    int best_terminal;  // def_id, -1 if none
 };
 
 static KingdomAnalysis analyze_kingdom(const GameState& state) {
     KingdomAnalysis k = {};
+    k.best_terminal = -1;
+
+    // Build a set of available def_ids from supply piles
+    // (small fixed-size — just check membership inline)
+    static constexpr int MAX_PILES = 20;
+    int available[MAX_PILES];
+    int num_available = 0;
+
     for (const auto& pile : state.get_supply().piles()) {
         if (pile.card_ids.empty()) continue;
-        const auto& name = pile.pile_name;
-        if (name == "Village" || name == "Festival" || name == "Worker's Village") k.has_village = true;
-        if (name == "Chapel" || name == "Lookout" || name == "Sentry") k.has_chapel = true;
-        if (name == "Witch") { k.has_witch = true; k.has_terminal_draw = true; }
-        if (name == "Smithy" || name == "Council Room" || name == "Library" ||
-            name == "Moat" || name == "Scholar" || name == "Courtyard") k.has_terminal_draw = true;
-        if (name == "Laboratory" || name == "Market") k.has_cantrip_draw = true;
+        const Card* card = state.card_def(pile.card_ids.back());
+        if (!card) continue;
+        int did = card->def_id;
+        if (num_available < MAX_PILES) available[num_available++] = did;
+        if (did == CardIds::Village || did == CardIds::Festival || did == CardIds::WorkersVillage) k.has_village = true;
+        if (did == CardIds::Chapel || did == CardIds::Lookout || did == CardIds::Sentry) k.has_chapel = true;
+        if (did == CardIds::Witch) { k.has_witch = true; k.has_terminal_draw = true; }
+        if (did == CardIds::Smithy || did == CardIds::CouncilRoom || did == CardIds::Library ||
+            did == CardIds::Moat || did == CardIds::Scholar || did == CardIds::Courtyard) k.has_terminal_draw = true;
+        if (did == CardIds::Laboratory || did == CardIds::Market) k.has_cantrip_draw = true;
     }
-    for (auto& t : {"Witch", "Scholar", "Smithy", "Courtyard", "Council Room", "Moat", "Library"}) {
-        int pi = state.get_supply().pile_index_of(t);
-        if (pi >= 0 && !state.get_supply().is_pile_empty_index(pi)) {
-            k.best_terminal = t;
-            break;
+
+    // Find best terminal from available piles (priority order)
+    int best_terminal_ids[] = {
+        CardIds::Witch, CardIds::Scholar, CardIds::Smithy,
+        CardIds::Courtyard, CardIds::CouncilRoom, CardIds::Moat, CardIds::Library
+    };
+    for (int tid : best_terminal_ids) {
+        if (tid < 0) continue;
+        for (int j = 0; j < num_available; j++) {
+            if (available[j] == tid) { k.best_terminal = tid; goto found; }
         }
     }
+    found:
     return k;
 }
 
@@ -599,85 +614,84 @@ struct DeckProfile {
     int total_plus_actions;   // sum of +Actions from all action cards
     int total_plus_cards;     // sum of +Cards from all action cards
     int total_plus_coins;     // sum of +Coins from all action cards
-    std::unordered_map<std::string, int> counts;
+    std::unordered_map<int, int> counts;  // def_id → count
 };
 
 // +Actions, +Cards, +Coins each card provides when played
 struct CardYield { int actions; int cards; int coins; };
-static CardYield card_yield(const std::string& name) {
+static CardYield card_yield(int did) {
     // Villages
-    if (name == "Village")           return {2, 1, 0};
-    if (name == "Festival")          return {2, 0, 2};
-    if (name == "Worker's Village")  return {2, 1, 1};
+    if (did == CardIds::Village)           return {2, 1, 0};
+    if (did == CardIds::Festival)          return {2, 0, 2};
+    if (did == CardIds::WorkersVillage)    return {2, 1, 1};
     // Cantrips
-    if (name == "Laboratory")        return {1, 2, 0};
-    if (name == "Market")            return {1, 1, 1};
-    if (name == "Sentry")            return {1, 1, 0};
-    if (name == "Poacher")           return {1, 1, 1};
-    if (name == "Merchant")          return {1, 1, 0};
-    if (name == "Harbinger")         return {1, 1, 0};
-    if (name == "Cellar")            return {1, 0, 0}; // draw depends on discard
-    if (name == "Hamlet")            return {1, 1, 0}; // base only, discards are optional
-    if (name == "Lookout")           return {1, 0, 0};
-    if (name == "Oasis")             return {1, 1, 1};
-    if (name == "Menagerie")         return {1, 1, 0}; // conservative (could be 3)
-    if (name == "Conspirator")       return {0, 0, 2}; // conditional +1 Card +1 Action
+    if (did == CardIds::Laboratory)        return {1, 2, 0};
+    if (did == CardIds::Market)            return {1, 1, 1};
+    if (did == CardIds::Sentry)            return {1, 1, 0};
+    if (did == CardIds::Poacher)           return {1, 1, 1};
+    if (did == CardIds::Merchant)          return {1, 1, 0};
+    if (did == CardIds::Harbinger)         return {1, 1, 0};
+    if (did == CardIds::Cellar)            return {1, 0, 0}; // draw depends on discard
+    if (did == CardIds::Hamlet)            return {1, 1, 0}; // base only, discards are optional
+    if (did == CardIds::Lookout)           return {1, 0, 0};
+    if (did == CardIds::Oasis)             return {1, 1, 1};
+    if (did == CardIds::Menagerie)         return {1, 1, 0}; // conservative (could be 3)
+    if (did == CardIds::Conspirator)       return {0, 0, 2}; // conditional +1 Card +1 Action
     // Terminal draw
-    if (name == "Smithy")            return {0, 3, 0};
-    if (name == "Witch")             return {0, 2, 0};
-    if (name == "Council Room")      return {0, 4, 0};
-    if (name == "Moat")              return {0, 2, 0};
-    if (name == "Scholar")           return {0, 7, 0}; // net depends on hand, but huge draw
-    if (name == "Courtyard")         return {0, 3, 0}; // net +2 (topdecks 1)
-    if (name == "Library")           return {0, 2, 0}; // draws to 7, estimate +2
+    if (did == CardIds::Smithy)            return {0, 3, 0};
+    if (did == CardIds::Witch)             return {0, 2, 0};
+    if (did == CardIds::CouncilRoom)       return {0, 4, 0};
+    if (did == CardIds::Moat)              return {0, 2, 0};
+    if (did == CardIds::Scholar)           return {0, 7, 0}; // net depends on hand, but huge draw
+    if (did == CardIds::Courtyard)         return {0, 3, 0}; // net +2 (topdecks 1)
+    if (did == CardIds::Library)           return {0, 2, 0}; // draws to 7, estimate +2
     // Terminal utility
-    if (name == "Militia")           return {0, 0, 2};
-    if (name == "Swindler")          return {0, 0, 2};
-    if (name == "Throne Room")       return {0, 0, 0};
-    if (name == "King's Court")      return {0, 0, 0};
-    if (name == "Chapel")            return {0, 0, 0};
-    if (name == "Remodel")           return {0, 0, 0};
-    if (name == "Mine")              return {0, 0, 0};
-    if (name == "Moneylender")       return {0, 0, 3}; // if trashing Copper
-    if (name == "Workshop")          return {0, 0, 0};
-    if (name == "Artisan")           return {0, 0, 0};
-    if (name == "Bandit")            return {0, 0, 0};
-    if (name == "Bureaucrat")        return {0, 0, 0};
-    if (name == "Vassal")            return {0, 0, 2};
-    if (name == "Storeroom")         return {0, 0, 0};
+    if (did == CardIds::Militia)           return {0, 0, 2};
+    if (did == CardIds::Swindler)          return {0, 0, 2};
+    if (did == CardIds::ThroneRoom)        return {0, 0, 0};
+    if (did == CardIds::KingsCourt)        return {0, 0, 0};
+    if (did == CardIds::Chapel)            return {0, 0, 0};
+    if (did == CardIds::Remodel)           return {0, 0, 0};
+    if (did == CardIds::Mine)              return {0, 0, 0};
+    if (did == CardIds::Moneylender)       return {0, 0, 3}; // if trashing Copper
+    if (did == CardIds::Workshop)          return {0, 0, 0};
+    if (did == CardIds::Artisan)           return {0, 0, 0};
+    if (did == CardIds::Bandit)            return {0, 0, 0};
+    if (did == CardIds::Bureaucrat)        return {0, 0, 0};
+    if (did == CardIds::Vassal)            return {0, 0, 2};
+    if (did == CardIds::Storeroom)         return {0, 0, 0};
     return {0, 0, 0};
 }
 
 static DeckProfile analyze_deck(const GameState& state, int pid) {
     DeckProfile p = {};
-    auto all = state.get_player(pid).all_cards();
-    p.deck_size = static_cast<int>(all.size());
-    for (int cid : all) {
+    const Player& player = state.get_player(pid);
+    p.deck_size = player.total_card_count();
+    player.for_each_card([&](int cid) {
         const Card* card = state.card_def(cid);
-        if (!card) continue;
+        if (!card) return;
 
-        const std::string& name = card->name;
-        p.counts[name]++;
+        int did = card->def_id;
+        p.counts[did]++;
         if (card->is_action()) {
             p.total_action_cards++;
-            auto y = card_yield(name);
+            auto y = card_yield(did);
             p.total_plus_actions += y.actions;
             p.total_plus_cards += y.cards;
             p.total_plus_coins += y.coins;
         }
         if (card->is_treasure()) { p.treasures++; p.total_money += card->coin_value; }
-        if (name == "Village" || name == "Festival" || name == "Worker's Village") p.villages++;
-        if (name == "Smithy" || name == "Council Room" || name == "Witch" ||
-            name == "Moat" || name == "Library" || name == "Scholar" ||
-            name == "Courtyard") p.terminal_draw++;
-        if (name == "Laboratory" || name == "Market" || name == "Sentry" ||
-            name == "Merchant" || name == "Harbinger" || name == "Poacher" ||
-            name == "Cellar" || name == "Hamlet" || name == "Lookout") p.cantrips++;
-        if (name == "Chapel") p.chapels++;
-        int did = card->def_id;
+        if (did == CardIds::Village || did == CardIds::Festival || did == CardIds::WorkersVillage) p.villages++;
+        if (did == CardIds::Smithy || did == CardIds::CouncilRoom || did == CardIds::Witch ||
+            did == CardIds::Moat || did == CardIds::Library || did == CardIds::Scholar ||
+            did == CardIds::Courtyard) p.terminal_draw++;
+        if (did == CardIds::Laboratory || did == CardIds::Market || did == CardIds::Sentry ||
+            did == CardIds::Merchant || did == CardIds::Harbinger || did == CardIds::Poacher ||
+            did == CardIds::Cellar || did == CardIds::Hamlet || did == CardIds::Lookout) p.cantrips++;
+        if (did == CardIds::Chapel) p.chapels++;
         if (did == GameState::def_copper() || did == GameState::def_estate() ||
             did == GameState::def_curse()) p.junk++;
-    }
+    });
     return p;
 }
 
@@ -685,30 +699,31 @@ static int engine_green_buy(const DecisionPoint& dp, const GameState& state, int
     int provinces_left = state.get_supply().count_index(state.pile_province());
     int coins = state.coins();
 
-    auto find = [&](const std::string& name) -> int {
+    auto find = [&](int target_def_id) -> int {
         for (int i = 0; i < static_cast<int>(dp.options.size()); i++)
-            if (dp.options[i].card_name == name) return i;
+            if (dp.options[i].def_id == target_def_id) return i;
         return -1;
     };
 
-    if (coins >= 8) { int idx = find("Province"); if (idx >= 0) return idx; }
+    if (coins >= 8) { int idx = find(CardIds::Province); if (idx >= 0) return idx; }
     if (coins >= 6) {
-        if (provinces_left <= 4) { int idx = find("Duchy"); if (idx >= 0) return idx; }
-        int idx = find("Gold"); if (idx >= 0) return idx;
+        if (provinces_left <= 4) { int idx = find(CardIds::Duchy); if (idx >= 0) return idx; }
+        int idx = find(CardIds::Gold); if (idx >= 0) return idx;
     }
     if (coins == 5) {
-        if (provinces_left <= 5) { int idx = find("Duchy"); if (idx >= 0) return idx; }
-        for (auto& n : {"Laboratory", "Market", "Festival"}) {
+        if (provinces_left <= 5) { int idx = find(CardIds::Duchy); if (idx >= 0) return idx; }
+        for (int n : {CardIds::Laboratory, CardIds::Market, CardIds::Festival}) {
+            if (n < 0) continue;
             int idx = find(n); if (idx >= 0) return idx;
         }
-        int idx = find("Silver"); if (idx >= 0) return idx;
+        int idx = find(CardIds::Silver); if (idx >= 0) return idx;
     }
     if (coins >= 3) {
-        if (provinces_left <= 2) { int idx = find("Estate"); if (idx >= 0) return idx; }
-        int idx = find("Silver"); if (idx >= 0) return idx;
+        if (provinces_left <= 2) { int idx = find(CardIds::Estate); if (idx >= 0) return idx; }
+        int idx = find(CardIds::Silver); if (idx >= 0) return idx;
     }
     if (coins == 2 && provinces_left <= 3) {
-        int idx = find("Estate"); if (idx >= 0) return idx;
+        int idx = find(CardIds::Estate); if (idx >= 0) return idx;
     }
     return -1;
 }
@@ -722,12 +737,11 @@ static std::vector<int> sentry_fate_decide(const DecisionPoint& dp, const GameSt
             if (card->def_id == GameState::def_estate()) return {2};  // trash
             if (card->def_id == GameState::def_copper()) {
                 int pid_s = dp.player_id;
-                auto all = state.get_player(pid_s).all_cards();
                 int total_money = 0;
-                for (int cid : all) {
+                state.get_player(pid_s).for_each_card([&](int cid) {
                     const Card* c = state.card_def(cid);
                     if (c && c->is_treasure()) total_money += c->coin_value;
-                }
+                });
                 if (total_money > 6) return {2};
                 if (total_money > 4) return {1};
                 return {0};
@@ -766,15 +780,15 @@ static std::vector<int> engine_sub_decide(const DecisionPoint& dp, const GameSta
         }
         case ChoiceType::YES_NO: {
             for (int i = 0; i < static_cast<int>(dp.options.size()); i++)
-                if (dp.options[i].label == "Yes") return {i};
+                if (dp.options[i].value != 0) return {i};
             return {static_cast<int>(dp.options.size()) - 1};
         }
         case ChoiceType::PLAY_CARD: {
             int best_idx = 0, best_prio = 999;
             for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
-                const Card* card = state.card_def(dp.options[i].card_id);
-                if (card) {
-                    int prio = action_priority(card->name);
+                int did = dp.options[i].def_id;
+                if (did >= 0) {
+                    int prio = action_priority(did);
                     if (prio < best_prio) { best_prio = prio; best_idx = i; }
                 }
             }
@@ -811,7 +825,7 @@ std::vector<int> EngineBot::decide(const DecisionPoint& dp, const GameState& sta
         int best_idx = -1, best_prio = 999;
         for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
             if (dp.options[i].is_pass) continue;
-            int prio = action_priority(dp.options[i].card_name);
+            int prio = action_priority(dp.options[i].def_id);
             if (prio < best_prio) { best_prio = prio; best_idx = i; }
         }
         if (best_idx >= 0) return {best_idx};
@@ -823,7 +837,7 @@ std::vector<int> EngineBot::decide(const DecisionPoint& dp, const GameState& sta
     // PLAY_TREASURE
     if (dp.type == DecisionType::PLAY_TREASURE) {
         for (int i = 0; i < static_cast<int>(dp.options.size()); i++)
-            if (dp.options[i].label == "Play all Treasures") return {i};
+            if (dp.options[i].is_play_all) return {i};
         for (int i = 0; i < static_cast<int>(dp.options.size()); i++)
             if (!dp.options[i].is_pass) return {i};
         return {static_cast<int>(dp.options.size()) - 1};
@@ -838,9 +852,9 @@ std::vector<int> EngineBot::decide(const DecisionPoint& dp, const GameState& sta
     auto prof = analyze_deck(state, pid);
     int coins = state.coins();
 
-    auto find = [&](const std::string& name) -> int {
+    auto find = [&](int target_def_id) -> int {
         for (int i = 0; i < static_cast<int>(dp.options.size()); i++)
-            if (dp.options[i].card_name == name) return i;
+            if (dp.options[i].def_id == target_def_id) return i;
         return -1;
     };
 
@@ -859,35 +873,35 @@ std::vector<int> EngineBot::decide(const DecisionPoint& dp, const GameState& sta
             int gold_def = GameState::def_gold();
             int silver_def = GameState::def_silver();
             int gold_count = 0, silver_count = 0;
-            for (int cid : state.get_player(pid).all_cards()) {
+            state.get_player(pid).for_each_card([&](int cid) {
                 int did = state.card_def_id(cid);
                 if (did == gold_def) gold_count++;
                 else if (did == silver_def) silver_count++;
-            }
+            });
             if (gold_count == 0 && silver_count < 5) {
-                int idx = find("Gold");
+                int idx = find(CardIds::Gold);
                 if (idx >= 0) return {idx};
             }
-            int idx = find("Province");
+            int idx = find(CardIds::Province);
             if (idx >= 0) return {idx};
         }
         if (coins >= 6) {
-            if (provinces_left <= 4) { int idx = find("Duchy"); if (idx >= 0) return {idx}; }
-            int idx = find("Gold");
+            if (provinces_left <= 4) { int idx = find(CardIds::Duchy); if (idx >= 0) return {idx}; }
+            int idx = find(CardIds::Gold);
             if (idx >= 0) return {idx};
         }
         if (coins == 5) {
-            if (provinces_left <= 5) { int idx = find("Duchy"); if (idx >= 0) return {idx}; }
-            int idx = find("Silver");
+            if (provinces_left <= 5) { int idx = find(CardIds::Duchy); if (idx >= 0) return {idx}; }
+            int idx = find(CardIds::Silver);
             if (idx >= 0) return {idx};
         }
         if (coins >= 3) {
-            if (provinces_left <= 2) { int idx = find("Estate"); if (idx >= 0) return {idx}; }
-            int idx = find("Silver");
+            if (provinces_left <= 2) { int idx = find(CardIds::Estate); if (idx >= 0) return {idx}; }
+            int idx = find(CardIds::Silver);
             if (idx >= 0) return {idx};
         }
         if (coins == 2) {
-            if (provinces_left <= 3) { int idx = find("Estate"); if (idx >= 0) return {idx}; }
+            if (provinces_left <= 3) { int idx = find(CardIds::Estate); if (idx >= 0) return {idx}; }
         }
         return pass();
     }
@@ -905,10 +919,10 @@ std::vector<int> EngineBot::decide(const DecisionPoint& dp, const GameState& sta
         }
 
         if (kingdom.has_chapel && prof.chapels == 0 && coins >= 2) {
-            int idx = find("Chapel");
+            int idx = find(CardIds::Chapel);
             if (idx >= 0) return {idx};
         }
-        if (!kingdom.best_terminal.empty()) {
+        if (kingdom.best_terminal >= 0) {
             int owned = prof.counts.count(kingdom.best_terminal) ?
                         prof.counts.at(kingdom.best_terminal) : 0;
             if (owned < 2) {
@@ -917,13 +931,14 @@ std::vector<int> EngineBot::decide(const DecisionPoint& dp, const GameState& sta
             }
         }
         if (coins >= 5) {
-            for (auto& n : {"Laboratory", "Market"}) {
+            for (int n : {CardIds::Laboratory, CardIds::Market}) {
+                if (n < 0) continue;
                 int owned = prof.counts.count(n) ? prof.counts.at(n) : 0;
                 if (owned < 2) { int idx = find(n); if (idx >= 0) return {idx}; }
             }
         }
-        if (coins >= 6) { int idx = find("Gold"); if (idx >= 0) return {idx}; }
-        if (coins >= 3) { int idx = find("Silver"); if (idx >= 0) return {idx}; }
+        if (coins >= 6) { int idx = find(CardIds::Gold); if (idx >= 0) return {idx}; }
+        if (coins >= 3) { int idx = find(CardIds::Silver); if (idx >= 0) return {idx}; }
         return pass();
     }
 
@@ -956,7 +971,7 @@ std::vector<int> EngineBot::decide(const DecisionPoint& dp, const GameState& sta
     // --- BUILD PHASE: buy whichever metric is the bottleneck ---
 
     if (kingdom.has_chapel && prof.chapels == 0) {
-        int idx = find("Chapel");
+        int idx = find(CardIds::Chapel);
         if (idx >= 0) return {idx};
     }
 
@@ -971,13 +986,13 @@ std::vector<int> EngineBot::decide(const DecisionPoint& dp, const GameState& sta
         bottleneck = Bottleneck::MONEY;
     }
 
-    auto is_limited = [&](const std::string& name) -> bool {
-        if ((name == "Chapel" || name == "Lookout") && prof.chapels >= 1) return true;
-        if (name == "Sentry" && prof.chapels >= 1) return true;
-        if ((name == "Smithy" || name == "Council Room" || name == "Witch" ||
-             name == "Moat" || name == "Library" || name == "Scholar" ||
-             name == "Courtyard") && prof.terminal_draw >= 2) return true;
-        if ((name == "Village" || name == "Festival" || name == "Worker's Village")
+    auto is_limited = [&](int did) -> bool {
+        if ((did == CardIds::Chapel || did == CardIds::Lookout) && prof.chapels >= 1) return true;
+        if (did == CardIds::Sentry && prof.chapels >= 1) return true;
+        if ((did == CardIds::Smithy || did == CardIds::CouncilRoom || did == CardIds::Witch ||
+             did == CardIds::Moat || did == CardIds::Library || did == CardIds::Scholar ||
+             did == CardIds::Courtyard) && prof.terminal_draw >= 2) return true;
+        if ((did == CardIds::Village || did == CardIds::Festival || did == CardIds::WorkersVillage)
             && prof.villages >= 3) return true;
         return false;
     };
@@ -985,26 +1000,26 @@ std::vector<int> EngineBot::decide(const DecisionPoint& dp, const GameState& sta
     int best_idx = -1, best_prio = 999;
     for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
         if (dp.options[i].is_pass) continue;
-        const std::string& name = dp.options[i].card_name;
-        if (name.empty()) continue;
-        if (name == "Province" || name == "Duchy" || name == "Estate" ||
-            name == "Gardens" || name == "Curse" || name == "Copper") continue;
-        if (is_limited(name)) continue;
+        int did = dp.options[i].def_id;
+        if (did < 0) continue;
+        if (did == CardIds::Province || did == CardIds::Duchy || did == CardIds::Estate ||
+            did == CardIds::Gardens || did == CardIds::Curse || did == CardIds::Copper) continue;
+        if (is_limited(did)) continue;
 
-        int prio = engine_build_priority(name);
-        auto y = card_yield(name);
+        int prio = engine_build_priority(did);
+        auto y = card_yield(did);
 
         if (bottleneck == Bottleneck::ACTIONS && y.actions >= 2) {
             prio = std::min(prio, 3);
         } else if (bottleneck == Bottleneck::DRAW && y.cards >= 2) {
             prio = std::min(prio, 5);
         } else if (bottleneck == Bottleneck::MONEY) {
-            if (name == "Gold" && coins >= 6) prio = 2;
-            else if (name == "Silver" && coins >= 3) prio = 8;
+            if (did == CardIds::Gold && coins >= 6) prio = 2;
+            else if (did == CardIds::Silver && coins >= 3) prio = 8;
             else if (y.coins >= 2) prio = std::min(prio, 10);
         }
 
-        if (name == "Witch" && prof.terminal_draw < 2) prio = std::min(prio, 15);
+        if (did == CardIds::Witch && prof.terminal_draw < 2) prio = std::min(prio, 15);
 
         if (prio < best_prio) { best_prio = prio; best_idx = i; }
     }

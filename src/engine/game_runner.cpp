@@ -35,7 +35,7 @@ DecisionFn GameRunner::make_decision_fn() {
         dp.max_choices = max_choices;
 
         // For MULTI_FATE (Sentry), read the stashed card_id so UI can show it
-        if (choice_type == ChoiceType::MULTI_FATE) {
+        if (observer_ && choice_type == ChoiceType::MULTI_FATE) {
             int sentry_cid = state_.get_turn_flag(TurnFlag::SentryCardId);
             if (sentry_cid > 0) {
                 dp.source_card = state_.card_name(sentry_cid);
@@ -50,7 +50,10 @@ DecisionFn GameRunner::make_decision_fn() {
             ActionOption opt;
             opt.local_id = i;
             opt.card_id = -1;
+            opt.def_id = -1;
             opt.is_pass = false;
+            opt.is_play_all = false;
+            opt.value = options[i];
 
             switch (choice_type) {
                 case ChoiceType::DISCARD:
@@ -59,37 +62,53 @@ DecisionFn GameRunner::make_decision_fn() {
                 case ChoiceType::PLAY_CARD:
                 case ChoiceType::REVEAL: {
                     int idx = options[i];
-                    opt.card_id = (idx < static_cast<int>(hand.size())) ? hand[idx] : -1;
+                    if (idx < static_cast<int>(hand.size())) {
+                        opt.card_id = hand[idx];
+                        opt.def_id = state_.card_def_id(opt.card_id);
+                    }
                     break;
                 }
                 case ChoiceType::SELECT_FROM_DISCARD: {
                     int idx = options[i];
-                    opt.card_id = (idx < static_cast<int>(discard.size())) ? discard[idx] : -1;
+                    if (idx < static_cast<int>(discard.size())) {
+                        opt.card_id = discard[idx];
+                        opt.def_id = state_.card_def_id(opt.card_id);
+                    }
                     break;
                 }
                 case ChoiceType::GAIN: {
                     opt.card_id = options[i];
+                    opt.def_id = state_.card_def_id(opt.card_id);
                     break;
                 }
                 case ChoiceType::YES_NO: {
-                    opt.label = (options[i] == 0) ? "No" : "Yes";
+                    if (observer_) {
+                        opt.label = (options[i] == 0) ? "No" : "Yes";
+                    }
                     break;
                 }
                 case ChoiceType::MULTI_FATE: {
-                    if (options[i] == 0) opt.label = "Keep (put back on deck)";
-                    else if (options[i] == 1) opt.label = "Discard";
-                    else if (options[i] == 2) opt.label = "Trash";
-                    else opt.label = "Option " + std::to_string(options[i]);
+                    if (observer_) {
+                        if (options[i] == 0) opt.label = "Keep (put back on deck)";
+                        else if (options[i] == 1) opt.label = "Discard";
+                        else if (options[i] == 2) opt.label = "Trash";
+                        else opt.label = "Option " + std::to_string(options[i]);
+                    }
                     break;
                 }
                 case ChoiceType::ORDER: {
-                    // options[i] is a card_id for ORDER
-                    opt.label = state_.card_name(options[i]);
                     opt.card_id = options[i];
+                    opt.def_id = state_.card_def_id(opt.card_id);
+                    if (observer_) {
+                        opt.label = state_.card_name(options[i]);
+                    }
                     break;
                 }
                 default: {
                     opt.card_id = options[i];
+                    if (opt.card_id >= 0) {
+                        opt.def_id = state_.card_def_id(opt.card_id);
+                    }
                     break;
                 }
             }
@@ -106,9 +125,11 @@ DecisionFn GameRunner::make_decision_fn() {
             int n = static_cast<int>(result.size());
 
             if (n < min_choices || n > max_choices) {
-                observe("  [engine] Invalid: need " + std::to_string(min_choices) +
-                        "-" + std::to_string(max_choices) + " choices, got " +
-                        std::to_string(n) + ". Retrying.");
+                if (observer_) {
+                    observe("  [engine] Invalid: need " + std::to_string(min_choices) +
+                            "-" + std::to_string(max_choices) + " choices, got " +
+                            std::to_string(n) + ". Retrying.");
+                }
                 continue;
             }
 
@@ -124,7 +145,9 @@ DecisionFn GameRunner::make_decision_fn() {
                 }
             }
             if (!valid) {
-                observe("  [engine] Invalid indices. Retrying.");
+                if (observer_) {
+                    observe("  [engine] Invalid indices. Retrying.");
+                }
                 continue;
             }
 
@@ -136,7 +159,9 @@ DecisionFn GameRunner::make_decision_fn() {
 GameResult GameRunner::run(std::vector<Agent*> agents) {
     agents_ = agents;
     // Route card-level logs through the observer
-    state_.set_log([this](const std::string& msg) { observe(msg); });
+    if (observer_) {
+        state_.set_log([this](const std::string& msg) { observe(msg); });
+    }
     BaseCards::setup_supply(state_, kingdom_cards_);
     BaseCards::setup_starting_decks(state_);
     state_.start_game();
@@ -148,8 +173,10 @@ GameResult GameRunner::run(std::vector<Agent*> agents) {
     while (!state_.is_game_over() && state_.turn_number() < MAX_TURNS
            && total_decisions_ < MAX_DECISIONS) {
         int pid = state_.current_player_id();
-        observe("--- Player " + std::to_string(pid) + "'s turn (Turn " +
-                std::to_string(state_.turn_number()) + ") ---");
+        if (observer_) {
+            observe("--- Player " + std::to_string(pid) + "'s turn (Turn " +
+                    std::to_string(state_.turn_number()) + ") ---");
+        }
         run_turn(pid);
     }
 
@@ -174,8 +201,7 @@ void GameRunner::run_turn(int pid) {
 void GameRunner::run_action_phase(int pid) {
     Agent* agent = agents_[pid];
     while (state_.actions() > 0) {
-        auto playable = Rules::playable_actions(state_, pid);
-        if (playable.empty()) break;
+        if (!Rules::has_playable_action(state_, pid)) break;
 
         DecisionPoint dp = build_action_decision(state_);
         auto choice = agent->decide(dp, state_);
@@ -190,8 +216,11 @@ void GameRunner::run_action_phase(int pid) {
         int hand_idx = player.find_in_hand(card_id);
         if (hand_idx == -1) break;
 
-        observe("  Player " + std::to_string(pid) + " plays " +
-                dp.options[chosen_idx].card_name);
+        if (observer_) {
+            const Card* card_info = state_.card_def(card_id);
+            observe("  Player " + std::to_string(pid) + " plays " +
+                    (card_info ? card_info->name : "???"));
+        }
 
         state_.add_actions(-1);
         DecisionFn decide_fn = make_decision_fn();
@@ -204,8 +233,7 @@ void GameRunner::run_treasure_phase(int pid) {
     int silver_def = GameState::def_silver();
 
     while (true) {
-        auto treasures = Rules::playable_treasures(state_, pid);
-        if (treasures.empty()) break;
+        if (!Rules::has_playable_treasure(state_, pid)) break;
 
         DecisionPoint dp = build_treasure_decision(state_);
         auto choice = agent->decide(dp, state_);
@@ -215,7 +243,7 @@ void GameRunner::run_treasure_phase(int pid) {
         int chosen_idx = choice[0];
         if (chosen_idx >= static_cast<int>(dp.options.size()) || dp.options[chosen_idx].is_pass) break;
 
-        if (dp.options[chosen_idx].label == "Play all Treasures") {
+        if (dp.options[chosen_idx].is_play_all) {
             Player& player = state_.get_player(pid);
             DecisionFn decide_fn = make_decision_fn();
 
@@ -225,12 +253,14 @@ void GameRunner::run_treasure_phase(int pid) {
                 if (card && card->is_treasure()) treasure_indices.push_back(i);
             }
 
-            std::ostringstream oss;
-            oss << "  Player " << pid << " plays all Treasures:";
-            for (int i : treasure_indices) {
-                oss << " " << state_.card_name(player.get_hand()[i]);
+            if (observer_) {
+                std::ostringstream oss;
+                oss << "  Player " << pid << " plays all Treasures:";
+                for (int i : treasure_indices) {
+                    oss << " " << state_.card_name(player.get_hand()[i]);
+                }
+                observe(oss.str());
             }
-            observe(oss.str());
 
             std::sort(treasure_indices.begin(), treasure_indices.end(), std::greater<int>());
 
@@ -258,12 +288,15 @@ void GameRunner::run_treasure_phase(int pid) {
         int hand_idx = player.find_in_hand(card_id);
         if (hand_idx == -1) break;
 
-        const Card* card = state_.card_def(card_id);
-        observe("  Player " + std::to_string(pid) + " plays " +
-                (card ? card->name : "???"));
+        if (observer_) {
+            const Card* card = state_.card_def(card_id);
+            observe("  Player " + std::to_string(pid) + " plays " +
+                    (card ? card->name : "???"));
+        }
 
         DecisionFn decide_fn = make_decision_fn();
         player.play_from_hand(hand_idx);
+        const Card* card = state_.card_def(card_id);
         if (card && card->on_play) {
             card->on_play(state_, pid, decide_fn);
         }
@@ -276,8 +309,10 @@ void GameRunner::run_treasure_phase(int pid) {
         }
     }
 
-    observe("  Player " + std::to_string(pid) + " has " +
-            std::to_string(state_.coins()) + " coins");
+    if (observer_) {
+        observe("  Player " + std::to_string(pid) + " has " +
+                std::to_string(state_.coins()) + " coins");
+    }
 }
 
 void GameRunner::run_buy_phase(int pid) {
@@ -297,7 +332,9 @@ void GameRunner::run_buy_phase(int pid) {
         const Card* card = state_.card_def(dp.options[chosen_idx].card_id);
         if (!card) break;
 
-        observe("  Player " + std::to_string(pid) + " buys " + card->name);
+        if (observer_) {
+            observe("  Player " + std::to_string(pid) + " buys " + card->name);
+        }
 
         state_.add_coins(-card->cost);
         state_.add_buys(-1);

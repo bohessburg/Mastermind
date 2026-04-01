@@ -21,10 +21,13 @@ enum class DecisionType : uint8_t {
 struct ActionOption {
     int local_id;
     int card_id;
-    int pile_index = -1;  // for BUY_CARD decisions
-    std::string card_name;
-    std::string label;
+    int def_id = -1;      // card definition ID (fast integer comparison)
+    int pile_index = -1;   // for BUY_CARD decisions
+    int value = 0;         // raw option value (YES_NO: 0=No/1=Yes, MULTI_FATE: 0/1/2)
+    std::string card_name; // UI display only
+    std::string label;     // UI display only
     bool is_pass;
+    bool is_play_all = false; // "Play all Treasures" shortcut
 };
 
 struct DecisionPoint {

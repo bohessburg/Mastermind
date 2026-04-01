@@ -1,4 +1,5 @@
 #include "engine/game_runner.h"
+#include "engine/card_ids.h"
 
 #include <algorithm>
 #include <chrono>
@@ -120,6 +121,7 @@ static void print_result(const BenchResult& r) {
 int main() {
     BaseCards::register_all();
     Level1Cards::register_all();
+    CardIds::init();
 
     int n = 5000;
 

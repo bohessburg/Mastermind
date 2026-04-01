@@ -1,10 +1,12 @@
 #include <catch2/catch_test_macros.hpp>
 #include "test_helpers.h"
 #include "engine/game_runner.h"
+#include "engine/card_ids.h"
 
 TEST_CASE("Full game completes without crash", "[invariant]") {
     BaseCards::register_all();
     Level1Cards::register_all();
+    CardIds::init();
 
     std::vector<std::string> kingdom = {
         "Smithy", "Village", "Market", "Laboratory", "Festival",
@@ -26,6 +28,7 @@ TEST_CASE("Full game completes without crash", "[invariant]") {
 TEST_CASE("Random agent game completes", "[invariant]") {
     BaseCards::register_all();
     Level1Cards::register_all();
+    CardIds::init();
     std::vector<std::string> kingdom = {
         "Smithy", "Village", "Market", "Laboratory", "Festival",
         "Cellar", "Chapel", "Workshop", "Moat", "Militia"
@@ -47,6 +50,7 @@ TEST_CASE("Scores are deterministic with same seed", "[invariant]") {
 
     BaseCards::register_all();
     Level1Cards::register_all();
+    CardIds::init();
     auto run_game = [&]() {
         GameRunner runner(2, kingdom);
         BigMoneyAgent agent1;

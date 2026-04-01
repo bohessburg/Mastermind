@@ -20,7 +20,7 @@ TEST_CASE("Treasure decision includes play-all shortcut", "[actionspace]") {
     game.set_hand(0, {"Copper", "Silver", "Gold", "Estate"});
 
     auto dp = build_treasure_decision(game.state());
-    CHECK(dp.options[0].label == "Play all Treasures");
+    CHECK(dp.options[0].is_play_all);
     CHECK(dp.options.back().is_pass);
     // Play all + 3 individual treasures + stop = 5
     CHECK(dp.num_options() == 5);
@@ -34,7 +34,7 @@ TEST_CASE("Buy decision filters by coins", "[actionspace]") {
     auto dp = build_buy_decision(game.state());
     // All piles costing <= 4 + End Buys
     for (int i = 0; i < dp.num_options() - 1; i++) {
-        const Card* card = CardRegistry::get(dp.options[i].card_name);
+        const Card* card = (dp.options[i].def_id >= 0) ? CardRegistry::get(dp.options[i].def_id) : nullptr;
         REQUIRE(card);
         CHECK(card->cost <= 4);
     }
