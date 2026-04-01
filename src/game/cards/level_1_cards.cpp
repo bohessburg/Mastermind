@@ -409,6 +409,7 @@ void register_all() {
             // For each card: 0=put back, 1=discard, 2=trash
             std::vector<int> keep_cards;
             for (int card_id : top_cards) {
+                state.set_turn_flag(TurnFlag::SentryCardId, card_id);
                 auto chosen = decide(pid, ChoiceType::MULTI_FATE, {0, 1, 2}, 1, 1);
                 int fate = chosen.empty() ? 0 : chosen[0];
                 if (fate == 1) {
@@ -422,6 +423,8 @@ void register_all() {
 
             // Put back kept cards. If >1, ask for order.
             if (keep_cards.size() == 2) {
+                state.set_turn_flag(TurnFlag::SentryOrderCard0, keep_cards[0]);
+                state.set_turn_flag(TurnFlag::SentryOrderCard1, keep_cards[1]);
                 auto chosen = decide(pid, ChoiceType::ORDER, keep_cards, 1, 1);
                 int top_id = chosen.empty() ? keep_cards[0] : chosen[0];
                 int bottom_id = (top_id == keep_cards[0]) ? keep_cards[1] : keep_cards[0];

@@ -1,0 +1,11 @@
+build/
+.git/
+.cache/
+.idea/
+.vscode/
+Testing/
+*.o
+*.a
+*.so
+*.dylib
+.DS_Store

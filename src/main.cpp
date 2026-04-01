@@ -4,6 +4,7 @@
 #include <chrono>
 #include <future>
 #include <iostream>
+#include <map>
 #include <memory>
 #include <random>
 #include <string>
@@ -29,6 +30,10 @@ static std::unique_ptr<Agent> make_agent(AgentType t, uint64_t seed) {
     return nullptr;
 }
 
+struct StratBucket {
+    int games = 0, wins = 0, losses = 0, ties = 0;
+};
+
 struct BenchResult {
     std::string label;
     int num_games;
@@ -37,6 +42,7 @@ struct BenchResult {
     double avg_turns;
     double avg_score_p1, avg_score_p2;
     int skipped;
+    std::map<std::string, StratBucket> strat_breakdown;
 };
 
 static constexpr double BENCH_TIMEOUT_SEC = 10.0;
@@ -66,6 +72,12 @@ static BenchResult run_bench(const std::string& label, int max_games,
     int games_played = 0;
     int skipped = 0;
     std::mt19937 kingdom_rng(std::hash<std::string>{}(label));
+    std::map<std::string, StratBucket> strat_breakdown;
+
+    // Track strategy breakdown when Engine is one of the agents
+    bool engine_is_p1 = (t1 == AgentType::ENGINE);
+    bool engine_is_p2 = (t2 == AgentType::ENGINE);
+    bool track_strat = (engine_is_p1 != engine_is_p2); // exactly one Engine
 
     auto start = std::chrono::high_resolution_clock::now();
 
@@ -75,6 +87,11 @@ static BenchResult run_bench(const std::string& label, int max_games,
         auto a1 = make_agent(t1, g * 2);
         auto a2 = make_agent(t2, g * 2 + 1);
         std::vector<Agent*> agents = {a1.get(), a2.get()};
+
+        std::string strat;
+        if (track_strat) {
+            strat = EngineBot::strategy_for(kingdom);
+        }
 
         auto result = runner.run(agents);
 
@@ -90,6 +107,18 @@ static BenchResult run_bench(const std::string& label, int max_games,
         total_score_p1 += result.scores[0];
         total_score_p2 += result.scores[1];
         games_played++;
+
+        if (track_strat) {
+            auto& b = strat_breakdown[strat];
+            b.games++;
+            bool engine_won = (engine_is_p1 && result.winner == 0) ||
+                              (engine_is_p2 && result.winner == 1);
+            bool engine_lost = (engine_is_p1 && result.winner == 1) ||
+                               (engine_is_p2 && result.winner == 0);
+            if (engine_won) b.wins++;
+            else if (engine_lost) b.losses++;
+            else b.ties++;
+        }
     }
 
     auto end = std::chrono::high_resolution_clock::now();
@@ -99,7 +128,7 @@ static BenchResult run_bench(const std::string& label, int max_games,
             games_played ? static_cast<double>(total_turns) / games_played : 0,
             games_played ? static_cast<double>(total_score_p1) / games_played : 0,
             games_played ? static_cast<double>(total_score_p2) / games_played : 0,
-            skipped};
+            skipped, strat_breakdown};
 }
 
 static void print_result(const BenchResult& r) {
@@ -114,12 +143,143 @@ static void print_result(const BenchResult& r) {
               << "  Ties: " << r.ties << "\n";
     std::cout << "    Avg score: P1=" << r.avg_score_p1
               << "  P2=" << r.avg_score_p2 << "\n";
-    std::cout << "    Avg turns: " << r.avg_turns << "\n\n" << std::flush;
+    std::cout << "    Avg turns: " << r.avg_turns << "\n";
+    if (!r.strat_breakdown.empty()) {
+        std::cout << "    Strategy breakdown (Engine win%):\n";
+        for (auto& [strat, b] : r.strat_breakdown) {
+            double pct = b.games > 0 ? 100.0 * b.wins / b.games : 0;
+            std::cout << "      " << strat << ": "
+                      << b.wins << "W/" << b.losses << "L/" << b.ties << "T"
+                      << " (" << b.games << " games, " << pct << "%)\n";
+        }
+    }
+    std::cout << "\n" << std::flush;
 }
 
-int main() {
+static void run_loss_analysis() {
+    int n = 20000;
+    std::mt19937 kingdom_rng(12345);
+    std::map<std::string, int> loss_card_counts;
+    std::map<std::string, int> win_card_counts;
+    int total_losses = 0;
+    int total_wins = 0;
+
+    std::cout << "=== LOSS ANALYSIS: Engine vs BigMoney ===\n";
+    std::cout << n << " games per seat...\n\n" << std::flush;
+
+    for (int seat = 0; seat < 2; seat++) {
+        for (int g = 0; g < n; g++) {
+            auto kingdom = random_kingdom(kingdom_rng);
+            GameRunner runner(2, kingdom);
+            std::unique_ptr<Agent> engine, bm;
+            engine = std::make_unique<EngineBot>();
+            bm = std::make_unique<BigMoneyAgent>();
+
+            std::vector<Agent*> agents;
+            if (seat == 0) agents = {engine.get(), bm.get()};
+            else agents = {bm.get(), engine.get()};
+
+            auto result = runner.run(agents);
+            if (result.total_turns >= 79) continue;
+
+            bool engine_won = (seat == 0 && result.winner == 0) ||
+                              (seat == 1 && result.winner == 1);
+            bool engine_lost = (seat == 0 && result.winner == 1) ||
+                               (seat == 1 && result.winner == 0);
+
+            if (engine_lost) {
+                total_losses++;
+                for (const auto& card : kingdom)
+                    loss_card_counts[card]++;
+            }
+            if (engine_won) {
+                total_wins++;
+                for (const auto& card : kingdom)
+                    win_card_counts[card]++;
+            }
+        }
+    }
+
+    // Sort by loss count descending
+    std::vector<std::pair<std::string, int>> sorted_losses(
+        loss_card_counts.begin(), loss_card_counts.end());
+    std::sort(sorted_losses.begin(), sorted_losses.end(),
+        [](const auto& a, const auto& b) { return a.second > b.second; });
+
+    printf("Total: %d wins, %d losses\n\n", total_wins, total_losses);
+    printf("%-20s  Losses  Wins    Loss%%   Win%%    Delta\n", "Card");
+    printf("%-20s  ------  ------  ------  ------  ------\n", "----");
+    for (const auto& [card, losses] : sorted_losses) {
+        int wins = win_card_counts.count(card) ? win_card_counts.at(card) : 0;
+        double loss_pct = 100.0 * losses / total_losses;
+        double win_pct = total_wins > 0 ? 100.0 * wins / total_wins : 0;
+        double delta = loss_pct - win_pct;
+        printf("%-20s  %5d   %5d   %5.1f%%  %5.1f%%  %+5.1f%%\n",
+               card.c_str(), losses, wins, loss_pct, win_pct, delta);
+    }
+    printf("\nPositive Delta = card appears MORE in losses than wins (bad for Engine)\n");
+    printf("Negative Delta = card appears MORE in wins than losses (good for Engine)\n");
+}
+
+static void run_sweep() {
+    int n = 5000;
+    std::vector<double> term_vals = {0.05, 0.08, 0.10, 0.12, 0.15, 0.20};
+    std::vector<double> act_vals  = {0.15, 0.20, 0.25, 0.30, 0.35, 0.40};
+
+    std::cout << "=== DENSITY LIMIT SWEEP ===\n";
+    std::cout << "5000 games per seat per config\n\n";
+    std::cout << "TermDens  ActDens   P1win%  P2win%  SeatAdj%\n";
+    std::cout << "--------  --------  ------  ------  --------\n" << std::flush;
+
+    struct SweepResult { double td, ad, p1pct, p2pct, seat; };
+    std::vector<SweepResult> results;
+
+    for (double td : term_vals) {
+        for (double ad : act_vals) {
+            EngineBot::terminal_density_limit = td;
+            EngineBot::action_density_limit = ad;
+
+            auto f1 = std::async(std::launch::async, run_bench,
+                "EvBM", n, AgentType::ENGINE, AgentType::BIG_MONEY);
+            auto f2 = std::async(std::launch::async, run_bench,
+                "BMvE", n, AgentType::BIG_MONEY, AgentType::ENGINE);
+
+            auto r1 = f1.get();
+            auto r2 = f2.get();
+
+            double p1pct = r1.num_games > 0 ?
+                100.0 * r1.p1_wins / r1.num_games : 0;
+            double p2pct = r2.num_games > 0 ?
+                100.0 * r2.p2_wins / r2.num_games : 0;
+            double seat = (p1pct + p2pct) / 2.0;
+
+            results.push_back({td, ad, p1pct, p2pct, seat});
+
+            printf("  %.2f      %.2f    %5.1f%%  %5.1f%%   %5.1f%%\n",
+                   td, ad, p1pct, p2pct, seat);
+            std::cout << std::flush;
+        }
+    }
+
+    // Find and print best
+    auto best = std::max_element(results.begin(), results.end(),
+        [](const SweepResult& a, const SweepResult& b) { return a.seat < b.seat; });
+    printf("\nBest: terminal=%.2f action=%.2f -> %.1f%% seat-adjusted\n",
+           best->td, best->ad, best->seat);
+}
+
+int main(int argc, char* argv[]) {
     BaseCards::register_all();
     Level1Cards::register_all();
+
+    if (argc > 1 && std::string(argv[1]) == "--sweep") {
+        run_sweep();
+        return 0;
+    }
+    if (argc > 1 && std::string(argv[1]) == "--losses") {
+        run_loss_analysis();
+        return 0;
+    }
 
     int n = 5000;
 

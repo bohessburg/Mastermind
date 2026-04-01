@@ -66,6 +66,8 @@ enum class TurnFlag : int {
     MerchantCount,
     MerchantSilverTriggered,
     SentryCardId,
+    SentryOrderCard0,
+    SentryOrderCard1,
     COUNT  // must be last
 };
 

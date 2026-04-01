@@ -177,3 +177,120 @@ All measurements on Apple M1 Max, Release build (`-O2`).
 | Engine vs Engine | ~3,000 |
 
 Stress test: 100K Engine vs Engine games in ~3.3s (30K games/sec across 10 threads).
+
+---
+
+## BM_PLUS_X Optimization (v2)
+
+**Seat-adjusted win rate vs BigMoney: 42.5% -> 75.3%**
+
+Major rework of the EngineBot, centered on making BM_PLUS_X the dominant strategy. FULL_ENGINE was disabled entirely as BM_PLUS_X outperforms it on all tested random kingdoms.
+
+### Strategy selection changes
+
+- **Disabled FULL_ENGINE** — on random 10-of-32 kingdoms, BM_PLUS_X beats BigMoney ~75% while FULL_ENGINE only won ~22%. The engine overbuilds and gets outpaced by BigMoney's Province rush.
+- **Expanded BM_PLUS_X triggers** — added Militia, Swindler, Festival, Moneylender, Bandit to the list of cards that trigger BM_PLUS_X (previously only terminal draw + Chapel + cantrip draw).
+- **Chapel-only boards fall to PURE_BM** — trashing without a good action to pair it with loses to pure money.
+
+### Card ranking overhaul
+
+BM_PLUS_X best_action priority (what the bot splashes into its money deck):
+
+| Rank | Card | Rationale |
+|------|------|-----------|
+| 1 | Witch | +2 cards + Curses destroy BigMoney (-24% delta) |
+| 2 | Bandit | Free Gold + trashes opponent's treasures |
+| 3 | Militia | +$2 + force discard to 3 (-18% delta) |
+| 4 | Laboratory | Non-terminal +2 cards |
+| 5 | Smithy | +3 cards |
+| 6 | Council Room | +4 cards +1 buy |
+| 7 | Festival | Non-terminal +$2 +1 buy |
+| 8 | Market | Non-terminal +$1 +1 buy |
+| 9 | Swindler | +$2, disruptive attack |
+| 10 | Courtyard | +3 cards (topdeck 1) |
+| 11-14 | Library, Moat, Scholar, Moneylender | Weak options |
+
+Key demotions: Scholar dropped from #3 to #13 (discard-hand-then-draw is bad in a money deck). Sentry removed from buy list entirely (only bought as trasher via special logic).
+
+### Density-based action limits
+
+Replaced fixed copy limits (max 2 terminals, etc.) with density-based limits tuned via parameter sweep:
+
+- **Terminal density < 0.08** — roughly 1 terminal per 12 cards. Prevents terminal collision.
+- **Action density < 0.35** — keeps the deck money-focused.
+
+The bot only buys the single best terminal in the kingdom (doesn't settle for weaker ones on cheap hands — waits for the $5 hand to buy Witch rather than buying Smithy at $4).
+
+### Greening trigger
+
+Replaced `total_money >= 16` with density-based greening:
+
+- **money_density >= 1.2 (P1) or 1.1 (P2)** — P2 greens slightly earlier for tempo.
+- **Turn > 5 failsafe** — always green after turn 5.
+- Removed the old `has_trasher && junk <= 2` trigger which caused premature greening on thin-but-poor decks.
+
+### Chapel logic
+
+Chapel's presence in the kingdom was the #1 factor in losses (+18% delta initially). Systematic fixes:
+
+1. **Attack-only Chapel** — only buy Chapel when Militia or Bandit is in the kingdom. Witch boards don't need Chapel (Witch is strong enough alone). Trashing without attacks doesn't beat BigMoney's speed.
+2. **Cheap-hand buying** — only buy Chapel on turns 1-2 with $2-$3 hands. Don't waste $4+ hands on a $2 card.
+3. **First-play aggression** — first Chapel play trashes all junk with no money floor. Subsequent plays preserve $3 in hand money so the turn isn't wasted.
+4. **Conditional play** — after first play, only play Chapel if it's the only terminal action in hand. Don't waste an action on Chapel when Witch/Militia is available.
+
+Result: Chapel delta reduced from +18.2% to +6.0%.
+
+### Sentry logic
+
+- Always trash Estates, Coppers, and Curses on reveal.
+- Always discard Duchies and Provinces (don't trash VP cards we bought).
+- When ordering kept cards, put actions on top of deck over treasures.
+- Removed from the general buy list — only bought as trasher backup on Militia/Bandit boards.
+
+### Swindler decision logic
+
+When Swindler trashes an opponent's card, give them the worst replacement:
+
+- Cost 0: give Curse
+- Cost 2: give Estate
+- Cost 3-5: give the worst action card (reverse of best_action ranking), never a treasure
+- Cost 6: give an action if available, otherwise Gold
+- Cost 7+: give same card type
+
+### Throne Room / King's Court
+
+- Play priority 0 (play before everything else — can double villages, cantrips, or terminals).
+- Never throne Chapel.
+- Not bought in BM_PLUS_X — a money deck with ~1 terminal doesn't have enough targets to justify TR's $4 cost over Silver.
+
+### What helped most (ordered by impact)
+
+| Change | Win rate impact |
+|--------|----------------|
+| Disable FULL_ENGINE, expand BM_PLUS_X | +20% (42% -> 62%) |
+| Militia ranked #3 (above Smithy/Lab) | +3% |
+| Bandit ranked #2 | +2% |
+| Chapel attack-only restriction | +2% |
+| Scholar demotion | +1.5% |
+| Density-based action limits | +1% |
+| Aggressive Sentry trashing | +1% |
+| Smart Swindler decisions | +0.5% |
+
+### Loss analysis insights
+
+Cards most correlated with Engine losses (delta = loss% - win%):
+
+| Card | Delta | Explanation |
+|------|-------|-------------|
+| Chapel | +6.0% | Tempo cost of trashing, even on attack boards |
+| Sentry | +3.5% | Same trasher issue |
+| Festival | +3.2% | Bot buys it but doesn't help enough |
+| Everything else | <+2% | Noise |
+
+Cards most correlated with Engine wins:
+
+| Card | Delta | Explanation |
+|------|-------|-------------|
+| Witch | -24.1% | Curses are devastating to BigMoney |
+| Militia | -17.7% | Discard-to-3 cripples $8 Province hands |
+| All others | <-1% | Only attacks meaningfully beat BigMoney |

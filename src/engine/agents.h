@@ -48,4 +48,15 @@ public:
 class EngineBot : public Agent {
 public:
     std::vector<int> decide(const DecisionPoint& dp, const GameState& state) override;
+
+    // Returns the strategy name for a given kingdom card list
+    static std::string strategy_for(const std::vector<std::string>& kingdom);
+
+    // Tunable density limits for BM_PLUS_X
+    static inline double terminal_density_limit = 0.08;
+    static inline double action_density_limit = 0.35;
+
+private:
+    int chapel_plays_ = 0;
+    std::vector<int> sentry_vassal_decide(const DecisionPoint& dp, const GameState& state);
 };
