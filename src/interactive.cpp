@@ -1,5 +1,6 @@
 #include "engine/game_runner.h"
 #include "engine/action_space.h"
+#include "engine/card_ids.h"
 
 #include <algorithm>
 #include <chrono>
@@ -284,9 +285,24 @@ public:
 
         for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
             const auto& opt = dp.options[i];
-            std::cout << "    " << i << ") " << opt.label;
-            if (!opt.card_name.empty() && !opt.is_pass) {
-                const Card* card = CardRegistry::get(opt.card_name);
+            // Construct label from def_id if not populated
+            std::string display_label = opt.label;
+            if (display_label.empty()) {
+                if (opt.is_play_all) {
+                    display_label = "Play all Treasures";
+                } else if (opt.is_pass) {
+                    display_label = (dp.type == DecisionType::PLAY_ACTION) ? "End Actions" :
+                                    (dp.type == DecisionType::PLAY_TREASURE) ? "Stop playing Treasures" :
+                                    "End Buys";
+                } else if (opt.def_id >= 0) {
+                    const Card* c = CardRegistry::get(opt.def_id);
+                    std::string prefix = (dp.type == DecisionType::BUY_CARD) ? "Buy " : "Play ";
+                    display_label = prefix + (c ? c->name : "???");
+                }
+            }
+            std::cout << "    " << i << ") " << display_label;
+            if (opt.def_id >= 0 && !opt.is_pass) {
+                const Card* card = CardRegistry::get(opt.def_id);
                 if (card) {
                     std::cout << " [" << card->cost << "$";
                     if (!card->text.empty()) std::cout << " | " << card->text;
@@ -328,6 +344,7 @@ int main() {
 
     BaseCards::register_all();
     Level1Cards::register_all();
+    CardIds::init();
 
     // Kingdom selection
     std::cout << "  Kingdom setup:\n";

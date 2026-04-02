@@ -9,6 +9,8 @@ namespace Rules {
     bool can_play_action(const GameState& state, int player_id, int card_id);
     bool can_play_treasure(const GameState& state, int player_id, int card_id);
     bool can_buy(const GameState& state, int player_id, int pile_index);
+    bool has_playable_action(const GameState& state, int player_id);
+    bool has_playable_treasure(const GameState& state, int player_id);
     std::vector<int> playable_actions(const GameState& state, int player_id);
     std::vector<int> playable_treasures(const GameState& state, int player_id);
     std::vector<int> buyable_piles(const GameState& state, int player_id);

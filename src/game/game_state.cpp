@@ -100,7 +100,7 @@ int GameState::gain_card(int player_id, int pile_index) {
     int card_id = supply_.gain_from_index(pile_index);
     if (card_id == -1) return -1;
     players_[player_id].add_to_discard(card_id);
-    log("    P" + std::to_string(player_id + 1) + " gains " +
+    if (log_fn_) log("    P" + std::to_string(player_id + 1) + " gains " +
         supply_.pile_at(pile_index).pile_name + " to discard");
     return card_id;
 }
@@ -109,7 +109,7 @@ int GameState::gain_card_to_hand(int player_id, int pile_index) {
     int card_id = supply_.gain_from_index(pile_index);
     if (card_id == -1) return -1;
     players_[player_id].add_to_hand(card_id);
-    log("    P" + std::to_string(player_id + 1) + " gains " +
+    if (log_fn_) log("    P" + std::to_string(player_id + 1) + " gains " +
         supply_.pile_at(pile_index).pile_name + " to hand");
     return card_id;
 }
@@ -118,14 +118,14 @@ int GameState::gain_card_to_deck_top(int player_id, int pile_index) {
     int card_id = supply_.gain_from_index(pile_index);
     if (card_id == -1) return -1;
     players_[player_id].add_to_deck_top(card_id);
-    log("    P" + std::to_string(player_id + 1) + " gains " +
+    if (log_fn_) log("    P" + std::to_string(player_id + 1) + " gains " +
         supply_.pile_at(pile_index).pile_name + " to deck top");
     return card_id;
 }
 
 void GameState::trash_card(int card_id) {
     trash_.push_back(card_id);
-    log("    Trashed " + card_name(card_id));
+    if (log_fn_) log("    Trashed " + card_name(card_id));
 }
 
 const std::vector<int>& GameState::get_trash() const {
@@ -141,7 +141,7 @@ int GameState::play_card_from_hand(int player_id, int hand_index, DecisionFn dec
     if (card && card->is_action()) {
         actions_played_++;
     }
-    log("  P" + std::to_string(player_id + 1) + " plays " + card_name(card_id));
+    if (log_fn_) log("  P" + std::to_string(player_id + 1) + " plays " + card_name(card_id));
     if (card && card->on_play) {
         card->on_play(*this, player_id, decide);
     }
@@ -153,7 +153,7 @@ void GameState::play_card_effect(int card_id, int player_id, DecisionFn decide) 
     if (card && card->is_action()) {
         actions_played_++;
     }
-    log("    P" + std::to_string(player_id + 1) + " plays " + card_name(card_id) + " again");
+    if (log_fn_) log("    P" + std::to_string(player_id + 1) + " plays " + card_name(card_id) + " again");
     if (card && card->on_play) {
         card->on_play(*this, player_id, decide);
     }
@@ -173,7 +173,7 @@ void GameState::resolve_attack(
             const Card* card = card_def(hand[h]);
             if (card && card->is_reaction() && card->on_react) {
                 if (card->on_react(*this, target_id, attacker_id, decide)) {
-                    log("    P" + std::to_string(target_id + 1) + " reveals " +
+                    if (log_fn_) log("    P" + std::to_string(target_id + 1) + " reveals " +
                         card->name + " — blocks the attack!");
                     blocked = true;
                     break;
@@ -182,7 +182,7 @@ void GameState::resolve_attack(
         }
 
         if (!blocked) {
-            log("    Attack hits P" + std::to_string(target_id + 1));
+            if (log_fn_) log("    Attack hits P" + std::to_string(target_id + 1));
             attack_effect(*this, target_id, decide);
         }
     }
@@ -222,7 +222,7 @@ int GameState::effective_cost(int pile_index) const {
 }
 
 int GameState::total_cards_owned(int player_id) const {
-    return static_cast<int>(players_[player_id].all_cards().size());
+    return players_[player_id].total_card_count();
 }
 
 // --- Well-known pile/def caching ---
@@ -309,9 +309,7 @@ std::vector<int> GameState::calculate_scores() const {
     std::vector<int> scores(num_players(), 0);
     for (int p = 0; p < num_players(); p++) {
         const Player& player = players_[p];
-        std::vector<int> owned = player.all_cards();
-
-        for (int card_id : owned) {
+        player.for_each_card([&](int card_id) {
             const Card* card = card_def(card_id);
             if (card) {
                 if (card->vp_fn) {
@@ -320,7 +318,7 @@ std::vector<int> GameState::calculate_scores() const {
                     scores[p] += card->victory_points;
                 }
             }
-        }
+        });
     }
     return scores;
 }
