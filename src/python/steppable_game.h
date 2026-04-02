@@ -8,6 +8,7 @@
 #include "../game/cards/level_1_cards.h"
 
 #include <condition_variable>
+#include <memory>
 #include <mutex>
 #include <thread>
 #include <vector>
@@ -30,10 +31,38 @@ public:
     SteppableGame(int num_players, const std::vector<std::string>& kingdom_cards)
         : num_players_(num_players)
         , kingdom_cards_(kingdom_cards)
+        , ai_agents_(num_players)           // nullptr = human-controlled
     {}
 
     ~SteppableGame() {
         shutdown();
+    }
+
+    // Assign an AI agent to a player slot. That player's decisions will be
+    // auto-resolved in C++ instead of being sent to Python.
+    // agent_type: "random", "big_money", "heuristic", "engine_bot"
+    void set_ai_agent(int player_id, const std::string& agent_type) {
+        if (player_id < 0 || player_id >= num_players_) {
+            throw std::runtime_error("Invalid player_id");
+        }
+        if (agent_type == "random") {
+            ai_agents_[player_id] = std::make_unique<RandomAgent>();
+        } else if (agent_type == "big_money") {
+            ai_agents_[player_id] = std::make_unique<BigMoneyAgent>();
+        } else if (agent_type == "heuristic") {
+            ai_agents_[player_id] = std::make_unique<HeuristicAgent>();
+        } else if (agent_type == "engine_bot") {
+            ai_agents_[player_id] = std::make_unique<EngineBot>();
+        } else if (agent_type == "" || agent_type == "human") {
+            ai_agents_[player_id] = nullptr;
+        } else {
+            throw std::runtime_error("Unknown agent type: " + agent_type);
+        }
+    }
+
+    // Check if a player slot is AI-controlled
+    bool is_ai_player(int player_id) const {
+        return player_id >= 0 && player_id < num_players_ && ai_agents_[player_id] != nullptr;
     }
 
     // --- Main API ---
@@ -107,6 +136,7 @@ public:
 private:
     int num_players_;
     std::vector<std::string> kingdom_cards_;
+    std::vector<std::unique_ptr<Agent>> ai_agents_;  // nullptr = human
 
     // Synchronization between main thread and game thread
     std::mutex mtx_;
@@ -161,7 +191,13 @@ private:
     public:
         ProxyAgent(SteppableGame* game) : game_(game) {}
 
-        std::vector<int> decide(const DecisionPoint& dp, const GameState&) override {
+        std::vector<int> decide(const DecisionPoint& dp, const GameState& state) override {
+            // If this player has an AI agent, resolve immediately without
+            // involving the Python/main thread at all
+            if (game_->ai_agents_[dp.player_id]) {
+                return game_->ai_agents_[dp.player_id]->decide(dp, state);
+            }
+
             std::unique_lock<std::mutex> lock(game_->mtx_);
 
             // Check if we should abort (shutdown or game over via max turns)

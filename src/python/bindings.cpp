@@ -61,6 +61,8 @@ PYBIND11_MODULE(dominion_engine, m) {
         .def_readonly("def_id", &ActionOption::def_id)
         .def_readonly("pile_index", &ActionOption::pile_index)
         .def_readonly("value", &ActionOption::value)
+        .def_readonly("card_name", &ActionOption::card_name)
+        .def_readonly("label", &ActionOption::label)
         .def_readonly("is_pass", &ActionOption::is_pass)
         .def_readonly("is_play_all", &ActionOption::is_play_all)
         .def("__repr__", [](const ActionOption& o) {
@@ -181,7 +183,13 @@ PYBIND11_MODULE(dominion_engine, m) {
         .def("get_state", &SteppableGame::get_state,
              py::return_value_policy::reference_internal,
              "Access the underlying GameState (read-only)")
-        .def("num_players", &SteppableGame::num_players);
+        .def("num_players", &SteppableGame::num_players)
+        .def("set_ai_agent", &SteppableGame::set_ai_agent,
+             py::arg("player_id"), py::arg("agent_type"),
+             "Assign AI to a player slot: 'random', 'big_money', 'heuristic', 'engine_bot', or 'human'")
+        .def("is_ai_player", &SteppableGame::is_ai_player,
+             py::arg("player_id"),
+             "Check if a player slot is AI-controlled");
 
     // --- Card lookup utilities ---
     // These let Python look up card info by name or def_id
