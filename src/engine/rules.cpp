@@ -25,6 +25,25 @@ bool can_buy(const GameState& state, int /*player_id*/, int pile_index) {
     return card && card->cost <= state.coins();
 }
 
+bool has_playable_action(const GameState& state, int player_id) {
+    if (state.current_phase() != Phase::ACTION || state.actions() <= 0) return false;
+    const auto& hand = state.get_player(player_id).get_hand();
+    for (int card_id : hand) {
+        const Card* card = state.card_def(card_id);
+        if (card && card->is_action()) return true;
+    }
+    return false;
+}
+
+bool has_playable_treasure(const GameState& state, int player_id) {
+    const auto& hand = state.get_player(player_id).get_hand();
+    for (int card_id : hand) {
+        const Card* card = state.card_def(card_id);
+        if (card && card->is_treasure()) return true;
+    }
+    return false;
+}
+
 std::vector<int> playable_actions(const GameState& state, int player_id) {
     std::vector<int> result;
     if (state.current_phase() != Phase::ACTION || state.actions() <= 0) return result;

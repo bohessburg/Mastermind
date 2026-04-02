@@ -1,4 +1,5 @@
 #include "test_helpers.h"
+#include "engine/card_ids.h"
 
 #include <algorithm>
 
@@ -14,6 +15,7 @@ void TestGame::ensure_cards_registered() {
     if (!g_cards_registered) {
         BaseCards::register_all();
         Level1Cards::register_all();
+        CardIds::init();
         g_cards_registered = true;
     }
 }

@@ -14,10 +14,19 @@ DecisionPoint build_action_decision(const GameState& state) {
     for (int i = 0; i < static_cast<int>(hand.size()); i++) {
         const Card* card = state.card_def(hand[i]);
         if (card && card->is_action()) {
-            dp.options.push_back({idx++, hand[i], -1, card->name, "Play " + card->name, false});
+            ActionOption opt;
+            opt.local_id = idx++;
+            opt.card_id = hand[i];
+            opt.def_id = card->def_id;
+            opt.is_pass = false;
+            dp.options.push_back(opt);
         }
     }
-    dp.options.push_back({idx, -1, -1, "", "End Actions", true});
+    ActionOption pass_opt;
+    pass_opt.local_id = idx;
+    pass_opt.card_id = -1;
+    pass_opt.is_pass = true;
+    dp.options.push_back(pass_opt);
 
     return dp;
 }
@@ -51,16 +60,30 @@ DecisionPoint build_treasure_decision(const GameState& state) {
 
     int idx = 0;
     if (has_treasure && all_basic) {
-        dp.options.push_back({idx++, -1, -1, "", "Play all Treasures", false});
+        ActionOption opt;
+        opt.local_id = idx++;
+        opt.card_id = -1;
+        opt.is_pass = false;
+        opt.is_play_all = true;
+        dp.options.push_back(opt);
     }
 
     for (int i = 0; i < static_cast<int>(hand.size()); i++) {
         const Card* card = state.card_def(hand[i]);
         if (card && card->is_treasure()) {
-            dp.options.push_back({idx++, hand[i], -1, card->name, "Play " + card->name, false});
+            ActionOption opt;
+            opt.local_id = idx++;
+            opt.card_id = hand[i];
+            opt.def_id = card->def_id;
+            opt.is_pass = false;
+            dp.options.push_back(opt);
         }
     }
-    dp.options.push_back({idx, -1, -1, "", "Stop playing Treasures", true});
+    ActionOption pass_opt;
+    pass_opt.local_id = idx;
+    pass_opt.card_id = -1;
+    pass_opt.is_pass = true;
+    dp.options.push_back(pass_opt);
 
     return dp;
 }
@@ -82,10 +105,20 @@ DecisionPoint build_buy_decision(const GameState& state) {
         int top_id = piles[i].card_ids.back();
         const Card* card = state.card_def(top_id);
         if (card && card->cost <= coins) {
-            dp.options.push_back({idx++, top_id, i, card->name, "Buy " + card->name, false});
+            ActionOption opt;
+            opt.local_id = idx++;
+            opt.card_id = top_id;
+            opt.def_id = card->def_id;
+            opt.pile_index = i;
+            opt.is_pass = false;
+            dp.options.push_back(opt);
         }
     }
-    dp.options.push_back({idx, -1, -1, "", "End Buys", true});
+    ActionOption pass_opt;
+    pass_opt.local_id = idx;
+    pass_opt.card_id = -1;
+    pass_opt.is_pass = true;
+    dp.options.push_back(pass_opt);
 
     return dp;
 }
