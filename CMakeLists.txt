@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # --- Core engine library ---
-add_library(dominion_engine
+add_library(dominion_engine_lib
     src/game/card.cpp
     src/game/player.cpp
     src/game/supply.cpp
@@ -18,24 +18,24 @@ add_library(dominion_engine
     src/engine/agents.cpp
     src/engine/game_runner.cpp
 )
-target_include_directories(dominion_engine PUBLIC src)
-target_compile_options(dominion_engine PRIVATE -Wall -Wextra -Wpedantic)
+target_include_directories(dominion_engine_lib PUBLIC src)
+target_compile_options(dominion_engine_lib PRIVATE -Wall -Wextra -Wpedantic)
 
 # --- Main executable (benchmark) ---
 add_executable(dominion_zero src/main.cpp)
-target_link_libraries(dominion_zero PRIVATE dominion_engine)
+target_link_libraries(dominion_zero PRIVATE dominion_engine_lib)
 
 # --- Interactive play (vs bot) ---
 add_executable(dominion_play src/interactive.cpp)
-target_link_libraries(dominion_play PRIVATE dominion_engine)
+target_link_libraries(dominion_play PRIVATE dominion_engine_lib)
 
 # --- Local 2-player ---
 add_executable(dominion_2p src/local_multiplayer.cpp)
-target_link_libraries(dominion_2p PRIVATE dominion_engine)
+target_link_libraries(dominion_2p PRIVATE dominion_engine_lib)
 
 # --- Stress test ---
 add_executable(dominion_stress src/stress_test.cpp)
-target_link_libraries(dominion_stress PRIVATE dominion_engine)
+target_link_libraries(dominion_stress PRIVATE dominion_engine_lib)
 
 # --- GUI (requires raylib) ---
 find_package(PkgConfig QUIET)
@@ -49,10 +49,33 @@ if(RAYLIB_FOUND)
     )
     target_include_directories(dominion_gui PRIVATE ${RAYLIB_INCLUDE_DIRS})
     target_link_directories(dominion_gui PRIVATE ${RAYLIB_LIBRARY_DIRS})
-    target_link_libraries(dominion_gui PRIVATE dominion_engine ${RAYLIB_LIBRARIES}
+    target_link_libraries(dominion_gui PRIVATE dominion_engine_lib ${RAYLIB_LIBRARIES}
         "-framework IOKit" "-framework Cocoa" "-framework OpenGL")
 else()
     message(STATUS "raylib not found — skipping GUI build (install with: brew install raylib)")
+endif()
+
+# --- Python bindings (requires pybind11: pip install pybind11) ---
+find_package(Python3 COMPONENTS Interpreter Development QUIET)
+find_package(pybind11 QUIET)
+if(NOT pybind11_FOUND)
+    # Try finding via Python's pybind11 package
+    execute_process(
+        COMMAND ${Python3_EXECUTABLE} -m pybind11 --cmakedir
+        OUTPUT_VARIABLE pybind11_DIR
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+    )
+    if(pybind11_DIR)
+        find_package(pybind11 REQUIRED PATHS ${pybind11_DIR})
+    endif()
+endif()
+if(pybind11_FOUND)
+    pybind11_add_module(dominion_engine src/python/bindings.cpp)
+    target_link_libraries(dominion_engine PRIVATE dominion_engine_lib)
+    message(STATUS "Python bindings enabled (pybind11 found)")
+else()
+    message(STATUS "pybind11 not found — skipping Python bindings (install with: pip install pybind11)")
 endif()
 
 # --- Tests ---
@@ -77,7 +100,7 @@ if(BUILD_TESTS)
         tests/test_action_space.cpp
         tests/test_invariants.cpp
     )
-    target_link_libraries(dominion_tests PRIVATE dominion_engine Catch2::Catch2WithMain)
+    target_link_libraries(dominion_tests PRIVATE dominion_engine_lib Catch2::Catch2WithMain)
     target_compile_options(dominion_tests PRIVATE -Wall -Wextra)
 
     include(CTest)
