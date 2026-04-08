@@ -13,6 +13,13 @@ GameRunner::GameRunner(int num_players, const std::vector<std::string>& kingdom_
 {
 }
 
+GameRunner::GameRunner(GameState state)
+    : state_(std::move(state))
+    , kingdom_cards_()
+    , total_decisions_(0)
+{
+}
+
 const GameState& GameRunner::state() const { return state_; }
 
 void GameRunner::set_observer(GameObserver observer) {
@@ -177,6 +184,47 @@ GameResult GameRunner::run(std::vector<Agent*> agents) {
             observe("--- Player " + std::to_string(pid) + "'s turn (Turn " +
                     std::to_string(state_.turn_number()) + ") ---");
         }
+        run_turn(pid);
+    }
+
+    agents_ = {};
+    return {
+        state_.calculate_scores(),
+        state_.winner(),
+        state_.turn_number(),
+        total_decisions_
+    };
+}
+
+GameResult GameRunner::resume(std::vector<Agent*> agents, Phase start_phase) {
+    agents_ = agents;
+    // Rollouts run silent — do not install a log handler.
+
+    static constexpr int MAX_TURNS = 80;
+    static constexpr int MAX_DECISIONS = 5000;
+
+    if (!state_.is_game_over()) {
+        // Finish the current player's in-progress turn from the given phase.
+        // The engine does not track ACTION→TREASURE→BUY transitions in
+        // state_.phase_, so the caller (MCTS) tells us where to pick up.
+        int pid = state_.current_player_id();
+        if (start_phase == Phase::ACTION) {
+            run_action_phase(pid);
+            run_treasure_phase(pid);
+            run_buy_phase(pid);
+        } else if (start_phase == Phase::TREASURE) {
+            run_treasure_phase(pid);
+            run_buy_phase(pid);
+        } else if (start_phase == Phase::BUY) {
+            run_buy_phase(pid);
+        }
+        state_.set_phase(Phase::CLEANUP);
+        state_.advance_phase();
+    }
+
+    while (!state_.is_game_over() && state_.turn_number() < MAX_TURNS
+           && total_decisions_ < MAX_DECISIONS) {
+        int pid = state_.current_player_id();
         run_turn(pid);
     }
 

@@ -3,6 +3,8 @@
 #include "action_space.h"
 #include "../game/game_state.h"
 
+#include <cstdint>
+#include <memory>
 #include <random>
 #include <vector>
 
@@ -48,4 +50,29 @@ public:
 class EngineBot : public Agent {
 public:
     std::vector<int> decide(const DecisionPoint& dp, const GameState& state) override;
+};
+
+// Forward decl — defined in mcts.h. Kept opaque so agents.h doesn't pull
+// the MCTS implementation into every translation unit.
+class MCTS;
+
+// Shallow open-loop MCTS at top-level decisions (PLAY_ACTION /
+// PLAY_TREASURE / BUY_CARD). Sub-decisions inside card effects are
+// handled by an internal BetterRandomAgent fallback (the same logic
+// used by the rollout policy, for consistency).
+class MCTSBot : public Agent {
+public:
+    // num_simulations: rollouts per top-level decision (default 200)
+    // exploration_c:   UCB1 exploration constant (default sqrt(2))
+    // seed:            seeds both the MCTS RNG and the sub-decision fallback
+    explicit MCTSBot(int num_simulations = 200,
+                     double exploration_c = 1.41421356237,
+                     uint64_t seed = 42);
+    ~MCTSBot() override;
+
+    std::vector<int> decide(const DecisionPoint& dp, const GameState& state) override;
+
+private:
+    std::unique_ptr<MCTS> mcts_;
+    BetterRandomAgent fallback_;  // for sub-decisions inside card effects
 };

@@ -23,6 +23,13 @@ class GameState {
 public:
     GameState(int num_players);
 
+    // Copyable: MCTS clones GameState to run rollouts. All members are
+    // value types or shallow-copyable pointers (Card* points into a static
+    // registry). If a non-copyable member is ever added, this declaration
+    // will fail to compile and force a deliberate decision.
+    GameState(const GameState&) = default;
+    GameState& operator=(const GameState&) = default;
+
     // --- Card ID system ---
     int create_card(const std::string& card_name);
     const std::string& card_name(int card_id) const;

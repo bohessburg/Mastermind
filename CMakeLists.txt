@@ -17,6 +17,7 @@ add_library(dominion_engine_lib
     src/engine/rules.cpp
     src/engine/agents.cpp
     src/engine/game_runner.cpp
+    src/engine/mcts.cpp
 )
 target_include_directories(dominion_engine_lib PUBLIC src)
 target_compile_options(dominion_engine_lib PRIVATE -Wall -Wextra -Wpedantic)
@@ -36,6 +37,10 @@ target_link_libraries(dominion_2p PRIVATE dominion_engine_lib)
 # --- Stress test ---
 add_executable(dominion_stress src/stress_test.cpp)
 target_link_libraries(dominion_stress PRIVATE dominion_engine_lib)
+
+# --- MCTS smoke test ---
+add_executable(dominion_mcts_smoke src/mcts_smoke.cpp)
+target_link_libraries(dominion_mcts_smoke PRIVATE dominion_engine_lib)
 
 # --- GUI (requires raylib) ---
 find_package(PkgConfig QUIET)

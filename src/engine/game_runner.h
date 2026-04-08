@@ -24,7 +24,18 @@ class GameRunner {
 public:
     GameRunner(int num_players, const std::vector<std::string>& kingdom_cards);
 
+    // Build a runner around a pre-existing state (used by MCTS rollouts).
+    // Setup (supply, starting decks, start_game) is skipped — caller is
+    // responsible for the state being mid-game.
+    explicit GameRunner(GameState state);
+
     GameResult run(std::vector<Agent*> agents);
+
+    // Resume mid-game from `start_phase` of the current player's turn, then
+    // continue normal turn order until terminal or timeout. Used by MCTS to
+    // play out a cloned state from a top-level decision point.
+    GameResult resume(std::vector<Agent*> agents, Phase start_phase);
+
     const GameState& state() const;
 
     void set_observer(GameObserver observer);

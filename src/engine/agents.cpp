@@ -1,5 +1,6 @@
 #include "agents.h"
 #include "card_ids.h"
+#include "mcts.h"
 
 #include <algorithm>
 #include <unordered_map>
@@ -1025,4 +1026,35 @@ std::vector<int> EngineBot::decide(const DecisionPoint& dp, const GameState& sta
     }
     if (best_idx >= 0) return {best_idx};
     return pass();
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// MCTSBot — shallow open-loop MCTS at top-level decisions, with a
+// BetterRandomAgent fallback for sub-decisions inside card effects.
+// ═══════════════════════════════════════════════════════════════════
+
+MCTSBot::MCTSBot(int num_simulations, double exploration_c, uint64_t seed)
+    : mcts_(std::make_unique<MCTS>(num_simulations, exploration_c, seed))
+    , fallback_(seed)
+{
+}
+
+MCTSBot::~MCTSBot() = default;
+
+std::vector<int> MCTSBot::decide(const DecisionPoint& dp, const GameState& state) {
+    // Sub-decisions inside card effects can't easily be MCTS-rooted in the
+    // current engine (the call stack is mid-effect, no clean resume point),
+    // so they fall back to the rollout-equivalent random policy.
+    if (dp.type != DecisionType::PLAY_ACTION &&
+        dp.type != DecisionType::PLAY_TREASURE &&
+        dp.type != DecisionType::BUY_CARD) {
+        return fallback_.decide(dp, state);
+    }
+
+    // Degenerate cases: no real choice to search over.
+    if (dp.options.empty()) return {};
+    if (dp.options.size() == 1) return {0};
+
+    int best = mcts_->search(state, dp, dp.player_id);
+    return {best};
 }
