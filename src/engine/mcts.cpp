@@ -62,7 +62,15 @@ HeuristicRolloutPolicy::HeuristicRolloutPolicy(uint64_t seed) : rng_(seed) {}
 std::vector<int> HeuristicRolloutPolicy::decide(const DecisionPoint& dp, const GameState&) {
     if (dp.options.empty()) return {};
 
-    
+    if (dp.type == DecisionType::PLAY_TREASURE) {
+        for (int i = 0; i < static_cast<int>(dp.options.size()); i++) {
+            if (dp.options[i].is_play_all) return {i};
+        }
+    }
+
+    if (dp.type == DecisionType::BUY_CARD) {
+        
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -113,11 +121,14 @@ Phase phase_for_decision(DecisionType type) {
 // MCTS
 // ═══════════════════════════════════════════════════════════════════
 
-MCTS::MCTS(int num_simulations, double exploration_c, uint64_t seed)
+MCTS::MCTS(int num_simulations,
+           double exploration_c,
+           uint64_t seed,
+           std::unique_ptr<Agent> rollout_policy)
     : num_simulations_(num_simulations)
     , exploration_c_(exploration_c)
     , rng_(seed)
-    , rollout_policy_(seed ^ 0x9E3779B97F4A7C15ULL)
+    , rollout_policy_(std::move(rollout_policy))
 {
 }
 
@@ -157,8 +168,8 @@ int MCTS::search(const GameState& state, const DecisionPoint& dp, int mcts_playe
         // outer GameRunner — rollouts must not emit user-visible output.
         clone.set_log(nullptr);
 
-        ScriptedThenRolloutAgent scripted(chosen, &rollout_policy_);
-        std::vector<Agent*> rollout_agents(clone.num_players(), &rollout_policy_);
+        ScriptedThenRolloutAgent scripted(chosen, rollout_policy_.get());
+        std::vector<Agent*> rollout_agents(clone.num_players(), rollout_policy_.get());
         rollout_agents[mcts_player_id] = &scripted;
 
         GameRunner runner(std::move(clone));

@@ -1034,7 +1034,17 @@ std::vector<int> EngineBot::decide(const DecisionPoint& dp, const GameState& sta
 // ═══════════════════════════════════════════════════════════════════
 
 MCTSBot::MCTSBot(int num_simulations, double exploration_c, uint64_t seed)
-    : mcts_(std::make_unique<MCTS>(num_simulations, exploration_c, seed))
+    : MCTSBot(num_simulations, exploration_c, seed,
+              std::make_unique<BetterRandomRolloutPolicy>(seed ^ 0x9E3779B97F4A7C15ULL))
+{
+}
+
+MCTSBot::MCTSBot(int num_simulations,
+                 double exploration_c,
+                 uint64_t seed,
+                 std::unique_ptr<Agent> rollout_policy)
+    : mcts_(std::make_unique<MCTS>(num_simulations, exploration_c, seed,
+                                   std::move(rollout_policy)))
     , fallback_(seed)
 {
 }

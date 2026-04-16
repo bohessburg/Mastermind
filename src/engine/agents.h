@@ -68,6 +68,13 @@ public:
     explicit MCTSBot(int num_simulations = 200,
                      double exploration_c = 1.41421356237,
                      uint64_t seed = 42);
+
+    // Overload for plugging in a custom rollout policy. Ownership is taken.
+    MCTSBot(int num_simulations,
+            double exploration_c,
+            uint64_t seed,
+            std::unique_ptr<Agent> rollout_policy);
+
     ~MCTSBot() override;
 
     std::vector<int> decide(const DecisionPoint& dp, const GameState& state) override;

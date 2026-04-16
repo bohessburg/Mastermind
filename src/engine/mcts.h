@@ -4,6 +4,7 @@
 #include "../game/game_state.h"
 
 #include <cstdint>
+#include <memory>
 #include <random>
 #include <vector>
 
@@ -47,7 +48,15 @@ struct MCTSChild {
 
 class MCTS {
 public:
-    MCTS(int num_simulations, double exploration_c, uint64_t seed);
+    // `rollout_policy` is the agent used to play out cloned games during
+    // simulations. MCTS takes ownership. It is reused across all rollouts
+    // within a single search() call (and across calls), so its RNG state
+    // carries forward — this is what gives variance between simulations
+    // when the policy is stochastic.
+    MCTS(int num_simulations,
+         double exploration_c,
+         uint64_t seed,
+         std::unique_ptr<Agent> rollout_policy);
 
     // Run search from the given state at the given decision point. Returns
     // the option index of the most-visited child.
@@ -57,5 +66,5 @@ private:
     int num_simulations_;
     double exploration_c_;
     std::mt19937 rng_;
-    BetterRandomRolloutPolicy rollout_policy_;
+    std::unique_ptr<Agent> rollout_policy_;
 };
