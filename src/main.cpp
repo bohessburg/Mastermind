@@ -10,13 +10,14 @@
 #include <string>
 #include <vector>
 
-enum class AgentType { BETTER_RANDOM, BIG_MONEY, ENGINE };
+enum class AgentType { BETTER_RANDOM, BIG_MONEY, ENGINE, MCTS };
 
 static std::string agent_name(AgentType t) {
     switch (t) {
         case AgentType::BETTER_RANDOM: return "BetterRandom";
         case AgentType::BIG_MONEY:     return "BigMoney";
         case AgentType::ENGINE:        return "Engine";
+        case AgentType::MCTS:          return "MCTS";
     }
     return "???";
 }
@@ -26,6 +27,7 @@ static std::unique_ptr<Agent> make_agent(AgentType t, uint64_t seed) {
         case AgentType::BETTER_RANDOM: return std::make_unique<BetterRandomAgent>(seed);
         case AgentType::BIG_MONEY:     return std::make_unique<BigMoneyAgent>();
         case AgentType::ENGINE:        return std::make_unique<EngineBot>();
+        case AgentType::MCTS:          return std::make_unique<MCTSBot>();
     }
     return nullptr;
 }
@@ -124,9 +126,13 @@ int main() {
     CardIds::init();
 
     int n = 5000;
+    // MCTSBot runs ~200 rollouts per top-level decision, so a single game
+    // costs ~1s. 5000 games would take hours — use a much smaller count.
+    int mcts_n = 50;
 
     std::cout << "Random kingdoms (10 of 32 cards per game)\n";
-    std::cout << n << " games per matchup, all in parallel\n\n" << std::flush;
+    std::cout << n << " games per matchup (" << mcts_n
+              << " for MCTS matchups), all in parallel\n\n" << std::flush;
 
     auto f1 = std::async(std::launch::async, run_bench, "Engine vs BigMoney", n, AgentType::ENGINE, AgentType::BIG_MONEY);
     auto f2 = std::async(std::launch::async, run_bench, "BigMoney vs Engine", n, AgentType::BIG_MONEY, AgentType::ENGINE);
@@ -137,6 +143,8 @@ int main() {
     auto f7 = std::async(std::launch::async, run_bench, "Engine vs Engine", n, AgentType::ENGINE, AgentType::ENGINE);
     auto f8 = std::async(std::launch::async, run_bench, "BigMoney vs BigMoney", n, AgentType::BIG_MONEY, AgentType::BIG_MONEY);
     auto f9 = std::async(std::launch::async, run_bench, "BetterRandom vs BetterRandom", n, AgentType::BETTER_RANDOM, AgentType::BETTER_RANDOM);
+    auto f10 = std::async(std::launch::async, run_bench, "MCTSBot vs Engine", mcts_n, AgentType::MCTS, AgentType::ENGINE);
+    auto f11 = std::async(std::launch::async, run_bench, "MCTSBot vs BigMoney", mcts_n, AgentType::MCTS, AgentType::BIG_MONEY);
 
     print_result(f1.get());
     print_result(f2.get());
@@ -147,6 +155,8 @@ int main() {
     print_result(f7.get());
     print_result(f8.get());
     print_result(f9.get());
+    print_result(f10.get());
+    print_result(f11.get());
 
     return 0;
 }
