@@ -9,7 +9,7 @@ cmake --build "$BUILD_DIR" -j"$(nproc)" 2>/dev/null | grep -E "^\[|^BUILD|error:
 
 echo ""
 echo "=== Running tests ==="
-"$BUILD_DIR"/dominion_tests
+ctest --test-dir "$BUILD_DIR" -R v2 --output-on-failure
 
 echo ""
 echo "=== Ready. Attach with: mclaude ==="

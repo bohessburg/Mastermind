@@ -1,5 +1,12 @@
 # DominionZero Engine: Complete Implementation Plan
 
+> **HISTORICAL (v1) — SUPERSEDED.** This document describes the v1
+> architecture (GameRunner, DecisionFn callbacks, string-based APIs), which
+> is being replaced. Do not follow it for new work. The authoritative plans
+> are `REFACTOR_PLAN.md` (architecture) and `IMPLEMENTATION_PLAN.md` (build
+> order). Kept for reference while v1 serves as the differential-testing
+> oracle during the v2 migration.
+
 ## Table of Contents
 1. [Project Overview](#1-project-overview)
 2. [Existing Codebase Reference](#2-existing-codebase-reference)

@@ -1,6 +1,17 @@
 # DominionZero: Implementation Progress
 
-Cross-reference: [Full planning doc](../.claude/plans/inherited-leaping-pinwheel.md) | [Benchmarks](docs/benchmarks.md)
+> **HISTORICAL (v1) — SUPERSEDED.** This tracks the v1 engine, which is being
+> replaced; see `CLAUDE.md` for current status and `IMPLEMENTATION_PLAN.md`
+> for v2 progress. Corrections to claims below, found in a July 2026 review:
+> - Sentry, Mine, and Bureaucrat have confirmed bugs (index-vs-value
+>   confusion; Sentry duplicates/loses cards). "All 26 cards implemented" is
+>   true but not all are correct.
+> - The `on_gain`/`on_trash`/`on_duration`/`on_discard`/`on_reveal` slots on
+>   `Card` are declared but never invoked by anything — dead code.
+> - Level-2 cards and their tests exist on disk but are not in the CMake
+>   build; `level_2_cards.cpp` does not compile.
+
+Cross-reference: [Benchmarks](docs/benchmarks.md)
 
 ## Status Summary
 

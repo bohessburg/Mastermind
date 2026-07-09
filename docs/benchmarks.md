@@ -1,4 +1,12 @@
-# Engine Benchmarks and Performance
+# Engine Benchmarks and Performance (v1 baseline)
+
+> **Caveat (July 2026 review):** these numbers are skewed by a setup bug —
+> the stress harness samples kingdoms containing Level-2 card names that are
+> never registered, and `setup_supply` silently skips unknown names, so
+> ~19% of benchmarked games ran with 7–9 supply piles instead of 10 (which
+> also changes the three-pile game-end condition). Treat games/sec as a
+> rough v1 baseline and the win rates as approximate. v2 benchmarks will
+> replace this file (IMPLEMENTATION_PLAN.md §5.4 bench suite).
 
 ## Build Configuration
 

@@ -22,58 +22,7 @@ function(configure_v2_target target_name)
     endif()
 endfunction()
 
-# --- Core engine library ---
-add_library(dominion_engine
-    src/game/card.cpp
-    src/game/player.cpp
-    src/game/supply.cpp
-    src/game/game_state.cpp
-    src/game/cards/base_cards.cpp
-    src/game/cards/level_1_cards.cpp
-    src/engine/action_space.cpp
-    src/engine/rules.cpp
-    src/engine/agents.cpp
-    src/engine/game_runner.cpp
-)
-target_include_directories(dominion_engine PUBLIC src)
-target_compile_options(dominion_engine PRIVATE -Wall -Wextra -Wpedantic)
-
-# --- Main executable (benchmark) ---
-add_executable(dominion_zero src/main.cpp)
-target_link_libraries(dominion_zero PRIVATE dominion_engine)
-
-# --- Interactive play (vs bot) ---
-add_executable(dominion_play src/interactive.cpp)
-target_link_libraries(dominion_play PRIVATE dominion_engine)
-
-# --- Local 2-player ---
-add_executable(dominion_2p src/local_multiplayer.cpp)
-target_link_libraries(dominion_2p PRIVATE dominion_engine)
-
-# --- Stress test ---
-add_executable(dominion_stress src/stress_test.cpp)
-target_link_libraries(dominion_stress PRIVATE dominion_engine)
-
-# --- GUI (requires raylib) ---
-find_package(PkgConfig QUIET)
-if(PkgConfig_FOUND)
-    pkg_check_modules(RAYLIB QUIET raylib)
-endif()
-find_library(GLFW_LIBRARY glfw HINTS /opt/homebrew/opt/glfw/lib)
-if(RAYLIB_FOUND AND GLFW_LIBRARY)
-    add_executable(dominion_gui
-        src/gui/gui_main.cpp
-        src/gui/gui_agent.cpp
-    )
-    target_include_directories(dominion_gui PRIVATE ${RAYLIB_INCLUDE_DIRS})
-    target_link_directories(dominion_gui PRIVATE ${RAYLIB_LIBRARY_DIRS})
-    target_link_libraries(dominion_gui PRIVATE dominion_engine ${RAYLIB_LIBRARIES}
-        ${GLFW_LIBRARY} "-framework IOKit" "-framework Cocoa" "-framework OpenGL")
-else()
-    message(STATUS "raylib/glfw not found — skipping GUI build (install with: brew install raylib glfw)")
-endif()
-
-# --- v2 core skeleton ---
+# --- v2 engine ---
 add_library(dominion_v2 STATIC
     src/v2/cards/base.cpp
     src/v2/core/actions.cpp
@@ -145,6 +94,12 @@ target_link_libraries(v2_fuzz PRIVATE dominion_v2_drivers)
 configure_v2_target(v2_fuzz)
 
 if(BUILD_PYTHON)
+    if(NOT Python3_EXECUTABLE)
+        set(_local_python "${CMAKE_CURRENT_SOURCE_DIR}/.venv/bin/python")
+        if(EXISTS "${_local_python}")
+            set(Python3_EXECUTABLE "${_local_python}" CACHE FILEPATH "Python interpreter for v2 bindings")
+        endif()
+    endif()
     set(Python3_FIND_UNVERSIONED_NAMES FIRST)
     set(Python3_FIND_STRATEGY LOCATION)
     find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
@@ -177,24 +132,7 @@ if(BUILD_TESTS)
     )
     FetchContent_MakeAvailable(Catch2)
 
-    add_executable(dominion_tests
-        tests/test_helpers.cpp
-        tests/test_player.cpp
-        tests/test_supply.cpp
-        tests/test_game_state.cpp
-        tests/test_cards_base.cpp
-        tests/test_card_interactions.cpp
-        tests/test_attack_reactions.cpp
-        tests/test_action_space.cpp
-        tests/test_invariants.cpp
-    )
-    target_link_libraries(dominion_tests PRIVATE dominion_engine Catch2::Catch2WithMain)
-    target_compile_options(dominion_tests PRIVATE -Wall -Wextra)
-
     add_executable(v2_tests
-        tests/v2/diff_bridge.cpp
-        tests/v2/diff_v1.cpp
-        tests/v2/diff_v2.cpp
         tests/v2/fuzz_harness.cpp
         tests/v2/spec_harness.cpp
         tests/v2/test_types.cpp
@@ -205,7 +143,6 @@ if(BUILD_TESTS)
         tests/v2/test_determinism.cpp
         tests/v2/test_conservation.cpp
         tests/v2/test_alloc.cpp
-        tests/v2/test_differential.cpp
         tests/v2/test_fuzz.cpp
         tests/v2/test_golden.cpp
         tests/v2/test_encoder.cpp
@@ -214,12 +151,11 @@ if(BUILD_TESTS)
         tests/v2/test_specs_base.cpp
         tests/v2/test_attacks_triggers.cpp
     )
-    target_link_libraries(v2_tests PRIVATE dominion_engine dominion_v2_drivers dominion_v2_encode Catch2::Catch2WithMain)
+    target_link_libraries(v2_tests PRIVATE dominion_v2_drivers dominion_v2_encode Catch2::Catch2WithMain)
     target_compile_definitions(v2_tests PRIVATE V2_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/v2/golden")
     add_dependencies(v2_tests v2_client_defs)
     configure_v2_target(v2_tests)
 
     include(Catch)
-    catch_discover_tests(dominion_tests PROPERTIES TIMEOUT 10)
     catch_discover_tests(v2_tests TEST_PREFIX "v2." PROPERTIES TIMEOUT 10)
 endif()

@@ -62,11 +62,6 @@ struct Snapshot {
 [[nodiscard]] Step buy(std::string name);
 [[nodiscard]] Step end_turn();
 
-[[nodiscard]] Snapshot run_v1(const Scenario& scenario);
 [[nodiscard]] Snapshot run_v2(const Scenario& scenario);
-[[nodiscard]] std::string mismatch_dump(
-    const Scenario& scenario,
-    const Snapshot& v1,
-    const Snapshot& v2);
 
 } // namespace dz_diff

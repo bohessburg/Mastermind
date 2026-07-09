@@ -1,6 +1,8 @@
 # Build
 build/
+build-*/
 cmake-build-*/
+Testing/
 .venv/
 src/v2/web/client/node_modules/
 src/v2/web/client/dist/
@@ -24,3 +26,4 @@ compile_commands.json
 
 # Clangd cache
 .cache/
+Dominion_CompleteRules_v11.1.pdf
