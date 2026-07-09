@@ -1,4 +1,18 @@
-# Implemented Cards
+# Implemented Cards (v1 engine)
+
+> **Note:** Base + Level 1 are built and tested; the Sentry/Mine/Bureaucrat
+> oracle bugs are fixed for differential testing. Level 2 is **not in the CMake build**
+> and `level_2_cards.cpp` currently does not compile; those cards do not
+> exist at runtime. Levels 3–10 are empty stubs.
+
+## v2 Implemented Kingdom Cards (24)
+
+Cellar, Chapel, Village, Smithy, Workshop, Remodel, Mine, Merchant, Militia,
+Witch, Moat, Bureaucrat, Market, Festival, Laboratory, Gardens, Moneylender,
+Poacher, Vassal, Harbinger, Throne Room, Council Room, Artisan, Bandit.
+
+Sentry and Library are Phase 3 pending. Woodcutter, Feast, and other
+2nd-edition-removed cards are out of scope for v2.
 
 ## Base Cards (7)
 
@@ -43,7 +57,7 @@
 | Gardens | 4 | Victory | Worth 1 VP per 10 cards you have (round down). |
 | Merchant | 3 | Action | +1 Card, +1 Action. The first time you play a Silver this turn, +1 Coin. |
 
-## Level 2 Cards (12)
+## Level 2 Cards (11 written, 0 in build)
 
 | Card | Cost | Type | Text |
 |------|------|------|------|
@@ -58,7 +72,7 @@
 | Menagerie | 3 | Action | +1 Action. Reveal your hand. If all different names, +3 Cards. Otherwise, +1 Card. |
 | Oasis | 3 | Action | +1 Card, +1 Action, +1 Coin. Discard a card. |
 | King's Court | 7 | Action | You may play an Action card from your hand three times. |
-| Courier | 4 | Action | +1 Coin. Discard top card of deck. Look through discard; you may play an Action or Treasure from it. |
-| Sentinel | 3 | Action | Look at the top 5 cards of your deck. You may trash up to 2 of them. Put the rest back in any order.
 
-**Total: 45 cards**
+(Courier and Sentinel were previously listed here but were never implemented.)
+
+**Total: 33 cards built and registered (7 base + 26 level 1); 11 more written but not building**

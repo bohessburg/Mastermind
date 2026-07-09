@@ -126,6 +126,9 @@ if(BUILD_TESTS)
     target_compile_options(dominion_tests PRIVATE -Wall -Wextra)
 
     add_executable(v2_tests
+        tests/v2/diff_bridge.cpp
+        tests/v2/diff_v1.cpp
+        tests/v2/diff_v2.cpp
         tests/v2/spec_harness.cpp
         tests/v2/test_types.cpp
         tests/v2/test_rng.cpp
@@ -135,10 +138,11 @@ if(BUILD_TESTS)
         tests/v2/test_determinism.cpp
         tests/v2/test_conservation.cpp
         tests/v2/test_alloc.cpp
+        tests/v2/test_differential.cpp
         tests/v2/test_specs_base.cpp
         tests/v2/test_attacks_triggers.cpp
     )
-    target_link_libraries(v2_tests PRIVATE dominion_v2_drivers Catch2::Catch2WithMain)
+    target_link_libraries(v2_tests PRIVATE dominion_engine dominion_v2_drivers Catch2::Catch2WithMain)
     configure_v2_target(v2_tests)
 
     include(Catch)
