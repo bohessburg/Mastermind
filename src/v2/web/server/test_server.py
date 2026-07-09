@@ -278,6 +278,33 @@ def test_private_decision_context_labels_sentry_for_actor_only() -> None:
     assert order_labels == ["Put Copper on top (drawn next)", "Put Estate on top (drawn next)"]
 
 
+def test_card_select_decisions_include_additive_visible_zone_metadata() -> None:
+    cases = [
+        (decision(dz.DEF_CELLAR, kind=4), dz.DEF_COPPER, "hand"),
+        (decision(dz.DEF_WORKSHOP, kind=5), dz.DEF_SILVER, "supply"),
+        (decision(dz.DEF_HARBINGER, kind=4), dz.DEF_SILVER, "discard"),
+        (decision(dz.DEF_BANDIT, kind=4), dz.DEF_GOLD, "set_aside"),
+        (decision(dz.DEF_MOAT, kind=8), dz.DEF_MOAT, "hand"),
+    ]
+    for decision_value, selected_def, expected_zone in cases:
+        game = FakeDecisionGame(
+            decision_value,
+            {},
+            [dz.A_SELECT_BASE + selected_def],
+        )
+        message = _decision_message(SimpleNamespace(game=game), 0)
+        assert message["select_zone"] == expected_zone
+        assert message["options"][0]["def"] == selected_def
+
+    # It is wire-additive and actor-only: an observer still receives the
+    # pre-existing inactive shape with no private card-choice metadata.
+    inactive = _decision_message(
+        SimpleNamespace(game=FakeDecisionGame(decision(dz.DEF_CELLAR, kind=4), {}, [dz.A_SELECT_BASE + dz.DEF_COPPER])),
+        1,
+    )
+    assert "select_zone" not in inactive
+
+
 def test_library_and_vassal_prompts_include_subject_card() -> None:
     library = FakeDecisionGame(
         decision(dz.DEF_LIBRARY, kind=6, player=0),

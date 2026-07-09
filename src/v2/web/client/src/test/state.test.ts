@@ -5,6 +5,7 @@ import {
   findNextBasicTreasurePlay,
   formatTrashEntries,
   indexDecisionOptionsByDef,
+  indexSelectOptionsByDef,
   initialClientState,
   reduceServerMessage,
 } from '../state';
@@ -94,6 +95,63 @@ describe('client state reducer', () => {
     expect(indexDecisionOptionsByDef(decision, 'Play').get(0)?.action).toBe(100);
     expect(indexDecisionOptionsByDef(decision, 'Buy').get(1)?.action).toBe(200);
     expect(indexDecisionOptionsByDef(decision, 'Play').has(1)).toBe(false);
+  });
+
+  it('indexes A_SELECT card actions only in the decision zone', () => {
+    const chooseFromHand: DecisionMessage = {
+      type: 'decision',
+      seat: 0,
+      kind: 'Choose',
+      source: { def: 10, name: 'Cellar' },
+      prompt: 'Cellar: discard any number of cards',
+      min: 0,
+      max: 5,
+      select_zone: 'hand',
+      options: [
+        { action: 400, label: 'Discard Copper', def: 0 },
+        { action: 0, label: 'Done' },
+      ],
+    };
+    const gainFromSupply: DecisionMessage = {
+      ...chooseFromHand,
+      kind: 'ChooseGain',
+      source: { def: 14, name: 'Workshop' },
+      prompt: 'Workshop: gain a card costing up to 4',
+      select_zone: 'supply',
+      options: [{ action: 400, label: 'Gain Copper', def: 0 }],
+    };
+
+    // Copper can be visible in hand and Supply at the same time. Only the
+    // decision's actual source zone may receive the click affordance.
+    expect(indexSelectOptionsByDef(chooseFromHand, 'hand').get(0)?.action).toBe(400);
+    expect(indexSelectOptionsByDef(chooseFromHand, 'supply').has(0)).toBe(false);
+    expect(indexSelectOptionsByDef(gainFromSupply, 'supply').get(0)?.action).toBe(400);
+    expect(indexSelectOptionsByDef(gainFromSupply, 'hand').has(0)).toBe(false);
+  });
+
+  it('supports discard and set-aside select zones for their visible card tiles', () => {
+    const harbinger: DecisionMessage = {
+      type: 'decision',
+      seat: 0,
+      kind: 'Choose',
+      source: { def: 34, name: 'Harbinger' },
+      prompt: 'Harbinger: put a discard card onto your deck',
+      min: 0,
+      max: 1,
+      options: [{ action: 401, label: 'Topdeck Silver', def: 1 }],
+    };
+    const bandit: DecisionMessage = {
+      ...harbinger,
+      source: { def: 38, name: 'Bandit' },
+      select_zone: 'set_aside',
+      options: [{ action: 402, label: 'Trash Gold', def: 2 }],
+    };
+
+    // Harbinger also exercises the older-message fallback when select_zone is
+    // absent; Bandit receives the explicit server hint.
+    expect(indexSelectOptionsByDef(harbinger, 'discard').get(1)?.action).toBe(401);
+    expect(indexSelectOptionsByDef(harbinger, 'hand').has(1)).toBe(false);
+    expect(indexSelectOptionsByDef(bandit, 'set_aside').get(2)?.action).toBe(402);
   });
 
   it('selects only legal basic treasure plays and stops when none remain or seat is inactive', () => {

@@ -8,6 +8,7 @@ import type {
   StateMessage,
   TableMessage,
 } from './protocol';
+import type { SelectZone } from './protocol';
 
 export interface ClientState {
   table?: TableMessage;
@@ -60,6 +61,52 @@ export function indexDecisionOptionsByDef(
       continue;
     }
     byDef.set(option.def, option);
+  }
+  return byDef;
+}
+
+/**
+ * Supports older servers while preferring the additive wire hint.  A select
+ * action can name the same definition as a card in another visible zone, so
+ * callers must only use the returned map for the matching zone.
+ */
+export function selectZoneForDecision(decision: DecisionMessage | undefined): SelectZone | undefined {
+  if (!decision) {
+    return undefined;
+  }
+  if (decision.select_zone) {
+    return decision.select_zone;
+  }
+  if (decision.kind === 'ChooseGain') {
+    return 'supply';
+  }
+  if (decision.kind === 'ReactWindow') {
+    return 'hand';
+  }
+  if (decision.kind === 'Choose') {
+    if (decision.source.name === 'Harbinger') {
+      return 'discard';
+    }
+    if (decision.source.name === 'Bandit') {
+      return 'set_aside';
+    }
+    return 'hand';
+  }
+  return undefined;
+}
+
+export function indexSelectOptionsByDef(
+  decision: DecisionMessage | undefined,
+  zone: SelectZone,
+): Map<number, DecisionOption> {
+  const byDef = new Map<number, DecisionOption>();
+  if (selectZoneForDecision(decision) !== zone) {
+    return byDef;
+  }
+  for (const option of decision?.options ?? []) {
+    if (option.def !== undefined) {
+      byDef.set(option.def, option);
+    }
   }
   return byDef;
 }

@@ -181,6 +181,28 @@ def _state_message(session: Session, seat: int) -> dict[str, Any]:
     return {"type": "state", "view": _state_view(session, seat)}
 
 
+def _select_zone(decision: dict[str, Any]) -> str | None:
+    """Return the UI zone for the base-set A_SELECT decision currently shown.
+
+    The engine's legal mask identifies cards by definition rather than card
+    instance.  Sending the zone keeps a hand Copper from making an unrelated
+    supply Copper clickable when a decision happens to name both visibly.
+    """
+    kind = decision_kind_name(decision)
+    source = int(decision["source"])
+    if kind == "ChooseGain":
+        return "supply"
+    if kind == "ReactWindow":
+        return "hand"
+    if kind != "Choose":
+        return None
+    if source == int(dz.DEF_HARBINGER):
+        return "discard"
+    if source == int(dz.DEF_BANDIT):
+        return "set_aside"
+    return "hand"
+
+
 def _decision_message(session: Session, seat: int) -> dict[str, Any]:
     decision = session.game.current_decision()
     acting = int(decision["player"])
@@ -198,6 +220,11 @@ def _decision_message(session: Session, seat: int) -> dict[str, Any]:
     }
     if seat == acting:
         message["options"] = legal_options(session.game.legal_mask(), decision, context)
+        if any(dz.A_SELECT_BASE <= option["action"] < dz.A_OPTION_BASE for option in message["options"]):
+            select_zone = _select_zone(decision)
+            if select_zone is not None:
+                # Wire-additive metadata: older clients safely ignore it.
+                message["select_zone"] = select_zone
     return message
 
 

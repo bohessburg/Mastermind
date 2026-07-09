@@ -83,6 +83,9 @@ export interface DecisionOption {
   name?: string;
 }
 
+/** The visible card zone a card-select decision refers to. */
+export type SelectZone = 'hand' | 'supply' | 'discard' | 'set_aside';
+
 export interface TableMessage {
   type: 'table';
   seats: SeatInfo[];
@@ -104,6 +107,8 @@ export interface DecisionMessage {
   options: DecisionOption[];
   min: number;
   max: number;
+  /** Additive server hint for A_SELECT card choices; absent for non-card decisions. */
+  select_zone?: SelectZone;
 }
 
 export interface LogMessage {

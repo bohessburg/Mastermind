@@ -16,6 +16,7 @@ import {
   findNextBasicTreasurePlay,
   formatTrashEntries,
   indexDecisionOptionsByDef,
+  indexSelectOptionsByDef,
   initialClientState,
   reduceServerMessage,
 } from './state';
@@ -130,11 +131,11 @@ function ResourceBar({ resources }: { resources: ResourceView }) {
 
 function SupplyGrid({
   piles,
-  buyActionsByDef,
+  actionsByDef,
   onAction,
 }: {
   piles: CountedCard[];
-  buyActionsByDef: Map<number, DecisionOption>;
+  actionsByDef: Map<number, DecisionOption>;
   onAction: (option: DecisionOption) => void;
 }) {
   return (
@@ -145,9 +146,9 @@ function SupplyGrid({
           def={pile.def}
           count={pile.count}
           empty={pile.count === 0}
-          clickable={buyActionsByDef.has(pile.def)}
+          clickable={actionsByDef.has(pile.def)}
           onActivate={() => {
-            const option = buyActionsByDef.get(pile.def);
+            const option = actionsByDef.get(pile.def);
             if (option) {
               onAction(option);
             }
@@ -240,11 +241,11 @@ function TrashAndResources({
 
 function CountedCardRow({
   cards,
-  playActionsByDef,
+  actionsByDef,
   onAction,
 }: {
   cards: CountedCard[];
-  playActionsByDef: Map<number, DecisionOption>;
+  actionsByDef: Map<number, DecisionOption>;
   onAction: (option: DecisionOption) => void;
 }) {
   if (cards.length === 0) {
@@ -257,9 +258,9 @@ function CountedCardRow({
           key={card.def}
           def={card.def}
           count={card.count}
-          clickable={playActionsByDef.has(card.def)}
+          clickable={actionsByDef.has(card.def)}
           onActivate={() => {
-            const option = playActionsByDef.get(card.def);
+            const option = actionsByDef.get(card.def);
             if (option) {
               onAction(option);
             }
@@ -270,14 +271,33 @@ function CountedCardRow({
   );
 }
 
-function DefRow({ defs }: { defs: number[] }) {
+function DefRow({
+  defs,
+  actionsByDef,
+  onAction,
+}: {
+  defs: number[];
+  actionsByDef?: Map<number, DecisionOption>;
+  onAction?: (option: DecisionOption) => void;
+}) {
   if (defs.length === 0) {
     return <div className="empty-row">No cards</div>;
   }
   return (
     <div className="tile-row">
       {defs.map((def, index) => (
-        <CardTile key={`${def}-${index}`} def={def} compact />
+        <CardTile
+          key={`${def}-${index}`}
+          def={def}
+          compact
+          clickable={actionsByDef?.has(def)}
+          onActivate={() => {
+            const option = actionsByDef?.get(def);
+            if (option) {
+              onAction?.(option);
+            }
+          }}
+        />
       ))}
     </div>
   );
@@ -290,7 +310,9 @@ function PlayerArea({
   deckCount,
   discardCount,
   discardTop,
-  playActionsByDef,
+  handActionsByDef,
+  discardActionsByDef,
+  setAsideActionsByDef,
   onAction,
 }: {
   hand: CountedCard[];
@@ -299,7 +321,9 @@ function PlayerArea({
   deckCount: number;
   discardCount: number;
   discardTop: number | null;
-  playActionsByDef: Map<number, DecisionOption>;
+  handActionsByDef: Map<number, DecisionOption>;
+  discardActionsByDef: Map<number, DecisionOption>;
+  setAsideActionsByDef: Map<number, DecisionOption>;
   onAction: (option: DecisionOption) => void;
 }) {
   return (
@@ -310,7 +334,7 @@ function PlayerArea({
       </div>
       <div className="zone-block hand-block">
         <div className="zone-title">Hand</div>
-        <CountedCardRow cards={hand} playActionsByDef={playActionsByDef} onAction={onAction} />
+        <CountedCardRow cards={hand} actionsByDef={handActionsByDef} onAction={onAction} />
       </div>
       <details className="mats-tray" open={setAside.length > 0}>
         <summary>Mats and private counts</summary>
@@ -319,11 +343,24 @@ function PlayerArea({
           <div>Discard {discardCount}</div>
           <div className="mini-row">
             <span>Discard top</span>
-            <CardTile def={discardTop} compact />
+            <CardTile
+              def={discardTop}
+              compact
+              clickable={discardTop !== null && discardActionsByDef.has(discardTop)}
+              onActivate={() => {
+                if (discardTop === null) {
+                  return;
+                }
+                const option = discardActionsByDef.get(discardTop);
+                if (option) {
+                  onAction(option);
+                }
+              }}
+            />
           </div>
           <div>
             <span>Set aside</span>
-            <DefRow defs={setAside} />
+            <DefRow defs={setAside} actionsByDef={setAsideActionsByDef} onAction={onAction} />
           </div>
         </div>
       </details>
@@ -356,6 +393,8 @@ function DecisionPanel({
   }
 
   const active = decision.options.length > 0;
+  const tileOptions = decision.options.filter((option) => option.def !== undefined);
+  const controlOptions = decision.options.filter((option) => option.def === undefined);
   return (
     <section className="decision-panel">
       <h2>Decision</h2>
@@ -386,7 +425,21 @@ function DecisionPanel({
         </button>
       )}
       <div className="option-stack">
-        {decision.options.map((option) => (
+        {tileOptions.length > 0 && (
+          <div className="tile-option-chips" aria-label="Card options">
+            {tileOptions.map((option) => (
+              <button
+                className="tile-option-chip"
+                key={option.action}
+                type="button"
+                onClick={() => onAct(option)}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        )}
+        {controlOptions.map((option) => (
           <button
             className={option.label === 'Done' ? 'primary-option' : ''}
             key={option.action}
@@ -403,19 +456,21 @@ function DecisionPanel({
 }
 
 function LogRail({ lines }: { lines: string[] }) {
-  const endRef = useRef<HTMLDivElement | null>(null);
+  const linesRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
-    endRef.current?.scrollIntoView({ block: 'end' });
+    const element = linesRef.current;
+    if (element) {
+      element.scrollTop = element.scrollHeight;
+    }
   }, [lines]);
 
   return (
     <section className="log-rail">
       <h2>Log</h2>
-      <div className="log-lines">
+      <div className="log-lines" ref={linesRef}>
         {lines.map((line, index) => (
           <div key={`${line}-${index}`}>{line}</div>
         ))}
-        <div ref={endRef} />
       </div>
     </section>
   );
@@ -615,6 +670,24 @@ export function App() {
     }
     return indexDecisionOptionsByDef(decision, 'Buy');
   }, [clientState.decision]);
+  const selectHandActionsByDef = useMemo(
+    () => indexSelectOptionsByDef(clientState.decision, 'hand'),
+    [clientState.decision],
+  );
+  const selectSupplyActionsByDef = useMemo(
+    () => indexSelectOptionsByDef(clientState.decision, 'supply'),
+    [clientState.decision],
+  );
+  const selectDiscardActionsByDef = useMemo(
+    () => indexSelectOptionsByDef(clientState.decision, 'discard'),
+    [clientState.decision],
+  );
+  const selectSetAsideActionsByDef = useMemo(
+    () => indexSelectOptionsByDef(clientState.decision, 'set_aside'),
+    [clientState.decision],
+  );
+  const handActionsByDef = playActionsByDef.size > 0 ? playActionsByDef : selectHandActionsByDef;
+  const supplyActionsByDef = buyActionsByDef.size > 0 ? buyActionsByDef : selectSupplyActionsByDef;
   const canPlayAllTreasures = Boolean(findNextBasicTreasurePlay(clientState.decision, defsById));
 
   if (!credentials) {
@@ -637,7 +710,7 @@ export function App() {
       {clientState.error && <div className="error-banner">{clientState.error}</div>}
       <div className="game-layout">
         <div className="main-table">
-          {view && <SupplyGrid piles={view.piles} buyActionsByDef={buyActionsByDef} onAction={act} />}
+          {view && <SupplyGrid piles={view.piles} actionsByDef={supplyActionsByDef} onAction={act} />}
           {view && <OpponentStrip opponents={view.opponents} />}
           {view && (
             <TrashAndResources
@@ -655,7 +728,9 @@ export function App() {
               deckCount={view.myDeckCount}
               discardCount={view.myDiscardCount}
               discardTop={view.myDiscardTop}
-              playActionsByDef={playActionsByDef}
+              handActionsByDef={handActionsByDef}
+              discardActionsByDef={selectDiscardActionsByDef}
+              setAsideActionsByDef={selectSetAsideActionsByDef}
               onAction={act}
             />
           )}
