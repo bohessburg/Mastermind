@@ -5,6 +5,22 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+option(ENABLE_SANITIZERS "Enable ASan/UBSan for v2 targets" OFF)
+
+function(configure_v2_target target_name)
+    target_compile_features(${target_name} PUBLIC cxx_std_20)
+    target_compile_options(${target_name} PRIVATE -Wall -Wextra -Wpedantic -Wconversion)
+
+    if(ENABLE_SANITIZERS)
+        if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+            target_compile_options(${target_name} PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
+            target_link_options(${target_name} PRIVATE -fsanitize=address,undefined)
+        else()
+            message(WARNING "ENABLE_SANITIZERS is only wired for Clang/GNU v2 targets")
+        endif()
+    endif()
+endfunction()
+
 # --- Core engine library ---
 add_library(dominion_engine
     src/game/card.cpp
@@ -56,9 +72,17 @@ else()
     message(STATUS "raylib not found — skipping GUI build (install with: brew install raylib)")
 endif()
 
+# --- v2 core skeleton ---
+add_library(dominion_v2 STATIC
+    src/v2/cards/base.cpp
+)
+target_include_directories(dominion_v2 PUBLIC src)
+configure_v2_target(dominion_v2)
+
 # --- Tests ---
 option(BUILD_TESTS "Build test suite" ON)
 if(BUILD_TESTS)
+    include(CTest)
     include(FetchContent)
     FetchContent_Declare(
         Catch2
@@ -81,7 +105,15 @@ if(BUILD_TESTS)
     target_link_libraries(dominion_tests PRIVATE dominion_engine Catch2::Catch2WithMain)
     target_compile_options(dominion_tests PRIVATE -Wall -Wextra)
 
-    include(CTest)
+    add_executable(v2_tests
+        tests/v2/test_types.cpp
+        tests/v2/test_rng.cpp
+        tests/v2/test_state.cpp
+    )
+    target_link_libraries(v2_tests PRIVATE dominion_v2 Catch2::Catch2WithMain)
+    configure_v2_target(v2_tests)
+
     include(Catch)
     catch_discover_tests(dominion_tests PROPERTIES TIMEOUT 10)
+    catch_discover_tests(v2_tests TEST_PREFIX "v2." PROPERTIES TIMEOUT 10)
 endif()
