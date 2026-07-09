@@ -13,6 +13,18 @@ static int count_of(const std::vector<std::string>& v, const std::string& s) {
     return static_cast<int>(std::count(v.begin(), v.end(), s));
 }
 
+static std::vector<int> player_and_trash_card_ids(const TestGame& game, int pid) {
+    std::vector<int> ids = game.state().get_player(pid).all_cards();
+    const auto& trash = game.state().get_trash();
+    ids.insert(ids.end(), trash.begin(), trash.end());
+    return ids;
+}
+
+static bool has_duplicate_card_ids(const std::vector<int>& ids) {
+    std::set<int> unique(ids.begin(), ids.end());
+    return unique.size() != ids.size();
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // SMITHY
 // ═══════════════════════════════════════════════════════════════════
@@ -431,6 +443,32 @@ TEST_CASE("Mine: trash Treasure, gain better Treasure to hand", "[cards][mine]")
         CHECK(contains(game.hand_names(0), "Gold"));
     }
 
+    SECTION("trashes the selected treasure option, not the returned option index") {
+        game.set_hand(0, {"Mine", "Estate", "Copper", "Silver"});
+
+        auto decide = [&game](int /*player_id*/, ChoiceType type,
+                              const std::vector<int>& options,
+                              int /*min_choices*/, int /*max_choices*/) -> std::vector<int> {
+            if (type == ChoiceType::TRASH) {
+                return {1}; // second treasure option: Silver, whose hand index is 2
+            }
+            if (type == ChoiceType::GAIN) {
+                for (int i = 0; i < static_cast<int>(options.size()); ++i) {
+                    if (game.state().card_name(options[i]) == "Gold") {
+                        return {i};
+                    }
+                }
+            }
+            return {0};
+        };
+        game.play_card(0, "Mine", decide);
+
+        REQUIRE(game.state().get_trash().size() == 1);
+        CHECK(game.state().card_name(game.state().get_trash()[0]) == "Silver");
+        CHECK(contains(game.hand_names(0), "Copper"));
+        CHECK(contains(game.hand_names(0), "Gold"));
+    }
+
     SECTION("no Treasures in hand") {
         game.set_hand(0, {"Mine", "Estate"});
         game.play_card(0, "Mine", TestGame::minimal_decisions());
@@ -502,6 +540,23 @@ TEST_CASE("Sentry: +1 Card +1 Action, look at top 2, trash/discard/keep", "[card
         // Gold should be back on deck
         auto top = game.state().get_player(0).peek_deck(1);
         CHECK(game.state().card_name(top[0]) == "Gold");
+    }
+
+    SECTION("kept cards preserve physical card identity when ordered") {
+        game.set_hand(0, {"Sentry"});
+        game.set_deck(0, {"Copper", "Estate", "Gold"}); // draw Gold, keep Estate/Copper
+        const auto before = player_and_trash_card_ids(game, 0);
+
+        auto decide = TestGame::scripted_decisions({{0}, {0}, {0}});
+        game.play_card(0, "Sentry", decide);
+
+        const auto after = player_and_trash_card_ids(game, 0);
+        CHECK(after.size() == before.size());
+        CHECK_FALSE(has_duplicate_card_ids(after));
+        auto top = game.state().get_player(0).peek_deck(2);
+        REQUIRE(top.size() == 2);
+        CHECK(game.state().card_name(top[0]) == "Estate");
+        CHECK(game.state().card_name(top[1]) == "Copper");
     }
 }
 
@@ -587,6 +642,18 @@ TEST_CASE("Bureaucrat: gain Silver to deck, opponent topdecks Victory", "[cards]
 
         CHECK(game.deck_names(1).back() == "Duchy");
         CHECK(game.state().get_player(1).hand_size() == 2);
+    }
+
+    SECTION("opponent topdecks the selected Victory option, not the returned option index") {
+        game.set_hand(0, {"Bureaucrat"});
+        game.set_hand(1, {"Copper", "Estate", "Duchy"});
+        // Victory options are hand indices [1, 2]. Choose option index 1 -> Duchy.
+        auto decide = TestGame::scripted_decisions({{1}});
+        game.play_card(0, "Bureaucrat", decide);
+
+        CHECK(game.deck_names(1).back() == "Duchy");
+        CHECK(contains(game.hand_names(1), "Estate"));
+        CHECK_FALSE(contains(game.hand_names(1), "Duchy"));
     }
 }
 

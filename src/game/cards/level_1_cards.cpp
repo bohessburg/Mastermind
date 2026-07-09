@@ -338,7 +338,7 @@ void register_all() {
             auto trash_chosen = decide(pid, ChoiceType::TRASH, treasure_indices, 0, 1);
             if (trash_chosen.empty()) return;
 
-            int hand_idx = trash_chosen[0];
+            int hand_idx = treasure_indices[trash_chosen[0]];
             int trashed_id = player.trash_from_hand_return(hand_idx);
             const Card* trashed = state.card_def(trashed_id);
             state.trash_card(trashed_id);
@@ -426,7 +426,7 @@ void register_all() {
                 state.set_turn_flag(TurnFlag::SentryOrderCard0, keep_cards[0]);
                 state.set_turn_flag(TurnFlag::SentryOrderCard1, keep_cards[1]);
                 auto chosen = decide(pid, ChoiceType::ORDER, keep_cards, 1, 1);
-                int top_id = chosen.empty() ? keep_cards[0] : chosen[0];
+                int top_id = chosen.empty() ? keep_cards[0] : keep_cards[chosen[0]];
                 int bottom_id = (top_id == keep_cards[0]) ? keep_cards[1] : keep_cards[0];
                 player.add_to_deck_top(bottom_id);
                 player.add_to_deck_top(top_id);
@@ -497,7 +497,7 @@ void register_all() {
                 } else {
                     auto chosen = dec(target, ChoiceType::REVEAL, victory_indices, 1, 1);
                     if (!chosen.empty()) {
-                        p.topdeck_from_hand(chosen[0]);
+                        p.topdeck_from_hand(victory_indices[chosen[0]]);
                     }
                 }
             }, decide);
