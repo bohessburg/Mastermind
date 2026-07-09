@@ -1,0 +1,45 @@
+{
+  "seed": 20260710,
+  "generations": 100,
+  "device": "auto",
+  "checkpoint_dir": "checkpoints/run1",
+  "metrics_csv": "checkpoints/run1/metrics.csv",
+  "model": {
+    "hidden_sizes": [
+      1024,
+      1024,
+      512
+    ]
+  },
+  "selfplay": {
+    "n_games": 512,
+    "sims_per_move": 128,
+    "games_per_generation": 1024,
+    "max_batch": 4096,
+    "c_puct": 1.25,
+    "dirichlet_alpha": 0.3,
+    "dirichlet_frac": 0.25,
+    "temp_moves": 12,
+    "kingdom_mode": "random",
+    "max_recorded_moves": 512,
+    "max_tree_nodes": 4096
+  },
+  "optim": {
+    "lr": 0.001,
+    "weight_decay": 0.0001,
+    "batch_size": 1024,
+    "train_steps_per_generation": 500
+  },
+  "replay": {
+    "capacity": 500000
+  },
+  "eval": {
+    "eval_every_n_generations": 5,
+    "eval_games": 100,
+    "eval_sims": 400,
+    "eval_opponent": "engine",
+    "eval_kingdoms": "random",
+    "eval_n_games": 128,
+    "eval_max_batch": 4096
+  }
+}
