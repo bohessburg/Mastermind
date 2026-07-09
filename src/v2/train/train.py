@@ -8,6 +8,7 @@ import random
 import sys
 import time
 from dataclasses import asdict
+from math import cos, pi
 from pathlib import Path
 from typing import Any
 
@@ -141,6 +142,18 @@ def load_full_checkpoint(path: str | Path, map_location: torch.device | str):
         return torch.load(path, map_location=map_location)
 
 
+def resolve_resume_path(resume: str | Path | None, checkpoint_dir: str | Path) -> str | None:
+    if resume is None:
+        return None
+    if str(resume) != "latest":
+        return str(resume)
+    root = Path(checkpoint_dir)
+    candidates = sorted(root.glob("gen_*.pt"))
+    if not candidates:
+        raise FileNotFoundError(f"--resume latest found no gen_*.pt files in {root}")
+    return str(candidates[-1])
+
+
 def load_checkpoint(path: str | Path, device: torch.device):
     payload = load_full_checkpoint(path, device)
     cfg_dict = payload["config"]
@@ -158,6 +171,28 @@ def load_checkpoint(path: str | Path, device: torch.device):
     return cfg, int(payload["generation"]), model, optimizer, replay
 
 
+def learning_rate_for_generation(config: TrainConfig, generation: int) -> float:
+    schedule = config.optim.lr_schedule.lower()
+    if schedule == "constant":
+        return config.optim.lr
+    if schedule == "step":
+        if config.optim.step_decay_every <= 0:
+            return config.optim.lr
+        steps = max(0, generation - 1) // config.optim.step_decay_every
+        return max(config.optim.min_lr, config.optim.lr * (config.optim.step_decay_gamma ** steps))
+    if schedule == "cosine":
+        total = max(1, config.generations - 1)
+        progress = min(1.0, max(0.0, (generation - 1) / total))
+        span = config.optim.lr - config.optim.min_lr
+        return config.optim.min_lr + (0.5 * span * (1.0 + cos(pi * progress)))
+    raise ValueError(f"unknown lr_schedule: {config.optim.lr_schedule}")
+
+
+def set_optimizer_lr(optimizer: torch.optim.Optimizer, lr: float) -> None:
+    for group in optimizer.param_groups:
+        group["lr"] = lr
+
+
 def append_metrics(path: str | Path, row: dict[str, Any]) -> None:
     out = Path(path)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -169,6 +204,7 @@ def append_metrics(path: str | Path, row: dict[str, Any]) -> None:
         "policy_loss",
         "value_loss",
         "entropy",
+        "lr",
         "games_per_hour",
         "leaves_per_sec",
         "nn_evals_per_sec",
@@ -195,6 +231,7 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
     requested = config
     device = select_device(config.device)
     seed_everything(config.seed, deterministic=device.type == "cpu")
+    resume = resolve_resume_path(resume, requested.checkpoint_dir)
     if resume is not None:
         config, start_generation, model, optimizer, replay = load_checkpoint(resume, device)
         config.generations = requested.generations
@@ -224,6 +261,8 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
     for generation in range(start_generation + 1, start_generation + generations + 1):
         gen_seed = config.seed + (generation * 0x9E37)
         gen_start = time.perf_counter()
+        lr = learning_rate_for_generation(config, generation)
+        set_optimizer_lr(optimizer, lr)
         sp_stats = run_self_play_generation(model, replay, config.selfplay, gen_seed, device)
 
         losses = {"policy_loss": float("nan"), "value_loss": float("nan"), "entropy": float("nan")}
@@ -280,6 +319,7 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
             "policy_loss": losses["policy_loss"],
             "value_loss": losses["value_loss"],
             "entropy": losses["entropy"],
+            "lr": lr,
             "games_per_hour": sp_stats.games_per_hour,
             "leaves_per_sec": sp_stats.leaves_per_sec,
             "nn_evals_per_sec": sp_stats.nn_evals_per_sec,
@@ -310,12 +350,19 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     add_config_args(parser)
     args = parser.parse_args(argv)
-    config = load_config(args.config)
+    config_path = Path(__file__).resolve().parent / "configs" / "smoke.json" if args.smoke else args.config
+    config = load_config(config_path)
     if args.device is not None:
         config.device = args.device
     if args.checkpoint_dir is not None:
         config.checkpoint_dir = args.checkpoint_dir
         config.metrics_csv = str(Path(args.checkpoint_dir) / "metrics.csv")
+    elif args.smoke:
+        config.checkpoint_dir = "/tmp/dominion_v2_train_smoke"
+        config.metrics_csv = "/tmp/dominion_v2_train_smoke/metrics.csv"
+    if args.smoke and args.device is None:
+        config.device = "cpu"
+        config.generations = 1
     run_training(config, resume=args.resume, profile=args.profile)
     return 0
 

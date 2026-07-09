@@ -1,0 +1,49 @@
+{
+  "_comment": "RTX 4090-class remote run. Larger replay and lower LR address run1 value-loss oscillation; cosine decay keeps late updates smaller without adding a scheduler dependency.",
+  "_comment_replay": "Replay capacity and train_steps_per_generation are deliberately prominent knobs for stability/throughput tuning.",
+  "seed": 20260710,
+  "generations": 200,
+  "device": "auto",
+  "checkpoint_dir": "/workspace/checkpoints",
+  "metrics_csv": "/workspace/checkpoints/metrics.csv",
+  "model": {
+    "hidden_sizes": [
+      1024,
+      1024,
+      512
+    ]
+  },
+  "selfplay": {
+    "n_games": 1024,
+    "sims_per_move": 128,
+    "games_per_generation": 2048,
+    "max_batch": 8192,
+    "c_puct": 1.25,
+    "dirichlet_alpha": 0.3,
+    "dirichlet_frac": 0.25,
+    "temp_moves": 12,
+    "kingdom_mode": "random",
+    "max_recorded_moves": 512,
+    "max_tree_nodes": 4096
+  },
+  "optim": {
+    "lr": 0.0002,
+    "lr_schedule": "cosine",
+    "min_lr": 0.00005,
+    "weight_decay": 0.0001,
+    "batch_size": 2048,
+    "train_steps_per_generation": 750
+  },
+  "replay": {
+    "capacity": 1000000
+  },
+  "eval": {
+    "eval_every_n_generations": 5,
+    "eval_games": 200,
+    "eval_sims": 400,
+    "eval_opponent": "engine",
+    "eval_kingdoms": "random",
+    "eval_n_games": 256,
+    "eval_max_batch": 8192
+  }
+}

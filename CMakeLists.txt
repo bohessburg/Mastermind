@@ -11,6 +11,8 @@ option(BUILD_PYTHON "Build v2 Python bindings" OFF)
 function(configure_v2_target target_name)
     target_compile_features(${target_name} PUBLIC cxx_std_20)
     target_compile_options(${target_name} PRIVATE -Wall -Wextra -Wpedantic -Wconversion)
+    # Static libs link into the pybind11 shared module; PIC is required on Linux.
+    set_target_properties(${target_name} PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
     if(ENABLE_SANITIZERS)
         if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")

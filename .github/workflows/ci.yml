@@ -33,7 +33,7 @@ jobs:
       - name: Create venv
         run: python3 -m venv .venv
       - name: Install Python deps
-        run: ./.venv/bin/python -m pip install --upgrade pip numpy pybind11 torch -r src/v2/web/server/requirements.txt
+        run: ./.venv/bin/python -m pip install --upgrade pip numpy pybind11 requests torch -r src/v2/web/server/requirements.txt
       - name: Configure
         run: |
           PYBIND11_DIR="$(./.venv/bin/python -m pybind11 --cmakedir)"
@@ -46,6 +46,10 @@ jobs:
         run: PYTHONPATH=build-py ./.venv/bin/python -m pytest src/v2/train -q
       - name: Server tests
         run: PYTHONPATH=build-py ./.venv/bin/python -m pytest src/v2/web/server -q
+      - name: Infra tests
+        run: PYTHONPATH=. ./.venv/bin/python -m pytest scripts/infra -q
+      - name: Infra dry-run
+        run: PYTHONPATH=. ./.venv/bin/python -m scripts.infra.remote_run --dry-run --ssh-target root@example.invalid --run ci launch --config src/v2/train/configs/smoke.json --resume-latest
 
   web-client:
     name: Web Client

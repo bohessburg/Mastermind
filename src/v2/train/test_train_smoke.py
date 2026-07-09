@@ -6,8 +6,8 @@ from pathlib import Path
 
 import torch
 
-from .config import TrainConfig
-from .train import load_checkpoint, load_full_checkpoint, run_training
+from .config import TrainConfig, load_config
+from .train import load_checkpoint, load_full_checkpoint, resolve_resume_path, run_training
 
 
 def tiny_config(tmp_path: Path, seed: int = 20260709, generations: int = 2) -> TrainConfig:
@@ -76,6 +76,21 @@ def test_checkpoint_resume_roundtrip(tmp_path: Path) -> None:
     loaded_cfg.metrics_csv = str(tmp_path / "resume" / "metrics.csv")
     run_training(loaded_cfg, resume=str(first))
     assert (Path(loaded_cfg.checkpoint_dir) / "gen_0002.pt").exists()
+
+
+def test_resume_latest_resolves_newest_checkpoint(tmp_path: Path) -> None:
+    root = tmp_path / "ckpt"
+    root.mkdir()
+    (root / "gen_0001.pt").write_bytes(b"old")
+    (root / "gen_0010.pt").write_bytes(b"new")
+    assert resolve_resume_path("latest", root) == str(root / "gen_0010.pt")
+
+
+def test_config_ignores_comment_fields(tmp_path: Path) -> None:
+    path = tmp_path / "config.json"
+    path.write_text('{"_comment": "ignored", "optim": {"_comment_lr": "ignored", "lr": 0.0002}}')
+    cfg = load_config(path)
+    assert cfg.optim.lr == 0.0002
 
 
 def test_cpu_first_generation_is_deterministic(tmp_path: Path) -> None:

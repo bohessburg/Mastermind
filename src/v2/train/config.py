@@ -44,6 +44,10 @@ class SelfPlayConfig:
 @dataclass
 class OptimConfig:
     lr: float = 1.0e-3
+    lr_schedule: str = "constant"
+    min_lr: float = 1.0e-5
+    step_decay_every: int = 20
+    step_decay_gamma: float = 0.5
     weight_decay: float = 1.0e-4
     batch_size: int = 256
     train_steps_per_generation: int = 100
@@ -84,6 +88,10 @@ class TrainConfig:
 
 def _merge_dataclass(instance: Any, data: dict[str, Any]) -> Any:
     for key, value in data.items():
+        if key.startswith("_comment"):
+            continue
+        if not hasattr(instance, key):
+            raise ValueError(f"unknown config key: {key}")
         current = getattr(instance, key)
         if hasattr(current, "__dataclass_fields__") and isinstance(value, dict):
             _merge_dataclass(current, value)
@@ -112,3 +120,4 @@ def add_config_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--device", type=str, default=None)
     parser.add_argument("--checkpoint-dir", type=str, default=None)
     parser.add_argument("--profile", action="store_true")
+    parser.add_argument("--smoke", action="store_true")
