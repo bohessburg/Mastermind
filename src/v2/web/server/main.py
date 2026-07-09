@@ -16,7 +16,9 @@ import dominion_v2_py as dz
 
 from .defs import def_by_id, def_id, kingdom_def_ids, load_defs
 from .observer import (
+    BanditLogState,
     SentryLogState,
+    bandit_resolution_logs,
     capture_public_snapshot,
     decision_kind_name,
     legal_options,
@@ -59,6 +61,7 @@ class Session:
     human_decision_prefixes: list[int] = field(default_factory=list)
     log_lines: list[str] = field(default_factory=list)
     sentry_log_states: dict[int, SentryLogState] = field(default_factory=dict)
+    bandit_log_state: BanditLogState = field(default_factory=BanditLogState)
     connections: dict[str, WebSocket] = field(default_factory=dict)
     bot_rngs: list[random.Random] = field(default_factory=list)
     thinking_delay_ms: int = 600
@@ -352,6 +355,15 @@ def _apply_action(session: Session, seat: int, action: int) -> tuple[list[str], 
     after = capture_public_snapshot(session.game)
     after_decision = session.game.current_decision()
     lines = public_log_lines(seat, action, decision, before, after, decision_context, after_decision)
+    lines.extend(bandit_resolution_logs(
+        session.bandit_log_state,
+        seat,
+        action,
+        decision,
+        before,
+        after,
+        decision_context,
+    ))
     resolution_lines, private_lines = sentry_resolution_logs(
         session.sentry_log_states,
         seat,
@@ -418,6 +430,7 @@ def _undo_previous_human_decision(session: Session, seat: int) -> str:
     session.game = _replay_game(session, session.action_log)
     session.log_lines = session.log_lines[:log_prefix]
     session.sentry_log_states.clear()
+    session.bandit_log_state.hits_by_attacker.clear()
     line = "Undo: rewound to previous human decision"
     session.log_lines.append(line)
     return line

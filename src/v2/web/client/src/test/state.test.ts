@@ -3,6 +3,7 @@ import type { CardDef, DecisionMessage, LogMessage, StateMessage, TableMessage }
 import {
   canSendDone,
   findNextBasicTreasurePlay,
+  formatTrashEntries,
   indexDecisionOptionsByDef,
   initialClientState,
   reduceServerMessage,
@@ -124,5 +125,20 @@ describe('client state reducer', () => {
     ).toBeUndefined();
     expect(findNextBasicTreasurePlay({ ...buyDecision, kind: 'PhaseAction' }, defs)).toBeUndefined();
     expect(findNextBasicTreasurePlay({ ...buyDecision, options: [] }, defs)).toBeUndefined();
+  });
+
+  it('formats the full trash multiset for the trash popover', () => {
+    const names = new Map<number, string>([
+      [0, 'Copper'],
+      [1, 'Silver'],
+    ]);
+    expect(formatTrashEntries(
+      [
+        { def: 0, count: 3 },
+        { def: 1, count: 1 },
+      ],
+      (def) => names.get(def),
+    )).toEqual(['Copper x3', 'Silver x1']);
+    expect(formatTrashEntries([], (def) => names.get(def))).toEqual(['Trash is empty']);
   });
 });

@@ -227,7 +227,8 @@ def log_line(seat: int, action: int, decision: dict[str, Any]) -> str:
         return f"P{seat + 1} passes"
     if verb == "done":
         return f"P{seat + 1} finishes choosing"
-    return f"P{seat + 1} {verb}s{rest}"
+    suffix = "es" if verb.endswith(("s", "x", "z", "ch", "sh")) else "s"
+    return f"P{seat + 1} {verb}{suffix}{rest}"
 
 
 @dataclass(frozen=True)
@@ -265,6 +266,11 @@ class SentryLogState:
     discarded: list[int] = field(default_factory=list)
     kept: list[int] = field(default_factory=list)
     kept_on_top: int | None = None
+
+
+@dataclass
+class BanditLogState:
+    hits_by_attacker: dict[int, int] = field(default_factory=dict)
 
 
 def capture_public_snapshot(game: Any) -> PublicSnapshot:
@@ -325,19 +331,7 @@ def _source_name(action: int, decision: dict[str, Any]) -> str:
 
 
 def _format_bandit(context: LogContext) -> list[str]:
-    trash_added = _trash_added(context.before, context.after)
-    category = action_category(context.action)
-    lines: list[str] = []
-    for player, (before, after) in enumerate(zip(context.before.players, context.after.players)):
-        if category == "play" and player == context.seat:
-            continue
-        discard_added = _discard_added(before, after)
-        if not discard_added and not trash_added:
-            continue
-        revealed = trash_added + discard_added
-        trashed = _card_list(trash_added) if trash_added else "nothing"
-        lines.append(f"P{player + 1} reveals {_card_list(revealed)}; trashes {trashed}")
-    return lines
+    return []
 
 
 def _format_militia(context: LogContext) -> list[str]:
@@ -431,6 +425,7 @@ def _generic_line_is_private(context: LogContext) -> bool:
     category = action_category(context.action)
     return (
         (context.source_name == "Militia" and category == "select")
+        or (context.source_name == "Bandit" and category == "select")
         or (context.source_name == "Bureaucrat" and category == "select")
         or (context.source_name in {"Sentry", "Library", "Vassal"} and category == "option")
     )
@@ -554,3 +549,137 @@ def sentry_resolution_logs(
     private = {seat: _sentry_private_summary(state)}
     states.pop(seat, None)
     return public, private
+
+
+def _remove_one(values: list[int], value: int) -> bool:
+    try:
+        values.remove(value)
+    except ValueError:
+        return False
+    return True
+
+
+def _bandit_sequence_start(action: int, decision: dict[str, Any]) -> bool:
+    category = action_category(action)
+    source_name = def_name(int(decision.get("source", -1)))
+    if category == "play" and action_def(action, dz.A_PLAY_BASE) == int(dz.DEF_BANDIT):
+        return True
+    return (
+        category == "select"
+        and source_name == "Throne Room"
+        and action_def(action, dz.A_SELECT_BASE) == int(dz.DEF_BANDIT)
+    )
+
+
+def _bandit_emit_hit(
+    state: BanditLogState,
+    attacker: int | None,
+    victim: int,
+    revealed: list[int],
+    trashed: list[int],
+) -> list[str]:
+    lines: list[str] = []
+    if attacker is not None:
+        prior_hits = state.hits_by_attacker.get(attacker, 0)
+        if prior_hits > 0:
+            lines.append(f"P{attacker + 1} plays Bandit (again)")
+        state.hits_by_attacker[attacker] = prior_hits + 1
+    trashed_text = _card_list(trashed) if trashed else "nothing"
+    lines.append(f"P{victim + 1} reveals {_card_list(revealed)}; trashes {trashed_text}")
+    return lines
+
+
+def _split_bandit_hits(discarded: list[int], trashed: list[int]) -> list[tuple[list[int], list[int]]]:
+    discard_remaining = list(discarded)
+    trash_remaining = list(trashed)
+    hits: list[tuple[list[int], list[int]]] = []
+    while discard_remaining or trash_remaining:
+        hit_trash: list[int] = []
+        revealed: list[int] = []
+        if trash_remaining:
+            card = trash_remaining.pop(0)
+            hit_trash.append(card)
+            revealed.append(card)
+        while len(revealed) < 2 and discard_remaining:
+            revealed.append(discard_remaining.pop(0))
+        hits.append((revealed, hit_trash))
+    return hits
+
+
+def _fallback_bandit_attacker(
+    seat: int,
+    category: str,
+    decision_context: dict[str, Any] | None,
+    victim: int | None,
+    player_count: int,
+) -> int | None:
+    if decision_context and decision_context.get("attacker_player") is not None:
+        return int(decision_context["attacker_player"])
+    if category == "play":
+        return seat
+    if player_count == 2 and victim is not None:
+        return 1 - victim
+    return None
+
+
+def bandit_resolution_logs(
+    state: BanditLogState,
+    seat: int,
+    action: int,
+    decision: dict[str, Any],
+    before: PublicSnapshot,
+    after: PublicSnapshot,
+    decision_context: dict[str, Any] | None,
+) -> list[str]:
+    if _bandit_sequence_start(action, decision):
+        state.hits_by_attacker[seat] = 0
+
+    source_name = _source_name(action, decision)
+    if source_name != "Bandit":
+        return []
+
+    category = action_category(action)
+    player_count = len(before.players)
+    trash_remaining = _trash_added(before, after)
+    discard_remaining = [
+        _discard_added(before_player, after_player)
+        for before_player, after_player in zip(before.players, after.players)
+    ]
+    lines: list[str] = []
+
+    if category == "select":
+        victim = int((decision_context or {}).get("victim_player", decision.get("player", seat)))
+        attacker = _fallback_bandit_attacker(seat, category, decision_context, victim, player_count)
+        revealed = _context_subjects(decision_context)
+        selected = action_def(action, dz.A_SELECT_BASE)
+        if revealed:
+            lines.extend(_bandit_emit_hit(state, attacker, victim, revealed, [selected]))
+            _remove_one(trash_remaining, selected)
+            for card in revealed:
+                if card != selected and 0 <= victim < len(discard_remaining):
+                    _remove_one(discard_remaining[victim], card)
+
+    victim_indices = list(range(player_count))
+    attacker_for_auto = _fallback_bandit_attacker(seat, category, decision_context, None, player_count)
+    if attacker_for_auto is not None:
+        victim_indices = [player for player in victim_indices if player != attacker_for_auto]
+
+    for player in victim_indices:
+        discarded = discard_remaining[player]
+        if not discarded and not trash_remaining:
+            continue
+        if trash_remaining and not discarded and player_count != 2:
+            before_player = before.players[player]
+            after_player = after.players[player]
+            if before_player.deck_count == after_player.deck_count:
+                continue
+        attacker = _fallback_bandit_attacker(seat, category, decision_context, player, player_count)
+        for revealed, trashed in _split_bandit_hits(discarded, trash_remaining):
+            if not revealed:
+                continue
+            lines.extend(_bandit_emit_hit(state, attacker, player, revealed, trashed))
+            for card in trashed:
+                _remove_one(trash_remaining, card)
+        discard_remaining[player] = []
+
+    return lines

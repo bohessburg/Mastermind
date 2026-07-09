@@ -14,6 +14,7 @@ import type {
 import {
   ClientState,
   findNextBasicTreasurePlay,
+  formatTrashEntries,
   indexDecisionOptionsByDef,
   initialClientState,
   reduceServerMessage,
@@ -188,12 +189,46 @@ function OpponentStrip({ opponents }: { opponents: OpponentView[] }) {
   );
 }
 
-function TrashAndResources({ trashTop, resources, turn }: { trashTop: number | null; resources: ResourceView; turn: number }) {
+function TrashTile({ trash, trashTop }: { trash: CountedCard[]; trashTop: number | null }) {
+  const topCard = cardDef(trashTop);
+  const total = trash.reduce((sum, card) => sum + card.count, 0);
+  const entries = formatTrashEntries(trash, (def) => cardDef(def)?.name);
+  const tileClass = topCard ? typeClass(topCard.types) : 'unknown';
+
+  return (
+    <div className={`card-tile compact trash-tile ${tileClass}`} tabIndex={0}>
+      <div className="card-title-row">
+        <strong>{topCard ? topCard.name : 'Empty'}</strong>
+      </div>
+      {total > 0 && <div className="card-count">x{total}</div>}
+      <div className="card-popover" role="tooltip">
+        <div className="popover-title">Trash</div>
+        <div className="trash-popover-list">
+          {entries.map((entry) => (
+            <span key={entry}>{entry}</span>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TrashAndResources({
+  trash,
+  trashTop,
+  resources,
+  turn,
+}: {
+  trash: CountedCard[];
+  trashTop: number | null;
+  resources: ResourceView;
+  turn: number;
+}) {
   return (
     <section className="table-middle">
       <div className="trash-panel">
         <span>Trash top</span>
-        <CardTile def={trashTop} compact />
+        <TrashTile trash={trash} trashTop={trashTop} />
       </div>
       <div className="turn-panel">
         <span>Turn {turn}</span>
@@ -604,7 +639,14 @@ export function App() {
         <div className="main-table">
           {view && <SupplyGrid piles={view.piles} buyActionsByDef={buyActionsByDef} onAction={act} />}
           {view && <OpponentStrip opponents={view.opponents} />}
-          {view && <TrashAndResources trashTop={view.trashTop} resources={view.resources} turn={view.turn} />}
+          {view && (
+            <TrashAndResources
+              trash={view.trash}
+              trashTop={view.trashTop}
+              resources={view.resources}
+              turn={view.turn}
+            />
+          )}
           {view && (
             <PlayerArea
               hand={view.myHand}

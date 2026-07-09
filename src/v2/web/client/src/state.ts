@@ -1,5 +1,6 @@
 import type {
   CardDef,
+  CountedCard,
   DecisionMessage,
   DecisionOption,
   GameOverMessage,
@@ -84,4 +85,16 @@ export function findNextBasicTreasurePlay(
     }
   }
   return best;
+}
+
+export function formatTrashEntries(
+  trash: CountedCard[],
+  nameForDef: (def: number) => string | undefined,
+): string[] {
+  if (trash.length === 0) {
+    return ['Trash is empty'];
+  }
+  return trash
+    .filter((card) => card.count > 0)
+    .map((card) => `${nameForDef(card.def) ?? `Card ${card.def}`} x${card.count}`);
 }

@@ -353,6 +353,10 @@ code {
   color: #7f8b9a;
 }
 
+.trash-tile {
+  cursor: default;
+}
+
 .type-action {
   border-color: #d8dde6;
 }
@@ -452,6 +456,12 @@ code {
 
 .popover-title {
   font-weight: 800;
+}
+
+.trash-popover-list {
+  display: grid;
+  gap: 3px;
+  color: #d7dee7;
 }
 
 .popover-types,

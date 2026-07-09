@@ -8,11 +8,22 @@ import numpy as np
 
 import dominion_v2_py as dz
 
-from src.v2.web.server.main import _decision_message, _post_step_messages, app, sessions
+from src.v2.web.server.main import (
+    Seat,
+    Session,
+    _decision_message,
+    _post_step_messages,
+    _undo_previous_human_decision,
+    app,
+    sessions,
+)
 from src.v2.web.server.observer import (
+    BanditLogState,
     PlayerPublicSnapshot,
     PublicSnapshot,
     SentryLogState,
+    bandit_resolution_logs,
+    log_line,
     public_log_lines,
     sentry_resolution_logs,
 )
@@ -313,6 +324,7 @@ def test_sentry_resolution_log_summarizes_once_and_private_detail_is_seat_filter
 
 
 def test_public_effect_logs_describe_bandit_militia_and_witch_without_private_leaks() -> None:
+    bandit_state = BanditLogState()
     bandit_before = snapshot(
         (
             player_snapshot(discard=()),
@@ -333,6 +345,15 @@ def test_public_effect_logs_describe_bandit_militia_and_witch_without_private_le
         bandit_before,
         bandit_after,
     )
+    bandit_lines.extend(bandit_resolution_logs(
+        bandit_state,
+        0,
+        dz.A_PLAY_BASE + dz.DEF_BANDIT,
+        decision(dz.DEF_BANDIT, kind=1),
+        bandit_before,
+        bandit_after,
+        {},
+    ))
     assert "P2 reveals Silver and Estate; trashes Silver" in bandit_lines
 
     militia_before = snapshot(
@@ -378,6 +399,167 @@ def test_public_effect_logs_describe_bandit_militia_and_witch_without_private_le
         witch_after,
     )
     assert "P2 gains a Curse" in witch_lines
+
+
+def test_throned_bandit_logs_one_victim_attributed_line_per_hit() -> None:
+    state = BanditLogState()
+    empty = snapshot((player_snapshot(), player_snapshot()))
+
+    start_decision = decision(dz.DEF_THRONE_ROOM, kind=4, player=0)
+    start_lines = public_log_lines(
+        0,
+        dz.A_SELECT_BASE + dz.DEF_BANDIT,
+        start_decision,
+        empty,
+        empty,
+    )
+    start_lines.extend(bandit_resolution_logs(
+        state,
+        0,
+        dz.A_SELECT_BASE + dz.DEF_BANDIT,
+        start_decision,
+        empty,
+        empty,
+        {},
+    ))
+    assert start_lines == ["P1 plays Bandit"]
+
+    first_before = snapshot((player_snapshot(), player_snapshot(deck_count=2, discard=())))
+    first_after = snapshot(
+        (player_snapshot(), player_snapshot(deck_count=0, discard=(dz.DEF_GOLD,))),
+        {dz.DEF_SILVER: 1},
+    )
+    first_decision = decision(dz.DEF_BANDIT, kind=4, player=1)
+    first_context = {
+        "source_def": dz.DEF_BANDIT,
+        "subject_defs": [dz.DEF_SILVER, dz.DEF_GOLD],
+        "subject_index": None,
+        "victim_player": 1,
+        "attacker_player": 0,
+    }
+    first_lines = public_log_lines(
+        1,
+        dz.A_SELECT_BASE + dz.DEF_SILVER,
+        first_decision,
+        first_before,
+        first_after,
+        first_context,
+    )
+    first_lines.extend(bandit_resolution_logs(
+        state,
+        1,
+        dz.A_SELECT_BASE + dz.DEF_SILVER,
+        first_decision,
+        first_before,
+        first_after,
+        first_context,
+    ))
+    assert first_lines == ["P2 reveals Silver and Gold; trashes Silver"]
+
+    second_before = first_after
+    second_after = snapshot(
+        (player_snapshot(), player_snapshot(deck_count=0, discard=(dz.DEF_GOLD, dz.DEF_COPPER))),
+        {dz.DEF_SILVER: 1, dz.DEF_GOLD: 1},
+    )
+    second_context = {
+        "source_def": dz.DEF_BANDIT,
+        "subject_defs": [dz.DEF_GOLD, dz.DEF_COPPER],
+        "subject_index": None,
+        "victim_player": 1,
+        "attacker_player": 0,
+    }
+    second_lines = public_log_lines(
+        1,
+        dz.A_SELECT_BASE + dz.DEF_GOLD,
+        first_decision,
+        second_before,
+        second_after,
+        second_context,
+    )
+    second_lines.extend(bandit_resolution_logs(
+        state,
+        1,
+        dz.A_SELECT_BASE + dz.DEF_GOLD,
+        first_decision,
+        second_before,
+        second_after,
+        second_context,
+    ))
+    assert second_lines == [
+        "P1 plays Bandit (again)",
+        "P2 reveals Gold and Copper; trashes Gold",
+    ]
+
+    all_lines = start_lines + first_lines + second_lines
+    assert not any(line.startswith("P1 reveals") for line in all_lines)
+    assert not any("Silver, Gold and Gold" in line or "Silver, Gold, Gold and Copper" in line for line in all_lines)
+
+
+def test_undo_clears_in_flight_bandit_log_state_before_continuing() -> None:
+    setup = dz.Setup(players=2, kingdom=KINGDOM)
+    session = Session(
+        session_id="undo-bandit",
+        seats=[Seat("human", "p1"), Seat("bot", "p2")],
+        setup=setup,
+        seed=0xBADA11,
+        kingdom=[dz.def_id(name) for name in KINGDOM],
+        game=dz.new_game(setup, 0xBADA11),
+    )
+    session.action_log = [12345]
+    session.action_log_line_counts = [4]
+    session.human_decision_prefixes = [0]
+    session.log_lines = [
+        "P1 plays Throne Room",
+        "P1 plays Bandit",
+        "P2 reveals Silver and Gold; trashes Silver",
+        "P1 plays Bandit (again)",
+    ]
+    session.bandit_log_state.hits_by_attacker[0] = 2
+
+    line = _undo_previous_human_decision(session, 0)
+    assert line == "Undo: rewound to previous human decision"
+    assert session.action_log == []
+    assert session.action_log_line_counts == []
+    assert session.log_lines == [line]
+    assert session.bandit_log_state.hits_by_attacker == {}
+
+    before = snapshot((player_snapshot(), player_snapshot(deck_count=2, discard=())))
+    after = snapshot(
+        (player_snapshot(), player_snapshot(deck_count=0, discard=(dz.DEF_GOLD,))),
+        {dz.DEF_SILVER: 1},
+    )
+    context = {
+        "source_def": dz.DEF_BANDIT,
+        "subject_defs": [dz.DEF_SILVER, dz.DEF_GOLD],
+        "subject_index": None,
+        "victim_player": 1,
+        "attacker_player": 0,
+    }
+    continued = bandit_resolution_logs(
+        session.bandit_log_state,
+        1,
+        dz.A_SELECT_BASE + dz.DEF_SILVER,
+        decision(dz.DEF_BANDIT, kind=4, player=1),
+        before,
+        after,
+        context,
+    )
+    fresh = bandit_resolution_logs(
+        BanditLogState(),
+        1,
+        dz.A_SELECT_BASE + dz.DEF_SILVER,
+        decision(dz.DEF_BANDIT, kind=4, player=1),
+        before,
+        after,
+        context,
+    )
+    assert continued == fresh == ["P2 reveals Silver and Gold; trashes Silver"]
+
+
+def test_log_line_spells_trashes_correctly() -> None:
+    line = log_line(1, dz.A_SELECT_BASE + dz.DEF_SILVER, decision(dz.DEF_BANDIT, player=1))
+    assert line == "P2 trashes Silver"
+    assert "trash" + "s" not in line
 
 
 def test_sentry_public_log_never_names_kept_topdecked_cards() -> None:

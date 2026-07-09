@@ -6,6 +6,7 @@
 #include "v2/core/defs.h"
 #include "v2/core/determinize.h"
 #include "v2/core/game.h"
+#include "v2/core/interp.h"
 #include "v2/core/score.h"
 #include "v2/encode/encoder.h"
 
@@ -147,6 +148,18 @@ void append_subject_def(py::list& subjects, const GameState& state, std::int16_t
     subjects.append(py::int_(state.slot_to_def[static_cast<Slot>(slot_value)]));
 }
 
+[[nodiscard]] py::object bandit_attacker_object(const GameState& state, const EffectFrame& attack_frame) {
+    for (std::uint8_t depth = state.effect_depth; depth > 0U; --depth) {
+        const EffectFrame& frame = state.effect_stack[depth - 1U];
+        if (frame.source == DEF_BANDIT
+            && (frame.flags & FRAME_ATTACK) == 0U
+            && frame.player != attack_frame.player) {
+            return py::int_(frame.player);
+        }
+    }
+    return py::none();
+}
+
 [[nodiscard]] py::dict decision_context_dict(const GameState& state) {
     if (state.decision.kind == static_cast<std::uint8_t>(DecisionKind::None)
         || state.effect_depth == 0U) {
@@ -199,6 +212,20 @@ void append_subject_def(py::list& subjects, const GameState& state, std::int16_t
             subjects.append(py::int_(def_value));
             subject_index = py::int_(0);
         }
+    } else if (frame.source == DEF_BANDIT && kind == DecisionKind::Choose) {
+        // Bandit attack frame overlay mirrors interp.cpp:
+        //   data[1], data[2]: revealed set-aside slots
+        //   data[3]: revealed count
+        // The pending player is the victim. The attacker is the nearest
+        // non-attack Bandit frame below this attack frame, if still present.
+        const std::uint8_t count = frame.data[3] <= 0
+            ? 0U
+            : static_cast<std::uint8_t>(frame.data[3]);
+        for (std::uint8_t i = 0; i < count && i < 2U; ++i) {
+            append_subject_def(subjects, state, frame.data[1 + i]);
+        }
+        dict["victim_player"] = py::int_(frame.player);
+        dict["attacker_player"] = bandit_attacker_object(state, frame);
     }
 
     dict["subject_defs"] = subjects;
