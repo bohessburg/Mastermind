@@ -75,6 +75,11 @@ endif()
 # --- v2 core skeleton ---
 add_library(dominion_v2 STATIC
     src/v2/cards/base.cpp
+    src/v2/core/actions.cpp
+    src/v2/core/game.cpp
+    src/v2/core/interp.cpp
+    src/v2/core/setup.cpp
+    src/v2/core/turns.cpp
 )
 target_include_directories(dominion_v2 PUBLIC src)
 configure_v2_target(dominion_v2)
@@ -109,6 +114,8 @@ if(BUILD_TESTS)
         tests/v2/test_types.cpp
         tests/v2/test_rng.cpp
         tests/v2/test_state.cpp
+        tests/v2/test_setup.cpp
+        tests/v2/test_game_flow.cpp
     )
     target_link_libraries(v2_tests PRIVATE dominion_v2 Catch2::Catch2WithMain)
     configure_v2_target(v2_tests)

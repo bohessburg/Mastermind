@@ -15,6 +15,10 @@ constexpr CardDef kBaseCards[] = {
     DOMINION_V2_DEF(Curse, (Cost{0, 0, 0}), TYPE_CURSE, -1, 0),
 };
 
+constexpr Instr kEffectInstrs[] = {
+    Instr{Op::End, 0, 0, 0, 0},
+};
+
 static_assert(sizeof(kBaseCards) / sizeof(kBaseCards[0]) == BASIC_CARD_COUNT);
 
 } // namespace
@@ -29,6 +33,14 @@ std::uint16_t card_def_count() noexcept {
 
 const CardDef& card_def(DefId id) noexcept {
     return kBaseCards[id];
+}
+
+const Instr& effect_instr(std::uint16_t offset) noexcept {
+    return kEffectInstrs[offset];
+}
+
+std::uint16_t effect_instr_count() noexcept {
+    return static_cast<std::uint16_t>(sizeof(kEffectInstrs) / sizeof(kEffectInstrs[0]));
 }
 
 const CardDef* base_card_defs() noexcept {

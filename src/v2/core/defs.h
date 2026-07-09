@@ -123,6 +123,8 @@ inline constexpr std::uint16_t BASIC_CARD_COUNT = 10;
 [[nodiscard]] const CardDef* card_defs() noexcept;
 [[nodiscard]] std::uint16_t card_def_count() noexcept;
 [[nodiscard]] const CardDef& card_def(DefId id) noexcept;
+[[nodiscard]] const Instr& effect_instr(std::uint16_t offset) noexcept;
+[[nodiscard]] std::uint16_t effect_instr_count() noexcept;
 
 [[nodiscard]] const CardDef* base_card_defs() noexcept;
 [[nodiscard]] std::uint16_t base_card_def_count() noexcept;
