@@ -55,6 +55,17 @@ class ReplayConfig:
 
 
 @dataclass
+class EvalConfig:
+    eval_every_n_generations: int = 0
+    eval_games: int = 200
+    eval_sims: int = 400
+    eval_opponent: str = "engine"
+    eval_kingdoms: str = "random"
+    eval_n_games: int = 64
+    eval_max_batch: int = 512
+
+
+@dataclass
 class TrainConfig:
     seed: int = 12345
     generations: int = 10
@@ -65,6 +76,7 @@ class TrainConfig:
     selfplay: SelfPlayConfig = field(default_factory=SelfPlayConfig)
     optim: OptimConfig = field(default_factory=OptimConfig)
     replay: ReplayConfig = field(default_factory=ReplayConfig)
+    eval: EvalConfig = field(default_factory=EvalConfig)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

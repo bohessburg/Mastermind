@@ -39,6 +39,7 @@ target_include_directories(dominion_v2 PUBLIC src)
 configure_v2_target(dominion_v2)
 
 add_library(dominion_v2_mcts STATIC
+    src/v2/mcts/eval_runner.cpp
     src/v2/mcts/selfplay.cpp
     src/v2/mcts/tree.cpp
 )
@@ -167,6 +168,7 @@ if(BUILD_TESTS)
         tests/v2/test_bots.cpp
         tests/v2/test_mcts.cpp
         tests/v2/test_mcts_eval.cpp
+        tests/v2/test_eval_runner.cpp
         tests/v2/test_selfplay.cpp
         src/v2/mcts/eval.cpp
         tests/v2/test_specs_base.cpp

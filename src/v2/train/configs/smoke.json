@@ -26,5 +26,14 @@
   },
   "replay": {
     "capacity": 4096
+  },
+  "eval": {
+    "eval_every_n_generations": 0,
+    "eval_games": 8,
+    "eval_sims": 8,
+    "eval_opponent": "random",
+    "eval_kingdoms": "fixed",
+    "eval_n_games": 4,
+    "eval_max_batch": 32
   }
 }

@@ -9,6 +9,7 @@
 #include "v2/core/interp.h"
 #include "v2/core/score.h"
 #include "v2/encode/encoder.h"
+#include "v2/mcts/eval_runner.h"
 #include "v2/mcts/selfplay.h"
 
 #include <cstdint>
@@ -602,6 +603,65 @@ void selfplay_provide(
     return out;
 }
 
+[[nodiscard]] py::tuple eval_collect(EvalRunner& runner, std::uint32_t max_batch) {
+    std::uint32_t count = 0;
+    {
+        py::gil_scoped_release release;
+        count = runner.collect_leaves(max_batch);
+    }
+
+    py::array_t<float> obs({
+        static_cast<py::ssize_t>(count),
+        static_cast<py::ssize_t>(OBS_SIZE),
+    });
+    py::array_t<bool> masks({
+        static_cast<py::ssize_t>(count),
+        static_cast<py::ssize_t>(ACTION_SPACE_SIZE),
+    });
+    if (count != 0U) {
+        std::memcpy(
+            obs.mutable_data(),
+            runner.leaf_observations(),
+            static_cast<std::size_t>(count) * OBS_SIZE * sizeof(float));
+        std::memcpy(
+            masks.mutable_data(),
+            runner.leaf_legal_masks(),
+            static_cast<std::size_t>(count) * ACTION_SPACE_SIZE * sizeof(bool));
+    }
+    return py::make_tuple(obs, masks);
+}
+
+void eval_provide(
+    EvalRunner& runner,
+    py::array_t<float, py::array::c_style | py::array::forcecast> values,
+    py::array_t<float, py::array::c_style | py::array::forcecast> policies) {
+    if (values.ndim() != 1) {
+        throw std::invalid_argument("values must have shape [B]");
+    }
+    if (policies.ndim() != 2 || policies.shape(1) != static_cast<py::ssize_t>(ACTION_SPACE_SIZE)) {
+        throw std::invalid_argument("policies must have shape [B, ACTION_SPACE]");
+    }
+    if (policies.shape(0) != values.shape(0)) {
+        throw std::invalid_argument("values and policies batch sizes differ");
+    }
+    const auto count = static_cast<std::uint32_t>(values.shape(0));
+    {
+        py::gil_scoped_release release;
+        runner.provide_evaluations(values.data(), policies.data(), count);
+    }
+}
+
+[[nodiscard]] py::dict eval_result_dict(const EvalRunner& runner) {
+    const EvalRunnerResult result = runner.result();
+    py::dict dict;
+    dict["games"] = py::int_(result.games);
+    dict["nn_wins"] = py::int_(result.nn_wins);
+    dict["scripted_wins"] = py::int_(result.scripted_wins);
+    dict["ties"] = py::int_(result.ties);
+    dict["truncated"] = py::int_(result.truncated);
+    return dict;
+}
+
 [[nodiscard]] std::string def_constant_name(const char* name) {
     std::string constant = "DEF_";
     if (name != nullptr) {
@@ -911,6 +971,71 @@ PYBIND11_MODULE(dominion_v2_py, module) {
         .def("finished_games", &selfplay_finished)
         .def("games_completed", &SelfPlayRunner::games_completed)
         .def("total_virtual_loss", &SelfPlayRunner::total_virtual_loss);
+
+    py::enum_<EvalScriptedBotKind>(module, "EvalScriptedBotKind")
+        .value("Engine", EvalScriptedBotKind::Engine)
+        .value("BigMoney", EvalScriptedBotKind::BigMoney)
+        .value("Heuristic", EvalScriptedBotKind::Heuristic)
+        .value("Random", EvalScriptedBotKind::Random);
+
+    py::class_<EvalRunnerConfig>(module, "EvalRunnerConfig")
+        .def(py::init([](
+            std::uint32_t n_games,
+            std::uint32_t sims_per_move,
+            float c_puct,
+            std::uint32_t max_batch,
+            std::uint64_t seed,
+            std::uint32_t target_games,
+            SelfPlayKingdomMode kingdom_mode,
+            py::object kingdom,
+            std::uint32_t max_tree_nodes,
+            EvalScriptedBotKind opponent) {
+            EvalRunnerConfig config{};
+            config.n_games = n_games;
+            config.sims_per_move = sims_per_move;
+            config.c_puct = c_puct;
+            config.max_batch = max_batch;
+            config.seed = seed;
+            config.target_games = target_games;
+            config.kingdom_mode = kingdom_mode;
+            config.max_tree_nodes = max_tree_nodes;
+            config.opponent = opponent;
+            if (!kingdom.is_none()) {
+                PySetup setup(2, kingdom, false);
+                config.fixed_setup = setup.setup;
+            }
+            return config;
+        }),
+            py::arg("n_games") = 64,
+            py::arg("sims_per_move") = 400,
+            py::arg("c_puct") = 1.25F,
+            py::arg("max_batch") = 512,
+            py::arg("seed") = 0x4556414CULL,
+            py::arg("target_games") = 0,
+            py::arg("kingdom_mode") = SelfPlayKingdomMode::Random,
+            py::arg("kingdom") = py::none(),
+            py::arg("max_tree_nodes") = 4096,
+            py::arg("opponent") = EvalScriptedBotKind::Engine)
+        .def_readwrite("n_games", &EvalRunnerConfig::n_games)
+        .def_readwrite("sims_per_move", &EvalRunnerConfig::sims_per_move)
+        .def_readwrite("c_puct", &EvalRunnerConfig::c_puct)
+        .def_readwrite("max_batch", &EvalRunnerConfig::max_batch)
+        .def_readwrite("seed", &EvalRunnerConfig::seed)
+        .def_readwrite("target_games", &EvalRunnerConfig::target_games)
+        .def_readwrite("kingdom_mode", &EvalRunnerConfig::kingdom_mode)
+        .def_readwrite("max_tree_nodes", &EvalRunnerConfig::max_tree_nodes)
+        .def_readwrite("opponent", &EvalRunnerConfig::opponent);
+
+    py::class_<EvalRunner>(module, "EvalRunner")
+        .def(py::init<const EvalRunnerConfig&>(), py::arg("config"))
+        .def("collect_leaves", &eval_collect, py::arg("max_batch") = 0U)
+        .def("provide_evaluations", &eval_provide, py::arg("values"), py::arg("policies"))
+        .def("result", &eval_result_dict)
+        .def("games_completed", &EvalRunner::games_completed)
+        .def("total_virtual_loss", &EvalRunner::total_virtual_loss)
+        .def("active_nn_player", &EvalRunner::active_nn_player, py::arg("index"))
+        .def("active_sequence", &EvalRunner::active_sequence, py::arg("index"))
+        .def("last_scripted_action", &EvalRunner::last_scripted_action);
 
     module.def("new_game", &py_new_game, py::arg("setup"), py::arg("seed"));
     module.def("def_id", [](const std::string& name) {

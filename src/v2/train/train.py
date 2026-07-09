@@ -175,6 +175,14 @@ def append_metrics(path: str | Path, row: dict[str, Any]) -> None:
         "inference_pct",
         "plumbing_pct",
         "wall_time",
+        "eval_opponent",
+        "eval_games",
+        "eval_wins",
+        "eval_losses",
+        "eval_ties",
+        "eval_truncated",
+        "eval_win_pct_excl_ties",
+        "eval_games_per_hour",
     ]
     with out.open("a", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
@@ -229,6 +237,42 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
             losses = {key: value / steps for key, value in accum.items()}
 
         path = save_checkpoint(config, generation, model, optimizer, replay)
+        eval_row: dict[str, Any] = {}
+        should_eval = (
+            not profile
+            and config.eval.eval_every_n_generations > 0
+            and (
+                generation == start_generation + 1
+                or generation % config.eval.eval_every_n_generations == 0
+            )
+        )
+        if should_eval:
+            if __package__ in (None, ""):
+                from src.v2.train.evaluate import evaluate_checkpoint
+            else:
+                from .evaluate import evaluate_checkpoint
+
+            stats = evaluate_checkpoint(
+                path,
+                opponent=config.eval.eval_opponent,
+                games=config.eval.eval_games,
+                sims=config.eval.eval_sims,
+                kingdoms=config.eval.eval_kingdoms,
+                seed=config.seed ^ (generation * 0x4556),
+                device_name=device.type,
+                n_games=config.eval.eval_n_games,
+                max_batch=config.eval.eval_max_batch,
+            )
+            eval_row = {
+                "eval_opponent": stats.opponent,
+                "eval_games": stats.games,
+                "eval_wins": stats.wins,
+                "eval_losses": stats.losses,
+                "eval_ties": stats.ties,
+                "eval_truncated": stats.truncated,
+                "eval_win_pct_excl_ties": stats.win_pct_excl_ties,
+                "eval_games_per_hour": stats.games_per_hour,
+            }
         row = {
             "generation": generation,
             "games": sp_stats.games,
@@ -244,6 +288,7 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
             "wall_time": time.perf_counter() - gen_start,
             "checkpoint": str(path),
         }
+        row.update(eval_row)
         append_metrics(config.metrics_csv, row)
         metrics.append(row)
         print(json.dumps(row, sort_keys=True))
