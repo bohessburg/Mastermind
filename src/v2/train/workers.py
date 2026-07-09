@@ -9,14 +9,13 @@ and owns one persistent ``SelfPlayRunner``, so its game stream is reproducible.
 from __future__ import annotations
 
 import copy
-import io
 import multiprocessing as mp
 import queue
 import random
 import time
 import traceback
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable
 
 import numpy as np
 import torch
@@ -24,6 +23,12 @@ import torch
 import dominion_v2_py as dz
 
 from .config import TrainConfig
+from .inference_server import (
+    InferenceServer,
+    InferenceServerEndpoints,
+    deserialize_cpu_state_dict,
+    serialize_cpu_state_dict,
+)
 from .model import DominionNet
 from .selfplay import SelfPlayStats, make_runner_config
 
@@ -109,9 +114,13 @@ def _worker_device(name: str) -> torch.device:
     return torch.device(requested)
 
 
-def _seed_worker(seed: int, device: torch.device) -> None:
+def _seed_worker(seed: int, device: torch.device | None) -> None:
     random.seed(seed)
     np.random.seed(seed)
+    if device is None:
+        # Server-mode workers must not touch CUDA at all; the dedicated server
+        # is the sole owner of that context and of Torch model state.
+        return
     torch.manual_seed(seed)
     if device.type == "cuda":
         torch.cuda.manual_seed_all(seed)
@@ -122,27 +131,75 @@ def _seed_worker(seed: int, device: torch.device) -> None:
         torch.use_deterministic_algorithms(True, warn_only=True)
 
 
-def _load_cpu_weights(model: torch.nn.Module, state_dict: dict[str, torch.Tensor]) -> None:
-    # load_state_dict performs the one device-local copy required by this
-    # worker's inference session.
-    model.load_state_dict(state_dict)
+def _local_evaluator(model: torch.nn.Module, device: torch.device) -> Callable[[np.ndarray, np.ndarray], tuple[np.ndarray, np.ndarray]]:
+    def evaluate(obs: np.ndarray, masks: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        with torch.no_grad():
+            obs_tensor = torch.as_tensor(obs, dtype=torch.float32, device=device)
+            mask_tensor = torch.as_tensor(masks, dtype=torch.bool, device=device)
+            logits, values = model.evaluate(obs_tensor, mask_tensor)
+        return (
+            logits.detach().cpu().numpy().astype(np.float32, copy=False),
+            values.detach().cpu().numpy().astype(np.float32, copy=False),
+        )
+
+    return evaluate
 
 
-def _deserialize_cpu_state_dict(payload: bytes) -> dict[str, torch.Tensor]:
-    """Restore the CPU tensor state sent through a regular process queue."""
-    buffer = io.BytesIO(payload)
-    try:
-        return torch.load(buffer, map_location="cpu", weights_only=True)
-    except TypeError:  # pragma: no cover - older supported Torch versions
-        buffer.seek(0)
-        return torch.load(buffer, map_location="cpu")
+def _server_evaluator(
+    endpoints: InferenceServerEndpoints,
+    worker_index: int,
+) -> Callable[[np.ndarray, np.ndarray], tuple[np.ndarray, np.ndarray]]:
+    response_queue = endpoints.response_queues[worker_index]
+    request_id = 0
+
+    def evaluate(obs: np.ndarray, masks: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        nonlocal request_id
+        request_id += 1
+        deadline = time.monotonic() + endpoints.response_timeout_s
+        request = (
+            worker_index,
+            request_id,
+            np.ascontiguousarray(obs, dtype=np.float32),
+            np.ascontiguousarray(masks, dtype=np.bool_),
+        )
+        while True:
+            if not endpoints.alive_event.is_set():
+                raise RuntimeError("inference server is not alive while submitting a leaf batch")
+            remaining = deadline - time.monotonic()
+            if remaining <= 0.0:
+                raise RuntimeError("timed out submitting a leaf batch to the inference server")
+            try:
+                endpoints.request_queue.put(request, timeout=min(0.25, remaining))
+                break
+            except queue.Full:
+                continue
+
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0.0:
+                raise RuntimeError("timed out waiting for an inference-server response")
+            try:
+                kind, response_id, values, policies = response_queue.get(timeout=min(0.25, remaining))
+            except queue.Empty:
+                if not endpoints.alive_event.is_set():
+                    raise RuntimeError("inference server died while a worker awaited a response")
+                continue
+            if kind == "error":
+                raise RuntimeError(f"inference server rejected request {request_id}: {values}")
+            if kind != "response" or response_id != request_id:
+                raise RuntimeError("inference server routed a response to the wrong request")
+            return (
+                np.asarray(policies, dtype=np.float32),
+                np.asarray(values, dtype=np.float32),
+            )
+
+    return evaluate
 
 
 def _generate_games(
     runner: Any,
-    model: torch.nn.Module,
-    device: torch.device,
-    config: TrainConfig,
+    evaluate: Callable[[np.ndarray, np.ndarray], tuple[np.ndarray, np.ndarray]],
+    collect_max_batch: int,
     target_games: int,
     deferred: list[dict[str, Any]],
     result_queue: Any,
@@ -171,36 +228,30 @@ def _generate_games(
         deferred = deferred[target_games:]
         emit(ready)
 
-    model.eval()
-    with torch.no_grad():
-        while sent < target_games:
-            plumbing_start = time.perf_counter()
-            obs, masks = runner.collect_leaves(config.selfplay.max_batch)
-            stats.plumbing_time += time.perf_counter() - plumbing_start
-            batch = int(obs.shape[0])
-            if batch == 0:
-                continue
+    while sent < target_games:
+        plumbing_start = time.perf_counter()
+        obs, masks = runner.collect_leaves(collect_max_batch)
+        stats.plumbing_time += time.perf_counter() - plumbing_start
+        batch = int(obs.shape[0])
+        if batch == 0:
+            continue
 
-            inference_start = time.perf_counter()
-            obs_tensor = torch.as_tensor(obs, dtype=torch.float32, device=device)
-            mask_tensor = torch.as_tensor(masks, dtype=torch.bool, device=device)
-            logits, values = model.evaluate(obs_tensor, mask_tensor)
-            logits_np = logits.detach().cpu().numpy().astype(np.float32, copy=False)
-            values_np = values.detach().cpu().numpy().astype(np.float32, copy=False)
-            stats.inference_time += time.perf_counter() - inference_start
+        inference_start = time.perf_counter()
+        logits_np, values_np = evaluate(obs, masks)
+        stats.inference_time += time.perf_counter() - inference_start
 
-            plumbing_start = time.perf_counter()
-            runner.provide_evaluations(values_np, logits_np)
-            finished = runner.finished_games()
-            stats.plumbing_time += time.perf_counter() - plumbing_start
-            stats.leaves += batch
-            stats.nn_evals += batch
-            if not finished:
-                continue
+        plumbing_start = time.perf_counter()
+        runner.provide_evaluations(values_np, logits_np)
+        finished = runner.finished_games()
+        stats.plumbing_time += time.perf_counter() - plumbing_start
+        stats.leaves += batch
+        stats.nn_evals += batch
+        if not finished:
+            continue
 
-            remaining = target_games - sent
-            emit(finished[:remaining])
-            deferred.extend(finished[remaining:])
+        remaining = target_games - sent
+        emit(finished[:remaining])
+        deferred.extend(finished[remaining:])
 
     stats.wall_time = time.perf_counter() - start
     return stats, deferred
@@ -212,19 +263,33 @@ def _worker_main(
     runner_games: int,
     command_queue: Any,
     result_queue: Any,
+    inference_endpoints: InferenceServerEndpoints | None,
 ) -> None:
     """Worker entry point. Kept module-level for the spawn start method."""
     generation = -1
     try:
         worker_seed = int(config.seed) + worker_index
-        device = _worker_device(config.worker_device)
+        server_mode = config.worker_device.lower() == "server"
+        if server_mode and inference_endpoints is None:
+            raise RuntimeError("worker_device=server requires inference-server endpoints")
+        device = None if server_mode else _worker_device(config.worker_device)
         _seed_worker(worker_seed, device)
         worker_selfplay = copy.deepcopy(config.selfplay)
         # A process needs only its generation quota of in-flight games. This
         # avoids allocating the full global n_games pipeline in every worker.
         worker_selfplay.n_games = min(worker_selfplay.n_games, runner_games)
         runner = dz.SelfPlayRunner(make_runner_config(worker_selfplay, worker_seed))
-        model = DominionNet(dz.OBS_SIZE, dz.ACTION_SPACE_SIZE, config.model.hidden_sizes).to(device)
+        if server_mode:
+            assert inference_endpoints is not None
+            evaluate = _server_evaluator(inference_endpoints, worker_index)
+            collect_max_batch = inference_endpoints.request_batch_size
+            model: DominionNet | None = None
+        else:
+            assert device is not None
+            model = DominionNet(dz.OBS_SIZE, dz.ACTION_SPACE_SIZE, config.model.hidden_sizes).to(device)
+            model.eval()
+            evaluate = _local_evaluator(model, device)
+            collect_max_batch = config.selfplay.max_batch
         # A collect/provide batch can complete a few games past its quota.
         # They are emitted first next generation, giving the documented bound
         # of at most one generation of model-weight staleness.
@@ -235,13 +300,13 @@ def _worker_main(
             if command[0] == "stop":
                 return
             _, generation, target_games, state_payload = command
-            state_dict = _deserialize_cpu_state_dict(state_payload)
-            _load_cpu_weights(model, state_dict)
+            if model is not None:
+                model.load_state_dict(deserialize_cpu_state_dict(state_payload))
+                model.eval()
             stats, deferred = _generate_games(
                 runner,
-                model,
-                device,
-                config,
+                evaluate,
+                collect_max_batch,
                 int(target_games),
                 deferred,
                 result_queue,
@@ -274,16 +339,21 @@ def _worker_main(
 class ParallelSelfPlayPool:
     """A persistent spawn-process pool that synchronizes weights per generation."""
 
-    def __init__(self, config: TrainConfig):
+    def __init__(self, config: TrainConfig, inference_server: InferenceServer | None = None):
         self.config = copy.deepcopy(config)
         self.quotas = game_quotas(config.selfplay.games_per_generation, config.parallel_workers)
+        server_mode = config.worker_device.lower() == "server"
+        if server_mode != (inference_server is not None):
+            raise ValueError("worker_device=server requires exactly one inference server")
+        self.inference_server = inference_server
+        endpoints = inference_server.endpoints if inference_server is not None else None
         context = mp.get_context("spawn")
         self.result_queue = context.Queue(maxsize=max(2, config.parallel_workers * 2))
         self.command_queues = [context.Queue(maxsize=1) for _ in self.quotas]
         self.processes = [
             context.Process(
                 target=_worker_main,
-                args=(self.config, index, quota, command_queue, self.result_queue),
+                args=(self.config, index, quota, command_queue, self.result_queue, endpoints),
                 name=f"dominion-selfplay-{index}",
             )
             for index, (quota, command_queue) in enumerate(zip(self.quotas, self.command_queues))
@@ -291,26 +361,17 @@ class ParallelSelfPlayPool:
         for process in self.processes:
             process.start()
 
-    @staticmethod
-    def _cpu_state_dict(model: torch.nn.Module) -> dict[str, torch.Tensor]:
-        return {key: value.detach().cpu().clone() for key, value in model.state_dict().items()}
-
-    @classmethod
-    def _serialized_cpu_state_dict(cls, model: torch.nn.Module) -> bytes:
-        # Sending Tensor objects directly activates Torch's shared-memory
-        # reducer. A torch.save archive still contains only CPU tensors, while
-        # travelling as ordinary queue bytes on platforms without that service.
-        buffer = io.BytesIO()
-        torch.save(cls._cpu_state_dict(model), buffer)
-        return buffer.getvalue()
-
     def generate(
         self,
         model: torch.nn.Module,
         replay: Any,
         generation: int,
     ) -> ParallelSelfPlayResult:
-        state_payload = self._serialized_cpu_state_dict(model)
+        if self.inference_server is not None:
+            self.inference_server.ensure_alive()
+            state_payload = None
+        else:
+            state_payload = serialize_cpu_state_dict(model)
         for command_queue, quota in zip(self.command_queues, self.quotas):
             command_queue.put(("generate", generation, quota, state_payload))
 
@@ -322,6 +383,8 @@ class ParallelSelfPlayPool:
             try:
                 message = self.result_queue.get(timeout=1.0)
             except queue.Empty:
+                if self.inference_server is not None:
+                    self.inference_server.ensure_alive()
                 failed = [process.name for process in self.processes if process.exitcode not in (None, 0)]
                 if failed:
                     raise RuntimeError(f"self-play worker exited unexpectedly: {', '.join(failed)}")
@@ -361,6 +424,8 @@ class ParallelSelfPlayPool:
         expected = self.config.selfplay.games_per_generation
         if stats.games != expected:
             raise RuntimeError(f"parallel self-play collected {stats.games} games, expected {expected}")
+        if self.inference_server is not None:
+            self.inference_server.ensure_alive()
         return ParallelSelfPlayResult(stats=stats, collection_wall_time=time.perf_counter() - start)
 
     def close(self) -> None:
@@ -370,7 +435,7 @@ class ParallelSelfPlayPool:
             except (queue.Full, ValueError, OSError):
                 pass
         for process in self.processes:
-            process.join(timeout=10.0)
+            process.join(timeout=2.0)
             if process.is_alive():
                 process.terminate()
                 process.join(timeout=10.0)

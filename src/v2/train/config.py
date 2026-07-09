@@ -78,6 +78,13 @@ class TrainConfig:
     # exactly deterministic for the default configuration.
     parallel_workers: int = 1
     worker_device: str = "cuda"
+    # Used only when worker_device="server". The server owns the one model
+    # inference context while workers remain CPU-only SelfPlayRunner hosts.
+    server_device: str = "cuda"
+    server_max_batch: int = 8192
+    server_max_wait_ms: float = 2.0
+    server_fp16: bool = False
+    server_response_timeout_s: float = 30.0
     checkpoint_dir: str = "checkpoints"
     metrics_csv: str = "checkpoints/metrics.csv"
     model: ModelConfig = field(default_factory=ModelConfig)

@@ -191,4 +191,4 @@ def test_parallel_selfplay_cpu_smoke_two_generations(tmp_path: Path) -> None:
 
 
 def test_parallel_game_quotas_are_exact() -> None:
-    assert game_quotas(2048, 20) == [103] * 8 + [102] * 12
+    assert game_quotas(2048, 24) == [86] * 8 + [85] * 16

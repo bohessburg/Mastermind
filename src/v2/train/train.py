@@ -25,12 +25,14 @@ except ModuleNotFoundError as exc:  # pragma: no cover - gives a clearer CLI err
 if __package__ in (None, ""):
     sys.path.append(str(Path(__file__).resolve().parents[3]))
     from src.v2.train.config import TrainConfig, add_config_args, load_config, save_config
+    from src.v2.train.inference_server import InferenceServer
     from src.v2.train.model import DominionNet, count_parameters, masked_policy_loss
     from src.v2.train.replay import ReplayBuffer, load_replay_state, save_replay_state
     from src.v2.train.selfplay import SelfPlayStats, run_self_play_generation
     from src.v2.train.workers import ParallelSelfPlayPool
 else:
     from .config import TrainConfig, add_config_args, load_config, save_config
+    from .inference_server import InferenceServer
     from .model import DominionNet, count_parameters, masked_policy_loss
     from .replay import ReplayBuffer, load_replay_state, save_replay_state
     from .selfplay import SelfPlayStats, run_self_play_generation
@@ -231,6 +233,10 @@ def append_metrics(path: str | Path, row: dict[str, Any]) -> None:
         "plumbing_pct",
         "workers",
         "aggregate_games_per_hour",
+        "server_evals_per_sec",
+        "server_mean_batch_size",
+        "server_batch_wait_p50_ms",
+        "server_batch_wait_p99_ms",
         "wall_time",
         "eval_opponent",
         "eval_games",
@@ -261,6 +267,11 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
         config.device = requested.device
         config.parallel_workers = requested.parallel_workers
         config.worker_device = requested.worker_device
+        config.server_device = requested.server_device
+        config.server_max_batch = requested.server_max_batch
+        config.server_max_wait_ms = requested.server_max_wait_ms
+        config.server_fp16 = requested.server_fp16
+        config.server_response_timeout_s = requested.server_response_timeout_s
         if config.device == "auto":
             config.device = device.type
     else:
@@ -281,8 +292,13 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
         )
     )
 
-    pool = ParallelSelfPlayPool(config) if config.parallel_workers > 1 else None
+    inference_server: InferenceServer | None = None
+    pool: ParallelSelfPlayPool | None = None
     try:
+        if config.parallel_workers > 1 and config.worker_device.lower() == "server":
+            inference_server = InferenceServer(config, config.parallel_workers)
+        if config.parallel_workers > 1:
+            pool = ParallelSelfPlayPool(config, inference_server)
         for generation in range(start_generation + 1, start_generation + generations + 1):
             gen_start = time.perf_counter()
             lr = learning_rate_for_generation(config, generation)
@@ -293,9 +309,23 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
                 sp_stats = run_self_play_generation(model, replay, config.selfplay, gen_seed, device)
                 aggregate_games_per_hour = sp_stats.games_per_hour
             else:
+                if inference_server is not None:
+                    # The acknowledgement is a generation barrier: workers do
+                    # not submit work until the server owns this complete state.
+                    inference_server.sync_weights(model, generation)
                 parallel_result = pool.generate(model, replay, generation)
                 sp_stats = parallel_result.stats
                 aggregate_games_per_hour = parallel_result.aggregate_games_per_hour
+            server_metrics = (
+                inference_server.collect_metrics(generation)
+                if inference_server is not None
+                else {
+                    "server_evals_per_sec": 0.0,
+                    "server_mean_batch_size": 0.0,
+                    "server_batch_wait_p50_ms": 0.0,
+                    "server_batch_wait_p99_ms": 0.0,
+                }
+            )
 
             losses = {"policy_loss": float("nan"), "value_loss": float("nan"), "entropy": float("nan")}
             steps = config.optim.train_steps_per_generation
@@ -359,6 +389,7 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
                 "plumbing_pct": sp_stats.plumbing_pct,
                 "workers": config.parallel_workers,
                 "aggregate_games_per_hour": aggregate_games_per_hour,
+                **server_metrics,
                 "wall_time": time.perf_counter() - gen_start,
                 "checkpoint": str(path),
             }
@@ -369,6 +400,8 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
     finally:
         if pool is not None:
             pool.close()
+        if inference_server is not None:
+            inference_server.close()
 
     if profile and metrics:
         row = metrics[-1]
