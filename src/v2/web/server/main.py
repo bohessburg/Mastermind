@@ -15,7 +15,15 @@ from fastapi.staticfiles import StaticFiles
 import dominion_v2_py as dz
 
 from .defs import def_by_id, def_id, kingdom_def_ids, load_defs
-from .observer import capture_public_snapshot, decision_kind_name, legal_options, prompt_for, public_log_lines
+from .observer import (
+    SentryLogState,
+    capture_public_snapshot,
+    decision_kind_name,
+    legal_options,
+    prompt_for,
+    public_log_lines,
+    sentry_resolution_logs,
+)
 
 
 DEFAULT_KINGDOM = [
@@ -50,6 +58,7 @@ class Session:
     action_log_line_counts: list[int] = field(default_factory=list)
     human_decision_prefixes: list[int] = field(default_factory=list)
     log_lines: list[str] = field(default_factory=list)
+    sentry_log_states: dict[int, SentryLogState] = field(default_factory=dict)
     connections: dict[str, WebSocket] = field(default_factory=dict)
     bot_rngs: list[random.Random] = field(default_factory=list)
     thinking_delay_ms: int = 600
@@ -173,18 +182,19 @@ def _decision_message(session: Session, seat: int) -> dict[str, Any]:
     decision = session.game.current_decision()
     acting = int(decision["player"])
     source = int(decision["source"])
+    context = session.game.decision_context() if seat == acting else {}
     message = {
         "type": "decision",
         "seat": acting,
         "kind": decision_kind_name(decision),
         "source": {"def": source, "name": def_by_id(source)["name"] if source in load_defs()["by_id"] else ""},
-        "prompt": prompt_for(decision) if seat == acting else f"Waiting for P{acting + 1}",
+        "prompt": prompt_for(decision, context) if seat == acting else f"Waiting for P{acting + 1}",
         "options": [],
         "min": int(decision["min"]),
         "max": int(decision["max"]),
     }
     if seat == acting:
-        message["options"] = legal_options(session.game.legal_mask(), decision)
+        message["options"] = legal_options(session.game.legal_mask(), decision, context)
     return message
 
 
@@ -207,8 +217,14 @@ def _initial_messages(session: Session, seat: int) -> list[dict[str, Any]]:
     return messages
 
 
-def _post_step_messages(session: Session, seat: int, lines: list[str]) -> list[dict[str, Any]]:
-    messages = [{"type": "log", "lines": lines}, _state_message(session, seat)]
+def _post_step_messages(
+    session: Session,
+    seat: int,
+    lines: list[str],
+    private_lines_by_seat: dict[int, list[str]] | None = None,
+) -> list[dict[str, Any]]:
+    seat_lines = [*lines, *(private_lines_by_seat or {}).get(seat, [])]
+    messages = [{"type": "log", "lines": seat_lines}, _state_message(session, seat)]
     if session.game.game_over():
         messages.append(_gameover_message(session))
     else:
@@ -328,23 +344,33 @@ def _choose_bot_action(session: Session, seat: int) -> int:
     return _choose_bigmoney_action(session.game, legal)
 
 
-def _apply_action(session: Session, seat: int, action: int) -> list[str]:
+def _apply_action(session: Session, seat: int, action: int) -> tuple[list[str], dict[int, list[str]]]:
     decision = session.game.current_decision()
+    decision_context = session.game.decision_context()
     before = capture_public_snapshot(session.game)
     done = session.game.step(action)
     after = capture_public_snapshot(session.game)
     after_decision = session.game.current_decision()
-    lines = public_log_lines(seat, action, decision, before, after, after_decision)
+    lines = public_log_lines(seat, action, decision, before, after, decision_context, after_decision)
+    resolution_lines, private_lines = sentry_resolution_logs(
+        session.sentry_log_states,
+        seat,
+        action,
+        decision,
+        decision_context,
+        after_decision,
+    )
+    lines.extend(resolution_lines)
     session.action_log.append(action)
     session.action_log_line_counts.append(len(lines) + (1 if done else 0))
     session.log_lines.extend(lines)
     if done:
         session.log_lines.append("Game over")
         lines = [*lines, "Game over"]
-    return lines
+    return lines, private_lines
 
 
-def _apply_validated_action(session: Session, seat: int, action: int) -> list[str]:
+def _apply_validated_action(session: Session, seat: int, action: int) -> tuple[list[str], dict[int, list[str]]]:
     current = _current_player(session.game)
     if current != seat:
         raise ValueError("not your turn")
@@ -361,8 +387,8 @@ async def _run_bots(session: Session) -> None:
         if session.thinking_delay_ms > 0:
             await asyncio.sleep(session.thinking_delay_ms / 1000.0)
         action = _choose_bot_action(session, player)
-        lines = _apply_validated_action(session, player, action)
-        await _broadcast(session, lines)
+        lines, private_lines = _apply_validated_action(session, player, action)
+        await _broadcast(session, lines, private_lines)
 
 
 def _replay_game(session: Session, actions: list[int]) -> Any:
@@ -391,12 +417,17 @@ def _undo_previous_human_decision(session: Session, seat: int) -> str:
     ]
     session.game = _replay_game(session, session.action_log)
     session.log_lines = session.log_lines[:log_prefix]
+    session.sentry_log_states.clear()
     line = "Undo: rewound to previous human decision"
     session.log_lines.append(line)
     return line
 
 
-async def _broadcast(session: Session, lines: list[str]) -> None:
+async def _broadcast(
+    session: Session,
+    lines: list[str],
+    private_lines_by_seat: dict[int, list[str]] | None = None,
+) -> None:
     stale: list[str] = []
     for token, websocket in list(session.connections.items()):
         seat = _seat_index(session, token)
@@ -404,7 +435,7 @@ async def _broadcast(session: Session, lines: list[str]) -> None:
             stale.append(token)
             continue
         try:
-            for message in _post_step_messages(session, seat, lines):
+            for message in _post_step_messages(session, seat, lines, private_lines_by_seat):
                 await websocket.send_json(message)
         except RuntimeError:
             stale.append(token)
@@ -498,14 +529,14 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, seat_token: 
                 try:
                     if session.seats[seat].kind == "human":
                         session.human_decision_prefixes.append(len(session.action_log))
-                    lines = _apply_validated_action(session, seat, action)
+                    lines, private_lines = _apply_validated_action(session, seat, action)
                 except ValueError as error:
                     if session.human_decision_prefixes and session.human_decision_prefixes[-1] == len(session.action_log):
                         session.human_decision_prefixes.pop()
                     await websocket.send_json({"type": "error", "message": str(error)})
                     continue
 
-                await _broadcast(session, lines)
+                await _broadcast(session, lines, private_lines)
                 await _run_bots(session)
     except WebSocketDisconnect:
         async with session.lock:

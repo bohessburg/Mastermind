@@ -22,6 +22,8 @@ constexpr std::int16_t ACTIVE_PC_NONE = -1;
 //   [7] control owner: Repeat completed-iteration count
 //   BanditAttack active-op overlay:
 //     [1], [2] revealed set-aside slots, [3] revealed count, [4] trashable count
+//   Vassal DiscardDeckTop/PlayLastFromDiscard:
+//     [4] discarded def id while the yes/no play decision is pending
 constexpr int DATA_LAST_COUNT = 0;
 constexpr int DATA_LAST_DEF = 1;
 constexpr int DATA_LAST_COST_COINS = 2;

@@ -132,6 +132,80 @@ struct PyGame {
     return dict;
 }
 
+[[nodiscard]] py::dict empty_decision_context() {
+    py::dict dict;
+    dict["source_def"] = py::none();
+    dict["subject_defs"] = py::list();
+    dict["subject_index"] = py::none();
+    return dict;
+}
+
+void append_subject_def(py::list& subjects, const GameState& state, std::int16_t slot_value) {
+    if (slot_value < 0 || slot_value >= static_cast<std::int16_t>(state.num_slots)) {
+        return;
+    }
+    subjects.append(py::int_(state.slot_to_def[static_cast<Slot>(slot_value)]));
+}
+
+[[nodiscard]] py::dict decision_context_dict(const GameState& state) {
+    if (state.decision.kind == static_cast<std::uint8_t>(DecisionKind::None)
+        || state.effect_depth == 0U) {
+        return empty_decision_context();
+    }
+
+    const EffectFrame& frame = state.effect_stack[state.effect_depth - 1U];
+    py::dict dict = empty_decision_context();
+    dict["source_def"] = py::int_(frame.source);
+
+    py::list subjects;
+    py::object subject_index = py::none();
+    const auto kind = static_cast<DecisionKind>(state.decision.kind);
+
+    if (frame.source == DEF_LIBRARY && kind == DecisionKind::ChooseOption) {
+        // Library custom frame layout: data[1] is the currently drawn Action
+        // slot being kept or set aside.
+        append_subject_def(subjects, state, frame.data[1]);
+        if (py::len(subjects) > 0) {
+            subject_index = py::int_(0);
+        }
+    } else if (frame.source == DEF_SENTRY) {
+        // Sentry custom frame layout:
+        //   data[1], data[2]: looked-at set-aside slots in reveal order
+        //   data[3]: looked-at count
+        //   data[4]: current looked-at index for ChooseOption
+        const std::uint8_t count = frame.data[3] <= 0
+            ? 0U
+            : static_cast<std::uint8_t>(frame.data[3]);
+        if (kind == DecisionKind::ChooseOrder) {
+            const PlayerState& player = state.players[frame.player];
+            for (std::uint8_t i = 0; i < player.set_aside.size; ++i) {
+                append_subject_def(subjects, state, player.set_aside.cards[i]);
+            }
+        } else {
+            for (std::uint8_t i = 0; i < count && i < 2U; ++i) {
+                append_subject_def(subjects, state, frame.data[1 + i]);
+            }
+            if (kind == DecisionKind::ChooseOption
+                && frame.data[4] >= 0
+                && frame.data[4] < static_cast<std::int16_t>(py::len(subjects))) {
+                subject_index = py::int_(frame.data[4]);
+            }
+        }
+    } else if (frame.source == DEF_VASSAL && kind == DecisionKind::ChooseOption) {
+        // Vassal uses the shared DSL result slots. DiscardDeckTop stores the
+        // discarded def id in data[4] so the later yes/no option can play it.
+        const std::int16_t def_value = frame.data[4];
+        if (def_value >= 0 && def_value < static_cast<std::int16_t>(card_def_count())) {
+            subjects.append(py::int_(def_value));
+            subject_index = py::int_(0);
+        }
+    }
+
+    dict["subject_defs"] = subjects;
+    dict["subject_index"] = subject_index;
+    return dict;
+}
+
 [[nodiscard]] PyGame make_game(const GameState& state) noexcept {
     PyGame game{};
     game.state = state;
@@ -475,6 +549,9 @@ PYBIND11_MODULE(dominion_v2_py, module) {
         })
         .def("current_decision", [](const PyGame& self) {
             return decision_dict(Game::current_decision(self.state));
+        })
+        .def("decision_context", [](const PyGame& self) {
+            return decision_context_dict(self.state);
         })
         .def("encode", [](const PyGame& self, int player) {
             if (!valid_player(self.state, player)) {

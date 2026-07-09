@@ -1,13 +1,21 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
+import numpy as np
 
 import dominion_v2_py as dz
 
-from src.v2.web.server.main import app, sessions
-from src.v2.web.server.observer import PlayerPublicSnapshot, PublicSnapshot, public_log_lines
+from src.v2.web.server.main import _decision_message, _post_step_messages, app, sessions
+from src.v2.web.server.observer import (
+    PlayerPublicSnapshot,
+    PublicSnapshot,
+    SentryLogState,
+    public_log_lines,
+    sentry_resolution_logs,
+)
 from tests.v2.replay_export import verify_export_data
 
 
@@ -90,6 +98,82 @@ def decision(source: int, kind: int = 4, player: int = 0) -> dict:
     return {"player": player, "kind": kind, "source": source, "min": 0, "max": 0}
 
 
+class FakeDecisionGame:
+    def __init__(self, decision_value: dict, context: dict, actions: list[int]):
+        self._decision = decision_value
+        self._context = context
+        self._actions = actions
+
+    def current_decision(self):
+        return self._decision
+
+    def decision_context(self):
+        return self._context
+
+    def legal_mask(self):
+        mask = np.zeros(dz.ACTION_SPACE_SIZE, dtype=bool)
+        for action in self._actions:
+            mask[action] = True
+        return mask
+
+
+class FakeViewGame(FakeDecisionGame):
+    def __init__(self):
+        super().__init__(decision(dz.DEF_SENTRY, kind=6), {}, [])
+
+    def num_players(self):
+        return 2
+
+    def hand_count(self, player):
+        return 5
+
+    def deck_count(self, player):
+        return 0
+
+    def discard_count(self, player):
+        return 0
+
+    def discard_top(self, player):
+        return None
+
+    def in_play(self, player):
+        return []
+
+    def resources(self, player=-1):
+        return {
+            "actions": 1,
+            "buys": 1,
+            "coins": 0,
+            "potion": 0,
+            "debt": 0,
+            "coffers": 0,
+            "villagers": 0,
+            "favors": 0,
+            "vp_tokens": 0,
+        }
+
+    def hand(self, player):
+        return {}
+
+    def set_aside(self, player):
+        return []
+
+    def trash(self):
+        return {}
+
+    def supply(self):
+        return []
+
+    def phase(self):
+        return 0
+
+    def turn(self):
+        return 0
+
+    def game_over(self):
+        return False
+
+
 def assert_filtered_state(message: dict) -> None:
     assert message["type"] == "state"
     view = message["view"]
@@ -100,6 +184,132 @@ def assert_filtered_state(message: dict) -> None:
         assert "handCount" in opponent
         assert "deckCount" in opponent
         assert "discardTop" in opponent
+
+
+def test_private_decision_context_labels_sentry_for_actor_only() -> None:
+    game = FakeDecisionGame(
+        decision(dz.DEF_SENTRY, kind=6, player=0),
+        {"source_def": dz.DEF_SENTRY, "subject_defs": [dz.DEF_COPPER, dz.DEF_ESTATE], "subject_index": 0},
+        [dz.A_OPTION_BASE, dz.A_OPTION_BASE + 1, dz.A_OPTION_BASE + 2],
+    )
+    session = SimpleNamespace(game=game)
+
+    actor_message = _decision_message(session, 0)
+    opponent_message = _decision_message(session, 1)
+
+    assert actor_message["prompt"] == "Sentry: you look at Copper and Estate"
+    assert [option["label"] for option in actor_message["options"]] == [
+        "Trash Copper",
+        "Discard Copper",
+        "Keep Copper",
+    ]
+    assert "Copper" not in opponent_message["prompt"]
+    assert "Estate" not in opponent_message["prompt"]
+    assert opponent_message["options"] == []
+
+    order_game = FakeDecisionGame(
+        decision(dz.DEF_SENTRY, kind=7, player=0),
+        {"source_def": dz.DEF_SENTRY, "subject_defs": [dz.DEF_COPPER, dz.DEF_ESTATE], "subject_index": None},
+        [dz.A_OPTION_BASE, dz.A_OPTION_BASE + 1],
+    )
+    order_labels = [option["label"] for option in _decision_message(SimpleNamespace(game=order_game), 0)["options"]]
+    assert order_labels == ["Put Copper on top (drawn next)", "Put Estate on top (drawn next)"]
+
+
+def test_library_and_vassal_prompts_include_subject_card() -> None:
+    library = FakeDecisionGame(
+        decision(dz.DEF_LIBRARY, kind=6, player=0),
+        {"source_def": dz.DEF_LIBRARY, "subject_defs": [dz.DEF_VILLAGE], "subject_index": 0},
+        [dz.A_OPTION_BASE, dz.A_OPTION_BASE + 1],
+    )
+    library_message = _decision_message(SimpleNamespace(game=library), 0)
+    assert library_message["prompt"] == "Library: drew Village - set it aside?"
+    assert [option["label"] for option in library_message["options"]] == ["Keep Village", "Set aside Village"]
+
+    vassal = FakeDecisionGame(
+        decision(dz.DEF_VASSAL, kind=6, player=0),
+        {"source_def": dz.DEF_VASSAL, "subject_defs": [dz.DEF_SMITHY], "subject_index": 0},
+        [dz.A_OPTION_BASE, dz.A_OPTION_BASE + 1],
+    )
+    vassal_message = _decision_message(SimpleNamespace(game=vassal), 0)
+    assert vassal_message["prompt"] == "Vassal: discarded Smithy - play it?"
+    assert [option["label"] for option in vassal_message["options"]] == [
+        "Do not play Smithy",
+        "Play Smithy",
+    ]
+
+
+def test_sentry_resolution_log_summarizes_once_and_private_detail_is_seat_filtered() -> None:
+    states: dict[int, SentryLogState] = {}
+    before = snapshot((player_snapshot(), player_snapshot()))
+    after = snapshot((player_snapshot(), player_snapshot()), {dz.DEF_COPPER: 1})
+    first_decision = decision(dz.DEF_SENTRY, kind=6, player=0)
+    first_context = {
+        "source_def": dz.DEF_SENTRY,
+        "subject_defs": [dz.DEF_COPPER, dz.DEF_ESTATE],
+        "subject_index": 0,
+    }
+    next_sentry_decision = decision(dz.DEF_SENTRY, kind=6, player=0)
+
+    first_public = public_log_lines(
+        0,
+        dz.A_OPTION_BASE,
+        first_decision,
+        before,
+        after,
+        first_context,
+        next_sentry_decision,
+    )
+    first_summary, first_private = sentry_resolution_logs(
+        states,
+        0,
+        dz.A_OPTION_BASE,
+        first_decision,
+        first_context,
+        next_sentry_decision,
+    )
+    assert first_public == []
+    assert first_summary == []
+    assert first_private == {}
+
+    second_decision = decision(dz.DEF_SENTRY, kind=6, player=0)
+    second_context = {
+        "source_def": dz.DEF_SENTRY,
+        "subject_defs": [dz.DEF_COPPER, dz.DEF_ESTATE],
+        "subject_index": 1,
+    }
+    done_decision = decision(0, kind=1, player=0)
+    second_public = public_log_lines(
+        0,
+        dz.A_OPTION_BASE + 2,
+        second_decision,
+        after,
+        after,
+        second_context,
+        done_decision,
+    )
+    summary, private = sentry_resolution_logs(
+        states,
+        0,
+        dz.A_OPTION_BASE + 2,
+        second_decision,
+        second_context,
+        done_decision,
+    )
+    assert second_public == []
+    assert summary == ["P1 trashes Copper and keeps 1 card on top (Sentry)"]
+    assert private == {0: ["You looked at Copper and Estate; trashed Copper; kept Estate on top"]}
+    assert all("keeps" not in line for line in first_public + second_public)
+
+    session = SimpleNamespace(game=FakeViewGame())
+    actor_log = _post_step_messages(session, 0, summary, private)[0]["lines"]
+    opponent_log = _post_step_messages(session, 1, summary, private)[0]["lines"]
+    assert actor_log == [
+        "P1 trashes Copper and keeps 1 card on top (Sentry)",
+        "You looked at Copper and Estate; trashed Copper; kept Estate on top",
+    ]
+    assert opponent_log == ["P1 trashes Copper and keeps 1 card on top (Sentry)"]
+    assert "You looked" not in " ".join(opponent_log)
 
 
 def test_public_effect_logs_describe_bandit_militia_and_witch_without_private_leaks() -> None:
@@ -171,27 +381,32 @@ def test_public_effect_logs_describe_bandit_militia_and_witch_without_private_le
 
 
 def test_sentry_public_log_never_names_kept_topdecked_cards() -> None:
-    before = snapshot(
-        (
-            player_snapshot(deck_count=5, discard=(), set_aside_count=1),
-            player_snapshot(),
-        )
-    )
-    after = snapshot(
-        (
-            player_snapshot(deck_count=6, discard=(), set_aside_count=0),
-            player_snapshot(),
-        )
-    )
+    states: dict[int, SentryLogState] = {}
+    before = snapshot((player_snapshot(deck_count=5, discard=(), set_aside_count=1), player_snapshot()))
+    after = snapshot((player_snapshot(deck_count=6, discard=(), set_aside_count=0), player_snapshot()))
+    context = {"source_def": dz.DEF_SENTRY, "subject_defs": [dz.DEF_SILVER], "subject_index": 0}
+    done_decision = decision(0, kind=1, player=0)
     lines = public_log_lines(
         0,
         dz.A_OPTION_BASE + 2,
         decision(dz.DEF_SENTRY, kind=6),
         before,
         after,
+        context,
+        done_decision,
     )
-    assert "P1 puts 1 card back (Sentry)" in lines
-    assert "Silver" not in " ".join(lines)
+    summary, private = sentry_resolution_logs(
+        states,
+        0,
+        dz.A_OPTION_BASE + 2,
+        decision(dz.DEF_SENTRY, kind=6),
+        context,
+        done_decision,
+    )
+    assert lines == []
+    assert summary == ["P1 keeps 1 card on top (Sentry)"]
+    assert private == {0: ["You looked at Silver; kept Silver on top"]}
+    assert "Silver" not in " ".join(summary)
 
 
 def choose_big_money_action(decision: dict) -> int:

@@ -127,6 +127,9 @@ void discard_set_aside(GameState& state, PlayerId player_id) noexcept {
     }
 }
 
+// Library custom frame data exposed read-only through Python decision_context():
+//   data[0]: last ChooseOption result (0 keep, 1 set aside)
+//   data[1]: currently drawn Action slot while the option is pending
 RunResult library_step(GameState& state, EffectFrame& frame) noexcept {
     PlayerState& player = state.players[frame.player];
     switch (frame.pc) {
@@ -190,6 +193,11 @@ RunResult library_step(GameState& state, EffectFrame& frame) noexcept {
     }
 }
 
+// Sentry custom frame data exposed read-only through Python decision_context():
+//   data[0]: last ChooseOption/ChooseOrder result
+//   data[1], data[2]: looked-at set-aside slots in reveal order
+//   data[3]: looked-at count
+//   data[4]: current looked-at index for ChooseOption
 RunResult sentry_step(GameState& state, EffectFrame& frame) noexcept {
     PlayerState& player = state.players[frame.player];
     switch (frame.pc) {

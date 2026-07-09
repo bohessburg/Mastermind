@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
@@ -47,10 +47,32 @@ def action_category(action: int) -> str:
     return "other"
 
 
-def prompt_for(decision: dict[str, Any]) -> str:
+def _context_subjects(context: dict[str, Any] | None) -> list[int]:
+    if not context:
+        return []
+    return [int(def_value) for def_value in context.get("subject_defs", [])]
+
+
+def _context_subject_index(context: dict[str, Any] | None) -> int | None:
+    if not context or context.get("subject_index") is None:
+        return None
+    return int(context["subject_index"])
+
+
+def _current_subject_name(context: dict[str, Any] | None) -> str:
+    subjects = _context_subjects(context)
+    index = _context_subject_index(context)
+    if index is None or index < 0 or index >= len(subjects):
+        return ""
+    return def_name(subjects[index])
+
+
+def prompt_for(decision: dict[str, Any], context: dict[str, Any] | None = None) -> str:
     kind = decision_kind_name(decision)
     source = int(decision.get("source", 0))
     source_name = def_name(source) if source >= 0 else ""
+    subjects = _context_subjects(context)
+    current_name = _current_subject_name(context)
 
     if kind == "PhaseAction":
         return "Action phase"
@@ -93,6 +115,12 @@ def prompt_for(decision: dict[str, Any]) -> str:
             return "Throne Room: choose an Action to play twice"
         return f"{source_name}: choose cards"
     if kind == "ChooseOption":
+        if source_name == "Library" and current_name:
+            return f"Library: drew {current_name} - set it aside?"
+        if source_name == "Sentry" and subjects:
+            return f"Sentry: you look at {_card_list(subjects)}"
+        if source_name == "Vassal" and current_name:
+            return f"Vassal: discarded {current_name} - play it?"
         if source_name == "Library":
             return "Library: keep or set aside the Action"
         if source_name == "Sentry":
@@ -101,6 +129,8 @@ def prompt_for(decision: dict[str, Any]) -> str:
             return "Vassal: play the discarded Action?"
         return f"{source_name}: choose an option"
     if kind == "ChooseOrder":
+        if source_name == "Sentry" and subjects:
+            return f"Sentry: put {_card_list(subjects)} back in order"
         if source_name == "Sentry":
             return "Sentry: choose card order"
         return f"{source_name}: choose an order"
@@ -127,13 +157,23 @@ def _select_verb(decision: dict[str, Any]) -> str:
     return "Select"
 
 
-def _option_label(decision: dict[str, Any], option: int) -> str:
+def _option_label(decision: dict[str, Any], option: int, context: dict[str, Any] | None = None) -> str:
     kind = decision_kind_name(decision)
     source_name = def_name(int(decision.get("source", 0)))
+    subjects = _context_subjects(context)
+    current_name = _current_subject_name(context)
     if kind == "OrderTriggers":
         return f"Resolve trigger {option + 1}"
     if kind == "ChooseOrder":
+        if source_name == "Sentry" and option < len(subjects):
+            return f"Put {def_name(subjects[option])} on top (drawn next)"
         return f"Position {option + 1}"
+    if source_name == "Library" and current_name:
+        return f"Keep {current_name}" if option == 0 else f"Set aside {current_name}"
+    if source_name == "Sentry" and current_name:
+        return [f"Trash {current_name}", f"Discard {current_name}", f"Keep {current_name}"][option] if option < 3 else f"Option {option + 1}"
+    if source_name == "Vassal" and current_name:
+        return f"Do not play {current_name}" if option == 0 else f"Play {current_name}"
     if source_name == "Library":
         return "Keep Action" if option == 0 else "Set aside Action"
     if source_name == "Sentry":
@@ -143,7 +183,7 @@ def _option_label(decision: dict[str, Any], option: int) -> str:
     return f"Option {option + 1}"
 
 
-def label_for_action(action: int, decision: dict[str, Any]) -> tuple[str, int | None]:
+def label_for_action(action: int, decision: dict[str, Any], context: dict[str, Any] | None = None) -> tuple[str, int | None]:
     category = action_category(action)
     if category == "pass":
         kind = decision_kind_name(decision)
@@ -159,15 +199,15 @@ def label_for_action(action: int, decision: dict[str, Any]) -> tuple[str, int | 
         return f"{_select_verb(decision)} {def_name(def_id)}", def_id
     if category == "option":
         option = action_def(action, dz.A_OPTION_BASE)
-        return _option_label(decision, option), None
+        return _option_label(decision, option, context), None
     return f"Action {action}", None
 
 
-def legal_options(mask: np.ndarray, decision: dict[str, Any]) -> list[dict[str, Any]]:
+def legal_options(mask: np.ndarray, decision: dict[str, Any], context: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     options: list[dict[str, Any]] = []
     for action in np.flatnonzero(mask):
         action_int = int(action)
-        label, def_id = label_for_action(action_int, decision)
+        label, def_id = label_for_action(action_int, decision, context)
         option: dict[str, Any] = {"action": action_int, "label": label}
         if def_id is not None:
             option["def"] = def_id
@@ -210,11 +250,21 @@ class LogContext:
     seat: int
     action: int
     decision: dict[str, Any]
+    decision_context: dict[str, Any] | None
     after_decision: dict[str, Any] | None
     before: PublicSnapshot
     after: PublicSnapshot
     generic: str
     source_name: str
+
+
+@dataclass
+class SentryLogState:
+    looked: list[int] = field(default_factory=list)
+    trashed: list[int] = field(default_factory=list)
+    discarded: list[int] = field(default_factory=list)
+    kept: list[int] = field(default_factory=list)
+    kept_on_top: int | None = None
 
 
 def capture_public_snapshot(game: Any) -> PublicSnapshot:
@@ -333,23 +383,37 @@ def _format_bureaucrat(context: LogContext) -> list[str]:
 
 
 def _format_sentry(context: LogContext) -> list[str]:
-    before = context.before.players[context.seat]
-    after = context.after.players[context.seat]
-    trash_added = _trash_added(context.before, context.after)
-    discard_added = _discard_added(before, after)
-    parts: list[str] = []
-    if trash_added:
-        parts.append(f"trashes {_card_list(trash_added)}")
-    if discard_added:
-        parts.append(f"discards {_card_list(discard_added)}")
-    if parts:
-        return [f"P{context.seat + 1} {' and '.join(parts)} (Sentry)"]
-
-    put_back = max(0, after.deck_count - before.deck_count)
-    if put_back > 0:
-        plural = "card" if put_back == 1 else "cards"
-        return [f"P{context.seat + 1} puts {put_back} {plural} back (Sentry)"]
     return []
+
+
+def _format_library(context: LogContext) -> list[str]:
+    if action_category(context.action) != "option":
+        return []
+    option = action_def(context.action, dz.A_OPTION_BASE)
+    current = _current_subject_from_log_context(context)
+    if current is None or option != 1:
+        return []
+    return [f"P{context.seat + 1} sets aside {def_name(current)} (Library)"]
+
+
+def _format_vassal(context: LogContext) -> list[str]:
+    if action_category(context.action) != "option":
+        return []
+    option = action_def(context.action, dz.A_OPTION_BASE)
+    current = _current_subject_from_log_context(context)
+    if current is None:
+        return []
+    if option == 1:
+        return [f"P{context.seat + 1} plays {def_name(current)} (Vassal)"]
+    return [f"P{context.seat + 1} declines to play {def_name(current)} (Vassal)"]
+
+
+def _current_subject_from_log_context(context: LogContext) -> int | None:
+    subject_defs = _context_subjects(context.decision_context)
+    subject_index = _context_subject_index(context.decision_context)
+    if subject_index is None or subject_index < 0 or subject_index >= len(subject_defs):
+        return None
+    return int(subject_defs[subject_index])
 
 
 PUBLIC_FORMATTERS = {
@@ -358,6 +422,8 @@ PUBLIC_FORMATTERS = {
     "Witch": _format_witch,
     "Bureaucrat": _format_bureaucrat,
     "Sentry": _format_sentry,
+    "Library": _format_library,
+    "Vassal": _format_vassal,
 }
 
 
@@ -366,6 +432,7 @@ def _generic_line_is_private(context: LogContext) -> bool:
     return (
         (context.source_name == "Militia" and category == "select")
         or (context.source_name == "Bureaucrat" and category == "select")
+        or (context.source_name in {"Sentry", "Library", "Vassal"} and category == "option")
     )
 
 
@@ -375,13 +442,115 @@ def public_log_lines(
     decision: dict[str, Any],
     before: PublicSnapshot,
     after: PublicSnapshot,
+    decision_context: dict[str, Any] | None = None,
     after_decision: dict[str, Any] | None = None,
 ) -> list[str]:
     generic = log_line(seat, action, decision)
     source_name = _source_name(action, decision)
-    context = LogContext(seat, action, decision, after_decision, before, after, generic, source_name)
+    context = LogContext(seat, action, decision, decision_context, after_decision, before, after, generic, source_name)
     formatter = PUBLIC_FORMATTERS.get(source_name)
     details = formatter(context) if formatter is not None else []
     if _generic_line_is_private(context):
         return details
     return [generic, *details] if details else [generic]
+
+
+def _sentry_completion_pending(
+    decision: dict[str, Any],
+    decision_context: dict[str, Any] | None,
+    after_decision: dict[str, Any] | None,
+) -> bool:
+    kind = decision_kind_name(decision)
+    if kind == "ChooseOrder":
+        return True
+    if kind != "ChooseOption":
+        return False
+
+    subjects = _context_subjects(decision_context)
+    index = _context_subject_index(decision_context)
+    if index is None or index + 1 < len(subjects):
+        return False
+
+    after_kind = decision_kind_name(after_decision or {})
+    after_source = int((after_decision or {}).get("source", -1))
+    return not (after_source == int(dz.DEF_SENTRY) and after_kind == "ChooseOrder")
+
+
+def _sentry_public_summary(seat: int, state: SentryLogState) -> list[str]:
+    parts: list[str] = []
+    if state.trashed:
+        parts.append(f"trashes {_card_list(state.trashed)}")
+    if state.discarded:
+        parts.append(f"discards {_card_list(state.discarded)}")
+    if state.kept:
+        plural = "card" if len(state.kept) == 1 else "cards"
+        parts.append(f"keeps {len(state.kept)} {plural} on top")
+    if not parts:
+        return []
+    return [f"P{seat + 1} {' and '.join(parts)} (Sentry)"]
+
+
+def _sentry_private_summary(state: SentryLogState) -> list[str]:
+    parts: list[str] = [f"You looked at {_card_list(state.looked)}"]
+    actions: list[str] = []
+    if state.trashed:
+        actions.append(f"trashed {_card_list(state.trashed)}")
+    if state.discarded:
+        actions.append(f"discarded {_card_list(state.discarded)}")
+    if state.kept:
+        top = state.kept_on_top if state.kept_on_top is not None else state.kept[-1]
+        if len(state.kept) == 1:
+            actions.append(f"kept {def_name(top)} on top")
+        else:
+            others = [def_value for def_value in state.kept if def_value != top]
+            if others:
+                actions.append(f"kept {def_name(top)} on top over {_card_list(others)}")
+            else:
+                actions.append(f"kept {def_name(top)} on top")
+    if actions:
+        parts.append("; " + "; ".join(actions))
+    return ["".join(parts)]
+
+
+def sentry_resolution_logs(
+    states: dict[int, SentryLogState],
+    seat: int,
+    action: int,
+    decision: dict[str, Any],
+    decision_context: dict[str, Any] | None,
+    after_decision: dict[str, Any] | None,
+) -> tuple[list[str], dict[int, list[str]]]:
+    if int(decision.get("source", -1)) != int(dz.DEF_SENTRY) or action_category(action) != "option":
+        return [], {}
+
+    state = states.setdefault(seat, SentryLogState())
+    subjects = _context_subjects(decision_context)
+    if subjects and not state.looked:
+        state.looked = list(subjects)
+
+    option = action_def(action, dz.A_OPTION_BASE)
+    kind = decision_kind_name(decision)
+    if kind == "ChooseOption":
+        index = _context_subject_index(decision_context)
+        if index is not None and 0 <= index < len(subjects):
+            subject = subjects[index]
+            if option == 0:
+                state.trashed.append(subject)
+            elif option == 1:
+                state.discarded.append(subject)
+            elif option == 2:
+                state.kept.append(subject)
+                state.kept_on_top = subject
+    elif kind == "ChooseOrder":
+        if subjects and not state.kept:
+            state.kept = list(subjects)
+        if 0 <= option < len(subjects):
+            state.kept_on_top = subjects[option]
+
+    if not _sentry_completion_pending(decision, decision_context, after_decision):
+        return [], {}
+
+    public = _sentry_public_summary(seat, state)
+    private = {seat: _sentry_private_summary(state)}
+    states.pop(seat, None)
+    return public, private
