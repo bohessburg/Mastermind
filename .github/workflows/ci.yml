@@ -33,6 +33,18 @@ jobs:
       - name: Test
         run: ctest --test-dir build -R v2 --output-on-failure
 
+  sanitizer-fuzz:
+    name: Sanitizer Fuzz
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -B build-fuzz -DCMAKE_BUILD_TYPE=RelWithDebInfo -DENABLE_SANITIZERS=ON -DBUILD_TESTS=OFF
+      - name: Build
+        run: cmake --build build-fuzz --target v2_fuzz
+      - name: Run
+        run: ./build-fuzz/v2_fuzz --seeds 100000 --steps-budget 10000000 --players 0
+
   bench:
     name: Bench Smoke
     runs-on: ubuntu-latest

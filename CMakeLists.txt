@@ -99,6 +99,13 @@ add_executable(v2_bench
 target_link_libraries(v2_bench PRIVATE dominion_v2_drivers)
 configure_v2_target(v2_bench)
 
+add_executable(v2_fuzz
+    tests/v2/fuzz_harness.cpp
+    tests/v2/fuzz_main.cpp
+)
+target_link_libraries(v2_fuzz PRIVATE dominion_v2_drivers)
+configure_v2_target(v2_fuzz)
+
 # --- Tests ---
 option(BUILD_TESTS "Build test suite" ON)
 if(BUILD_TESTS)
@@ -129,6 +136,7 @@ if(BUILD_TESTS)
         tests/v2/diff_bridge.cpp
         tests/v2/diff_v1.cpp
         tests/v2/diff_v2.cpp
+        tests/v2/fuzz_harness.cpp
         tests/v2/spec_harness.cpp
         tests/v2/test_types.cpp
         tests/v2/test_rng.cpp
@@ -139,6 +147,7 @@ if(BUILD_TESTS)
         tests/v2/test_conservation.cpp
         tests/v2/test_alloc.cpp
         tests/v2/test_differential.cpp
+        tests/v2/test_fuzz.cpp
         tests/v2/test_specs_base.cpp
         tests/v2/test_attacks_triggers.cpp
     )
