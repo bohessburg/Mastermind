@@ -38,6 +38,7 @@ struct PlayerState {
 
     OrderedZone deck;
     OrderedZone discard;
+    OrderedZone set_aside;
 
     std::uint8_t in_play_size = 0;
     InPlayEntry in_play[MAX_IN_PLAY]{};

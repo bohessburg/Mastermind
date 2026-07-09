@@ -35,6 +35,8 @@ namespace {
         DEF_COUNCIL_ROOM,
         DEF_ARTISAN,
         DEF_BANDIT,
+        DEF_LIBRARY,
+        DEF_SENTRY,
         DEF_EXACT_TWO_TEST,
         DEF_REPEAT_CHOOSE_TEST,
         DEF_ORDER_ALPHA_TEST,
@@ -68,6 +70,7 @@ namespace {
     total += count_zone(player.island_mat);
     total += count_ordered(player.deck);
     total += count_ordered(player.discard);
+    total += count_ordered(player.set_aside);
     total += player.in_play_size;
     return total;
 }
@@ -201,6 +204,9 @@ SpecHarness::GivenBuilder& SpecHarness::given() {
     state_.effect_depth = 0;
     state_.decision = PendingDecision{0, static_cast<std::uint8_t>(DecisionKind::PhaseAction), 0, 0, 0};
     state_.trigger_table.dirty = 1U;
+    for (std::uint8_t slot = 0; slot < MAX_SLOTS; ++slot) {
+        state_.trash[slot] = 0;
+    }
     refresh_baseline();
     return given_;
 }
@@ -336,6 +342,7 @@ void SpecHarness::clear_player(PlayerId player_id) {
     }
     player.deck.size = 0;
     player.discard.size = 0;
+    player.set_aside.size = 0;
     player.in_play_size = 0;
     player.pending_size = 0;
 }

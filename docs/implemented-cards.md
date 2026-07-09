@@ -5,13 +5,14 @@
 > and `level_2_cards.cpp` currently does not compile; those cards do not
 > exist at runtime. Levels 3–10 are empty stubs.
 
-## v2 Implemented Kingdom Cards (24)
+## v2 Implemented Kingdom Cards (26)
 
 Cellar, Chapel, Village, Smithy, Workshop, Remodel, Mine, Merchant, Militia,
 Witch, Moat, Bureaucrat, Market, Festival, Laboratory, Gardens, Moneylender,
-Poacher, Vassal, Harbinger, Throne Room, Council Room, Artisan, Bandit.
+Poacher, Vassal, Harbinger, Throne Room, Council Room, Artisan, Bandit,
+Library, Sentry.
 
-Sentry and Library are Phase 3 pending. Woodcutter, Feast, and other
+The 2nd-edition base set is complete on v2. Woodcutter, Feast, and other
 2nd-edition-removed cards are out of scope for v2.
 
 ## Base Cards (7)

@@ -71,6 +71,7 @@ std::int16_t score(const GameState& state, PlayerId player_id) noexcept {
     total = static_cast<std::int16_t>(total + count_zone_vp(state, player_id, player.island_mat));
     total = static_cast<std::int16_t>(total + count_ordered_zone_vp(state, player_id, player.deck));
     total = static_cast<std::int16_t>(total + count_ordered_zone_vp(state, player_id, player.discard));
+    total = static_cast<std::int16_t>(total + count_ordered_zone_vp(state, player_id, player.set_aside));
     total = static_cast<std::int16_t>(total + count_in_play_vp(state, player_id, player));
     return total;
 }

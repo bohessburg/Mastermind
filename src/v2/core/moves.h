@@ -9,6 +9,7 @@ enum class MoveZone : std::uint8_t {
     InPlay,
     Deck,
     Discard,
+    SetAside,
     Revealed,
 };
 

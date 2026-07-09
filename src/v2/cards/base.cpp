@@ -1,5 +1,10 @@
 #include "v2/core/defs.h"
+#include "v2/core/interp.h"
+#include "v2/core/moves.h"
 #include "v2/core/triggers.h"
+
+#include <cassert>
+#include <cstdint>
 
 namespace {
 
@@ -17,6 +22,7 @@ enum FilterId : std::uint8_t {
 };
 
 constexpr std::uint8_t CHOOSE_MAX_ALL = 0xFFU;
+constexpr std::int16_t DATA_SLOT_NONE = static_cast<std::int16_t>(NONE);
 
 constexpr EffectSpan SPAN_CELLAR{0, 5};
 constexpr EffectSpan SPAN_CHAPEL{5, 2};
@@ -69,8 +75,211 @@ constexpr EffectSpan SPAN_BANDIT{109, 3};
     total += count_zone(player.island_mat);
     total += count_ordered(player.deck);
     total += count_ordered(player.discard);
+    total += count_ordered(player.set_aside);
     total += player.in_play_size;
     return static_cast<std::int16_t>(total / 10);
+}
+
+void append_ordered(OrderedZone& zone, Slot slot) noexcept {
+    assert(zone.size < MAX_DECK_CARDS);
+    zone.cards[zone.size] = slot;
+    ++zone.size;
+}
+
+[[nodiscard]] bool remove_ordered(OrderedZone& zone, Slot slot) noexcept {
+    for (std::uint8_t i = zone.size; i > 0U; --i) {
+        const std::uint8_t index = static_cast<std::uint8_t>(i - 1U);
+        if (zone.cards[index] != slot) {
+            continue;
+        }
+        for (std::uint8_t j = index; static_cast<std::uint8_t>(j + 1U) < zone.size; ++j) {
+            zone.cards[j] = zone.cards[j + 1U];
+        }
+        --zone.size;
+        zone.cards[zone.size] = 0;
+        return true;
+    }
+    return false;
+}
+
+void topdeck_from_set_aside(PlayerState& player, Slot slot) noexcept {
+    const bool removed = remove_ordered(player.set_aside, slot);
+    assert(removed);
+    if (removed) {
+        append_ordered(player.deck, slot);
+    }
+}
+
+[[nodiscard]] std::uint8_t hand_size(const PlayerState& player, std::uint8_t slots) noexcept {
+    std::uint8_t total = 0;
+    for (std::uint8_t slot = 0; slot < slots; ++slot) {
+        total = static_cast<std::uint8_t>(total + player.hand[slot]);
+    }
+    return total;
+}
+
+void discard_set_aside(GameState& state, PlayerId player_id) noexcept {
+    while (state.players[player_id].set_aside.size > 0U) {
+        const Slot slot = state.players[player_id].set_aside.cards[0];
+        const bool discarded = do_discard(state, player_id, slot, MoveZone::SetAside);
+        assert(discarded);
+        (void)discarded;
+    }
+}
+
+RunResult library_step(GameState& state, EffectFrame& frame) noexcept {
+    PlayerState& player = state.players[frame.player];
+    switch (frame.pc) {
+    case 0: {
+        frame.data[0] = 0;
+        frame.data[1] = DATA_SLOT_NONE;
+        if (hand_size(player, state.num_slots) >= 7U) {
+            if (player.set_aside.size == 0U) {
+                return RunResult::FrameDone;
+            }
+            discard_set_aside(state, frame.player);
+            frame.pc = 3;
+            return RunResult::Continue;
+        }
+
+        const Slot slot = take_deck_top_slot(state, frame.player);
+        if (slot == NONE) {
+            if (player.set_aside.size == 0U) {
+                return RunResult::FrameDone;
+            }
+            discard_set_aside(state, frame.player);
+            frame.pc = 3;
+            return RunResult::Continue;
+        }
+
+        const DefId def = state.slot_to_def[slot];
+        if ((card_def(def).types & TYPE_ACTION) == 0U) {
+            ++player.hand[slot];
+            return RunResult::Continue;
+        }
+
+        append_ordered(player.set_aside, slot);
+        frame.data[1] = slot;
+        frame.pc = 1;
+        state.decision = PendingDecision{
+            frame.player,
+            static_cast<std::uint8_t>(DecisionKind::ChooseOption),
+            DEF_LIBRARY,
+            0,
+            2,
+        };
+        return RunResult::NeedDecision;
+    }
+    case 2: {
+        const Slot slot = static_cast<Slot>(frame.data[1]);
+        assert(slot != NONE);
+        if (frame.data[0] != 1) {
+            const bool removed = remove_ordered(player.set_aside, slot);
+            assert(removed);
+            (void)removed;
+            ++player.hand[slot];
+        }
+        frame.pc = 0;
+        return RunResult::Continue;
+    }
+    case 3:
+        return RunResult::FrameDone;
+    default:
+        assert(false);
+        return RunResult::FrameDone;
+    }
+}
+
+RunResult sentry_step(GameState& state, EffectFrame& frame) noexcept {
+    PlayerState& player = state.players[frame.player];
+    switch (frame.pc) {
+    case 0: {
+        for (std::uint8_t i = 0; i < 8U; ++i) {
+            frame.data[i] = 0;
+        }
+        frame.data[1] = DATA_SLOT_NONE;
+        frame.data[2] = DATA_SLOT_NONE;
+        draw_cards(state, frame.player, 1);
+        if (state.actions < 255U) {
+            ++state.actions;
+        }
+        for (std::uint8_t i = 0; i < 2U; ++i) {
+            const Slot slot = take_deck_top_slot(state, frame.player);
+            if (slot == NONE) {
+                break;
+            }
+            append_ordered(player.set_aside, slot);
+            frame.data[1 + i] = slot;
+            ++frame.data[3];
+        }
+        if (frame.data[3] == 0) {
+            return RunResult::FrameDone;
+        }
+        frame.pc = 1;
+        return RunResult::Continue;
+    }
+    case 1:
+        if (frame.data[4] < frame.data[3]) {
+            state.decision = PendingDecision{
+                frame.player,
+                static_cast<std::uint8_t>(DecisionKind::ChooseOption),
+                DEF_SENTRY,
+                1,
+                3,
+            };
+            return RunResult::NeedDecision;
+        }
+        if (player.set_aside.size >= 2U) {
+            frame.pc = 3;
+            state.decision = PendingDecision{
+                frame.player,
+                static_cast<std::uint8_t>(DecisionKind::ChooseOrder),
+                DEF_SENTRY,
+                1,
+                2,
+            };
+            return RunResult::NeedDecision;
+        }
+        if (player.set_aside.size == 1U) {
+            topdeck_from_set_aside(player, player.set_aside.cards[0]);
+        }
+        return RunResult::FrameDone;
+    case 2: {
+        const std::uint8_t index = static_cast<std::uint8_t>(frame.data[4]);
+        const Slot slot = static_cast<Slot>(frame.data[1 + index]);
+        assert(slot != NONE);
+        if (frame.data[0] == 0) {
+            const bool trashed = do_trash(state, frame.player, slot, MoveZone::SetAside);
+            assert(trashed);
+            (void)trashed;
+        } else if (frame.data[0] == 1) {
+            const bool discarded = do_discard(state, frame.player, slot, MoveZone::SetAside);
+            assert(discarded);
+            (void)discarded;
+        }
+        ++frame.data[4];
+        frame.pc = 1;
+        return RunResult::Continue;
+    }
+    case 4: {
+        assert(player.set_aside.size >= 2U);
+        const Slot first = player.set_aside.cards[0];
+        const Slot second = player.set_aside.cards[1];
+        assert(first != NONE);
+        assert(second != NONE);
+        if (frame.data[0] == 0) {
+            topdeck_from_set_aside(player, second);
+            topdeck_from_set_aside(player, first);
+        } else {
+            topdeck_from_set_aside(player, first);
+            topdeck_from_set_aside(player, second);
+        }
+        return RunResult::FrameDone;
+    }
+    default:
+        assert(false);
+        return RunResult::FrameDone;
+    }
 }
 
 constexpr CardDef kBaseCards[] = {
@@ -211,6 +420,36 @@ constexpr CardDef kBaseCards[] = {
     },
     DOMINION_V2_DEF_EFFECT(Artisan, (Cost{6, 0, 0}), TYPE_ACTION, 0, 0, SPAN_ARTISAN),
     DOMINION_V2_DEF_EFFECT(Bandit, (Cost{5, 0, 0}), static_cast<std::uint16_t>(TYPE_ACTION | TYPE_ATTACK), 0, 0, SPAN_BANDIT),
+    CardDef{
+        "Library",
+        Cost{5, 0, 0},
+        TYPE_ACTION,
+        0,
+        0,
+        NO_EFFECT,
+        NO_EFFECT,
+        NO_EFFECT,
+        NO_EFFECT,
+        NO_EFFECT,
+        0U,
+        library_step,
+        nullptr,
+    },
+    CardDef{
+        "Sentry",
+        Cost{5, 0, 0},
+        TYPE_ACTION,
+        0,
+        0,
+        NO_EFFECT,
+        NO_EFFECT,
+        NO_EFFECT,
+        NO_EFFECT,
+        NO_EFFECT,
+        0U,
+        sentry_step,
+        nullptr,
+    },
 };
 
 constexpr Instr kEffectInstrs[] = {

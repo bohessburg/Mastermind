@@ -94,7 +94,7 @@ void reshuffle_discard_into_deck(GameState& state, PlayerId player_id) noexcept 
     return player.deck.cards[player.deck.size - 1U];
 }
 
-[[nodiscard]] Slot take_deck_top_slot(GameState& state, PlayerId player_id) noexcept {
+[[nodiscard]] Slot take_deck_top_slot_impl(GameState& state, PlayerId player_id) noexcept {
     if (!prepare_deck_top(state, player_id)) {
         return NONE;
     }
@@ -906,7 +906,7 @@ void resolve_bandit_revealed(GameState& state, EffectFrame& frame, Slot trash_sl
         frame.data[DATA_BANDIT_REVEALED_COUNT] = 0;
         frame.data[DATA_BANDIT_TRASHABLE_COUNT] = 0;
         for (std::uint8_t i = 0; i < 2U; ++i) {
-            const Slot slot = take_deck_top_slot(state, frame.player);
+            const Slot slot = take_deck_top_slot_impl(state, frame.player);
             if (slot == NONE) {
                 continue;
             }
@@ -1101,6 +1101,10 @@ void resume_trigger_order(GameState& state, Action action) noexcept {
 
 } // namespace
 
+Slot take_deck_top_slot(GameState& state, PlayerId player) noexcept {
+    return take_deck_top_slot_impl(state, player);
+}
+
 void draw_cards(GameState& state, PlayerId player, std::uint8_t count) noexcept {
     for (std::uint8_t i = 0; i < count; ++i) {
         if (!draw_one(state, player)) {
@@ -1223,7 +1227,7 @@ RunResult interp_run(GameState& state) noexcept {
                 return result;
             }
             if (result == RunResult::FrameDone) {
-                pop_frame(state);
+                complete_frame(state, frame);
             }
             continue;
         }
@@ -1363,6 +1367,17 @@ void interp_resume(GameState& state, Action action) noexcept {
 
     EffectFrame& frame = state.effect_stack[state.effect_depth - 1U];
     const DecisionKind kind = static_cast<DecisionKind>(state.decision.kind);
+    const bool custom_frame = (frame.flags & FRAME_ABSOLUTE_PROGRAM) == 0U
+        && frame.source < card_def_count()
+        && card_def(frame.source).custom != nullptr;
+    if (custom_frame && (kind == DecisionKind::ChooseOption || kind == DecisionKind::ChooseOrder)) {
+        assert(action_is_option(action));
+        frame.data[0] = static_cast<std::int16_t>(action_def(action, A_OPTION_BASE));
+        ++frame.pc;
+        state.decision = PendingDecision{};
+        return;
+    }
+
     switch (kind) {
     case DecisionKind::Choose: {
         const Instr& instr = current_effect_instr(state);

@@ -44,6 +44,7 @@ void clear_player(GameState& state, PlayerId player_id) {
     }
     player.deck.size = 0;
     player.discard.size = 0;
+    player.set_aside.size = 0;
     player.in_play_size = 0;
     player.pending_size = 0;
 }
@@ -111,6 +112,7 @@ void add_in_play(GameState& state, PlayerId player_id, DefId def) {
     total += count_zone(player.island_mat);
     total += player.deck.size;
     total += player.discard.size;
+    total += player.set_aside.size;
     total += player.in_play_size;
     return total;
 }

@@ -41,6 +41,7 @@ void clear_player(PlayerState& player) {
     }
     player.deck.size = 0;
     player.discard.size = 0;
+    player.set_aside.size = 0;
     player.in_play_size = 0;
     player.pending_size = 0;
 }
@@ -189,6 +190,7 @@ void add_ordered_zone(std::map<std::string, int>& out, const GameState& state, c
     add_count_zone(result, state, player.island_mat);
     add_ordered_zone(result, state, player.deck);
     add_ordered_zone(result, state, player.discard);
+    add_ordered_zone(result, state, player.set_aside);
     for (std::uint8_t i = 0; i < player.in_play_size; ++i) {
         add_slot_name(result, state, player.in_play[i].slot);
     }
@@ -219,6 +221,7 @@ void add_ordered_zone(std::map<std::string, int>& out, const GameState& state, c
         out << "zones p" << static_cast<int>(player_id)
             << " deck=" << static_cast<int>(player.deck.size)
             << " discard=" << static_cast<int>(player.discard.size)
+            << " set_aside=" << static_cast<int>(player.set_aside.size)
             << " in_play=" << static_cast<int>(player.in_play_size)
             << "\n";
     }

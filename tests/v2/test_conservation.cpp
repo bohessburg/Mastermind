@@ -33,6 +33,8 @@ namespace {
         DEF_COUNCIL_ROOM,
         DEF_ARTISAN,
         DEF_BANDIT,
+        DEF_LIBRARY,
+        DEF_SENTRY,
     };
     setup.kingdom_count = static_cast<std::uint8_t>(sizeof(kKingdom) / sizeof(kKingdom[0]));
     for (std::uint8_t i = 0; i < setup.kingdom_count; ++i) {
@@ -61,6 +63,7 @@ namespace {
     total += count_zone(player.island_mat);
     total += count_ordered(player.deck);
     total += count_ordered(player.discard);
+    total += count_ordered(player.set_aside);
     total += player.in_play_size;
     return total;
 }

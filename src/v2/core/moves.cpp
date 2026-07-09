@@ -104,6 +104,22 @@ void append_topdeck(PlayerState& player, Slot slot) noexcept {
     return false;
 }
 
+[[nodiscard]] bool remove_from_ordered(OrderedZone& zone, Slot slot) noexcept {
+    for (std::uint8_t i = zone.size; i > 0U; --i) {
+        const std::uint8_t index = static_cast<std::uint8_t>(i - 1U);
+        if (zone.cards[index] != slot) {
+            continue;
+        }
+        for (std::uint8_t j = index; static_cast<std::uint8_t>(j + 1U) < zone.size; ++j) {
+            zone.cards[j] = zone.cards[j + 1U];
+        }
+        --zone.size;
+        zone.cards[zone.size] = 0;
+        return true;
+    }
+    return false;
+}
+
 [[nodiscard]] bool remove_from_zone(PlayerState& player, Slot slot, MoveZone from_zone) noexcept {
     switch (from_zone) {
     case MoveZone::Hand:
@@ -114,6 +130,8 @@ void append_topdeck(PlayerState& player, Slot slot) noexcept {
         return remove_from_deck(player, slot);
     case MoveZone::Discard:
         return remove_from_discard(player, slot);
+    case MoveZone::SetAside:
+        return remove_from_ordered(player.set_aside, slot);
     case MoveZone::Revealed:
         return true;
     }

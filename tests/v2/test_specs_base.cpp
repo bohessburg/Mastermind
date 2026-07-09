@@ -20,6 +20,14 @@ namespace {
     return total;
 }
 
+[[nodiscard]] std::uint8_t hand_total(const GameState& state, PlayerId player_id = 0U) {
+    std::uint8_t total = 0;
+    for (std::uint8_t slot = 0; slot < state.num_slots; ++slot) {
+        total = static_cast<std::uint8_t>(total + state.players[player_id].hand[slot]);
+    }
+    return total;
+}
+
 } // namespace
 
 CARD_SPEC("v2 Cellar discards selected cards and draws per chosen") {
@@ -592,5 +600,198 @@ CARD_SPEC("v2 Bandit keeps revealed cards set aside across a trash choice") {
     REQUIRE(ordered_count(victim.discard, silver) == 1U);
     REQUIRE(ordered_count(victim.discard, gold) == 0U);
     expect().discard_has("Gold");
+    expect_conservation();
+}
+
+CARD_SPEC("v2 Library draws until hand has seven cards") {
+    given()
+        .hand("Library", "Copper", "Copper", "Copper", "Estate", "Estate")
+        .deck("Copper", "Silver", "Gold");
+
+    play("Library");
+
+    REQUIRE(state().phase == static_cast<std::uint8_t>(Phase::Buy));
+    REQUIRE(hand_total(state()) == 7U);
+    expect().hand_has("Gold").hand_has("Silver").deck_top("Copper");
+    expect_conservation();
+}
+
+CARD_SPEC("v2 Library stops when deck and discard are exhausted") {
+    given().hand("Library", "Copper").deck("Silver").discard("Estate");
+
+    play("Library");
+
+    REQUIRE(state().phase == static_cast<std::uint8_t>(Phase::Buy));
+    REQUIRE(hand_total(state()) == 3U);
+    expect().hand_has("Copper").hand_has("Silver").hand_has("Estate");
+    expect_conservation();
+}
+
+CARD_SPEC("v2 Library can set aside drawn Actions and discards them afterwards") {
+    given()
+        .hand("Library", "Copper", "Copper", "Estate", "Estate", "Silver")
+        .deck("Copper", "Silver", "Gold", "Smithy");
+
+    play("Library");
+    REQUIRE(state().decision.kind == static_cast<std::uint8_t>(DecisionKind::ChooseOption));
+    REQUIRE(state().decision.source == DEF_LIBRARY);
+    REQUIRE(state().players[0].set_aside.size == 1U);
+    expect_conservation();
+
+    option(1);
+
+    REQUIRE(state().phase == static_cast<std::uint8_t>(Phase::Buy));
+    REQUIRE(hand_total(state()) == 7U);
+    expect().discard_has("Smithy").hand_lacks("Smithy").hand_has("Gold").hand_has("Silver");
+    expect_conservation();
+}
+
+CARD_SPEC("v2 Library can keep drawn Actions in hand") {
+    given()
+        .hand("Library", "Copper", "Copper", "Estate", "Estate", "Silver")
+        .deck("Copper", "Silver", "Gold", "Smithy");
+
+    play("Library");
+    REQUIRE(state().decision.kind == static_cast<std::uint8_t>(DecisionKind::ChooseOption));
+    REQUIRE(state().decision.source == DEF_LIBRARY);
+    REQUIRE(state().players[0].set_aside.size == 1U);
+    expect_conservation();
+
+    option(0);
+
+    REQUIRE(state().phase == static_cast<std::uint8_t>(Phase::Buy));
+    REQUIRE(hand_total(state()) == 7U);
+    expect().hand_has("Smithy").hand_has("Gold").discard_lacks("Smithy");
+    expect_conservation();
+}
+
+CARD_SPEC("v2 Sentry supports every trash discard keep pair") {
+    constexpr std::uint8_t kTrash = 0;
+    constexpr std::uint8_t kDiscard = 1;
+    constexpr std::uint8_t kKeep = 2;
+    const std::uint8_t choices[] = {kTrash, kDiscard, kKeep};
+
+    for (std::uint8_t first_choice : choices) {
+        for (std::uint8_t second_choice : choices) {
+            given().hand("Sentry").deck("Copper", "Estate", "Gold");
+
+            play("Sentry");
+            REQUIRE(state().decision.kind == static_cast<std::uint8_t>(DecisionKind::ChooseOption));
+            REQUIRE(state().decision.source == DEF_SENTRY);
+            REQUIRE(state().players[0].set_aside.size == 2U);
+            expect_conservation();
+
+            option(first_choice);
+            REQUIRE(state().decision.kind == static_cast<std::uint8_t>(DecisionKind::ChooseOption));
+            REQUIRE(state().decision.source == DEF_SENTRY);
+            expect_conservation();
+
+            option(second_choice);
+            if (first_choice == kKeep && second_choice == kKeep) {
+                REQUIRE(state().decision.kind == static_cast<std::uint8_t>(DecisionKind::ChooseOrder));
+                REQUIRE(state().decision.source == DEF_SENTRY);
+                option(0);
+            }
+
+            const Slot copper = slot_of(state(), DEF_COPPER);
+            const Slot estate = slot_of(state(), DEF_ESTATE);
+            REQUIRE(copper != NONE);
+            REQUIRE(estate != NONE);
+            const PlayerState& player = state().players[0];
+
+            REQUIRE(state().phase == static_cast<std::uint8_t>(Phase::Buy));
+            REQUIRE(state().actions == 1U);
+            expect().hand_has("Gold");
+            REQUIRE(state().trash[estate] == (first_choice == kTrash ? 1U : 0U));
+            REQUIRE(state().trash[copper] == (second_choice == kTrash ? 1U : 0U));
+            REQUIRE(ordered_count(player.discard, estate) == (first_choice == kDiscard ? 1U : 0U));
+            REQUIRE(ordered_count(player.discard, copper) == (second_choice == kDiscard ? 1U : 0U));
+            REQUIRE(ordered_count(player.deck, estate) == (first_choice == kKeep ? 1U : 0U));
+            REQUIRE(ordered_count(player.deck, copper) == (second_choice == kKeep ? 1U : 0U));
+            if (first_choice == kKeep && second_choice == kKeep) {
+                REQUIRE(player.deck.size >= 2U);
+                REQUIRE(player.deck.cards[player.deck.size - 1U] == estate);
+                REQUIRE(player.deck.cards[player.deck.size - 2U] == copper);
+            }
+            expect_conservation();
+        }
+    }
+}
+
+CARD_SPEC("v2 Sentry handles a single card to look at") {
+    given().hand("Sentry").deck("Copper", "Gold");
+
+    play("Sentry");
+    REQUIRE(state().decision.kind == static_cast<std::uint8_t>(DecisionKind::ChooseOption));
+    REQUIRE(state().players[0].set_aside.size == 1U);
+
+    option(1);
+
+    REQUIRE(state().phase == static_cast<std::uint8_t>(Phase::Buy));
+    expect().hand_has("Gold").discard_has("Copper").actions(1);
+    expect_conservation();
+}
+
+CARD_SPEC("v2 Throne Room plays Sentry twice") {
+    given().hand("Throne Room", "Sentry").deck("Copper", "Estate", "Silver", "Gold");
+
+    play("Throne Room");
+    choose("Sentry");
+    REQUIRE(state().decision.kind == static_cast<std::uint8_t>(DecisionKind::ChooseOption));
+    REQUIRE(state().decision.source == DEF_SENTRY);
+
+    option(0);
+    REQUIRE(state().decision.kind == static_cast<std::uint8_t>(DecisionKind::ChooseOption));
+    option(0);
+
+    REQUIRE(state().phase == static_cast<std::uint8_t>(Phase::Buy));
+    REQUIRE(hand_total(state()) == 2U);
+    expect().hand_has("Gold").hand_has("Copper").trash_count("Silver", 1).trash_count("Estate", 1).actions(2);
+    expect_conservation();
+}
+
+CARD_SPEC("v2 Throne Room plays Library twice") {
+    given()
+        .hand("Throne Room", "Library", "Copper", "Copper", "Estate", "Estate", "Silver")
+        .deck("Copper", "Gold");
+
+    play("Throne Room");
+    choose("Library");
+
+    REQUIRE(state().phase == static_cast<std::uint8_t>(Phase::Buy));
+    REQUIRE(hand_total(state()) == 7U);
+    expect().hand_has("Gold").hand_has("Copper");
+    expect_conservation();
+}
+
+CARD_SPEC("v2 clone-equivalence holds while suspended in Library") {
+    given()
+        .hand("Library", "Copper", "Copper", "Estate", "Estate", "Silver")
+        .deck("Copper", "Gold", "Smithy");
+
+    play("Library");
+    REQUIRE(state().decision.kind == static_cast<std::uint8_t>(DecisionKind::ChooseOption));
+    REQUIRE(state().decision.source == DEF_LIBRARY);
+    expect_conservation();
+
+    GameState clone = state();
+    REQUIRE_FALSE(Game::step(state(), option_action(1)));
+    REQUIRE_FALSE(Game::step(clone, option_action(1)));
+    REQUIRE(same_bytes(state(), clone));
+    expect_conservation();
+}
+
+CARD_SPEC("v2 clone-equivalence holds while suspended in Sentry") {
+    given().hand("Sentry").deck("Copper", "Estate", "Gold");
+
+    play("Sentry");
+    REQUIRE(state().decision.kind == static_cast<std::uint8_t>(DecisionKind::ChooseOption));
+    REQUIRE(state().decision.source == DEF_SENTRY);
+    expect_conservation();
+
+    GameState clone = state();
+    REQUIRE_FALSE(Game::step(state(), option_action(2)));
+    REQUIRE_FALSE(Game::step(clone, option_action(2)));
+    REQUIRE(same_bytes(state(), clone));
     expect_conservation();
 }

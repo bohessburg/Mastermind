@@ -205,7 +205,9 @@ inline constexpr DefId DEF_THRONE_ROOM = 35;
 inline constexpr DefId DEF_COUNCIL_ROOM = 36;
 inline constexpr DefId DEF_ARTISAN = 37;
 inline constexpr DefId DEF_BANDIT = 38;
-inline constexpr std::uint16_t BASIC_CARD_COUNT = 39;
+inline constexpr DefId DEF_LIBRARY = 39;
+inline constexpr DefId DEF_SENTRY = 40;
+inline constexpr std::uint16_t BASIC_CARD_COUNT = 41;
 
 [[nodiscard]] const CardDef* card_defs() noexcept;
 [[nodiscard]] std::uint16_t card_def_count() noexcept;

@@ -14,6 +14,7 @@ inline constexpr std::uint8_t FRAME_ATTACK_IMMUNE = static_cast<std::uint8_t>(1U
 inline constexpr std::uint8_t FRAME_TRIGGER_ORDER = static_cast<std::uint8_t>(1U << 4);
 
 void draw_cards(GameState& state, PlayerId player, std::uint8_t count) noexcept;
+[[nodiscard]] Slot take_deck_top_slot(GameState& state, PlayerId player) noexcept;
 bool push_effect(GameState& state, DefId source, PlayerId player) noexcept;
 bool push_effect_span(
     GameState& state,
