@@ -38,10 +38,17 @@ add_library(dominion_v2 STATIC
 target_include_directories(dominion_v2 PUBLIC src)
 configure_v2_target(dominion_v2)
 
+add_library(dominion_v2_mcts STATIC
+    src/v2/mcts/tree.cpp
+)
+target_link_libraries(dominion_v2_mcts PUBLIC dominion_v2)
+target_include_directories(dominion_v2_mcts PUBLIC src)
+configure_v2_target(dominion_v2_mcts)
+
 add_library(dominion_v2_drivers STATIC
     src/v2/drivers/bots.cpp
 )
-target_link_libraries(dominion_v2_drivers PUBLIC dominion_v2)
+target_link_libraries(dominion_v2_drivers PUBLIC dominion_v2 dominion_v2_mcts)
 configure_v2_target(dominion_v2_drivers)
 
 add_library(dominion_v2_encode STATIC
@@ -57,13 +64,6 @@ add_library(dominion_v2_observe STATIC
 target_link_libraries(dominion_v2_observe PUBLIC dominion_v2)
 target_include_directories(dominion_v2_observe PUBLIC src)
 configure_v2_target(dominion_v2_observe)
-
-add_library(dominion_v2_mcts STATIC
-    src/v2/mcts/tree.cpp
-)
-target_link_libraries(dominion_v2_mcts PUBLIC dominion_v2)
-target_include_directories(dominion_v2_mcts PUBLIC src)
-configure_v2_target(dominion_v2_mcts)
 
 add_executable(v2_dump_defs
     src/v2/observe/dump_defs.cpp
@@ -86,6 +86,13 @@ add_executable(v2_bench
 )
 target_link_libraries(v2_bench PRIVATE dominion_v2_drivers)
 configure_v2_target(v2_bench)
+
+add_executable(v2_mcts_eval
+    src/v2/mcts/eval.cpp
+    src/v2/mcts/eval_main.cpp
+)
+target_link_libraries(v2_mcts_eval PRIVATE dominion_v2_drivers)
+configure_v2_target(v2_mcts_eval)
 
 add_executable(dominion_v2_play
     src/v2/drivers/tui.cpp
@@ -156,6 +163,8 @@ if(BUILD_TESTS)
         tests/v2/test_determinize.cpp
         tests/v2/test_bots.cpp
         tests/v2/test_mcts.cpp
+        tests/v2/test_mcts_eval.cpp
+        src/v2/mcts/eval.cpp
         tests/v2/test_specs_base.cpp
         tests/v2/test_attacks_triggers.cpp
     )

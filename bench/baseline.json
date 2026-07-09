@@ -1,10 +1,11 @@
 {
-  "step_median_ns": 41,
-  "step_p99_ns": 167,
-  "clone_ns": 104,
-  "legal_actions_ns": 25,
-  "random_games_per_sec": 34661.8,
-  "bm_games_per_sec": 51931.6,
-  "heuristic_games_per_sec": 58889.8,
-  "engine_games_per_sec": 57735.5
+  "step_median_ns": 42,
+  "step_p99_ns": 291,
+  "clone_ns": 184,
+  "legal_actions_ns": 42,
+  "random_games_per_sec": 28618.3,
+  "bm_games_per_sec": 58148.7,
+  "heuristic_games_per_sec": 61994.4,
+  "engine_games_per_sec": 57499.8,
+  "mcts_sims_per_sec": 17933.1
 }

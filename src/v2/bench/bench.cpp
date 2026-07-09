@@ -1,5 +1,6 @@
 #include "v2/core/game.h"
 #include "v2/drivers/bots.h"
+#include "v2/mcts/tree.h"
 
 #include <algorithm>
 #include <chrono>
@@ -20,6 +21,7 @@ constexpr int RANDOM_GAMES = 1000;
 constexpr int BM_GAMES = 1000;
 constexpr int HEURISTIC_GAMES = 1000;
 constexpr int ENGINE_GAMES = 1000;
+constexpr int MCTS_SEARCHES = 20;
 constexpr std::uint64_t STREAM_SEED = 0xBEE5'0001ULL;
 
 struct ActionStream {
@@ -185,6 +187,51 @@ V2_NOINLINE void clone_state(GameState& dst, const GameState& src) {
     return static_cast<double>(ENGINE_GAMES) / seconds;
 }
 
+[[nodiscard]] Setup fixed_mcts_setup() {
+    Setup setup{};
+    setup.num_players = 2U;
+    constexpr DefId kFixed[] = {
+        DEF_VILLAGE,
+        DEF_SMITHY,
+        DEF_MARKET,
+        DEF_FESTIVAL,
+        DEF_LABORATORY,
+        DEF_CELLAR,
+        DEF_CHAPEL,
+        DEF_MILITIA,
+        DEF_WITCH,
+        DEF_MOAT,
+    };
+    setup.kingdom_count = static_cast<std::uint8_t>(sizeof(kFixed) / sizeof(kFixed[0]));
+    for (std::uint8_t i = 0; i < setup.kingdom_count; ++i) {
+        setup.kingdom[i] = kFixed[i];
+    }
+    return setup;
+}
+
+[[nodiscard]] double measure_mcts_sims_per_sec() {
+    GameState state = Game::new_game(fixed_mcts_setup(), 0x4D43'0001ULL);
+    (void)Game::step(state, A_PASS);
+    MctsConfig config{};
+    config.sims_per_move = 1000U;
+    config.determinizations = 8U;
+    config.max_tree_nodes = 8192U;
+    config.rollout_seed = 0x4D43'0002ULL;
+    Mcts mcts(config);
+
+    std::uint64_t checksum = 0;
+    const auto start = Clock::now();
+    for (int i = 0; i < MCTS_SEARCHES; ++i) {
+        checksum += mcts.choose(state, Game::current_decision(state).player);
+    }
+    const auto end = Clock::now();
+    if (checksum == 0U) {
+        std::cout << "";
+    }
+    const double seconds = static_cast<double>(elapsed_ns(start, end)) / 1'000'000'000.0;
+    return static_cast<double>(MCTS_SEARCHES * 1000) / seconds;
+}
+
 } // namespace
 
 int main() {
@@ -196,6 +243,7 @@ int main() {
     const double bm_games_sec = measure_bm_games_per_sec();
     const double heuristic_games_sec = measure_heuristic_games_per_sec();
     const double engine_games_sec = measure_engine_games_per_sec();
+    const double mcts_sims_sec = measure_mcts_sims_per_sec();
 
     std::cout << "{\n"
               << "  \"step_median_ns\": " << step.median << ",\n"
@@ -205,7 +253,8 @@ int main() {
               << "  \"random_games_per_sec\": " << random_games_sec << ",\n"
               << "  \"bm_games_per_sec\": " << bm_games_sec << ",\n"
               << "  \"heuristic_games_per_sec\": " << heuristic_games_sec << ",\n"
-              << "  \"engine_games_per_sec\": " << engine_games_sec << "\n"
+              << "  \"engine_games_per_sec\": " << engine_games_sec << ",\n"
+              << "  \"mcts_sims_per_sec\": " << mcts_sims_sec << "\n"
               << "}\n";
     return 0;
 }

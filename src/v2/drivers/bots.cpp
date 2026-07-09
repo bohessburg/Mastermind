@@ -3,6 +3,7 @@
 #include "v2/core/score.h"
 
 #include <cstdint>
+#include <optional>
 
 namespace {
 
@@ -43,21 +44,34 @@ struct KingdomAnalysis {
     DefId best_action = NONE;
 };
 
+[[nodiscard]] Action first_legal(const ActionMask& legal) noexcept;
+
 struct BotController {
     BotKind kind = BotKind::BigMoney;
     RandomBot random{};
     BigMoneyBot big_money{};
     HeuristicBot heuristic{};
     EngineBot engine{};
+    std::optional<MctsBot> mcts{};
 
     explicit BotController(BotSpec spec) noexcept
-        : kind(spec.kind), random(spec.seed), big_money(), heuristic(), engine() {}
+        : kind(spec.kind), random(spec.seed), big_money(), heuristic(), engine(), mcts() {
+        if (kind == BotKind::Mcts) {
+            MctsConfig config = spec.mcts_config;
+            config.rollout_seed ^= (spec.seed * 0x9E37'79B9'7F4A'7C15ULL);
+            mcts.emplace(config);
+        }
+    }
 
     [[nodiscard]] Action choose_action(
         const GameState& state,
         const ActionMask& legal,
         int legal_count) noexcept {
         switch (kind) {
+        case BotKind::Mcts:
+            return mcts.has_value()
+                ? mcts->choose_action(state, legal, legal_count)
+                : first_legal(legal);
         case BotKind::Random:
             return random.choose_action(state, legal, legal_count);
         case BotKind::Heuristic:
@@ -1195,6 +1209,33 @@ Action EngineBot::choose_action(
         return legal.test(A_PASS) ? A_PASS : first_legal(legal);
     }
     return choose_generic_subdecision(state, legal, true);
+}
+
+MctsBot::MctsBot(const MctsConfig& cfg)
+    : config(cfg), search(cfg) {}
+
+Action MctsBot::choose_action(
+    const GameState& state,
+    const ActionMask& legal,
+    int legal_count) noexcept {
+    if (legal_count <= 0) {
+        return A_PASS;
+    }
+    if (legal_count == 1) {
+        return legal.nth_set(0U);
+    }
+
+    const DecisionKind decision = static_cast<DecisionKind>(state.decision.kind);
+    if (decision == DecisionKind::PhaseBuy) {
+        const Action treasure = first_legal_play_treasure(legal);
+        if (treasure != A_PASS) {
+            return treasure;
+        }
+    }
+
+    ++searches;
+    sims += config.sims_per_move;
+    return search.choose(state, state.decision.player);
 }
 
 double MatchupResult::win_rate_a() const noexcept {
