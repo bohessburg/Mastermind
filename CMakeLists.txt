@@ -5,6 +5,22 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+option(ENABLE_SANITIZERS "Enable ASan/UBSan for v2 targets" OFF)
+
+function(configure_v2_target target_name)
+    target_compile_features(${target_name} PUBLIC cxx_std_20)
+    target_compile_options(${target_name} PRIVATE -Wall -Wextra -Wpedantic -Wconversion)
+
+    if(ENABLE_SANITIZERS)
+        if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+            target_compile_options(${target_name} PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
+            target_link_options(${target_name} PRIVATE -fsanitize=address,undefined)
+        else()
+            message(WARNING "ENABLE_SANITIZERS is only wired for Clang/GNU v2 targets")
+        endif()
+    endif()
+endfunction()
+
 # --- Core engine library ---
 add_library(dominion_engine
     src/game/card.cpp
@@ -42,23 +58,49 @@ find_package(PkgConfig QUIET)
 if(PkgConfig_FOUND)
     pkg_check_modules(RAYLIB QUIET raylib)
 endif()
-if(RAYLIB_FOUND)
+find_library(GLFW_LIBRARY glfw HINTS /opt/homebrew/opt/glfw/lib)
+if(RAYLIB_FOUND AND GLFW_LIBRARY)
     add_executable(dominion_gui
         src/gui/gui_main.cpp
         src/gui/gui_agent.cpp
     )
     target_include_directories(dominion_gui PRIVATE ${RAYLIB_INCLUDE_DIRS})
     target_link_directories(dominion_gui PRIVATE ${RAYLIB_LIBRARY_DIRS})
-    target_link_directories(dominion_gui PRIVATE /opt/homebrew/opt/glfw/lib)
     target_link_libraries(dominion_gui PRIVATE dominion_engine ${RAYLIB_LIBRARIES}
-        glfw "-framework IOKit" "-framework Cocoa" "-framework OpenGL")
+        ${GLFW_LIBRARY} "-framework IOKit" "-framework Cocoa" "-framework OpenGL")
 else()
-    message(STATUS "raylib not found — skipping GUI build (install with: brew install raylib)")
+    message(STATUS "raylib/glfw not found — skipping GUI build (install with: brew install raylib glfw)")
 endif()
+
+# --- v2 core skeleton ---
+add_library(dominion_v2 STATIC
+    src/v2/cards/base.cpp
+    src/v2/core/actions.cpp
+    src/v2/core/game.cpp
+    src/v2/core/interp.cpp
+    src/v2/core/score.cpp
+    src/v2/core/setup.cpp
+    src/v2/core/turns.cpp
+)
+target_include_directories(dominion_v2 PUBLIC src)
+configure_v2_target(dominion_v2)
+
+add_library(dominion_v2_drivers STATIC
+    src/v2/drivers/bots.cpp
+)
+target_link_libraries(dominion_v2_drivers PUBLIC dominion_v2)
+configure_v2_target(dominion_v2_drivers)
+
+add_executable(v2_bench
+    src/v2/bench/bench.cpp
+)
+target_link_libraries(v2_bench PRIVATE dominion_v2_drivers)
+configure_v2_target(v2_bench)
 
 # --- Tests ---
 option(BUILD_TESTS "Build test suite" ON)
 if(BUILD_TESTS)
+    include(CTest)
     include(FetchContent)
     FetchContent_Declare(
         Catch2
@@ -81,7 +123,20 @@ if(BUILD_TESTS)
     target_link_libraries(dominion_tests PRIVATE dominion_engine Catch2::Catch2WithMain)
     target_compile_options(dominion_tests PRIVATE -Wall -Wextra)
 
-    include(CTest)
+    add_executable(v2_tests
+        tests/v2/test_types.cpp
+        tests/v2/test_rng.cpp
+        tests/v2/test_state.cpp
+        tests/v2/test_setup.cpp
+        tests/v2/test_game_flow.cpp
+        tests/v2/test_determinism.cpp
+        tests/v2/test_conservation.cpp
+        tests/v2/test_alloc.cpp
+    )
+    target_link_libraries(v2_tests PRIVATE dominion_v2_drivers Catch2::Catch2WithMain)
+    configure_v2_target(v2_tests)
+
     include(Catch)
     catch_discover_tests(dominion_tests PROPERTIES TIMEOUT 10)
+    catch_discover_tests(v2_tests TEST_PREFIX "v2." PROPERTIES TIMEOUT 10)
 endif()
