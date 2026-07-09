@@ -88,6 +88,8 @@ class TrainConfig:
     # Shared memory is the fast path; queue is retained for unsupported hosts.
     server_transport: str = "shm"
     server_shm_slots: int = 2
+    # queue blocks on the shared request-header queue; spin polls SHM counters.
+    server_poll: str = "queue"
     checkpoint_dir: str = "checkpoints"
     metrics_csv: str = "checkpoints/metrics.csv"
     model: ModelConfig = field(default_factory=ModelConfig)

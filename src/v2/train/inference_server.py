@@ -7,9 +7,11 @@ the large pickle copies that otherwise dominate small-batch self-play.
 
 from __future__ import annotations
 
+import argparse
 import atexit
 import copy
 import io
+import json
 import multiprocessing as mp
 import queue
 import time
@@ -31,6 +33,27 @@ import dominion_v2_py as dz
 
 from .config import TrainConfig
 from .model import DominionNet
+
+
+def _align(offset: int, alignment: int = 8) -> int:
+    return (offset + alignment - 1) // alignment * alignment
+
+
+def _request_layout(spec: WorkerSharedMemorySpec) -> tuple[int, int, int, int]:
+    obs_bytes = spec.slots * spec.max_request * spec.obs_size * np.dtype(np.float32).itemsize
+    masks_offset = obs_bytes
+    masks_bytes = spec.slots * spec.max_request * spec.action_size * np.dtype(np.uint8).itemsize
+    counts_offset = _align(masks_offset + masks_bytes, np.dtype(np.uint64).itemsize)
+    sequences_offset = _align(counts_offset + spec.slots * np.dtype(np.uint32).itemsize, np.dtype(np.uint64).itemsize)
+    return masks_offset, counts_offset, sequences_offset, sequences_offset + spec.slots * np.dtype(np.uint64).itemsize
+
+
+def _response_layout(spec: WorkerSharedMemorySpec) -> tuple[int, int, int]:
+    values_bytes = spec.slots * spec.max_request * np.dtype(np.float32).itemsize
+    policies_offset = values_bytes
+    policies_bytes = spec.slots * spec.max_request * spec.action_size * np.dtype(np.float32).itemsize
+    sequences_offset = _align(policies_offset + policies_bytes, np.dtype(np.uint64).itemsize)
+    return policies_offset, sequences_offset, sequences_offset + spec.slots * np.dtype(np.uint64).itemsize
 
 
 def serialize_cpu_state_dict(model: torch.nn.Module) -> bytes:
@@ -70,8 +93,8 @@ class WorkerSharedMemoryViews:
         self.spec = spec
         self.request_block = shared_memory.SharedMemory(name=spec.request_name)
         self.response_block = shared_memory.SharedMemory(name=spec.response_name)
-        request_obs_bytes = spec.slots * spec.max_request * spec.obs_size * np.dtype(np.float32).itemsize
-        response_values_bytes = spec.slots * spec.max_request * np.dtype(np.float32).itemsize
+        request_masks_offset, request_counts_offset, request_sequences_offset, _ = _request_layout(spec)
+        response_policies_offset, response_sequences_offset, _ = _response_layout(spec)
         self.request_obs = np.ndarray(
             (spec.slots, spec.max_request, spec.obs_size),
             dtype=np.float32,
@@ -81,7 +104,19 @@ class WorkerSharedMemoryViews:
             (spec.slots, spec.max_request, spec.action_size),
             dtype=np.uint8,
             buffer=self.request_block.buf,
-            offset=request_obs_bytes,
+            offset=request_masks_offset,
+        )
+        self.request_counts = np.ndarray(
+            (spec.slots,),
+            dtype=np.uint32,
+            buffer=self.request_block.buf,
+            offset=request_counts_offset,
+        )
+        self.request_sequences = np.ndarray(
+            (spec.slots,),
+            dtype=np.uint64,
+            buffer=self.request_block.buf,
+            offset=request_sequences_offset,
         )
         self.response_values = np.ndarray(
             (spec.slots, spec.max_request),
@@ -92,7 +127,13 @@ class WorkerSharedMemoryViews:
             (spec.slots, spec.max_request, spec.action_size),
             dtype=np.float32,
             buffer=self.response_block.buf,
-            offset=response_values_bytes,
+            offset=response_policies_offset,
+        )
+        self.response_sequences = np.ndarray(
+            (spec.slots,),
+            dtype=np.uint64,
+            buffer=self.response_block.buf,
+            offset=response_sequences_offset,
         )
 
     def close(self) -> None:
@@ -119,12 +160,9 @@ class SharedMemoryTransport:
         # A 12-hex token remains unique for a training invocation while
         # leaving room for the request/response and worker suffixes.
         token = f"dz{uuid.uuid4().hex[:12]}"
-        request_bytes = slots * max_request * (
-            dz.OBS_SIZE * np.dtype(np.float32).itemsize + dz.ACTION_SPACE_SIZE * np.dtype(np.uint8).itemsize
-        )
-        response_bytes = slots * max_request * (
-            np.dtype(np.float32).itemsize + dz.ACTION_SPACE_SIZE * np.dtype(np.float32).itemsize
-        )
+        layout_spec = WorkerSharedMemorySpec("", "", slots, max_request, dz.OBS_SIZE, dz.ACTION_SPACE_SIZE)
+        request_bytes = _request_layout(layout_spec)[3]
+        response_bytes = _response_layout(layout_spec)[2]
         specs: list[WorkerSharedMemorySpec] = []
         blocks: list[Any] = []
         try:
@@ -191,6 +229,7 @@ class InferenceServerEndpoints:
     request_batch_size: int
     transport: str
     shared_memory_specs: list[WorkerSharedMemorySpec] | None
+    poll: str
 
 
 @dataclass(frozen=True)
@@ -214,14 +253,18 @@ class _GenerationMetrics:
         if self.batch_waits_s is None:
             self.batch_waits_s = []
 
-    def snapshot(self) -> dict[str, float]:
+    def snapshot(self, include_totals: bool = False) -> dict[str, float]:
         waits_ms = np.asarray(self.batch_waits_s, dtype=np.float64)
-        return {
+        metrics = {
             "server_evals_per_sec": self.evals / self.inference_time if self.inference_time > 0.0 else 0.0,
             "server_mean_batch_size": self.evals / self.batches if self.batches > 0 else 0.0,
             "server_batch_wait_p50_ms": float(np.percentile(waits_ms, 50.0)) if waits_ms.size else 0.0,
             "server_batch_wait_p99_ms": float(np.percentile(waits_ms, 99.0)) if waits_ms.size else 0.0,
         }
+        if include_totals:
+            metrics["_server_total_evals"] = float(self.evals)
+            metrics["_server_total_batches"] = float(self.batches)
+        return metrics
 
 
 class _PinnedStaging:
@@ -298,6 +341,16 @@ def _server_main(
             assert endpoints.shared_memory_specs is not None
             views = [WorkerSharedMemoryViews(spec) for spec in endpoints.shared_memory_specs]
         endpoints.alive_event.set()
+        last_request_sequences = [np.zeros(view.spec.slots, dtype=np.uint64) for view in views]
+        # Flatten this once.  The spin path executes this scan for every
+        # request, so repeated worker/slot arithmetic would otherwise become
+        # another per-batch Python cost at high worker counts.
+        spin_slots = [
+            (worker_id, slot)
+            for worker_id, view in enumerate(views)
+            for slot in range(view.spec.slots)
+        ]
+        spin_cursor = 0
 
         def handle_commands() -> None:
             nonlocal running, metrics
@@ -317,36 +370,73 @@ def _server_main(
                     status_queue.put(("weights", generation, None))
                     continue
                 if kind == "metrics":
-                    _, generation = command
-                    status_queue.put(("metrics", generation, metrics.snapshot()))
+                    _, generation, include_totals = command
+                    status_queue.put(("metrics", generation, metrics.snapshot(bool(include_totals))))
                     metrics = _GenerationMetrics()
                     continue
                 raise RuntimeError(f"unknown inference-server command: {kind}")
 
+        def shared_request_from_header(worker_id: int, slot: int, count: int, sequence: int) -> _Request:
+            if not (0 <= worker_id < len(views)):
+                raise ValueError("shared-memory request has invalid worker id")
+            view = views[worker_id]
+            if not (0 <= slot < view.spec.slots and 0 < count <= view.spec.max_request):
+                raise ValueError("shared-memory request has invalid slot or count")
+            if slot != sequence % view.spec.slots:
+                raise ValueError("shared-memory request sequence does not match its slot")
+            return _Request(
+                worker_id=worker_id,
+                request_id=sequence,
+                slot=slot,
+                count=count,
+                obs=view.request_obs[slot, :count],
+                masks=view.request_masks[slot, :count],
+            )
+
+        def poll_shared_sequences() -> _Request | None:
+            nonlocal spin_cursor
+            total_slots = len(spin_slots)
+            if total_slots == 0:
+                return None
+            for scanned in range(total_slots):
+                flat_slot = (spin_cursor + scanned) % total_slots
+                worker_id, slot = spin_slots[flat_slot]
+                view = views[worker_id]
+                sequence = int(view.request_sequences[slot])
+                if sequence <= int(last_request_sequences[worker_id][slot]):
+                    continue
+                count = int(view.request_counts[slot])
+                request = shared_request_from_header(worker_id, slot, count, sequence)
+                last_request_sequences[worker_id][slot] = sequence
+                spin_cursor = (flat_slot + 1) % total_slots
+                return request
+            return None
+
         def dequeue_request(timeout: float | None = None) -> _Request:
+            if endpoints.poll == "spin":
+                deadline = None if timeout is None else time.perf_counter() + max(0.0, timeout)
+                while True:
+                    request = poll_shared_sequences()
+                    if request is not None:
+                        return request
+                    if deadline is not None and time.perf_counter() >= deadline:
+                        raise queue.Empty
+                    # Yield without a kernel queue wakeup; request/response
+                    # sequence counters provide the producer notification.
+                    time.sleep(0)
             if endpoints.transport == "shm":
                 if timeout is None:
                     worker_id, slot, count, sequence = endpoints.request_queue.get()
+                elif timeout <= 0.0:
+                    worker_id, slot, count, sequence = endpoints.request_queue.get_nowait()
                 else:
                     worker_id, slot, count, sequence = endpoints.request_queue.get(timeout=timeout)
                 worker_id, slot, count, sequence = int(worker_id), int(slot), int(count), int(sequence)
-                if not (0 <= worker_id < len(views)):
-                    raise ValueError("shared-memory request has invalid worker id")
-                view = views[worker_id]
-                if not (0 <= slot < view.spec.slots and 0 < count <= view.spec.max_request):
-                    raise ValueError("shared-memory request has invalid slot or count")
-                if slot != sequence % view.spec.slots:
-                    raise ValueError("shared-memory request sequence does not match its slot")
-                return _Request(
-                    worker_id=worker_id,
-                    request_id=sequence,
-                    slot=slot,
-                    count=count,
-                    obs=view.request_obs[slot, :count],
-                    masks=view.request_masks[slot, :count],
-                )
+                return shared_request_from_header(worker_id, slot, count, sequence)
             if timeout is None:
                 worker_id, request_id, obs, masks = endpoints.request_queue.get()
+            elif timeout <= 0.0:
+                worker_id, request_id, obs, masks = endpoints.request_queue.get_nowait()
             else:
                 worker_id, request_id, obs, masks = endpoints.request_queue.get(timeout=timeout)
             obs = np.ascontiguousarray(obs, dtype=np.float32)
@@ -413,7 +503,10 @@ def _server_main(
                     view = views[request.worker_id]
                     np.copyto(view.response_values[request.slot, : request.count], staging.values_np[offset:end])
                     np.copyto(view.response_policies[request.slot, : request.count], staging.policies_np[offset:end])
-                    endpoints.response_queues[request.worker_id].put((request.slot, request.count, request.request_id))
+                    if endpoints.poll == "spin":
+                        view.response_sequences[request.slot] = request.request_id
+                    else:
+                        endpoints.response_queues[request.worker_id].put((request.slot, request.count, request.request_id))
                 else:
                     endpoints.response_queues[request.worker_id].put(
                         (
@@ -444,6 +537,9 @@ class InferenceServer:
         requested_transport = config.server_transport.lower()
         if requested_transport not in {"shm", "queue"}:
             raise ValueError("server_transport must be 'shm' or 'queue'")
+        requested_poll = config.server_poll.lower()
+        if requested_poll not in {"queue", "spin"}:
+            raise ValueError("server_poll must be 'queue' or 'spin'")
         context = mp.get_context("spawn")
         self.request_queue = context.Queue(maxsize=max(4, worker_count * 4))
         self.response_queues = [context.Queue(maxsize=2) for _ in range(worker_count)]
@@ -467,6 +563,14 @@ class InferenceServer:
                     RuntimeWarning,
                     stacklevel=2,
                 )
+        self.poll = requested_poll
+        if self.poll == "spin" and self.transport != "shm":
+            self.poll = "queue"
+            warnings.warn(
+                "server_poll=spin requires shared-memory transport; falling back to queue polling",
+                RuntimeWarning,
+                stacklevel=2,
+            )
         self.endpoints = InferenceServerEndpoints(
             request_queue=self.request_queue,
             response_queues=self.response_queues,
@@ -475,6 +579,7 @@ class InferenceServer:
             request_batch_size=request_batch_size,
             transport=self.transport,
             shared_memory_specs=self.shared_transport.specs if self.shared_transport is not None else None,
+            poll=self.poll,
         )
         self.process = context.Process(
             target=_server_main,
@@ -537,9 +642,9 @@ class InferenceServer:
         self.command_queue.put(("weights", generation, serialize_cpu_state_dict(model)))
         self._wait_for_status("weights", generation)
 
-    def collect_metrics(self, generation: int) -> dict[str, float]:
+    def collect_metrics(self, generation: int, include_totals: bool = False) -> dict[str, float]:
         self.ensure_alive()
-        self.command_queue.put(("metrics", generation))
+        self.command_queue.put(("metrics", generation, include_totals))
         return self._wait_for_status("metrics", generation)
 
     def close(self) -> None:
@@ -560,3 +665,287 @@ class InferenceServer:
             response_queue.close()
         if self.shared_transport is not None:
             self.shared_transport.close()
+
+
+def _bench_worker_main(
+    endpoints: InferenceServerEndpoints,
+    worker_id: int,
+    start_event: Any,
+    stop_event: Any,
+    ready_queue: Any,
+    result_queue: Any,
+) -> None:
+    """Synthetic max-rate requester used by ``--bench-server``."""
+    shared_views: WorkerSharedMemoryViews | None = None
+    try:
+        if endpoints.transport == "shm":
+            assert endpoints.shared_memory_specs is not None
+            shared_views = WorkerSharedMemoryViews(endpoints.shared_memory_specs[worker_id])
+        count = endpoints.request_batch_size
+        obs = np.full((count, dz.OBS_SIZE), float(worker_id), dtype=np.float32)
+        masks = np.ones((count, dz.ACTION_SPACE_SIZE), dtype=np.uint8)
+        response_queue = endpoints.response_queues[worker_id]
+        sequence = 0
+        batches = 0
+        evals = 0
+        ready_queue.put(worker_id)
+        start_event.wait()
+        while not stop_event.is_set():
+            sequence += 1
+            deadline = time.monotonic() + endpoints.response_timeout_s
+            if shared_views is not None:
+                slot = sequence % shared_views.spec.slots
+                np.copyto(shared_views.request_obs[slot, :count], obs)
+                np.copyto(shared_views.request_masks[slot, :count], masks)
+                if endpoints.poll == "spin":
+                    shared_views.request_counts[slot] = count
+                    shared_views.request_sequences[slot] = sequence
+                    request: tuple[Any, ...] = ()
+                else:
+                    request = (worker_id, slot, count, sequence)
+            else:
+                request = (worker_id, sequence, obs, masks)
+            if shared_views is None or endpoints.poll != "spin":
+                while True:
+                    if not endpoints.alive_event.is_set():
+                        raise RuntimeError("inference server died during benchmark request submission")
+                    try:
+                        endpoints.request_queue.put(request, timeout=0.1)
+                        break
+                    except queue.Full:
+                        if time.monotonic() >= deadline:
+                            raise RuntimeError("benchmark request submission timed out")
+            while True:
+                if time.monotonic() >= deadline:
+                    raise RuntimeError("benchmark response wait timed out")
+                if shared_views is not None and endpoints.poll == "spin":
+                    if int(shared_views.response_sequences[slot]) == sequence:
+                        break
+                    if not endpoints.alive_event.is_set():
+                        raise RuntimeError("inference server died during benchmark response wait")
+                    time.sleep(0)
+                    continue
+                try:
+                    response = response_queue.get(timeout=0.1)
+                except queue.Empty:
+                    if not endpoints.alive_event.is_set():
+                        raise RuntimeError("inference server died during benchmark response wait")
+                    continue
+                if shared_views is not None:
+                    slot, response_count, response_sequence = response
+                    if slot != sequence % shared_views.spec.slots or response_count != count or response_sequence != sequence:
+                        raise RuntimeError("benchmark shared-memory response routing mismatch")
+                else:
+                    kind, response_sequence, _, _ = response
+                    if kind != "response" or response_sequence != sequence:
+                        raise RuntimeError("benchmark queue response routing mismatch")
+                break
+            batches += 1
+            evals += count
+        result_queue.put((worker_id, batches, evals, None))
+    except BaseException as exc:
+        result_queue.put((worker_id, 0, 0, repr(exc)))
+    finally:
+        if shared_views is not None:
+            shared_views.close()
+
+
+def _header_echo_main(request_queue: Any, response_queues: list[Any], stop_event: Any) -> None:
+    while True:
+        try:
+            worker_id, sequence = request_queue.get(timeout=0.01)
+        except queue.Empty:
+            if stop_event.is_set():
+                return
+            continue
+        response_queues[worker_id].put(sequence)
+
+
+def _header_echo_worker(
+    worker_id: int,
+    request_queue: Any,
+    response_queue: Any,
+    start_event: Any,
+    stop_event: Any,
+    ready_queue: Any,
+    result_queue: Any,
+) -> None:
+    ready_queue.put(worker_id)
+    start_event.wait()
+    sequence = 0
+    elapsed_ns = 0
+    rounds = 0
+    while not stop_event.is_set():
+        sequence += 1
+        started = time.perf_counter_ns()
+        request_queue.put((worker_id, sequence))
+        if response_queue.get(timeout=5.0) != sequence:
+            result_queue.put((worker_id, 0, "header response routing mismatch"))
+            return
+        elapsed_ns += time.perf_counter_ns() - started
+        rounds += 1
+    result_queue.put((worker_id, (elapsed_ns, rounds), None))
+
+
+def _bench_queue_header_round_trip(context: Any, worker_count: int, duration_s: float) -> float:
+    """Measure global-queue header ping-pong without model or array payloads."""
+    request_queue = context.Queue()
+    response_queues = [context.Queue() for _ in range(worker_count)]
+    start_event = context.Event()
+    stop_event = context.Event()
+    ready_queue = context.Queue()
+    result_queue = context.Queue()
+    echo = context.Process(target=_header_echo_main, args=(request_queue, response_queues, stop_event))
+    workers = [
+        context.Process(
+            target=_header_echo_worker,
+            args=(worker_id, request_queue, response_queues[worker_id], start_event, stop_event, ready_queue, result_queue),
+        )
+        for worker_id in range(worker_count)
+    ]
+    try:
+        echo.start()
+        for worker in workers:
+            worker.start()
+        for _ in workers:
+            ready_queue.get(timeout=10.0)
+        start_event.set()
+        time.sleep(duration_s)
+        stop_event.set()
+        results = [result_queue.get(timeout=10.0) for _ in workers]
+        errors = [result[2] for result in results if result[2] is not None]
+        if errors:
+            raise RuntimeError(errors[0])
+        elapsed_ns = sum(result[1][0] for result in results)
+        rounds = sum(result[1][1] for result in results)
+        return elapsed_ns / rounds / 1000.0 if rounds else 0.0
+    finally:
+        stop_event.set()
+        for process in [*workers, echo]:
+            if process.is_alive():
+                process.join(timeout=2.0)
+            if process.is_alive():
+                process.terminate()
+                process.join(timeout=2.0)
+        request_queue.close()
+        ready_queue.close()
+        result_queue.close()
+        for response_queue in response_queues:
+            response_queue.close()
+
+
+def bench_server(
+    *,
+    device: str,
+    worker_counts: list[int],
+    duration_s: float,
+    max_batch: int,
+    transport: str,
+    poll: str,
+) -> list[dict[str, float | int | str]]:
+    """Run standalone synthetic transport/server measurements for each worker count."""
+    if duration_s <= 0.0 or max_batch <= 0:
+        raise ValueError("benchmark duration and max batch must be positive")
+    context = mp.get_context("spawn")
+    rows: list[dict[str, float | int | str]] = []
+    for worker_count in worker_counts:
+        cfg = TrainConfig()
+        cfg.seed = 123
+        cfg.server_device = device
+        cfg.server_transport = transport
+        cfg.server_poll = poll
+        cfg.server_max_batch = max_batch
+        cfg.server_max_wait_ms = 2.0
+        cfg.server_response_timeout_s = 10.0
+        cfg.selfplay.max_batch = max_batch
+        cfg.model.hidden_sizes = [32]
+        server = InferenceServer(cfg, worker_count)
+        start_event = context.Event()
+        stop_event = context.Event()
+        ready_queue = context.Queue()
+        result_queue = context.Queue()
+        workers = [
+            context.Process(
+                target=_bench_worker_main,
+                args=(server.endpoints, worker_id, start_event, stop_event, ready_queue, result_queue),
+                name=f"inference-bench-{worker_id}",
+            )
+            for worker_id in range(worker_count)
+        ]
+        try:
+            for worker in workers:
+                worker.start()
+            for _ in workers:
+                ready_queue.get(timeout=15.0)
+            start = time.perf_counter()
+            start_event.set()
+            time.sleep(duration_s)
+            stop_event.set()
+            results = []
+            for _ in workers:
+                results.append(result_queue.get(timeout=15.0))
+            wall_time = time.perf_counter() - start
+            for worker in workers:
+                worker.join(timeout=5.0)
+                if worker.is_alive():
+                    worker.terminate()
+                    worker.join(timeout=5.0)
+            errors = [result[3] for result in results if result[3] is not None]
+            if errors:
+                raise RuntimeError(f"benchmark synthetic worker failure: {errors[0]}")
+            metrics = server.collect_metrics(generation=0, include_totals=True)
+            header_round_trip_us = _bench_queue_header_round_trip(context, worker_count, min(1.0, duration_s))
+            total_evals = int(metrics["_server_total_evals"])
+            total_batches = int(metrics["_server_total_batches"])
+            rows.append(
+                {
+                    "device": device,
+                    "transport": server.transport,
+                    "poll": server.poll,
+                    "workers": worker_count,
+                    "wall_time_s": wall_time,
+                    "batches_per_sec": total_batches / wall_time if wall_time > 0.0 else 0.0,
+                    "evals_per_sec": total_evals / wall_time if wall_time > 0.0 else 0.0,
+                    "mean_batch_size": float(metrics["server_mean_batch_size"]),
+                    "queue_header_round_trip_us": header_round_trip_us,
+                }
+            )
+        finally:
+            stop_event.set()
+            for worker in workers:
+                if worker.is_alive():
+                    worker.terminate()
+                    worker.join(timeout=5.0)
+            ready_queue.close()
+            result_queue.close()
+            server.close()
+    return rows
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--bench-server", action="store_true")
+    parser.add_argument("--device", choices=["cpu", "cuda"], default="cpu")
+    parser.add_argument("--workers", default="8,16,24")
+    parser.add_argument("--duration", type=float, default=3.0)
+    parser.add_argument("--max-batch", type=int, default=1024)
+    parser.add_argument("--transport", choices=["shm", "queue"], default="shm")
+    parser.add_argument("--poll", choices=["queue", "spin"], default="queue")
+    args = parser.parse_args(argv)
+    if not args.bench_server:
+        parser.error("--bench-server is required when invoking this module directly")
+    worker_counts = [int(value) for value in args.workers.split(",") if value]
+    for row in bench_server(
+        device=args.device,
+        worker_counts=worker_counts,
+        duration_s=args.duration,
+        max_batch=args.max_batch,
+        transport=args.transport,
+        poll=args.poll,
+    ):
+        print(json.dumps(row, sort_keys=True))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

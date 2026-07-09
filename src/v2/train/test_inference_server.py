@@ -52,10 +52,15 @@ def test_shared_cpu_inference_server_selfplay_smoke(tmp_path: Path) -> None:
     assert all(float(row["server_batch_wait_p99_ms"]) >= float(row["server_batch_wait_p50_ms"]) for row in rows)
 
 
-def test_inference_server_routes_fixed_weight_requests_under_concurrent_load(tmp_path: Path) -> None:
+@pytest.mark.parametrize("poll", ["queue", "spin"])
+def test_inference_server_routes_fixed_weight_requests_under_concurrent_load(
+    tmp_path: Path,
+    poll: str,
+) -> None:
     cfg = server_config(tmp_path, generations=1)
     cfg.server_max_batch = 32
     cfg.server_max_wait_ms = 10.0
+    cfg.server_poll = poll
     torch.manual_seed(333)
     model, _, _ = build_objects(cfg, torch.device("cpu"))
     model.eval()
@@ -90,7 +95,11 @@ def test_inference_server_routes_fixed_weight_requests_under_concurrent_load(tmp
             slot = request_id % view.spec.slots
             np.copyto(view.request_obs[slot, : obs.shape[0]], obs)
             np.copyto(view.request_masks[slot, : obs.shape[0]], masks.astype(np.uint8, copy=False))
-            server.request_queue.put((worker_id, slot, obs.shape[0], request_id))
+            if poll == "spin":
+                view.request_counts[slot] = obs.shape[0]
+                view.request_sequences[slot] = request_id
+            else:
+                server.request_queue.put((worker_id, slot, obs.shape[0], request_id))
 
         submitters = [
             threading.Thread(target=submit, args=(0, 11)),
@@ -102,9 +111,18 @@ def test_inference_server_routes_fixed_weight_requests_under_concurrent_load(tmp
         for submitter in submitters:
             submitter.join(timeout=5.0)
             assert not submitter.is_alive()
-        first = server.endpoints.response_queues[0].get(timeout=5.0)
-        second = server.endpoints.response_queues[1].get(timeout=5.0)
-        for worker_id, expected_request_id, response in ((0, 11, first), (1, 22, second)):
+        responses: list[tuple[int, int, int]] = []
+        for worker_id, request_id in ((0, 11), (1, 22)):
+            if poll == "spin":
+                slot = request_id % views[worker_id].spec.slots
+                deadline = time.monotonic() + 5.0
+                while int(views[worker_id].response_sequences[slot]) != request_id:
+                    assert time.monotonic() < deadline, "spin response did not arrive"
+                    time.sleep(0)
+                responses.append((slot, obs.shape[0], request_id))
+            else:
+                responses.append(server.endpoints.response_queues[worker_id].get(timeout=5.0))
+        for worker_id, expected_request_id, response in ((0, 11, responses[0]), (1, 22, responses[1])):
             slot, count, request_id = response
             assert slot == expected_request_id % views[worker_id].spec.slots
             assert count == obs.shape[0]
@@ -133,6 +151,19 @@ def test_queue_transport_fallback_smoke(tmp_path: Path) -> None:
     assert result["metrics"][0]["games"] == 2
     rows = read_metrics(Path(cfg.metrics_csv))
     assert float(rows[0]["server_evals_per_sec"]) > 0.0
+
+
+def test_spin_poll_falls_back_when_shared_memory_is_unavailable(tmp_path: Path) -> None:
+    cfg = server_config(tmp_path, generations=1)
+    cfg.server_transport = "queue"
+    cfg.server_poll = "spin"
+    with pytest.warns(RuntimeWarning, match="server_poll=spin requires shared-memory"):
+        server = InferenceServer(cfg, worker_count=2)
+    try:
+        assert server.transport == "queue"
+        assert server.poll == "queue"
+    finally:
+        server.close()
 
 
 def test_server_death_propagates_to_parent_without_hanging(tmp_path: Path) -> None:

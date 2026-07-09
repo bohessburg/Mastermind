@@ -169,7 +169,12 @@ def _server_evaluator(
             slot = request_id % shared_views.spec.slots
             np.copyto(shared_views.request_obs[slot, :count], np.asarray(obs, dtype=np.float32))
             np.copyto(shared_views.request_masks[slot, :count], np.asarray(masks, dtype=np.uint8))
-            request: tuple[Any, ...] = (worker_index, slot, count, request_id)
+            if endpoints.poll == "spin":
+                shared_views.request_counts[slot] = count
+                shared_views.request_sequences[slot] = request_id
+                request = ()
+            else:
+                request = (worker_index, slot, count, request_id)
         else:
             request = (
                 worker_index,
@@ -177,22 +182,33 @@ def _server_evaluator(
                 np.ascontiguousarray(obs, dtype=np.float32),
                 np.ascontiguousarray(masks, dtype=np.uint8),
             )
-        while True:
-            if not endpoints.alive_event.is_set():
-                raise RuntimeError("inference server is not alive while submitting a leaf batch")
-            remaining = deadline - time.monotonic()
-            if remaining <= 0.0:
-                raise RuntimeError("timed out submitting a leaf batch to the inference server")
-            try:
-                endpoints.request_queue.put(request, timeout=min(0.25, remaining))
-                break
-            except queue.Full:
-                continue
+        if shared_views is None or endpoints.poll != "spin":
+            while True:
+                if not endpoints.alive_event.is_set():
+                    raise RuntimeError("inference server is not alive while submitting a leaf batch")
+                remaining = deadline - time.monotonic()
+                if remaining <= 0.0:
+                    raise RuntimeError("timed out submitting a leaf batch to the inference server")
+                try:
+                    endpoints.request_queue.put(request, timeout=min(0.25, remaining))
+                    break
+                except queue.Full:
+                    continue
 
         while True:
             remaining = deadline - time.monotonic()
             if remaining <= 0.0:
                 raise RuntimeError("timed out waiting for an inference-server response")
+            if shared_views is not None and endpoints.poll == "spin":
+                if int(shared_views.response_sequences[slot]) == request_id:
+                    return (
+                        shared_views.response_policies[slot, :count],
+                        shared_views.response_values[slot, :count],
+                    )
+                if not endpoints.alive_event.is_set():
+                    raise RuntimeError("inference server died while a worker awaited a response")
+                time.sleep(0)
+                continue
             try:
                 response = response_queue.get(timeout=min(0.25, remaining))
             except queue.Empty:
