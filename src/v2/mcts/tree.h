@@ -19,6 +19,7 @@ enum class MctsRolloutPolicy : std::uint8_t {
     Random,
     Heuristic,
     EngineLike,
+    External,
 };
 
 struct MctsConfig {
@@ -48,6 +49,19 @@ struct MctsNode {
     bool terminal = false;
 };
 
+inline constexpr std::uint8_t MCTS_MAX_PATH = 96;
+
+struct MctsPendingLeaf {
+    std::uint32_t node = MCTS_NULL;
+    std::uint32_t state_index = MCTS_NULL;
+    std::uint32_t path[MCTS_MAX_PATH]{};
+    std::uint8_t depth = 0;
+    PlayerId player = 0;
+    ActionMask legal{};
+    int legal_count = 0;
+    bool valid = false;
+};
+
 class Mcts {
 public:
     explicit Mcts(const MctsConfig& config);
@@ -65,13 +79,29 @@ public:
     [[nodiscard]] Action best_root_action() const noexcept;
     [[nodiscard]] std::uint32_t root_visits_for(Action action) const noexcept;
     [[nodiscard]] float root_value_for(Action action) const noexcept;
+    [[nodiscard]] const GameState& state_for(std::uint32_t state_index) const noexcept;
+    [[nodiscard]] bool collect_external_leaf(MctsPendingLeaf& leaf) noexcept;
+    void provide_external_evaluation(
+        const MctsPendingLeaf& leaf,
+        float value,
+        const float* priors) noexcept;
+    void root_visit_policy(float* out, float temperature) const noexcept;
+    [[nodiscard]] Action sample_root_action(float temperature, Xoshiro256pp& rng) const noexcept;
+    [[nodiscard]] float total_virtual_loss() const noexcept;
 
 private:
     [[nodiscard]] std::uint32_t allocate_node() noexcept;
     [[nodiscard]] bool expand(std::uint32_t node_index) noexcept;
+    [[nodiscard]] bool expand_with_priors(std::uint32_t node_index, const float* priors) noexcept;
     [[nodiscard]] std::uint32_t select_child(std::uint32_t node_index) const noexcept;
     void rollout(GameState& state, Xoshiro256pp& rng) const noexcept;
     void backpropagate(const std::uint32_t* path, std::uint8_t depth, const GameState& terminal) noexcept;
+    void backpropagate_value(
+        const std::uint32_t* path,
+        std::uint8_t depth,
+        PlayerId value_player,
+        float value) noexcept;
+    void apply_virtual_loss(const std::uint32_t* path, std::uint8_t depth, float amount) noexcept;
     [[nodiscard]] float terminal_value_for(PlayerId player, const GameState& terminal) const noexcept;
     [[nodiscard]] float child_value_for_parent(const MctsNode& parent, const MctsNode& child) const noexcept;
     [[nodiscard]] PlayerId next_player_for_child(const GameState& child_state, PlayerId parent_player) const noexcept;

@@ -962,7 +962,7 @@ void Mcts::run_simulations(std::uint32_t simulations, Xoshiro256pp& rng) noexcep
     }
 
     for (std::uint32_t sim = 0; sim < simulations; ++sim) {
-        std::uint32_t path[MAX_EFFECT_DEPTH * 2U]{};
+        std::uint32_t path[MCTS_MAX_PATH]{};
         std::uint8_t depth = 0;
         std::uint32_t node_index = 0U;
         path[depth++] = node_index;
@@ -971,7 +971,7 @@ void Mcts::run_simulations(std::uint32_t simulations, Xoshiro256pp& rng) noexcep
                && !nodes_[node_index].terminal) {
             node_index = select_child(node_index);
             path[depth++] = node_index;
-            if (depth >= static_cast<std::uint8_t>(MAX_EFFECT_DEPTH * 2U)) {
+            if (depth >= MCTS_MAX_PATH) {
                 break;
             }
         }
@@ -981,7 +981,7 @@ void Mcts::run_simulations(std::uint32_t simulations, Xoshiro256pp& rng) noexcep
             const bool expanded = expand(node_index);
             if (expanded && leaf.first_child != MCTS_NULL) {
                 node_index = select_child(node_index);
-                if (depth < static_cast<std::uint8_t>(MAX_EFFECT_DEPTH * 2U)) {
+                if (depth < MCTS_MAX_PATH) {
                     path[depth++] = node_index;
                 }
             }
@@ -1075,6 +1075,163 @@ float Mcts::root_value_for(Action action) const noexcept {
     return 0.0F;
 }
 
+const GameState& Mcts::state_for(std::uint32_t state_index) const noexcept {
+    assert(state_index < capacity_);
+    return states_[state_index < capacity_ ? state_index : 0U];
+}
+
+bool Mcts::collect_external_leaf(MctsPendingLeaf& leaf) noexcept {
+    leaf = MctsPendingLeaf{};
+    if (node_count_ == 0U) {
+        return false;
+    }
+
+    std::uint32_t node_index = 0U;
+    std::uint32_t path[MCTS_MAX_PATH]{};
+    std::uint8_t depth = 0;
+    path[depth++] = node_index;
+
+    while (nodes_[node_index].expanded && nodes_[node_index].first_child != MCTS_NULL
+           && !nodes_[node_index].terminal) {
+        node_index = select_child(node_index);
+        if (depth < MCTS_MAX_PATH) {
+            path[depth++] = node_index;
+        } else {
+            break;
+        }
+    }
+
+    MctsNode& node = nodes_[node_index];
+    const GameState& state = states_[node.state_index];
+    if (node.terminal || terminal_state(state)) {
+        node.terminal = true;
+        backpropagate(path, depth, state);
+        return false;
+    }
+
+    if (node.expanded && node.first_child == MCTS_NULL) {
+        node.terminal = true;
+        backpropagate(path, depth, state);
+        return false;
+    }
+
+    ActionMask legal{};
+    const int legal_count = Game::legal_actions(state, legal);
+    if (legal_count <= 0) {
+        node.terminal = true;
+        backpropagate(path, depth, state);
+        return false;
+    }
+
+    leaf.node = node_index;
+    leaf.state_index = node.state_index;
+    for (std::uint8_t i = 0; i < depth; ++i) {
+        leaf.path[i] = path[i];
+    }
+    leaf.depth = depth;
+    leaf.player = node.player;
+    leaf.legal = legal;
+    leaf.legal_count = legal_count;
+    leaf.valid = true;
+    apply_virtual_loss(path, depth, 1.0F);
+    return true;
+}
+
+void Mcts::provide_external_evaluation(
+    const MctsPendingLeaf& leaf,
+    float value,
+    const float* priors) noexcept {
+    if (!leaf.valid || leaf.node >= node_count_) {
+        return;
+    }
+    if (value > 1.0F) {
+        value = 1.0F;
+    } else if (value < -1.0F) {
+        value = -1.0F;
+    }
+
+    MctsNode& node = nodes_[leaf.node];
+    if (!node.expanded && !node.terminal) {
+        (void)expand_with_priors(leaf.node, priors);
+    }
+    apply_virtual_loss(leaf.path, leaf.depth, -1.0F);
+    backpropagate_value(leaf.path, leaf.depth, leaf.player, value);
+}
+
+void Mcts::root_visit_policy(float* out, float temperature) const noexcept {
+    if (out == nullptr) {
+        return;
+    }
+    for (Action action = 0; action < ACTION_SPACE_SIZE; ++action) {
+        out[action] = 0.0F;
+    }
+    if (node_count_ == 0U) {
+        out[A_PASS] = 1.0F;
+        return;
+    }
+
+    const MctsNode& root = nodes_[0];
+    if (root.first_child == MCTS_NULL) {
+        out[A_PASS] = 1.0F;
+        return;
+    }
+    if (temperature <= 0.0F) {
+        out[best_root_action()] = 1.0F;
+        return;
+    }
+
+    const double inv_temp = 1.0 / static_cast<double>(temperature);
+    double sum = 0.0;
+    for (std::uint32_t child_index = root.first_child; child_index != MCTS_NULL;
+         child_index = nodes_[child_index].next_sibling) {
+        const MctsNode& child = nodes_[child_index];
+        const double weight = child.visits == 0U
+            ? 0.0
+            : std::pow(static_cast<double>(child.visits), inv_temp);
+        out[child.action_from_parent] = static_cast<float>(weight);
+        sum += weight;
+    }
+    if (sum <= 0.0) {
+        std::uint32_t count = 0;
+        for (std::uint32_t child_index = root.first_child; child_index != MCTS_NULL;
+             child_index = nodes_[child_index].next_sibling) {
+            ++count;
+        }
+        const float uniform = count == 0U ? 1.0F : 1.0F / static_cast<float>(count);
+        for (std::uint32_t child_index = root.first_child; child_index != MCTS_NULL;
+             child_index = nodes_[child_index].next_sibling) {
+            out[nodes_[child_index].action_from_parent] = uniform;
+        }
+        return;
+    }
+    const float scale = static_cast<float>(1.0 / sum);
+    for (std::uint32_t child_index = root.first_child; child_index != MCTS_NULL;
+         child_index = nodes_[child_index].next_sibling) {
+        out[nodes_[child_index].action_from_parent] *= scale;
+    }
+}
+
+Action Mcts::sample_root_action(float temperature, Xoshiro256pp& rng) const noexcept {
+    float policy[ACTION_SPACE_SIZE]{};
+    root_visit_policy(policy, temperature);
+    float sample = static_cast<float>(rng.uniform(1'000'000U)) / 1'000'000.0F;
+    for (Action action = 0; action < ACTION_SPACE_SIZE; ++action) {
+        sample -= policy[action];
+        if (sample <= 0.0F) {
+            return action;
+        }
+    }
+    return best_root_action();
+}
+
+float Mcts::total_virtual_loss() const noexcept {
+    float total = 0.0F;
+    for (std::uint32_t i = 0; i < node_count_; ++i) {
+        total += nodes_[i].virtual_loss;
+    }
+    return total;
+}
+
 std::uint32_t Mcts::allocate_node() noexcept {
     if (node_count_ >= capacity_) {
         assert(false && "MCTS node slab exhausted");
@@ -1108,7 +1265,8 @@ bool Mcts::expand(std::uint32_t node_index) noexcept {
     }
 
     const bool use_heuristic_prior = config_.prior_fn == nullptr
-        && config_.rollout_policy != MctsRolloutPolicy::Random
+        && (config_.rollout_policy == MctsRolloutPolicy::Heuristic
+            || config_.rollout_policy == MctsRolloutPolicy::EngineLike)
         && legal_count > 1;
     Action heuristic_prior_action = A_PASS;
     if (use_heuristic_prior) {
@@ -1174,6 +1332,71 @@ bool Mcts::expand(std::uint32_t node_index) noexcept {
     return node.first_child != MCTS_NULL;
 }
 
+bool Mcts::expand_with_priors(std::uint32_t node_index, const float* priors) noexcept {
+    if (node_index >= node_count_) {
+        return false;
+    }
+
+    MctsNode& node = nodes_[node_index];
+    if (node.terminal) {
+        node.expanded = true;
+        return true;
+    }
+
+    ActionMask legal{};
+    const int legal_count = Game::legal_actions(states_[node.state_index], legal);
+    if (legal_count <= 0) {
+        node.terminal = true;
+        node.expanded = true;
+        return true;
+    }
+
+    float prior_sum = 0.0F;
+    for (int i = 0; i < legal_count; ++i) {
+        const Action action = legal.nth_set(static_cast<std::uint32_t>(i));
+        const float prior = priors == nullptr ? 0.0F : priors[action];
+        if (prior > 0.0F) {
+            prior_sum += prior;
+        }
+    }
+    const bool use_uniform = prior_sum <= 0.0F;
+    if (use_uniform) {
+        prior_sum = static_cast<float>(legal_count);
+    }
+
+    std::uint32_t previous_child = MCTS_NULL;
+    for (int i = 0; i < legal_count; ++i) {
+        const Action action = legal.nth_set(static_cast<std::uint32_t>(i));
+        const std::uint32_t child_index = allocate_node();
+        if (child_index == MCTS_NULL) {
+            break;
+        }
+
+        GameState child_state = states_[node.state_index];
+        const bool done = Game::step(child_state, action);
+        states_[child_index] = child_state;
+
+        MctsNode& child = nodes_[child_index];
+        child.parent = node_index;
+        child.state_index = child_index;
+        child.action_from_parent = action;
+        child.terminal = done || terminal_state(child_state);
+        child.player = next_player_for_child(child_state, node.player);
+        const float raw_prior = use_uniform ? 1.0F : (priors[action] > 0.0F ? priors[action] : 0.0F);
+        child.prior = raw_prior / prior_sum;
+
+        if (previous_child == MCTS_NULL) {
+            node.first_child = child_index;
+        } else {
+            nodes_[previous_child].next_sibling = child_index;
+        }
+        previous_child = child_index;
+    }
+
+    node.expanded = true;
+    return node.first_child != MCTS_NULL;
+}
+
 std::uint32_t Mcts::select_child(std::uint32_t node_index) const noexcept {
     const MctsNode& node = nodes_[node_index];
     std::uint32_t best_child = node.first_child;
@@ -1205,6 +1428,7 @@ void Mcts::rollout(GameState& state, Xoshiro256pp& rng) const noexcept {
             break;
         }
         const Action action = config_.rollout_policy == MctsRolloutPolicy::Random
+                || config_.rollout_policy == MctsRolloutPolicy::External
             ? rollout_random_action(legal, legal_count, rng)
             : rollout_policy_action(
                 state,
@@ -1223,6 +1447,28 @@ void Mcts::backpropagate(const std::uint32_t* path, std::uint8_t depth, const Ga
         MctsNode& path_node = nodes_[path[i]];
         ++path_node.visits;
         path_node.value_sum += terminal_value_for(path_node.player, terminal);
+    }
+}
+
+void Mcts::backpropagate_value(
+    const std::uint32_t* path,
+    std::uint8_t depth,
+    PlayerId value_player,
+    float value) noexcept {
+    for (std::uint8_t i = 0; i < depth; ++i) {
+        MctsNode& path_node = nodes_[path[i]];
+        ++path_node.visits;
+        path_node.value_sum += path_node.player == value_player ? value : -value;
+    }
+}
+
+void Mcts::apply_virtual_loss(const std::uint32_t* path, std::uint8_t depth, float amount) noexcept {
+    for (std::uint8_t i = 0; i < depth; ++i) {
+        MctsNode& path_node = nodes_[path[i]];
+        path_node.virtual_loss += amount;
+        if (path_node.virtual_loss < 0.0F) {
+            path_node.virtual_loss = 0.0F;
+        }
     }
 }
 

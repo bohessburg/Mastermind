@@ -90,6 +90,97 @@ def batch_run(seed_base: int, steps: int):
     return completed, games_per_sec, tuple(reward_sequence)
 
 
+def selfplay_run(seed: int, batches: int):
+    config = dz.SelfPlayConfig(
+        n_games=64,
+        sims_per_move=64,
+        max_batch=256,
+        seed=seed,
+        kingdom_mode=dz.SelfPlayKingdomMode.Fixed,
+        kingdom=KINGDOM,
+        dirichlet_frac=0.0,
+    )
+    runner = dz.SelfPlayRunner(config)
+    leaves = 0
+    records_seen = 0
+
+    started = time.perf_counter()
+    for _ in range(batches):
+        obs, masks = runner.collect_leaves(config.max_batch)
+        assert obs.dtype == np.float32
+        assert masks.dtype == np.bool_
+        assert obs.ndim == 2 and obs.shape[1] == dz.OBS_SIZE
+        assert masks.ndim == 2 and masks.shape[1] == dz.ACTION_SPACE_SIZE
+        assert obs.shape[0] == masks.shape[0]
+        if obs.shape[0] == 0:
+            continue
+
+        values = np.zeros((obs.shape[0],), dtype=np.float32)
+        policies = np.zeros((obs.shape[0], dz.ACTION_SPACE_SIZE), dtype=np.float32)
+        runner.provide_evaluations(values, policies)
+        assert runner.total_virtual_loss() == 0.0
+        leaves += obs.shape[0]
+
+        for record in runner.finished_games():
+            records_seen += 1
+            rec_obs = record["observations"]
+            rec_policy = record["policy_targets"]
+            rec_values = record["values"]
+            assert rec_obs.dtype == np.float32
+            assert rec_policy.dtype == np.float32
+            assert rec_values.dtype == np.float32
+            assert rec_obs.shape[1] == dz.OBS_SIZE
+            assert rec_policy.shape[1] == dz.ACTION_SPACE_SIZE
+            assert rec_obs.shape[0] == rec_policy.shape[0] == rec_values.shape[0]
+            if rec_policy.shape[0] > 0:
+                np.testing.assert_allclose(rec_policy.sum(axis=1), 1.0, atol=1e-4)
+                assert np.all((rec_values == -1.0) | (rec_values == 0.0) | (rec_values == 1.0))
+
+    elapsed = time.perf_counter() - started
+    leaves_per_sec = leaves / elapsed if elapsed > 0 else 0.0
+    return leaves, leaves_per_sec, records_seen
+
+
+def selfplay_record_smoke(seed: int):
+    config = dz.SelfPlayConfig(
+        n_games=4,
+        sims_per_move=4,
+        max_batch=16,
+        seed=seed,
+        kingdom_mode=dz.SelfPlayKingdomMode.Fixed,
+        kingdom=KINGDOM,
+        dirichlet_frac=0.0,
+        max_recorded_moves=512,
+    )
+    runner = dz.SelfPlayRunner(config)
+    for _ in range(20000):
+        obs, masks = runner.collect_leaves(config.max_batch)
+        assert obs.shape[1] == dz.OBS_SIZE
+        assert masks.shape[1] == dz.ACTION_SPACE_SIZE
+        if obs.shape[0] == 0:
+            continue
+        runner.provide_evaluations(
+            np.zeros((obs.shape[0],), dtype=np.float32),
+            np.zeros((obs.shape[0], dz.ACTION_SPACE_SIZE), dtype=np.float32),
+        )
+        records = runner.finished_games()
+        if records:
+            record = records[0]
+            rec_obs = record["observations"]
+            rec_policy = record["policy_targets"]
+            rec_values = record["values"]
+            assert rec_obs.shape[1] == dz.OBS_SIZE
+            assert rec_policy.shape[1] == dz.ACTION_SPACE_SIZE
+            assert rec_obs.shape[0] == rec_policy.shape[0] == rec_values.shape[0]
+            assert rec_obs.dtype == np.float32
+            assert rec_policy.dtype == np.float32
+            assert rec_values.dtype == np.float32
+            np.testing.assert_allclose(rec_policy.sum(axis=1), 1.0, atol=1e-4)
+            assert np.all((rec_values == -1.0) | (rec_values == 0.0) | (rec_values == 1.0))
+            return len(records)
+    raise AssertionError("selfplay record smoke did not finish a game")
+
+
 def main():
     setup = dz.Setup(players=2, kingdom=[dz.def_id(name) for name in KINGDOM])
     game = dz.new_game(setup, 0x5EED)
@@ -130,6 +221,15 @@ def main():
     det_a = batch_run(0xBADC0DE, 512)[2]
     det_b = batch_run(0xBADC0DE, 512)[2]
     assert det_a == det_b
+
+    leaves, leaves_per_sec, records = selfplay_run(0x51E1F, 300)
+    assert leaves > 0
+    print(
+        f"selfplay_py_leaves_per_sec={leaves_per_sec:.2f} "
+        f"n=64 sims=64 max_batch=256 leaves={leaves} records={records}"
+    )
+    record_count = selfplay_record_smoke(0x51E1F + 1)
+    print(f"selfplay_py_record_smoke_records={record_count}")
 
 
 if __name__ == "__main__":

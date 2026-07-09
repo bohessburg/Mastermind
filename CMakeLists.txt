@@ -39,6 +39,7 @@ target_include_directories(dominion_v2 PUBLIC src)
 configure_v2_target(dominion_v2)
 
 add_library(dominion_v2_mcts STATIC
+    src/v2/mcts/selfplay.cpp
     src/v2/mcts/tree.cpp
 )
 target_link_libraries(dominion_v2_mcts PUBLIC dominion_v2)
@@ -57,6 +58,8 @@ add_library(dominion_v2_encode STATIC
 target_link_libraries(dominion_v2_encode PUBLIC dominion_v2)
 target_include_directories(dominion_v2_encode PUBLIC src)
 configure_v2_target(dominion_v2_encode)
+
+target_link_libraries(dominion_v2_mcts PUBLIC dominion_v2_encode)
 
 add_library(dominion_v2_observe STATIC
     src/v2/observe/card_text.cpp
@@ -128,7 +131,7 @@ if(BUILD_PYTHON)
     pybind11_add_module(dominion_v2_py
         src/v2/py/module.cpp
     )
-    target_link_libraries(dominion_v2_py PRIVATE dominion_v2_drivers dominion_v2_encode)
+    target_link_libraries(dominion_v2_py PRIVATE dominion_v2_drivers)
     target_include_directories(dominion_v2_py PRIVATE src)
     add_dependencies(dominion_v2_py v2_client_defs)
     configure_v2_target(dominion_v2_py)
@@ -164,11 +167,12 @@ if(BUILD_TESTS)
         tests/v2/test_bots.cpp
         tests/v2/test_mcts.cpp
         tests/v2/test_mcts_eval.cpp
+        tests/v2/test_selfplay.cpp
         src/v2/mcts/eval.cpp
         tests/v2/test_specs_base.cpp
         tests/v2/test_attacks_triggers.cpp
     )
-    target_link_libraries(v2_tests PRIVATE dominion_v2_drivers dominion_v2_encode dominion_v2_mcts Catch2::Catch2WithMain)
+    target_link_libraries(v2_tests PRIVATE dominion_v2_drivers Catch2::Catch2WithMain)
     target_compile_definitions(v2_tests PRIVATE V2_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/v2/golden")
     add_dependencies(v2_tests v2_client_defs)
     configure_v2_target(v2_tests)
