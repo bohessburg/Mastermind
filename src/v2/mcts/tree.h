@@ -18,15 +18,16 @@ using MctsPriorFn = float (*)(
 enum class MctsRolloutPolicy : std::uint8_t {
     Random,
     Heuristic,
+    EngineLike,
 };
 
 struct MctsConfig {
     std::uint32_t sims_per_move = 100;
     float c_puct = 1.25F;
-    std::uint8_t determinizations = 8;
+    std::uint8_t determinizations = 2;
     std::uint64_t rollout_seed = 0x4D435453ULL;
     std::uint32_t max_tree_nodes = 4096;
-    MctsRolloutPolicy rollout_policy = MctsRolloutPolicy::Heuristic;
+    MctsRolloutPolicy rollout_policy = MctsRolloutPolicy::EngineLike;
     float rollout_epsilon = 0.10F;
     MctsPriorFn prior_fn = nullptr;
     void* prior_user = nullptr;

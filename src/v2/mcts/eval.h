@@ -23,8 +23,9 @@ struct MctsEvalOptions {
     MctsEvalOpponent opponent = MctsEvalOpponent::Engine;
     MctsEvalKingdoms kingdoms = MctsEvalKingdoms::Random;
     std::uint64_t seed = 0x6D435453ULL;
-    std::uint8_t determinizations = 8;
+    std::uint8_t determinizations = 2;
     std::uint32_t threads = 0;
+    MctsRolloutPolicy rollout_policy = MctsRolloutPolicy::EngineLike;
 };
 
 struct MctsEvalResult {

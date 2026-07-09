@@ -124,6 +124,7 @@ struct EvalBot {
     config.determinizations = options.determinizations == 0U ? 1U : options.determinizations;
     config.rollout_seed = seed;
     config.max_tree_nodes = options.sims >= 1000U ? 8192U : 4096U;
+    config.rollout_policy = options.rollout_policy;
     return config;
 }
 

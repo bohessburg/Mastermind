@@ -60,6 +60,22 @@ namespace {
     return false;
 }
 
+[[nodiscard]] bool parse_rollout_policy(const char* text, MctsRolloutPolicy& out) noexcept {
+    if (std::strcmp(text, "random") == 0) {
+        out = MctsRolloutPolicy::Random;
+        return true;
+    }
+    if (std::strcmp(text, "heuristic") == 0) {
+        out = MctsRolloutPolicy::Heuristic;
+        return true;
+    }
+    if (std::strcmp(text, "engine") == 0 || std::strcmp(text, "enginelike") == 0) {
+        out = MctsRolloutPolicy::EngineLike;
+        return true;
+    }
+    return false;
+}
+
 [[nodiscard]] const char* opponent_name(MctsEvalOpponent opponent) noexcept {
     switch (opponent) {
     case MctsEvalOpponent::BigMoney:
@@ -78,10 +94,23 @@ namespace {
     return kingdoms == MctsEvalKingdoms::Fixed ? "fixed" : "random";
 }
 
+[[nodiscard]] const char* rollout_policy_name(MctsRolloutPolicy policy) noexcept {
+    switch (policy) {
+    case MctsRolloutPolicy::Random:
+        return "random";
+    case MctsRolloutPolicy::EngineLike:
+        return "engine";
+    case MctsRolloutPolicy::Heuristic:
+    default:
+        return "heuristic";
+    }
+}
+
 void usage(const char* argv0) {
     std::cerr << "usage: " << argv0
               << " [--sims N] [--games N] [--opponent engine|bigmoney|heuristic|random]"
-              << " [--kingdoms random|fixed] [--seed N] [--determinizations K] [--threads T]\n";
+              << " [--kingdoms random|fixed] [--seed N] [--determinizations K] [--threads T]"
+              << " [--rollout random|heuristic|engine]\n";
 }
 
 [[nodiscard]] bool parse_args(int argc, char** argv, MctsEvalOptions& options) {
@@ -122,6 +151,10 @@ void usage(const char* argv0) {
             if (!parse_u32(value, options.threads)) {
                 return false;
             }
+        } else if (std::strcmp(arg, "--rollout") == 0) {
+            if (!parse_rollout_policy(value, options.rollout_policy)) {
+                return false;
+            }
         } else {
             usage(argv[0]);
             return false;
@@ -146,6 +179,7 @@ int main(int argc, char** argv) {
     std::cout << "mcts_eval"
               << " opponent=" << opponent_name(options.opponent)
               << " kingdoms=" << kingdom_name(options.kingdoms)
+              << " rollout=" << rollout_policy_name(options.rollout_policy)
               << " games=" << result.games
               << " wins=" << result.mcts_wins
               << " losses=" << result.opponent_wins

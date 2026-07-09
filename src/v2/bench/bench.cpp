@@ -214,7 +214,7 @@ V2_NOINLINE void clone_state(GameState& dst, const GameState& src) {
     (void)Game::step(state, A_PASS);
     MctsConfig config{};
     config.sims_per_move = 1000U;
-    config.determinizations = 8U;
+    config.determinizations = 2U;
     config.max_tree_nodes = 8192U;
     config.rollout_seed = 0x4D43'0002ULL;
     Mcts mcts(config);

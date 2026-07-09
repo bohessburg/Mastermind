@@ -602,6 +602,14 @@ root cause addressed).
 > with BigMoney (91/82/27 at 1K sims), but the Phase 6 EngineBot gate still
 > failed (47/141/12 at 1K sims, random kingdoms). Remaining gap is strategy
 > quality/action valuation, not tree correctness or terminal greening.
+>
+> **Action-playing rollout rerun:** one targeted rollout upgrade made playouts
+> play Action cards before buying. Heuristic+actions vs EngineBot over 200
+> random-kingdom seat-swapped games: K=8 64/128/8, K=4 83/109/8, K=2
+> 98/94/8 (51.0% excluding ties). EngineLike rollouts, which add a trimmed
+> EngineBot-style buy, cleared the gate decisively: K=8 110/77/13, K=4
+> 110/73/17, K=2 123/64/13 (65.8% excluding ties). MctsConfig now defaults to
+> EngineLike rollouts with K=2. Best-config vs BigMoney was 173/22/5.
 
 ### Phase 7 — Durations & mats (Seaside/Adventures core mechanics)
 

@@ -73,6 +73,135 @@ namespace {
     return 0;
 }
 
+struct CardYield {
+    std::int8_t actions = 0;
+    std::int8_t cards = 0;
+    std::int8_t coins = 0;
+};
+
+struct RolloutDeckProfile {
+    std::uint8_t counts[BASIC_CARD_COUNT]{};
+    std::uint16_t deck_size = 0;
+    std::uint16_t chapels = 0;
+    std::uint16_t sentries = 0;
+    std::int16_t total_money = 0;
+    std::int16_t total_plus_coins = 0;
+};
+
+struct KingdomAnalysis {
+    bool has_trasher = false;
+    bool has_militia_or_bandit = false;
+    bool has_action_value = false;
+    DefId best_action = NONE;
+};
+
+[[nodiscard]] bool kingdom_has_available(const GameState& state, DefId def) noexcept {
+    return supply_count(state, def) > 0;
+}
+
+void add_count(RolloutDeckProfile& profile, DefId def, std::uint8_t amount) noexcept {
+    if (def >= BASIC_CARD_COUNT || amount == 0U) {
+        return;
+    }
+    const std::uint16_t next = static_cast<std::uint16_t>(profile.counts[def] + amount);
+    profile.counts[def] = next > 255U ? 255U : static_cast<std::uint8_t>(next);
+    profile.deck_size = static_cast<std::uint16_t>(profile.deck_size + amount);
+}
+
+void count_ordered_zone(const GameState& state, const OrderedZone& zone, RolloutDeckProfile& profile) noexcept {
+    for (std::uint8_t i = 0; i < zone.size; ++i) {
+        add_count(profile, def_for_slot(state, zone.cards[i]), 1U);
+    }
+}
+
+[[nodiscard]] CardYield card_yield(DefId def) noexcept {
+    switch (def) {
+    case DEF_VILLAGE:
+        return CardYield{2, 1, 0};
+    case DEF_FESTIVAL:
+        return CardYield{2, 0, 2};
+    case DEF_LABORATORY:
+        return CardYield{1, 2, 0};
+    case DEF_MARKET:
+    case DEF_SENTRY:
+    case DEF_POACHER:
+        return CardYield{1, 1, 1};
+    case DEF_MERCHANT:
+    case DEF_HARBINGER:
+        return CardYield{1, 1, 0};
+    case DEF_CELLAR:
+        return CardYield{1, 0, 0};
+    case DEF_SMITHY:
+        return CardYield{0, 3, 0};
+    case DEF_WITCH:
+    case DEF_MOAT:
+    case DEF_LIBRARY:
+        return CardYield{0, 2, 0};
+    case DEF_COUNCIL_ROOM:
+        return CardYield{0, 4, 0};
+    case DEF_MILITIA:
+    case DEF_VASSAL:
+        return CardYield{0, 0, 2};
+    case DEF_MONEYLENDER:
+        return CardYield{0, 0, 3};
+    default:
+        return CardYield{};
+    }
+}
+
+[[nodiscard]] RolloutDeckProfile analyze_deck(const GameState& state, PlayerId player) noexcept {
+    RolloutDeckProfile profile{};
+    if (player >= state.num_players) {
+        return profile;
+    }
+
+    const PlayerState& ps = state.players[player];
+    for (Slot slot = 0; slot < state.num_slots; ++slot) {
+        if (ps.hand[slot] != 0U) {
+            add_count(profile, def_for_slot(state, slot), ps.hand[slot]);
+        }
+        if (ps.exile[slot] != 0U) {
+            add_count(profile, def_for_slot(state, slot), ps.exile[slot]);
+        }
+        if (ps.tavern[slot] != 0U) {
+            add_count(profile, def_for_slot(state, slot), ps.tavern[slot]);
+        }
+        if (ps.island_mat[slot] != 0U) {
+            add_count(profile, def_for_slot(state, slot), ps.island_mat[slot]);
+        }
+    }
+    count_ordered_zone(state, ps.deck, profile);
+    count_ordered_zone(state, ps.discard, profile);
+    count_ordered_zone(state, ps.set_aside, profile);
+    for (std::uint8_t i = 0; i < ps.in_play_size; ++i) {
+        add_count(profile, def_for_slot(state, ps.in_play[i].slot), 1U);
+    }
+
+    for (DefId def = 0; def < BASIC_CARD_COUNT; ++def) {
+        const std::uint8_t count = profile.counts[def];
+        if (count == 0U) {
+            continue;
+        }
+        const CardDef& card = card_def(def);
+        if ((card.types & TYPE_TREASURE) != 0U) {
+            profile.total_money = static_cast<std::int16_t>(
+                profile.total_money + (card.coin_value * count));
+        }
+        if ((card.types & TYPE_ACTION) != 0U) {
+            const CardYield yield = card_yield(def);
+            profile.total_plus_coins = static_cast<std::int16_t>(
+                profile.total_plus_coins + (yield.coins * count));
+        }
+        if (def == DEF_CHAPEL) {
+            profile.chapels = static_cast<std::uint16_t>(profile.chapels + count);
+        }
+        if (def == DEF_SENTRY) {
+            profile.sentries = static_cast<std::uint16_t>(profile.sentries + count);
+        }
+    }
+    return profile;
+}
+
 [[nodiscard]] Action first_legal(const ActionMask& legal) noexcept {
     for (Action action = 0; action < ACTION_SPACE_SIZE; ++action) {
         if (legal.test(action)) {
@@ -113,6 +242,79 @@ namespace {
     return legal.test(action) ? action : A_PASS;
 }
 
+[[nodiscard]] int action_priority(DefId def) noexcept {
+    switch (def) {
+    case DEF_THRONE_ROOM:
+    case DEF_VILLAGE:
+        return 0;
+    case DEF_FESTIVAL:
+        return 1;
+    case DEF_LABORATORY:
+        return 10;
+    case DEF_MARKET:
+        return 11;
+    case DEF_SENTRY:
+        return 12;
+    case DEF_POACHER:
+        return 13;
+    case DEF_MERCHANT:
+        return 14;
+    case DEF_HARBINGER:
+        return 15;
+    case DEF_CELLAR:
+        return 16;
+    case DEF_WITCH:
+        return 30;
+    case DEF_COUNCIL_ROOM:
+        return 31;
+    case DEF_SMITHY:
+        return 32;
+    case DEF_MILITIA:
+        return 35;
+    case DEF_LIBRARY:
+        return 37;
+    case DEF_MINE:
+        return 38;
+    case DEF_REMODEL:
+        return 39;
+    case DEF_MONEYLENDER:
+        return 40;
+    case DEF_CHAPEL:
+        return 41;
+    case DEF_ARTISAN:
+        return 42;
+    case DEF_BANDIT:
+        return 43;
+    case DEF_BUREAUCRAT:
+        return 44;
+    case DEF_WORKSHOP:
+        return 45;
+    case DEF_MOAT:
+        return 46;
+    case DEF_VASSAL:
+        return 47;
+    default:
+        return 50;
+    }
+}
+
+[[nodiscard]] Action best_legal_play_action(const ActionMask& legal) noexcept {
+    Action best = A_PASS;
+    int best_priority = 999;
+    for (DefId def = 0; def < ACTION_DEF_COUNT; ++def) {
+        const Action action = play_action(def);
+        if (!legal.test(action) || !is_action_def(def)) {
+            continue;
+        }
+        const int priority = action_priority(def);
+        if (best == A_PASS || priority < best_priority) {
+            best = action;
+            best_priority = priority;
+        }
+    }
+    return best;
+}
+
 [[nodiscard]] int discard_priority(DefId def) noexcept {
     if (def == DEF_CURSE) {
         return 0;
@@ -146,7 +348,7 @@ namespace {
         return 100 + card_def(def).coin_value;
     }
     if (is_action_def(def)) {
-        return 50;
+        return 60 - action_priority(def);
     }
     if (def == DEF_PROVINCE || def == DEF_COLONY) {
         return 30;
@@ -316,6 +518,219 @@ namespace {
     return legal.test(A_PASS) ? A_PASS : first_legal(legal);
 }
 
+[[nodiscard]] KingdomAnalysis analyze_kingdom(const GameState& state) noexcept {
+    KingdomAnalysis analysis{};
+    constexpr DefId kBestActions[] = {
+        DEF_WITCH,
+        DEF_BANDIT,
+        DEF_MILITIA,
+        DEF_LABORATORY,
+        DEF_SMITHY,
+        DEF_COUNCIL_ROOM,
+        DEF_FESTIVAL,
+        DEF_MARKET,
+        DEF_LIBRARY,
+        DEF_MOAT,
+        DEF_MONEYLENDER,
+    };
+
+    for (std::uint8_t i = 0; i < state.num_piles; ++i) {
+        if (pile_count(state.piles[i]) <= 0) {
+            continue;
+        }
+        const DefId def = pile_top_def(state, state.piles[i]);
+        if (def == DEF_CHAPEL || def == DEF_SENTRY) {
+            analysis.has_trasher = true;
+        }
+        if (def == DEF_MILITIA || def == DEF_BANDIT) {
+            analysis.has_militia_or_bandit = true;
+        }
+        if (is_action_def(def)) {
+            analysis.has_action_value = true;
+        }
+    }
+
+    for (const DefId def : kBestActions) {
+        if (kingdom_has_available(state, def)) {
+            analysis.best_action = def;
+            break;
+        }
+    }
+    return analysis;
+}
+
+[[nodiscard]] Action engine_green_buy(const GameState& state, const ActionMask& legal) noexcept {
+    const int provinces_left = supply_count(state, DEF_PROVINCE);
+    const int coins = state.coins;
+    if (coins >= 8) {
+        const Action province = legal_buy(legal, DEF_PROVINCE);
+        if (province != A_PASS) {
+            return province;
+        }
+    }
+    if (coins >= 6) {
+        if (provinces_left <= 4) {
+            const Action duchy = legal_buy(legal, DEF_DUCHY);
+            if (duchy != A_PASS) {
+                return duchy;
+            }
+        }
+        const Action gold = legal_buy(legal, DEF_GOLD);
+        if (gold != A_PASS) {
+            return gold;
+        }
+    }
+    if (coins == 5) {
+        if (provinces_left <= 5) {
+            const Action duchy = legal_buy(legal, DEF_DUCHY);
+            if (duchy != A_PASS) {
+                return duchy;
+            }
+        }
+        constexpr DefId kGreenActions[] = {DEF_LABORATORY, DEF_MARKET, DEF_FESTIVAL};
+        for (const DefId def : kGreenActions) {
+            const Action action = legal_buy(legal, def);
+            if (action != A_PASS) {
+                return action;
+            }
+        }
+        const Action silver = legal_buy(legal, DEF_SILVER);
+        if (silver != A_PASS) {
+            return silver;
+        }
+    }
+    if (coins >= 3) {
+        if (provinces_left <= 2) {
+            const Action estate = legal_buy(legal, DEF_ESTATE);
+            if (estate != A_PASS) {
+                return estate;
+            }
+        }
+        const Action silver = legal_buy(legal, DEF_SILVER);
+        if (silver != A_PASS) {
+            return silver;
+        }
+    }
+    if (coins == 2 && provinces_left <= 3) {
+        const Action estate = legal_buy(legal, DEF_ESTATE);
+        if (estate != A_PASS) {
+            return estate;
+        }
+    }
+    return A_PASS;
+}
+
+[[nodiscard]] Action engine_like_buy(const GameState& state, const ActionMask& legal) noexcept {
+    const int provinces_left = supply_count(state, DEF_PROVINCE);
+    if (state.coins >= 8) {
+        const Action province = legal_buy(legal, DEF_PROVINCE);
+        if (province != A_PASS) {
+            return province;
+        }
+    }
+    if (state.coins >= 5 && provinces_left <= 4) {
+        const Action duchy = legal_buy(legal, DEF_DUCHY);
+        if (duchy != A_PASS) {
+            return duchy;
+        }
+    }
+    if (state.coins >= 2 && provinces_left <= 2) {
+        const Action estate = legal_buy(legal, DEF_ESTATE);
+        if (estate != A_PASS) {
+            return estate;
+        }
+    }
+
+    const KingdomAnalysis kingdom = analyze_kingdom(state);
+    if (!kingdom.has_action_value) {
+        return big_money_buy(state, legal);
+    }
+
+    const PlayerId player = state.decision.player;
+    const RolloutDeckProfile profile = analyze_deck(state, player);
+    const double deck_size = profile.deck_size > 0U ? static_cast<double>(profile.deck_size) : 1.0;
+    const double money_density = static_cast<double>(profile.total_money + profile.total_plus_coins) / deck_size;
+    const int my_turns = state.num_players == 0U ? 0 : static_cast<int>(state.turn_counter / state.num_players);
+    const bool is_second = player == 1U;
+    bool greening = money_density >= (is_second ? 1.1 : 1.2);
+    if (my_turns > 5) {
+        greening = true;
+    }
+    if (greening) {
+        const Action green = engine_green_buy(state, legal);
+        if (green != A_PASS) {
+            return green;
+        }
+    }
+
+    const bool has_trasher = profile.chapels > 0U || profile.sentries > 0U;
+    if (kingdom.has_trasher && !has_trasher && kingdom.has_militia_or_bandit) {
+        if (my_turns <= 2 && (state.coins == 2 || state.coins == 3)) {
+            const Action chapel = legal_buy(legal, DEF_CHAPEL);
+            if (chapel != A_PASS) {
+                return chapel;
+            }
+        }
+        const Action sentry = legal_buy(legal, DEF_SENTRY);
+        if (sentry != A_PASS) {
+            return sentry;
+        }
+    }
+
+    int terminal_count = 0;
+    int action_count = 0;
+    for (DefId def = 0; def < BASIC_CARD_COUNT; ++def) {
+        if (profile.counts[def] == 0U || !is_action_def(def)) {
+            continue;
+        }
+        if (def == DEF_CHAPEL || def == DEF_SENTRY || def == DEF_THRONE_ROOM) {
+            continue;
+        }
+        action_count += profile.counts[def];
+        if (card_yield(def).actions == 0) {
+            terminal_count += profile.counts[def];
+        }
+    }
+    const double terminal_density = static_cast<double>(terminal_count) / deck_size;
+    const double action_density = static_cast<double>(action_count) / deck_size;
+
+    if (kingdom.best_action != NONE && kingdom.best_action != DEF_SENTRY) {
+        bool under_limit = false;
+        if (kingdom.best_action == DEF_WITCH) {
+            under_limit = profile.counts[DEF_WITCH] < 2U;
+        } else if (card_yield(kingdom.best_action).actions == 0) {
+            under_limit = terminal_density < 0.08;
+        } else {
+            under_limit = action_density < 0.35;
+        }
+        if (under_limit) {
+            const Action best = legal_buy(legal, kingdom.best_action);
+            if (best != A_PASS) {
+                return best;
+            }
+        }
+    }
+
+    if (state.coins >= 5 && action_density < 0.35) {
+        constexpr DefId kCantripBuys[] = {DEF_LABORATORY, DEF_MARKET, DEF_FESTIVAL};
+        for (const DefId def : kCantripBuys) {
+            const Action action = legal_buy(legal, def);
+            if (action != A_PASS) {
+                return action;
+            }
+        }
+    }
+    const Action gold = legal_buy(legal, DEF_GOLD);
+    if (state.coins >= 6 && gold != A_PASS) {
+        return gold;
+    }
+    const Action silver = legal_buy(legal, DEF_SILVER);
+    if (state.coins >= 3 && silver != A_PASS) {
+        return silver;
+    }
+    return legal.test(A_PASS) ? A_PASS : first_legal(legal);
+}
+
 [[nodiscard]] Action sentry_option(const GameState& state, const ActionMask& legal) noexcept {
     DefId def = DEF_COPPER;
     if (state.effect_depth > 0U) {
@@ -357,12 +772,13 @@ namespace {
     return rng.uniform(10000U) < threshold;
 }
 
-[[nodiscard]] Action rollout_heuristic_action(
+[[nodiscard]] Action rollout_policy_action(
     const GameState& state,
     const ActionMask& legal,
     int legal_count,
     Xoshiro256pp& rng,
-    float epsilon) noexcept {
+    float epsilon,
+    MctsRolloutPolicy policy) noexcept {
     if (legal_count <= 0) {
         return A_PASS;
     }
@@ -371,8 +787,8 @@ namespace {
     }
 
     /*
-     * Local BigMoney-class rollout policy. This intentionally duplicates the
-     * driver bot's core choices so MCTS keeps no dependency on drivers.
+     * Local scripted rollout policy. This intentionally duplicates only compact
+     * driver bot choices so MCTS keeps no dependency on drivers.
      */
     const DecisionKind decision = static_cast<DecisionKind>(state.decision.kind);
     if (decision == DecisionKind::PhaseBuy) {
@@ -380,9 +796,18 @@ namespace {
         if (treasure != A_PASS) {
             return treasure;
         }
-        return big_money_buy(state, legal);
+        return policy == MctsRolloutPolicy::EngineLike
+            ? engine_like_buy(state, legal)
+            : big_money_buy(state, legal);
     }
-    if (decision == DecisionKind::PhaseAction || decision == DecisionKind::PhaseNight) {
+    if (decision == DecisionKind::PhaseAction) {
+        const Action action = best_legal_play_action(legal);
+        if (action != A_PASS) {
+            return action;
+        }
+        return legal.test(A_PASS) ? A_PASS : first_legal(legal);
+    }
+    if (decision == DecisionKind::PhaseNight) {
         return legal.test(A_PASS) ? A_PASS : first_legal(legal);
     }
     if (decision == DecisionKind::ReactWindow) {
@@ -395,6 +820,18 @@ namespace {
     if (decision == DecisionKind::ChooseOption) {
         if (state.decision.source == DEF_SENTRY) {
             return sentry_option(state, legal);
+        }
+        if (state.decision.source == DEF_LIBRARY) {
+            const Action set_aside = option_action(1U);
+            if (policy == MctsRolloutPolicy::EngineLike && legal.test(set_aside)) {
+                return set_aside;
+            }
+        }
+        if (state.decision.source == DEF_VASSAL) {
+            const Action play = option_action(1U);
+            if (legal.test(play)) {
+                return play;
+            }
         }
         const Action decline = option_action(0U);
         return legal.test(decline) ? decline : first_legal_option(legal);
@@ -414,6 +851,9 @@ namespace {
         if (source == DEF_CHAPEL || source == DEF_REMODEL || source == DEF_MINE
             || source == DEF_MONEYLENDER || source == DEF_BANDIT) {
             return choose_select_min_priority(legal, trash_priority, pass_allowed);
+        }
+        if (source == DEF_THRONE_ROOM) {
+            return choose_select_min_priority(legal, action_priority, pass_allowed);
         }
         if (source == DEF_BUREAUCRAT || source == DEF_ARTISAN) {
             return choose_select_min_priority(legal, discard_priority, pass_allowed);
@@ -668,17 +1108,18 @@ bool Mcts::expand(std::uint32_t node_index) noexcept {
     }
 
     const bool use_heuristic_prior = config_.prior_fn == nullptr
-        && config_.rollout_policy == MctsRolloutPolicy::Heuristic
+        && config_.rollout_policy != MctsRolloutPolicy::Random
         && legal_count > 1;
     Action heuristic_prior_action = A_PASS;
     if (use_heuristic_prior) {
         Xoshiro256pp prior_rng = Xoshiro256pp::seeded(0xC0FF'EE01ULL);
-        heuristic_prior_action = rollout_heuristic_action(
+        heuristic_prior_action = rollout_policy_action(
             states_[node.state_index],
             legal,
             legal_count,
             prior_rng,
-            0.0F);
+            0.0F,
+            config_.rollout_policy);
     }
 
     float prior_sum = 0.0F;
@@ -765,7 +1206,13 @@ void Mcts::rollout(GameState& state, Xoshiro256pp& rng) const noexcept {
         }
         const Action action = config_.rollout_policy == MctsRolloutPolicy::Random
             ? rollout_random_action(legal, legal_count, rng)
-            : rollout_heuristic_action(state, legal, legal_count, rng, config_.rollout_epsilon);
+            : rollout_policy_action(
+                state,
+                legal,
+                legal_count,
+                rng,
+                config_.rollout_epsilon,
+                config_.rollout_policy);
         (void)Game::step(state, action);
         ++guard;
     }
