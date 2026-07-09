@@ -131,6 +131,12 @@ add_executable(v2_bench
 target_link_libraries(v2_bench PRIVATE dominion_v2_drivers)
 configure_v2_target(v2_bench)
 
+add_executable(dominion_v2_play
+    src/v2/drivers/tui.cpp
+)
+target_link_libraries(dominion_v2_play PRIVATE dominion_v2_drivers dominion_v2_observe)
+configure_v2_target(dominion_v2_play)
+
 add_executable(v2_fuzz
     tests/v2/fuzz_harness.cpp
     tests/v2/fuzz_main.cpp
@@ -204,6 +210,7 @@ if(BUILD_TESTS)
         tests/v2/test_golden.cpp
         tests/v2/test_encoder.cpp
         tests/v2/test_determinize.cpp
+        tests/v2/test_bots.cpp
         tests/v2/test_specs_base.cpp
         tests/v2/test_attacks_triggers.cpp
     )

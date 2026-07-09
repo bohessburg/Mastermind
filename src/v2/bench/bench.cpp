@@ -18,6 +18,8 @@ constexpr int CLONE_ITERS = 100000;
 constexpr int LEGAL_ITERS = 100000;
 constexpr int RANDOM_GAMES = 1000;
 constexpr int BM_GAMES = 1000;
+constexpr int HEURISTIC_GAMES = 1000;
+constexpr int ENGINE_GAMES = 1000;
 constexpr std::uint64_t STREAM_SEED = 0xBEE5'0001ULL;
 
 struct ActionStream {
@@ -155,6 +157,34 @@ V2_NOINLINE void clone_state(GameState& dst, const GameState& src) {
     return static_cast<double>(BM_GAMES) / seconds;
 }
 
+[[nodiscard]] double measure_heuristic_games_per_sec() {
+    const auto start = Clock::now();
+    for (std::uint64_t i = 0; i < HEURISTIC_GAMES; ++i) {
+        (void)run_game(
+            Setup{},
+            0x4E00'0000ULL + i,
+            BotSpec{BotKind::Heuristic, i},
+            BotSpec{BotKind::Heuristic, i + 1U});
+    }
+    const auto end = Clock::now();
+    const double seconds = static_cast<double>(elapsed_ns(start, end)) / 1'000'000'000.0;
+    return static_cast<double>(HEURISTIC_GAMES) / seconds;
+}
+
+[[nodiscard]] double measure_engine_games_per_sec() {
+    const auto start = Clock::now();
+    for (std::uint64_t i = 0; i < ENGINE_GAMES; ++i) {
+        (void)run_game(
+            Setup{},
+            0xE600'0000ULL + i,
+            BotSpec{BotKind::Engine, i},
+            BotSpec{BotKind::Engine, i + 1U});
+    }
+    const auto end = Clock::now();
+    const double seconds = static_cast<double>(elapsed_ns(start, end)) / 1'000'000'000.0;
+    return static_cast<double>(ENGINE_GAMES) / seconds;
+}
+
 } // namespace
 
 int main() {
@@ -164,6 +194,8 @@ int main() {
     const std::uint64_t legal_ns = measure_legal_actions_ns();
     const double random_games_sec = measure_random_games_per_sec();
     const double bm_games_sec = measure_bm_games_per_sec();
+    const double heuristic_games_sec = measure_heuristic_games_per_sec();
+    const double engine_games_sec = measure_engine_games_per_sec();
 
     std::cout << "{\n"
               << "  \"step_median_ns\": " << step.median << ",\n"
@@ -171,7 +203,9 @@ int main() {
               << "  \"clone_ns\": " << clone_ns << ",\n"
               << "  \"legal_actions_ns\": " << legal_ns << ",\n"
               << "  \"random_games_per_sec\": " << random_games_sec << ",\n"
-              << "  \"bm_games_per_sec\": " << bm_games_sec << "\n"
+              << "  \"bm_games_per_sec\": " << bm_games_sec << ",\n"
+              << "  \"heuristic_games_per_sec\": " << heuristic_games_sec << ",\n"
+              << "  \"engine_games_per_sec\": " << engine_games_sec << "\n"
               << "}\n";
     return 0;
 }
