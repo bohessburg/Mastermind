@@ -58,6 +58,13 @@ target_link_libraries(dominion_v2_observe PUBLIC dominion_v2)
 target_include_directories(dominion_v2_observe PUBLIC src)
 configure_v2_target(dominion_v2_observe)
 
+add_library(dominion_v2_mcts STATIC
+    src/v2/mcts/tree.cpp
+)
+target_link_libraries(dominion_v2_mcts PUBLIC dominion_v2)
+target_include_directories(dominion_v2_mcts PUBLIC src)
+configure_v2_target(dominion_v2_mcts)
+
 add_executable(v2_dump_defs
     src/v2/observe/dump_defs.cpp
 )
@@ -148,10 +155,11 @@ if(BUILD_TESTS)
         tests/v2/test_encoder.cpp
         tests/v2/test_determinize.cpp
         tests/v2/test_bots.cpp
+        tests/v2/test_mcts.cpp
         tests/v2/test_specs_base.cpp
         tests/v2/test_attacks_triggers.cpp
     )
-    target_link_libraries(v2_tests PRIVATE dominion_v2_drivers dominion_v2_encode Catch2::Catch2WithMain)
+    target_link_libraries(v2_tests PRIVATE dominion_v2_drivers dominion_v2_encode dominion_v2_mcts Catch2::Catch2WithMain)
     target_compile_definitions(v2_tests PRIVATE V2_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/v2/golden")
     add_dependencies(v2_tests v2_client_defs)
     configure_v2_target(v2_tests)

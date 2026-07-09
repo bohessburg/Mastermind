@@ -1,6 +1,7 @@
 #include "v2/drivers/bots.h"
 
 #include "v2/core/determinize.h"
+#include "v2/mcts/tree.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <cstddef>
@@ -87,5 +88,29 @@ TEST_CASE("v2 new_game and BigMoney loops allocate nothing", "[v2][alloc]") {
     }
 
     REQUIRE(truncated == 0);
+    REQUIRE(allocations == 0U);
+}
+
+TEST_CASE("v2 MCTS search allocates nothing after construction", "[v2][alloc][mcts]") {
+    MctsConfig config{};
+    config.sims_per_move = 16U;
+    config.determinizations = 1U;
+    config.max_tree_nodes = 512U;
+    config.rollout_seed = 0xA110'C8EEULL;
+
+    Mcts search(config);
+    std::uint64_t allocations = 0;
+    {
+        AllocationScope scope;
+        for (std::uint64_t seed = 0; seed < 10U; ++seed) {
+            GameState state = Game::new_game(Setup{}, 0xC0DE'5000ULL + seed);
+            const Action action = search.choose(state, 0U);
+            ActionMask legal{};
+            (void)Game::legal_actions(state, legal);
+            REQUIRE(legal.test(action));
+        }
+        allocations = scope.count();
+    }
+
     REQUIRE(allocations == 0U);
 }
