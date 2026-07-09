@@ -2,12 +2,23 @@ from __future__ import annotations
 
 import csv
 import math
+import time
 from pathlib import Path
 
+import numpy as np
+import pytest
 import torch
 
 from .config import TrainConfig, load_config
-from .train import load_checkpoint, load_full_checkpoint, resolve_resume_path, run_training
+from .train import (
+    build_objects,
+    load_checkpoint,
+    load_full_checkpoint,
+    resolve_resume_path,
+    run_training,
+    save_checkpoint,
+)
+from .workers import game_quotas
 
 
 def tiny_config(tmp_path: Path, seed: int = 20260709, generations: int = 2) -> TrainConfig:
@@ -61,21 +72,52 @@ def test_tiny_training_smoke_checkpoint_and_metrics(tmp_path: Path) -> None:
         assert math.isfinite(float(row["entropy"]))
 
 
-def test_checkpoint_resume_roundtrip(tmp_path: Path) -> None:
+def test_split_checkpoint_roundtrip(tmp_path: Path) -> None:
+    cfg = tiny_config(tmp_path, seed=1234, generations=1)
+    model, optimizer, replay = build_objects(cfg, torch.device("cpu"))
+    count = 5
+    obs = np.arange(count * replay.obs_size, dtype=np.float32).reshape(count, replay.obs_size)
+    policy = np.zeros((count, replay.action_size), dtype=np.float32)
+    policy[:, 0] = 1.0
+    value = np.linspace(-1.0, 1.0, count, dtype=np.float32)
+    replay.add(obs, policy, value, policy > 0.0)
+    expected = replay.state_dict()
+
+    checkpoint = save_checkpoint(cfg, 1, model, optimizer, replay)
+    replay_file = Path(cfg.checkpoint_dir) / "replay_state.npz"
+    assert checkpoint.exists()
+    assert replay_file.exists()
+    assert not list(Path(cfg.checkpoint_dir).glob(".*.tmp"))
+
+    payload = load_full_checkpoint(checkpoint, "cpu")
+    assert "replay" not in payload
+    assert {"generation", "config", "model", "optimizer"}.issubset(payload)
+
+    _, generation, _, _, restored = load_checkpoint(checkpoint, torch.device("cpu"))
+    actual = restored.state_dict()
+    assert generation == 1
+    for key in ("capacity", "obs_size", "action_size", "write", "size", "rng_state"):
+        assert actual[key] == expected[key]
+    for key in ("obs", "policy", "value", "legal_mask"):
+        np.testing.assert_array_equal(actual[key], expected[key])
+
+
+def test_resume_without_replay_file_warns_and_uses_empty_buffer(tmp_path: Path) -> None:
     cfg = tiny_config(tmp_path, seed=1234, generations=1)
     run_training(cfg)
     first = Path(cfg.checkpoint_dir) / "gen_0001.pt"
-    assert first.exists()
+    replay_file = Path(cfg.checkpoint_dir) / "replay_state.npz"
+    replay_file.unlink()
 
-    loaded_cfg, generation, _, _, replay = load_checkpoint(first, torch.device("cpu"))
+    with pytest.warns(RuntimeWarning, match="replay buffer was not restored"):
+        _, generation, _, _, replay = load_checkpoint(first, torch.device("cpu"))
     assert generation == 1
-    assert len(replay) > 0
+    assert len(replay) == 0
 
-    loaded_cfg.generations = 2
-    loaded_cfg.checkpoint_dir = str(tmp_path / "resume")
-    loaded_cfg.metrics_csv = str(tmp_path / "resume" / "metrics.csv")
-    run_training(loaded_cfg, resume=str(first))
-    assert (Path(loaded_cfg.checkpoint_dir) / "gen_0002.pt").exists()
+    resume_cfg = tiny_config(tmp_path / "resume", seed=1234, generations=2)
+    with pytest.warns(RuntimeWarning, match="replay buffer was not restored"):
+        run_training(resume_cfg, resume=str(first))
+    assert (Path(resume_cfg.checkpoint_dir) / "gen_0002.pt").exists()
 
 
 def test_resume_latest_resolves_newest_checkpoint(tmp_path: Path) -> None:
@@ -118,3 +160,35 @@ def test_cpu_first_generation_is_deterministic(tmp_path: Path) -> None:
     assert tensors_a.keys() == tensors_b.keys()
     for key in tensors_a:
         torch.testing.assert_close(tensors_a[key], tensors_b[key], rtol=0.0, atol=0.0)
+
+
+def test_parallel_selfplay_cpu_smoke_two_generations(tmp_path: Path) -> None:
+    """Spawn workers on CPU; this stays small enough for normal CI runners."""
+    cfg = tiny_config(tmp_path, seed=5150, generations=2)
+    cfg.parallel_workers = 2
+    cfg.worker_device = "cpu"
+    cfg.model.hidden_sizes = [16]
+    cfg.selfplay.n_games = 2
+    cfg.selfplay.games_per_generation = 2
+    cfg.selfplay.sims_per_move = 2
+    cfg.selfplay.max_batch = 4
+    cfg.selfplay.max_recorded_moves = 64
+    cfg.selfplay.max_tree_nodes = 256
+    cfg.optim.batch_size = 8
+    cfg.optim.train_steps_per_generation = 1
+    cfg.replay.capacity = 512
+
+    start = time.monotonic()
+    result = run_training(cfg)
+    elapsed = time.monotonic() - start
+
+    assert elapsed < 180.0
+    assert len(result["metrics"]) == 2
+    assert [row["games"] for row in result["metrics"]] == [2, 2]
+    metrics = read_metrics(Path(cfg.metrics_csv))
+    assert [int(row["workers"]) for row in metrics] == [2, 2]
+    assert all(float(row["aggregate_games_per_hour"]) > 0.0 for row in metrics)
+
+
+def test_parallel_game_quotas_are_exact() -> None:
+    assert game_quotas(2048, 20) == [103] * 8 + [102] * 12

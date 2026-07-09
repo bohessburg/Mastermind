@@ -7,6 +7,7 @@ import os
 import random
 import sys
 import time
+import warnings
 from dataclasses import asdict
 from math import cos, pi
 from pathlib import Path
@@ -25,13 +26,15 @@ if __package__ in (None, ""):
     sys.path.append(str(Path(__file__).resolve().parents[3]))
     from src.v2.train.config import TrainConfig, add_config_args, load_config, save_config
     from src.v2.train.model import DominionNet, count_parameters, masked_policy_loss
-    from src.v2.train.replay import ReplayBuffer
+    from src.v2.train.replay import ReplayBuffer, load_replay_state, save_replay_state
     from src.v2.train.selfplay import SelfPlayStats, run_self_play_generation
+    from src.v2.train.workers import ParallelSelfPlayPool
 else:
     from .config import TrainConfig, add_config_args, load_config, save_config
     from .model import DominionNet, count_parameters, masked_policy_loss
-    from .replay import ReplayBuffer
+    from .replay import ReplayBuffer, load_replay_state, save_replay_state
     from .selfplay import SelfPlayStats, run_self_play_generation
+    from .workers import ParallelSelfPlayPool
 
 
 def select_device(name: str) -> torch.device:
@@ -106,14 +109,15 @@ def checkpoint_payload(
     generation: int,
     model: torch.nn.Module,
     optimizer: torch.optim.Optimizer,
-    replay: ReplayBuffer,
 ) -> dict[str, Any]:
+    """Return the small, inference-usable generation checkpoint payload."""
     return {
         "generation": generation,
         "config": config.to_dict(),
         "model": model.state_dict(),
         "optimizer": optimizer.state_dict(),
-        "replay": replay.state_dict(),
+        # RNG state is small generation metadata used for reproducible resume;
+        # the potentially multi-GB replay data lives in replay_state.npz.
         "torch_rng_state": torch.get_rng_state(),
         "numpy_rng_state": np.random.get_state(),
         "python_rng_state": random.getstate(),
@@ -130,7 +134,10 @@ def save_checkpoint(
     out_dir = Path(config.checkpoint_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / f"gen_{generation:04d}.pt"
-    torch.save(checkpoint_payload(config, generation, model, optimizer, replay), path)
+    torch.save(checkpoint_payload(config, generation, model, optimizer), path)
+    # Keep exactly one crash-safe replay snapshot rather than embedding it in
+    # every generation checkpoint.
+    save_replay_state(replay, out_dir / "replay_state.npz")
     save_config(config, out_dir / "config.json")
     return path
 
@@ -155,7 +162,8 @@ def resolve_resume_path(resume: str | Path | None, checkpoint_dir: str | Path) -
 
 
 def load_checkpoint(path: str | Path, device: torch.device):
-    payload = load_full_checkpoint(path, device)
+    checkpoint_path = Path(path)
+    payload = load_full_checkpoint(checkpoint_path, device)
     cfg_dict = payload["config"]
     cfg = load_config(None)
     from src.v2.train.config import _merge_dataclass  # local to keep private helper out of public API
@@ -164,10 +172,21 @@ def load_checkpoint(path: str | Path, device: torch.device):
     model, optimizer, replay = build_objects(cfg, device)
     model.load_state_dict(payload["model"])
     optimizer.load_state_dict(payload["optimizer"])
-    replay.load_state_dict(payload["replay"])
-    torch.set_rng_state(payload["torch_rng_state"].cpu())
-    np.random.set_state(payload["numpy_rng_state"])
-    random.setstate(payload["python_rng_state"])
+    replay_path = checkpoint_path.parent / "replay_state.npz"
+    if replay_path.exists():
+        load_replay_state(replay, replay_path)
+    else:
+        warnings.warn(
+            f"replay state {replay_path} is missing; replay buffer was not restored and resume will use an empty buffer",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+    if "torch_rng_state" in payload:
+        torch.set_rng_state(payload["torch_rng_state"].cpu())
+    if "numpy_rng_state" in payload:
+        np.random.set_state(payload["numpy_rng_state"])
+    if "python_rng_state" in payload:
+        random.setstate(payload["python_rng_state"])
     return cfg, int(payload["generation"]), model, optimizer, replay
 
 
@@ -210,6 +229,8 @@ def append_metrics(path: str | Path, row: dict[str, Any]) -> None:
         "nn_evals_per_sec",
         "inference_pct",
         "plumbing_pct",
+        "workers",
+        "aggregate_games_per_hour",
         "wall_time",
         "eval_opponent",
         "eval_games",
@@ -238,6 +259,8 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
         config.checkpoint_dir = requested.checkpoint_dir
         config.metrics_csv = requested.metrics_csv
         config.device = requested.device
+        config.parallel_workers = requested.parallel_workers
+        config.worker_device = requested.worker_device
         if config.device == "auto":
             config.device = device.type
     else:
@@ -258,80 +281,94 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
         )
     )
 
-    for generation in range(start_generation + 1, start_generation + generations + 1):
-        gen_seed = config.seed + (generation * 0x9E37)
-        gen_start = time.perf_counter()
-        lr = learning_rate_for_generation(config, generation)
-        set_optimizer_lr(optimizer, lr)
-        sp_stats = run_self_play_generation(model, replay, config.selfplay, gen_seed, device)
-
-        losses = {"policy_loss": float("nan"), "value_loss": float("nan"), "entropy": float("nan")}
-        steps = config.optim.train_steps_per_generation
-        if len(replay) > 0 and steps > 0:
-            accum = {"policy_loss": 0.0, "value_loss": 0.0, "entropy": 0.0}
-            for _ in range(steps):
-                step_losses = train_step(model, optimizer, replay, config.optim.batch_size, device)
-                for key in accum:
-                    accum[key] += step_losses[key]
-            losses = {key: value / steps for key, value in accum.items()}
-
-        path = save_checkpoint(config, generation, model, optimizer, replay)
-        eval_row: dict[str, Any] = {}
-        should_eval = (
-            not profile
-            and config.eval.eval_every_n_generations > 0
-            and (
-                generation == start_generation + 1
-                or generation % config.eval.eval_every_n_generations == 0
-            )
-        )
-        if should_eval:
-            if __package__ in (None, ""):
-                from src.v2.train.evaluate import evaluate_checkpoint
+    pool = ParallelSelfPlayPool(config) if config.parallel_workers > 1 else None
+    try:
+        for generation in range(start_generation + 1, start_generation + generations + 1):
+            gen_start = time.perf_counter()
+            lr = learning_rate_for_generation(config, generation)
+            set_optimizer_lr(optimizer, lr)
+            if pool is None:
+                # Keep the legacy default path and its seed derivation intact.
+                gen_seed = config.seed + (generation * 0x9E37)
+                sp_stats = run_self_play_generation(model, replay, config.selfplay, gen_seed, device)
+                aggregate_games_per_hour = sp_stats.games_per_hour
             else:
-                from .evaluate import evaluate_checkpoint
+                parallel_result = pool.generate(model, replay, generation)
+                sp_stats = parallel_result.stats
+                aggregate_games_per_hour = parallel_result.aggregate_games_per_hour
 
-            stats = evaluate_checkpoint(
-                path,
-                opponent=config.eval.eval_opponent,
-                games=config.eval.eval_games,
-                sims=config.eval.eval_sims,
-                kingdoms=config.eval.eval_kingdoms,
-                seed=config.seed ^ (generation * 0x4556),
-                device_name=device.type,
-                n_games=config.eval.eval_n_games,
-                max_batch=config.eval.eval_max_batch,
+            losses = {"policy_loss": float("nan"), "value_loss": float("nan"), "entropy": float("nan")}
+            steps = config.optim.train_steps_per_generation
+            if len(replay) > 0 and steps > 0:
+                accum = {"policy_loss": 0.0, "value_loss": 0.0, "entropy": 0.0}
+                for _ in range(steps):
+                    step_losses = train_step(model, optimizer, replay, config.optim.batch_size, device)
+                    for key in accum:
+                        accum[key] += step_losses[key]
+                losses = {key: value / steps for key, value in accum.items()}
+
+            path = save_checkpoint(config, generation, model, optimizer, replay)
+            eval_row: dict[str, Any] = {}
+            should_eval = (
+                not profile
+                and config.eval.eval_every_n_generations > 0
+                and (
+                    generation == start_generation + 1
+                    or generation % config.eval.eval_every_n_generations == 0
+                )
             )
-            eval_row = {
-                "eval_opponent": stats.opponent,
-                "eval_games": stats.games,
-                "eval_wins": stats.wins,
-                "eval_losses": stats.losses,
-                "eval_ties": stats.ties,
-                "eval_truncated": stats.truncated,
-                "eval_win_pct_excl_ties": stats.win_pct_excl_ties,
-                "eval_games_per_hour": stats.games_per_hour,
+            if should_eval:
+                if __package__ in (None, ""):
+                    from src.v2.train.evaluate import evaluate_checkpoint
+                else:
+                    from .evaluate import evaluate_checkpoint
+
+                stats = evaluate_checkpoint(
+                    path,
+                    opponent=config.eval.eval_opponent,
+                    games=config.eval.eval_games,
+                    sims=config.eval.eval_sims,
+                    kingdoms=config.eval.eval_kingdoms,
+                    seed=config.seed ^ (generation * 0x4556),
+                    device_name=device.type,
+                    n_games=config.eval.eval_n_games,
+                    max_batch=config.eval.eval_max_batch,
+                )
+                eval_row = {
+                    "eval_opponent": stats.opponent,
+                    "eval_games": stats.games,
+                    "eval_wins": stats.wins,
+                    "eval_losses": stats.losses,
+                    "eval_ties": stats.ties,
+                    "eval_truncated": stats.truncated,
+                    "eval_win_pct_excl_ties": stats.win_pct_excl_ties,
+                    "eval_games_per_hour": stats.games_per_hour,
+                }
+            row = {
+                "generation": generation,
+                "games": sp_stats.games,
+                "positions": sp_stats.positions,
+                "policy_loss": losses["policy_loss"],
+                "value_loss": losses["value_loss"],
+                "entropy": losses["entropy"],
+                "lr": lr,
+                "games_per_hour": sp_stats.games_per_hour,
+                "leaves_per_sec": sp_stats.leaves_per_sec,
+                "nn_evals_per_sec": sp_stats.nn_evals_per_sec,
+                "inference_pct": sp_stats.inference_pct,
+                "plumbing_pct": sp_stats.plumbing_pct,
+                "workers": config.parallel_workers,
+                "aggregate_games_per_hour": aggregate_games_per_hour,
+                "wall_time": time.perf_counter() - gen_start,
+                "checkpoint": str(path),
             }
-        row = {
-            "generation": generation,
-            "games": sp_stats.games,
-            "positions": sp_stats.positions,
-            "policy_loss": losses["policy_loss"],
-            "value_loss": losses["value_loss"],
-            "entropy": losses["entropy"],
-            "lr": lr,
-            "games_per_hour": sp_stats.games_per_hour,
-            "leaves_per_sec": sp_stats.leaves_per_sec,
-            "nn_evals_per_sec": sp_stats.nn_evals_per_sec,
-            "inference_pct": sp_stats.inference_pct,
-            "plumbing_pct": sp_stats.plumbing_pct,
-            "wall_time": time.perf_counter() - gen_start,
-            "checkpoint": str(path),
-        }
-        row.update(eval_row)
-        append_metrics(config.metrics_csv, row)
-        metrics.append(row)
-        print(json.dumps(row, sort_keys=True))
+            row.update(eval_row)
+            append_metrics(config.metrics_csv, row)
+            metrics.append(row)
+            print(json.dumps(row, sort_keys=True))
+    finally:
+        if pool is not None:
+            pool.close()
 
     if profile and metrics:
         row = metrics[-1]

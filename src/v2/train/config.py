@@ -74,6 +74,10 @@ class TrainConfig:
     seed: int = 12345
     generations: int = 10
     device: str = "auto"
+    # Parallel collection is opt-in so the legacy single-pipeline run remains
+    # exactly deterministic for the default configuration.
+    parallel_workers: int = 1
+    worker_device: str = "cuda"
     checkpoint_dir: str = "checkpoints"
     metrics_csv: str = "checkpoints/metrics.csv"
     model: ModelConfig = field(default_factory=ModelConfig)

@@ -4,6 +4,9 @@
   "seed": 20260710,
   "generations": 200,
   "device": "auto",
+  "parallel_workers": 20,
+  "worker_device": "cuda",
+  "_comment_parallel": "2048 games are split exactly across workers: eight produce 103 games and twelve produce 102 games per generation.",
   "checkpoint_dir": "/workspace/checkpoints",
   "metrics_csv": "/workspace/checkpoints/metrics.csv",
   "model": {

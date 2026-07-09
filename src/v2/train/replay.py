@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import json
+import os
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -97,3 +100,62 @@ class ReplayBuffer:
         self.value[: self.size] = state["value"]
         self.legal_mask[: self.size] = state["legal_mask"]
         self.rng.bit_generator.state = state["rng_state"]
+
+
+def save_replay_state(replay: ReplayBuffer, path: str | Path) -> Path:
+    """Atomically persist the current replay contents in a compact NPZ file."""
+    destination = Path(path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    state = replay.state_dict()
+    metadata = {
+        "version": 1,
+        "capacity": state["capacity"],
+        "obs_size": state["obs_size"],
+        "action_size": state["action_size"],
+        "write": state["write"],
+        "size": state["size"],
+        "rng_state": state["rng_state"],
+    }
+    temporary = destination.with_name(f".{destination.name}.tmp")
+    try:
+        # Passing an already-open file avoids numpy silently appending ".npz"
+        # to the temporary filename.  os.replace makes the completed file the
+        # only visible version after a crash-safe write.
+        with temporary.open("wb") as handle:
+            np.savez_compressed(
+                handle,
+                metadata=np.asarray(json.dumps(metadata)),
+                obs=state["obs"],
+                policy=state["policy"],
+                value=state["value"],
+                legal_mask=state["legal_mask"],
+            )
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, destination)
+    except BaseException:
+        temporary.unlink(missing_ok=True)
+        raise
+    return destination
+
+
+def load_replay_state(replay: ReplayBuffer, path: str | Path) -> None:
+    """Load a replay state saved by :func:`save_replay_state`."""
+    with np.load(Path(path), allow_pickle=False) as archive:
+        metadata = json.loads(str(archive["metadata"].item()))
+        if int(metadata.get("version", 0)) != 1:
+            raise ValueError("unsupported replay state version")
+        state = {
+            "capacity": metadata["capacity"],
+            "obs_size": metadata["obs_size"],
+            "action_size": metadata["action_size"],
+            "write": metadata["write"],
+            "size": metadata["size"],
+            "rng_state": metadata["rng_state"],
+            # Archive-backed arrays become invalid once the context closes.
+            "obs": archive["obs"].copy(),
+            "policy": archive["policy"].copy(),
+            "value": archive["value"].copy(),
+            "legal_mask": archive["legal_mask"].copy(),
+        }
+    replay.load_state_dict(state)
