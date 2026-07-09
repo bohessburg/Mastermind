@@ -58,18 +58,18 @@ find_package(PkgConfig QUIET)
 if(PkgConfig_FOUND)
     pkg_check_modules(RAYLIB QUIET raylib)
 endif()
-if(RAYLIB_FOUND)
+find_library(GLFW_LIBRARY glfw HINTS /opt/homebrew/opt/glfw/lib)
+if(RAYLIB_FOUND AND GLFW_LIBRARY)
     add_executable(dominion_gui
         src/gui/gui_main.cpp
         src/gui/gui_agent.cpp
     )
     target_include_directories(dominion_gui PRIVATE ${RAYLIB_INCLUDE_DIRS})
     target_link_directories(dominion_gui PRIVATE ${RAYLIB_LIBRARY_DIRS})
-    target_link_directories(dominion_gui PRIVATE /opt/homebrew/opt/glfw/lib)
     target_link_libraries(dominion_gui PRIVATE dominion_engine ${RAYLIB_LIBRARIES}
-        glfw "-framework IOKit" "-framework Cocoa" "-framework OpenGL")
+        ${GLFW_LIBRARY} "-framework IOKit" "-framework Cocoa" "-framework OpenGL")
 else()
-    message(STATUS "raylib not found — skipping GUI build (install with: brew install raylib)")
+    message(STATUS "raylib/glfw not found — skipping GUI build (install with: brew install raylib glfw)")
 endif()
 
 # --- v2 core skeleton ---
@@ -78,11 +78,24 @@ add_library(dominion_v2 STATIC
     src/v2/core/actions.cpp
     src/v2/core/game.cpp
     src/v2/core/interp.cpp
+    src/v2/core/score.cpp
     src/v2/core/setup.cpp
     src/v2/core/turns.cpp
 )
 target_include_directories(dominion_v2 PUBLIC src)
 configure_v2_target(dominion_v2)
+
+add_library(dominion_v2_drivers STATIC
+    src/v2/drivers/bots.cpp
+)
+target_link_libraries(dominion_v2_drivers PUBLIC dominion_v2)
+configure_v2_target(dominion_v2_drivers)
+
+add_executable(v2_bench
+    src/v2/bench/bench.cpp
+)
+target_link_libraries(v2_bench PRIVATE dominion_v2_drivers)
+configure_v2_target(v2_bench)
 
 # --- Tests ---
 option(BUILD_TESTS "Build test suite" ON)
@@ -116,8 +129,11 @@ if(BUILD_TESTS)
         tests/v2/test_state.cpp
         tests/v2/test_setup.cpp
         tests/v2/test_game_flow.cpp
+        tests/v2/test_determinism.cpp
+        tests/v2/test_conservation.cpp
+        tests/v2/test_alloc.cpp
     )
-    target_link_libraries(v2_tests PRIVATE dominion_v2 Catch2::Catch2WithMain)
+    target_link_libraries(v2_tests PRIVATE dominion_v2_drivers Catch2::Catch2WithMain)
     configure_v2_target(v2_tests)
 
     include(Catch)

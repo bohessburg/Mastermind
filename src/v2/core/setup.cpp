@@ -6,6 +6,7 @@
 
 #include <cassert>
 #include <cstdint>
+#include <cstring>
 
 namespace {
 
@@ -108,6 +109,7 @@ void add_kingdom_piles(GameState& state, const Setup& setup, PlayerId players) n
 
 GameState new_game(const Setup& setup, std::uint64_t seed) noexcept {
     GameState state{};
+    std::memset(&state, 0, sizeof(state));
     state.num_players = sanitize_player_count(setup.num_players);
     state.rng = Xoshiro256pp::seeded(seed);
 
