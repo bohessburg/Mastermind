@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
@@ -12,8 +14,10 @@ from src.v2.web.server.main import (
     Seat,
     Session,
     _decision_message,
+    _apply_action,
     _post_step_messages,
     _undo_previous_human_decision,
+    _apply_validated_action,
     app,
     sessions,
 )
@@ -42,6 +46,7 @@ KINGDOM = [
     "Market",
     "Remodel",
 ]
+FIXTURE_THRONE_BANDIT = Path(__file__).with_name("fixtures_throne_bandit_replay.json")
 
 
 def by_type(messages: list[dict], message_type: str) -> dict:
@@ -183,6 +188,52 @@ class FakeViewGame(FakeDecisionGame):
 
     def game_over(self):
         return False
+
+
+class FakeThronedBanditAutoGame:
+    def __init__(self):
+        self.before = True
+
+    def current_decision(self):
+        if self.before:
+            return decision(dz.DEF_THRONE_ROOM, kind=4, player=0)
+        return decision(0, kind=2, player=0)
+
+    def decision_context(self):
+        return {}
+
+    def step(self, action):
+        assert action == dz.A_SELECT_BASE + dz.DEF_BANDIT
+        self.before = False
+        return False
+
+    def num_players(self):
+        return 2
+
+    def hand_count(self, player):
+        return 5
+
+    def deck_count(self, player):
+        if player == 1:
+            return 4 if self.before else 0
+        return 0
+
+    def discard(self, player):
+        if self.before:
+            return []
+        if player == 0:
+            return [dz.DEF_GOLD, dz.DEF_GOLD]
+        return [dz.DEF_COPPER, dz.DEF_COPPER, dz.DEF_COPPER, dz.DEF_COPPER]
+
+    def discard_top(self, player):
+        cards = self.discard(player)
+        return cards[-1] if cards else None
+
+    def set_aside(self, player):
+        return []
+
+    def trash(self):
+        return {}
 
 
 def assert_filtered_state(message: dict) -> None:
@@ -493,6 +544,66 @@ def test_throned_bandit_logs_one_victim_attributed_line_per_hit() -> None:
     all_lines = start_lines + first_lines + second_lines
     assert not any(line.startswith("P1 reveals") for line in all_lines)
     assert not any("Silver, Gold and Gold" in line or "Silver, Gold, Gold and Copper" in line for line in all_lines)
+
+
+def test_fixture_replay_logs_throned_bandit_hits_through_server_session_path() -> None:
+    data = json.loads(FIXTURE_THRONE_BANDIT.read_text())
+    setup = dz.Setup(players=len(data["seats"]), kingdom=data["kingdom"])
+    session = Session(
+        session_id="fixture-throne-bandit",
+        seats=[Seat(kind, f"seat-{index}") for index, kind in enumerate(data["seats"])],
+        setup=setup,
+        seed=int(data["seed"]),
+        kingdom=[int(def_value) for def_value in data["kingdom"]],
+        game=dz.new_game(setup, int(data["seed"])),
+    )
+
+    lines_by_index: dict[int, list[str]] = {}
+    for index, action in enumerate(data["actions"]):
+        player = int(session.game.current_decision()["player"])
+        lines, private = _apply_validated_action(session, player, int(action))
+        assert private == {} or index in {49, 51, 85}
+        lines_by_index[index] = lines
+
+    assert len(data["actions"]) == 108
+    assert lines_by_index[87] == [
+        "P1 plays Bandit",
+        "P2 reveals Silver and Copper; trashes Silver",
+        "P1 plays Bandit (again)",
+        "P2 reveals Gold and Copper; trashes Gold",
+    ]
+    assert lines_by_index[107] == [
+        "P1 plays Bandit",
+        "P2 reveals Copper and Copper; trashes nothing",
+    ]
+    assert session.log_lines.count("P2 reveals Silver and Copper; trashes Silver") == 1
+    assert session.log_lines.count("P1 plays Bandit (again)") == 1
+    assert session.log_lines.count("P2 reveals Gold and Copper; trashes Gold") == 1
+    assert session.log_lines.count("P2 reveals Copper and Copper; trashes nothing") == 1
+    assert not any("Silver, Gold and Gold" in line or "Silver, Gold, Gold and Copper" in line for line in session.log_lines)
+
+
+def test_throned_bandit_splits_two_auto_hits_from_one_server_step() -> None:
+    session = SimpleNamespace(
+        game=FakeThronedBanditAutoGame(),
+        bandit_log_state=BanditLogState(),
+        sentry_log_states={},
+        action_log=[],
+        action_log_line_counts=[],
+        log_lines=[],
+    )
+
+    lines, private = _apply_action(session, 0, dz.A_SELECT_BASE + dz.DEF_BANDIT)
+
+    assert private == {}
+    assert lines == [
+        "P1 plays Bandit",
+        "P2 reveals Copper and Copper; trashes nothing",
+        "P1 plays Bandit (again)",
+        "P2 reveals Copper and Copper; trashes nothing",
+    ]
+    assert session.action_log == [dz.A_SELECT_BASE + dz.DEF_BANDIT]
+    assert session.action_log_line_counts == [4]
 
 
 def test_undo_clears_in_flight_bandit_log_state_before_continuing() -> None:

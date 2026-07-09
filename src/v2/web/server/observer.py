@@ -315,6 +315,12 @@ def _discard_added(before: PlayerPublicSnapshot, after: PlayerPublicSnapshot) ->
     return added
 
 
+def _bandit_revealed_discards(before: PlayerPublicSnapshot, after: PlayerPublicSnapshot) -> list[int]:
+    if len(after.discard) >= len(before.discard) and after.discard[: len(before.discard)] == before.discard:
+        return list(after.discard[len(before.discard) :])
+    return list(after.discard)
+
+
 def _trash_added(before: PublicSnapshot, after: PublicSnapshot) -> list[int]:
     added: list[int] = []
     for def_value, count in sorted(after.trash.items()):
@@ -571,6 +577,12 @@ def _bandit_sequence_start(action: int, decision: dict[str, Any]) -> bool:
     )
 
 
+def _bandit_resolution_candidate(action: int, decision: dict[str, Any]) -> bool:
+    if _bandit_sequence_start(action, decision):
+        return True
+    return _source_name(action, decision) == "Bandit"
+
+
 def _bandit_emit_hit(
     state: BanditLogState,
     attacker: int | None,
@@ -631,23 +643,24 @@ def bandit_resolution_logs(
     after: PublicSnapshot,
     decision_context: dict[str, Any] | None,
 ) -> list[str]:
-    if _bandit_sequence_start(action, decision):
+    started = _bandit_sequence_start(action, decision)
+    if started:
         state.hits_by_attacker[seat] = 0
 
-    source_name = _source_name(action, decision)
-    if source_name != "Bandit":
+    if not _bandit_resolution_candidate(action, decision):
         return []
 
     category = action_category(action)
+    source_name = _source_name(action, decision)
     player_count = len(before.players)
     trash_remaining = _trash_added(before, after)
     discard_remaining = [
-        _discard_added(before_player, after_player)
+        _bandit_revealed_discards(before_player, after_player)
         for before_player, after_player in zip(before.players, after.players)
     ]
     lines: list[str] = []
 
-    if category == "select":
+    if category == "select" and source_name == "Bandit":
         victim = int((decision_context or {}).get("victim_player", decision.get("player", seat)))
         attacker = _fallback_bandit_attacker(seat, category, decision_context, victim, player_count)
         revealed = _context_subjects(decision_context)
@@ -660,7 +673,7 @@ def bandit_resolution_logs(
                     _remove_one(discard_remaining[victim], card)
 
     victim_indices = list(range(player_count))
-    attacker_for_auto = _fallback_bandit_attacker(seat, category, decision_context, None, player_count)
+    attacker_for_auto = seat if started else _fallback_bandit_attacker(seat, category, decision_context, None, player_count)
     if attacker_for_auto is not None:
         victim_indices = [player for player in victim_indices if player != attacker_for_auto]
 

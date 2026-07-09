@@ -27,3 +27,4 @@ compile_commands.json
 # Clangd cache
 .cache/
 Dominion_CompleteRules_v11.1.pdf
+__pycache__/
