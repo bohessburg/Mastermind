@@ -1,4 +1,4 @@
-export type SeatKind = 'human' | 'bot';
+export type SeatKind = 'human' | 'bot' | 'bot:bigmoney' | 'bot:random';
 
 export interface SeatInfo {
   index: number;
@@ -145,6 +145,7 @@ export interface CreateSessionRequest {
   seats: SeatKind[];
   kingdom?: Array<string | number>;
   seed?: number;
+  thinking_delay_ms?: number;
 }
 
 export interface CreateSessionResponse {

@@ -127,6 +127,12 @@ code {
   font-size: 12px;
 }
 
+.header-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
 .error-banner,
 .error-text {
   color: #ffd7d7;

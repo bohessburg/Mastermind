@@ -232,6 +232,18 @@ struct PyGame {
     return perspective_score == best_score ? 1.0F : -1.0F;
 }
 
+[[nodiscard]] std::uint64_t fnv1a_state(const GameState& state) noexcept {
+    constexpr std::uint64_t kOffset = 14695981039346656037ULL;
+    constexpr std::uint64_t kPrime = 1099511628211ULL;
+    const auto* bytes = reinterpret_cast<const std::uint8_t*>(&state);
+    std::uint64_t hash = kOffset;
+    for (std::size_t i = 0; i < sizeof(GameState); ++i) {
+        hash ^= bytes[i];
+        hash *= kPrime;
+    }
+    return hash;
+}
+
 [[nodiscard]] std::uint64_t batch_seed(
     std::uint64_t seed_base,
     std::uint64_t generation,
@@ -610,6 +622,9 @@ PYBIND11_MODULE(dominion_v2_py, module) {
         })
         .def("truncated", [](const PyGame& self) {
             return self.state.truncated != 0U;
+        })
+        .def("state_hash", [](const PyGame& self) {
+            return fnv1a_state(self.state);
         });
 
     py::class_<PyBatchRunner>(module, "BatchRunner")

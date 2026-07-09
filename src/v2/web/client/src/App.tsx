@@ -445,6 +445,11 @@ export function App() {
     }
   }
 
+  function undo() {
+    socketRef.current?.send({ type: 'undo_request' });
+    setPicked([]);
+  }
+
   if (!credentials) {
     return <JoinScreen onJoin={setCredentials} />;
   }
@@ -457,7 +462,10 @@ export function App() {
           <h1>DominionZero v2</h1>
           <span>{status}</span>
         </div>
-        <button type="button" onClick={() => setCredentials(undefined)}>Leave</button>
+        <div className="header-actions">
+          <button type="button" onClick={undo}>Undo</button>
+          <button type="button" onClick={() => setCredentials(undefined)}>Leave</button>
+        </div>
       </header>
       {clientState.error && <div className="error-banner">{clientState.error}</div>}
       <div className="game-layout">

@@ -47,14 +47,17 @@ class Session:
     kingdom: list[int]
     game: Any
     action_log: list[int] = field(default_factory=list)
+    human_decision_prefixes: list[int] = field(default_factory=list)
     log_lines: list[str] = field(default_factory=list)
     connections: dict[str, WebSocket] = field(default_factory=dict)
-    bot_rng: random.Random = field(default_factory=random.Random)
+    bot_rngs: list[random.Random] = field(default_factory=list)
+    thinking_delay_ms: int = 600
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
 
 app = FastAPI(title="DominionZero v2 Web Server")
 sessions: dict[str, Session] = {}
+SEAT_KINDS = {"human", "bot", "bot:bigmoney", "bot:random"}
 
 
 def _make_setup(players: int, kingdom: list[int]) -> dz.Setup:
@@ -77,6 +80,24 @@ def _seat_index(session: Session, token: str) -> int:
         if seat.token == token:
             return index
     return -1
+
+
+def _is_bot_kind(kind: str) -> bool:
+    return kind == "bot" or kind.startswith("bot:")
+
+
+def _bot_policy(kind: str) -> str:
+    if kind == "bot":
+        return "bigmoney"
+    if kind.startswith("bot:"):
+        return kind.split(":", 1)[1]
+    return ""
+
+
+def _is_human_vs_bot(session: Session) -> bool:
+    humans = sum(1 for seat in session.seats if seat.kind == "human")
+    bots = sum(1 for seat in session.seats if _is_bot_kind(seat.kind))
+    return len(session.seats) == 2 and humans == 1 and bots == 1
 
 
 def _hand_entries(hand: dict[int, int]) -> list[dict[str, int]]:
@@ -201,11 +222,106 @@ def _current_player(game: Any) -> int:
     return int(game.current_decision()["player"])
 
 
-def _choose_bot_action(session: Session) -> int:
-    legal = np.flatnonzero(session.game.legal_mask())
-    if legal.size == 0:
+def _legal_actions(game: Any) -> list[int]:
+    return [int(action) for action in np.flatnonzero(game.legal_mask())]
+
+
+def _is_treasure(def_value: int) -> bool:
+    return "Treasure" in def_by_id(def_value)["types"]
+
+
+def _coin_value(def_value: int) -> int:
+    return int(def_by_id(def_value).get("coin_value", 0))
+
+
+def _cost_coins(def_value: int) -> int:
+    return int(def_by_id(def_value)["cost"]["coins"])
+
+
+def _select_def(action: int) -> int:
+    return int(action) - int(dz.A_SELECT_BASE)
+
+
+def _option_index(action: int) -> int:
+    return int(action) - int(dz.A_OPTION_BASE)
+
+
+def _first_legal(legal: list[int]) -> int:
+    if not legal:
         return int(dz.A_PASS)
-    return int(legal[session.bot_rng.randrange(int(legal.size))])
+    return int(legal[0])
+
+
+def _choose_bigmoney_action(game: Any, legal: list[int]) -> int:
+    decision = game.current_decision()
+    kind = decision_kind_name(decision)
+    source = int(decision["source"])
+    source_name = def_by_id(source)["name"] if source in load_defs()["by_id"] else ""
+    legal_set = set(legal)
+
+    if kind == "ReactWindow":
+        moat = int(dz.A_SELECT_BASE + dz.DEF_MOAT)
+        if moat in legal_set:
+            return moat
+        if int(dz.A_PASS) in legal_set:
+            return int(dz.A_PASS)
+
+    if kind == "PhaseBuy":
+        for def_value in (dz.DEF_PLATINUM, dz.DEF_GOLD, dz.DEF_SILVER, dz.DEF_COPPER, dz.DEF_POTION):
+            action = int(dz.A_PLAY_BASE + def_value)
+            if action in legal_set:
+                return action
+        for def_value in (dz.DEF_PROVINCE, dz.DEF_GOLD, dz.DEF_SILVER):
+            action = int(dz.A_BUY_BASE + def_value)
+            if action in legal_set:
+                return action
+
+    if kind == "Choose" and source_name == "Militia":
+        selects = [action for action in legal if dz.A_SELECT_BASE <= action < dz.A_OPTION_BASE]
+        if selects:
+            return max(
+                selects,
+                key=lambda action: (
+                    _coin_value(_select_def(action)),
+                    1 if _is_treasure(_select_def(action)) else 0,
+                    _cost_coins(_select_def(action)),
+                    -_select_def(action),
+                ),
+            )
+
+    if kind == "Choose" and source_name == "Bureaucrat":
+        selects = [action for action in legal if dz.A_SELECT_BASE <= action < dz.A_OPTION_BASE]
+        if selects:
+            return min(selects, key=lambda action: (_cost_coins(_select_def(action)), _select_def(action)))
+
+    if kind in {"Choose", "ChooseGain"} and int(dz.A_PASS) in legal_set:
+        return int(dz.A_PASS)
+
+    if kind == "ChooseOption":
+        options = [action for action in legal if dz.A_OPTION_BASE <= action < dz.A_CALL_BASE]
+        if options:
+            return min(options, key=_option_index)
+        if int(dz.A_PASS) in legal_set:
+            return int(dz.A_PASS)
+
+    if kind in {"PhaseAction", "PhaseNight"} and int(dz.A_PASS) in legal_set:
+        return int(dz.A_PASS)
+
+    if int(dz.A_PASS) in legal_set:
+        return int(dz.A_PASS)
+    return _first_legal(legal)
+
+
+def _choose_bot_action(session: Session, seat: int) -> int:
+    legal = _legal_actions(session.game)
+    if not legal:
+        return int(dz.A_PASS)
+
+    policy = _bot_policy(session.seats[seat].kind)
+    if policy == "random":
+        rng = session.bot_rngs[seat]
+        return int(legal[rng.randrange(len(legal))])
+    return _choose_bigmoney_action(session.game, legal)
 
 
 def _apply_action(session: Session, seat: int, action: int) -> str:
@@ -219,17 +335,54 @@ def _apply_action(session: Session, seat: int, action: int) -> str:
     return line
 
 
-def _run_bots(session: Session) -> list[str]:
-    lines: list[str] = []
+def _apply_validated_action(session: Session, seat: int, action: int) -> str:
+    current = _current_player(session.game)
+    if current != seat:
+        raise ValueError("not your turn")
+    if not _is_legal(session.game, action):
+        raise ValueError("illegal action")
+    return _apply_action(session, seat, action)
+
+
+async def _run_bots(session: Session) -> None:
     while not session.game.game_over():
         player = _current_player(session.game)
-        if player >= len(session.seats) or session.seats[player].kind != "bot":
+        if player >= len(session.seats) or not _is_bot_kind(session.seats[player].kind):
             break
-        action = _choose_bot_action(session)
-        if not _is_legal(session.game, action):
-            break
-        lines.append(_apply_action(session, player, action))
-    return lines
+        if session.thinking_delay_ms > 0:
+            await asyncio.sleep(session.thinking_delay_ms / 1000.0)
+        action = _choose_bot_action(session, player)
+        line = _apply_validated_action(session, player, action)
+        await _broadcast(session, [line])
+
+
+def _replay_game(session: Session, actions: list[int]) -> Any:
+    game = dz.new_game(session.setup, session.seed)
+    for action in actions:
+        if not _is_legal(game, int(action)):
+            raise RuntimeError(f"recorded action is illegal during replay: {action}")
+        game.step(int(action))
+    return game
+
+
+def _undo_previous_human_decision(session: Session, seat: int) -> str:
+    if not _is_human_vs_bot(session):
+        raise ValueError("undo is only available in human-vs-bot sessions")
+    if seat < 0 or session.seats[seat].kind != "human":
+        raise ValueError("only a human seat can undo")
+    if not session.human_decision_prefixes:
+        raise ValueError("nothing to undo")
+
+    prefix = session.human_decision_prefixes.pop()
+    session.action_log = session.action_log[:prefix]
+    session.human_decision_prefixes = [
+        previous for previous in session.human_decision_prefixes if previous < prefix
+    ]
+    session.game = _replay_game(session, session.action_log)
+    session.log_lines = session.log_lines[:prefix]
+    line = "Undo: rewound to previous human decision"
+    session.log_lines.append(line)
+    return line
 
 
 async def _broadcast(session: Session, lines: list[str]) -> None:
@@ -254,10 +407,13 @@ async def create_session(payload: dict[str, Any]) -> dict[str, Any]:
     if len(seat_kinds) < 2 or len(seat_kinds) > dz.MAX_PLAYERS:
         raise HTTPException(status_code=400, detail="seats must have 2 to MAX_PLAYERS entries")
     for kind in seat_kinds:
-        if kind not in {"human", "bot"}:
-            raise HTTPException(status_code=400, detail="seat kind must be human or bot")
+        if kind not in SEAT_KINDS:
+            raise HTTPException(status_code=400, detail="seat kind must be human, bot, bot:bigmoney, or bot:random")
 
     seed = int(payload.get("seed", secrets.randbits(63)))
+    thinking_delay_ms = int(payload.get("thinking_delay_ms", payload.get("thinkingDelayMs", 600)))
+    if thinking_delay_ms < 0:
+        raise HTTPException(status_code=400, detail="thinking delay must be non-negative")
     kingdom = _parse_kingdom(payload)
     setup = _make_setup(len(seat_kinds), kingdom)
     session_id = secrets.token_urlsafe(12)
@@ -269,10 +425,30 @@ async def create_session(payload: dict[str, Any]) -> dict[str, Any]:
         seed=seed,
         kingdom=kingdom,
         game=dz.new_game(setup, seed),
-        bot_rng=random.Random(seed ^ 0xB07),
+        bot_rngs=[
+            random.Random(seed ^ 0xB07 ^ ((index + 1) * 0x9E3779B97F4A7C15))
+            for index in range(len(seats))
+        ],
+        thinking_delay_ms=thinking_delay_ms,
     )
     sessions[session_id] = session
     return {"session_id": session_id, "seat_tokens": [seat.token for seat in seats]}
+
+
+@app.get("/api/session/{session_id}/export")
+async def export_session(session_id: str) -> dict[str, Any]:
+    session = sessions.get(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="session not found")
+    async with session.lock:
+        return {
+            "seed": session.seed,
+            "kingdom": session.kingdom,
+            "seats": [seat.kind for seat in session.seats],
+            "actions": session.action_log,
+            "obs_version": int(dz.OBS_VERSION),
+            "final_state_hash": f"0x{session.game.state_hash():016x}",
+        }
 
 
 @app.websocket("/ws/{session_id}/{seat_token}")
@@ -292,23 +468,34 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, seat_token: 
     try:
         while True:
             payload = await websocket.receive_json()
+            if payload.get("type") == "undo_request":
+                async with session.lock:
+                    try:
+                        line = _undo_previous_human_decision(session, seat)
+                    except ValueError as error:
+                        await websocket.send_json({"type": "error", "message": str(error)})
+                        continue
+                    await _broadcast(session, [line])
+                continue
+
             if payload.get("type") != "act":
                 await websocket.send_json({"type": "error", "message": "unsupported message"})
                 continue
 
             action = int(payload.get("action", -1))
             async with session.lock:
-                current = _current_player(session.game)
-                if current != seat:
-                    await websocket.send_json({"type": "error", "message": "not your turn"})
-                    continue
-                if not _is_legal(session.game, action):
-                    await websocket.send_json({"type": "error", "message": "illegal action"})
+                try:
+                    if session.seats[seat].kind == "human":
+                        session.human_decision_prefixes.append(len(session.action_log))
+                    line = _apply_validated_action(session, seat, action)
+                except ValueError as error:
+                    if session.human_decision_prefixes and session.human_decision_prefixes[-1] == len(session.action_log):
+                        session.human_decision_prefixes.pop()
+                    await websocket.send_json({"type": "error", "message": str(error)})
                     continue
 
-                lines = [_apply_action(session, seat, action)]
-                lines.extend(_run_bots(session))
-                await _broadcast(session, lines)
+                await _broadcast(session, [line])
+                await _run_bots(session)
     except WebSocketDisconnect:
         async with session.lock:
             if session.connections.get(seat_token) is websocket:

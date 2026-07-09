@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 import dominion_v2_py as dz
 
 from src.v2.web.server.main import app, sessions
+from tests.v2.replay_export import verify_export_data
 
 
 KINGDOM = [
@@ -36,6 +37,18 @@ def read_initial(websocket) -> list[dict]:
 
 def read_update(websocket) -> list[dict]:
     return [websocket.receive_json() for _ in range(3)]
+
+
+def read_until_decision_or_gameover(websocket) -> list[dict]:
+    last_messages: list[dict] = []
+    for _ in range(2000):
+        last_messages = read_update(websocket)
+        if any(message["type"] == "gameover" for message in last_messages):
+            return last_messages
+        decision = by_type(last_messages, "decision")
+        if decision["options"]:
+            return last_messages
+    raise AssertionError(f"no active decision or gameover after updates: {last_messages}")
 
 
 def read_broadcast(ws0, ws1) -> tuple[list[dict], list[dict]]:
@@ -188,3 +201,106 @@ def test_websocket_initial_state_can_report_gameover() -> None:
         assert len(gameover["scores"]) == 2
         assert gameover["winner"] in (0, 1, None)
         assert gameover["truncated"] is False
+
+
+def test_human_vs_bigmoney_bot_completes_over_websocket() -> None:
+    sessions.clear()
+    client = TestClient(app)
+    response = client.post(
+        "/api/session",
+        json={
+            "seats": ["human", "bot:bigmoney"],
+            "kingdom": KINGDOM,
+            "seed": 0x5102,
+            "thinking_delay_ms": 0,
+        },
+    )
+    assert response.status_code == 200
+    created = response.json()
+    session = sessions[created["session_id"]]
+
+    with client.websocket_connect(f"/ws/{created['session_id']}/{created['seat_tokens'][0]}") as websocket:
+        messages = read_initial(websocket)
+        for _ in range(4000):
+            if any(message["type"] == "gameover" for message in messages):
+                break
+            decision = by_type(messages, "decision")
+            if not decision["options"]:
+                messages = read_until_decision_or_gameover(websocket)
+                continue
+            websocket.send_json({"type": "act", "action": choose_big_money_action(decision)})
+            messages = read_until_decision_or_gameover(websocket)
+        else:
+            raise AssertionError("web game did not complete")
+
+    assert session.game.game_over()
+    assert session.game.truncated() is False
+    assert any(line.startswith("P2 ") for line in session.log_lines)
+    assert len(session.action_log) > 0
+
+
+def test_undo_rewinds_to_previous_human_decision() -> None:
+    sessions.clear()
+    client = TestClient(app)
+    response = client.post(
+        "/api/session",
+        json={
+            "seats": ["human", "bot:bigmoney"],
+            "kingdom": KINGDOM,
+            "seed": 0x5103,
+            "thinking_delay_ms": 0,
+        },
+    )
+    assert response.status_code == 200
+    created = response.json()
+    session = sessions[created["session_id"]]
+
+    with client.websocket_connect(f"/ws/{created['session_id']}/{created['seat_tokens'][0]}") as websocket:
+        initial = read_initial(websocket)
+        initial_state = by_type(initial, "state")["view"]
+        initial_decision = by_type(initial, "decision")
+        websocket.send_json({"type": "act", "action": choose_big_money_action(initial_decision)})
+        _ = read_until_decision_or_gameover(websocket)
+        assert session.action_log
+
+        websocket.send_json({"type": "undo_request"})
+        undo_messages = read_update(websocket)
+        assert "undo" in " ".join(by_type(undo_messages, "log")["lines"]).lower()
+        assert by_type(undo_messages, "state")["view"] == initial_state
+        assert by_type(undo_messages, "decision")["options"]
+
+    replay = dz.new_game(session.setup, session.seed)
+    assert session.action_log == []
+    assert session.game.state_hash() == replay.state_hash()
+
+
+def test_export_endpoint_replays_deterministically() -> None:
+    sessions.clear()
+    client = TestClient(app)
+    response = client.post(
+        "/api/session",
+        json={
+            "seats": ["human", "bot:random"],
+            "kingdom": KINGDOM,
+            "seed": 0x5104,
+            "thinking_delay_ms": 0,
+        },
+    )
+    assert response.status_code == 200
+    created = response.json()
+
+    with client.websocket_connect(f"/ws/{created['session_id']}/{created['seat_tokens'][0]}") as websocket:
+        messages = read_initial(websocket)
+        decision = by_type(messages, "decision")
+        websocket.send_json({"type": "act", "action": choose_big_money_action(decision)})
+        _ = read_until_decision_or_gameover(websocket)
+
+    export_response = client.get(f"/api/session/{created['session_id']}/export")
+    assert export_response.status_code == 200
+    data = export_response.json()
+    assert data["seed"] == 0x5104
+    assert data["kingdom"]
+    assert data["seats"] == ["human", "bot:random"]
+    assert data["actions"]
+    assert data["obs_version"] == dz.OBS_VERSION
+    assert verify_export_data(data) == int(data["final_state_hash"], 16)
