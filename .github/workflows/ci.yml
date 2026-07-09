@@ -21,6 +21,26 @@ jobs:
       - name: Test
         run: ctest --test-dir build -R v2 --output-on-failure
 
+  python-smoke:
+    name: Python Smoke ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create venv
+        run: python3 -m venv .venv
+      - name: Install numpy
+        run: ./.venv/bin/python -m pip install --upgrade pip numpy
+      - name: Configure
+        run: cmake -B build-py -DCMAKE_BUILD_TYPE=Release -DBUILD_PYTHON=ON -DPython3_EXECUTABLE="$PWD/.venv/bin/python"
+      - name: Build
+        run: cmake --build build-py --target dominion_v2_py
+      - name: Smoke
+        run: PYTHONPATH=build-py ./.venv/bin/python src/v2/py/test_smoke.py
+
   sanitizer:
     name: Debug Sanitizers
     runs-on: ubuntu-latest

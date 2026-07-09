@@ -6,6 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(ENABLE_SANITIZERS "Enable ASan/UBSan for v2 targets" OFF)
+option(BUILD_PYTHON "Build v2 Python bindings" OFF)
 
 function(configure_v2_target target_name)
     target_compile_features(${target_name} PUBLIC cxx_std_20)
@@ -93,6 +94,13 @@ add_library(dominion_v2_drivers STATIC
 target_link_libraries(dominion_v2_drivers PUBLIC dominion_v2)
 configure_v2_target(dominion_v2_drivers)
 
+add_library(dominion_v2_encode STATIC
+    src/v2/encode/encoder.cpp
+)
+target_link_libraries(dominion_v2_encode PUBLIC dominion_v2)
+target_include_directories(dominion_v2_encode PUBLIC src)
+configure_v2_target(dominion_v2_encode)
+
 add_executable(v2_bench
     src/v2/bench/bench.cpp
 )
@@ -105,6 +113,38 @@ add_executable(v2_fuzz
 )
 target_link_libraries(v2_fuzz PRIVATE dominion_v2_drivers)
 configure_v2_target(v2_fuzz)
+
+if(BUILD_PYTHON)
+    set(Python3_FIND_UNVERSIONED_NAMES FIRST)
+    set(Python3_FIND_STRATEGY LOCATION)
+    find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
+    execute_process(
+        COMMAND "${Python3_EXECUTABLE}" -c "import numpy; print(numpy.get_include())"
+        RESULT_VARIABLE NUMPY_INCLUDE_RESULT
+        OUTPUT_VARIABLE Python3_NumPy_INCLUDE_DIRS
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+    if(NOT NUMPY_INCLUDE_RESULT EQUAL 0)
+        message(FATAL_ERROR "BUILD_PYTHON=ON requires numpy for ${Python3_EXECUTABLE}")
+    endif()
+    execute_process(
+        COMMAND "${Python3_EXECUTABLE}" -c "import sysconfig; print(sysconfig.get_config_var('EXT_SUFFIX') or '.so')"
+        OUTPUT_VARIABLE PYTHON_EXTENSION_SUFFIX
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+
+    add_library(dominion_v2_py MODULE
+        src/v2/py/module.cpp
+    )
+    target_link_libraries(dominion_v2_py PRIVATE dominion_v2_drivers dominion_v2_encode Python3::Python)
+    target_include_directories(dominion_v2_py PRIVATE src ${Python3_NumPy_INCLUDE_DIRS})
+    set_target_properties(dominion_v2_py PROPERTIES
+        PREFIX ""
+        OUTPUT_NAME "dominion_v2_py"
+        SUFFIX "${PYTHON_EXTENSION_SUFFIX}"
+    )
+    configure_v2_target(dominion_v2_py)
+endif()
 
 # --- Tests ---
 option(BUILD_TESTS "Build test suite" ON)
@@ -149,10 +189,11 @@ if(BUILD_TESTS)
         tests/v2/test_differential.cpp
         tests/v2/test_fuzz.cpp
         tests/v2/test_golden.cpp
+        tests/v2/test_encoder.cpp
         tests/v2/test_specs_base.cpp
         tests/v2/test_attacks_triggers.cpp
     )
-    target_link_libraries(v2_tests PRIVATE dominion_engine dominion_v2_drivers Catch2::Catch2WithMain)
+    target_link_libraries(v2_tests PRIVATE dominion_engine dominion_v2_drivers dominion_v2_encode Catch2::Catch2WithMain)
     target_compile_definitions(v2_tests PRIVATE V2_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/v2/golden")
     configure_v2_target(v2_tests)
 
