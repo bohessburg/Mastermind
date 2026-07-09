@@ -124,6 +124,7 @@ if(BUILD_TESTS)
     target_compile_options(dominion_tests PRIVATE -Wall -Wextra)
 
     add_executable(v2_tests
+        tests/v2/spec_harness.cpp
         tests/v2/test_types.cpp
         tests/v2/test_rng.cpp
         tests/v2/test_state.cpp
@@ -132,6 +133,7 @@ if(BUILD_TESTS)
         tests/v2/test_determinism.cpp
         tests/v2/test_conservation.cpp
         tests/v2/test_alloc.cpp
+        tests/v2/test_specs_base.cpp
     )
     target_link_libraries(v2_tests PRIVATE dominion_v2_drivers Catch2::Catch2WithMain)
     configure_v2_target(v2_tests)

@@ -31,9 +31,19 @@ using ActionMask = std::bitset<ACTION_SPACE_SIZE>;
     return static_cast<Action>(A_BUY_BASE + def);
 }
 
+[[nodiscard]] constexpr Action select_action(DefId def) noexcept {
+    return static_cast<Action>(A_SELECT_BASE + def);
+}
+
+[[nodiscard]] constexpr Action option_action(std::uint8_t option) noexcept {
+    return static_cast<Action>(A_OPTION_BASE + option);
+}
+
 [[nodiscard]] bool action_is_pass(Action action) noexcept;
 [[nodiscard]] bool action_is_play(Action action) noexcept;
 [[nodiscard]] bool action_is_buy(Action action) noexcept;
+[[nodiscard]] bool action_is_select(Action action) noexcept;
+[[nodiscard]] bool action_is_option(Action action) noexcept;
 [[nodiscard]] DefId action_def(Action action, Action base) noexcept;
 
 [[nodiscard]] Cost effective_cost(const GameState& state, DefId def) noexcept;
