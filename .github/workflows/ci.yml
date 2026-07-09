@@ -55,4 +55,34 @@ jobs:
       - name: Build
         run: cmake --build build --target v2_bench
       - name: Run
-        run: ./build/v2_bench
+        run: ./build/v2_bench | tee bench/current.json
+      - name: Regression gate
+        run: |
+          python3 - <<'PY'
+          import json
+          import sys
+
+          with open("bench/baseline.json", "r", encoding="utf-8") as f:
+              baseline = json.load(f)
+          with open("bench/current.json", "r", encoding="utf-8") as f:
+              current = json.load(f)
+
+          failures = []
+          step_limit = baseline["step_median_ns"] * 1.15
+          random_limit = baseline["random_games_per_sec"] * 0.85
+
+          if current["step_median_ns"] > step_limit:
+              failures.append(
+                  f"step_median_ns {current['step_median_ns']} > {step_limit:.2f}"
+              )
+          if current["random_games_per_sec"] < random_limit:
+              failures.append(
+                  f"random_games_per_sec {current['random_games_per_sec']} < {random_limit:.2f}"
+              )
+
+          print("baseline:", json.dumps(baseline, sort_keys=True))
+          print("current:", json.dumps(current, sort_keys=True))
+          if failures:
+              print("bench regression:", "; ".join(failures), file=sys.stderr)
+              sys.exit(1)
+          PY

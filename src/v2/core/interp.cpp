@@ -59,23 +59,9 @@ void reshuffle_discard_into_deck(GameState& state, PlayerId player_id) noexcept 
     player.deck.size = player.discard.size;
     player.discard.size = 0;
     shuffle_zone(player.deck, state.rng);
-    emit(state, TriggerKind::OnShuffle, TriggerPayload{player_id, 0, NONE, 0U});
-}
-
-[[nodiscard]] bool draw_one(GameState& state, PlayerId player_id) noexcept {
-    PlayerState& player = state.players[player_id];
-    if (player.deck.size == 0U) {
-        reshuffle_discard_into_deck(state, player_id);
+    if (!trigger_table_clean_empty(state)) {
+        emit(state, TriggerKind::OnShuffle, TriggerPayload{player_id, 0, NONE, 0U});
     }
-    if (player.deck.size == 0U) {
-        return false;
-    }
-
-    --player.deck.size;
-    const Slot card = player.deck.cards[player.deck.size];
-    assert(card < MAX_SLOTS);
-    ++player.hand[card];
-    return true;
 }
 
 [[nodiscard]] bool prepare_deck_top(GameState& state, PlayerId player_id) noexcept {
@@ -491,7 +477,9 @@ void apply_then(GameState& state, EffectFrame& frame, const Instr& instr, Then t
     case Then::Play:
         assert(state.players[frame.player].hand[slot] > 0U);
         play_slot_from_hand(state, frame.player, slot);
-        emit(state, TriggerKind::OnPlayAction, TriggerPayload{frame.player, def, slot, 0U});
+        if (!trigger_table_clean_empty(state)) {
+            emit(state, TriggerKind::OnPlayAction, TriggerPayload{frame.player, def, slot, 0U});
+        }
         break;
     case Then::PutInHand:
     case Then::Keep:
@@ -753,7 +741,9 @@ void play_last_from_discard(GameState& state, EffectFrame& frame) noexcept {
     const DefId def = static_cast<DefId>(frame.data[DATA_LAST_COST_DEBT]);
     const Slot slot = slot_of(state, def);
     if (slot != NONE && play_slot_from_discard(state, frame.player, slot)) {
-        emit(state, TriggerKind::OnPlayAction, TriggerPayload{frame.player, def, slot, 0U});
+        if (!trigger_table_clean_empty(state)) {
+            emit(state, TriggerKind::OnPlayAction, TriggerPayload{frame.player, def, slot, 0U});
+        }
         const bool pushed = push_effect(state, def, frame.player);
         (void)pushed;
         assert(pushed);
@@ -1106,10 +1096,23 @@ Slot take_deck_top_slot(GameState& state, PlayerId player) noexcept {
 }
 
 void draw_cards(GameState& state, PlayerId player, std::uint8_t count) noexcept {
-    for (std::uint8_t i = 0; i < count; ++i) {
-        if (!draw_one(state, player)) {
+    PlayerState& player_state = state.players[player];
+    std::uint8_t remaining = count;
+    while (remaining > 0U) {
+        if (player_state.deck.size == 0U) {
+            reshuffle_discard_into_deck(state, player);
+        }
+        if (player_state.deck.size == 0U) {
             return;
         }
+        const std::uint8_t take = player_state.deck.size < remaining ? player_state.deck.size : remaining;
+        for (std::uint8_t i = 0; i < take; ++i) {
+            --player_state.deck.size;
+            const Slot card = player_state.deck.cards[player_state.deck.size];
+            assert(card < MAX_SLOTS);
+            ++player_state.hand[card];
+        }
+        remaining = static_cast<std::uint8_t>(remaining - take);
     }
 }
 

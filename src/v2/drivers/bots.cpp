@@ -142,16 +142,7 @@ Action RandomBot::choose_action(
     }
 
     std::uint32_t index = rng.uniform(static_cast<std::uint32_t>(legal_count));
-    for (Action action = 0; action < ACTION_SPACE_SIZE; ++action) {
-        if (!legal.test(action)) {
-            continue;
-        }
-        if (index == 0U) {
-            return action;
-        }
-        --index;
-    }
-    return A_PASS;
+    return legal.nth_set(index);
 }
 
 Action BigMoneyBot::choose_action(
@@ -205,23 +196,20 @@ GameResult run_game(
     BotSpec bot0,
     BotSpec bot1) noexcept {
     GameState state = Game::new_game(setup, seed);
-    BotController bots[MAX_PLAYERS] = {
-        BotController(bot0),
-        BotController(bot1),
-        BotController(bot1),
-        BotController(bot1),
-    };
+    BotController first_bot(bot0);
+    BotController other_bot(bot1);
 
     bool done = state.phase == static_cast<std::uint8_t>(Phase::Over);
+    ActionMask legal{};
     while (!done) {
-        ActionMask legal{};
         const int legal_count = Game::legal_actions(state, legal);
         if (legal_count <= 0) {
             break;
         }
 
         const PlayerId player = Game::current_decision(state).player;
-        const Action action = bots[player].choose_action(state, legal, legal_count);
+        BotController& bot = player == 0U ? first_bot : other_bot;
+        const Action action = bot.choose_action(state, legal, legal_count);
         done = Game::step(state, action);
     }
 

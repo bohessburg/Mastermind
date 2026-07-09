@@ -115,6 +115,9 @@ void emit(GameState& state, TriggerKind kind, TriggerPayload payload) noexcept {
     if (state.trigger_table.dirty != 0U) {
         rebuild_trigger_table(state);
     }
+    if (state.trigger_table.count == 0U) {
+        return;
+    }
 
     Subscription matches[MAX_TRIGGER_SUBS]{};
     std::uint8_t match_count = 0;

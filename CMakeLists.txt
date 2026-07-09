@@ -148,10 +148,12 @@ if(BUILD_TESTS)
         tests/v2/test_alloc.cpp
         tests/v2/test_differential.cpp
         tests/v2/test_fuzz.cpp
+        tests/v2/test_golden.cpp
         tests/v2/test_specs_base.cpp
         tests/v2/test_attacks_triggers.cpp
     )
     target_link_libraries(v2_tests PRIVATE dominion_engine dominion_v2_drivers Catch2::Catch2WithMain)
+    target_compile_definitions(v2_tests PRIVATE V2_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/v2/golden")
     configure_v2_target(v2_tests)
 
     include(Catch)

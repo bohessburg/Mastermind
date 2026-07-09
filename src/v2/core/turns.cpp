@@ -9,28 +9,6 @@
 
 namespace {
 
-void discard_hand(GameState& state, PlayerId player_id) noexcept {
-    PlayerState& player = state.players[player_id];
-    for (std::uint8_t slot = 0; slot < MAX_SLOTS; ++slot) {
-        const std::uint8_t count = player.hand[slot];
-        for (std::uint8_t i = 0; i < count; ++i) {
-            const bool discarded = do_discard(state, player_id, slot, MoveZone::Hand);
-            (void)discarded;
-            assert(discarded);
-        }
-    }
-}
-
-void discard_in_play(GameState& state, PlayerId player_id) noexcept {
-    PlayerState& player = state.players[player_id];
-    while (player.in_play_size > 0U) {
-        const Slot slot = player.in_play[0].slot;
-        const bool discarded = do_discard(state, player_id, slot, MoveZone::InPlay);
-        (void)discarded;
-        assert(discarded);
-    }
-}
-
 [[nodiscard]] bool pile_top_def(const GameState& state, const Pile& pile, DefId& out) noexcept {
     if (pile.mixed_len > 0U) {
         const Slot slot = pile.mixed[pile.mixed_len - 1U];
@@ -123,8 +101,8 @@ void start_turn(GameState& state, PlayerId player) noexcept {
 
 void cleanup_current_turn(GameState& state) noexcept {
     const PlayerId player_id = current_player(state);
-    discard_in_play(state, player_id);
-    discard_hand(state, player_id);
+    do_discard_all_in_play(state, player_id);
+    do_discard_all_hand(state, player_id);
     draw_cards(state, player_id, 5U);
 
     state.actions = 0;

@@ -35,4 +35,7 @@ struct TriggerPayload {
 }
 
 void mark_trigger_table_dirty(GameState& state) noexcept;
+[[nodiscard]] inline bool trigger_table_clean_empty(const GameState& state) noexcept {
+    return state.trigger_table.dirty == 0U && state.trigger_table.count == 0U;
+}
 void emit(GameState& state, TriggerKind kind, TriggerPayload payload) noexcept;

@@ -152,6 +152,29 @@ void gain_to_destination(PlayerState& player, Slot slot, GainDestination destina
     }
 }
 
+[[nodiscard]] bool gain_from_pile(
+    GameState& state,
+    PlayerId player,
+    Pile& pile,
+    GainDestination destination) noexcept {
+    if (!pile_has_cards(pile)) {
+        return false;
+    }
+
+    const Slot slot = pile_top_slot(pile);
+    const DefId def = state.slot_to_def[slot];
+    const bool has_triggers = !trigger_table_clean_empty(state);
+    if (has_triggers) {
+        emit(state, TriggerKind::WouldGain, TriggerPayload{player, def, slot, static_cast<std::uint8_t>(destination)});
+    }
+    decrement_pile(pile);
+    gain_to_destination(state.players[player], slot, destination);
+    if (has_triggers) {
+        emit(state, TriggerKind::OnGain, TriggerPayload{player, def, slot, static_cast<std::uint8_t>(destination)});
+    }
+    return true;
+}
+
 } // namespace
 
 bool do_gain(GameState& state, PlayerId player, Slot slot, GainDestination destination) noexcept {
@@ -161,12 +184,19 @@ bool do_gain(GameState& state, PlayerId player, Slot slot, GainDestination desti
         return false;
     }
 
-    const DefId def = state.slot_to_def[slot];
-    emit(state, TriggerKind::WouldGain, TriggerPayload{player, def, slot, static_cast<std::uint8_t>(destination)});
-    decrement_pile(*pile);
-    gain_to_destination(state.players[player], slot, destination);
-    emit(state, TriggerKind::OnGain, TriggerPayload{player, def, slot, static_cast<std::uint8_t>(destination)});
-    return true;
+    return gain_from_pile(state, player, *pile, destination);
+}
+
+bool do_gain_from_supply_pile(
+    GameState& state,
+    PlayerId player,
+    std::uint8_t pile_index,
+    GainDestination destination) noexcept {
+    assert(player < state.num_players);
+    if (pile_index >= state.num_piles) {
+        return false;
+    }
+    return gain_from_pile(state, player, state.piles[pile_index], destination);
 }
 
 bool do_trash(GameState& state, PlayerId player, Slot slot, MoveZone from_zone) noexcept {
@@ -175,12 +205,14 @@ bool do_trash(GameState& state, PlayerId player, Slot slot, MoveZone from_zone) 
         return false;
     }
 
-    if (from_zone == MoveZone::InPlay) {
+    if (from_zone == MoveZone::InPlay && card_def(state.slot_to_def[slot]).trigger_mask != 0U) {
         mark_trigger_table_dirty(state);
     }
 
     ++state.trash[slot];
-    emit(state, TriggerKind::OnTrash, TriggerPayload{player, state.slot_to_def[slot], slot, 0U});
+    if (!trigger_table_clean_empty(state)) {
+        emit(state, TriggerKind::OnTrash, TriggerPayload{player, state.slot_to_def[slot], slot, 0U});
+    }
     return true;
 }
 
@@ -190,11 +222,57 @@ bool do_discard(GameState& state, PlayerId player, Slot slot, MoveZone from_zone
         return false;
     }
 
-    if (from_zone == MoveZone::InPlay) {
+    if (from_zone == MoveZone::InPlay && card_def(state.slot_to_def[slot]).trigger_mask != 0U) {
         mark_trigger_table_dirty(state);
     }
 
     append_discard(state.players[player], slot);
-    emit(state, TriggerKind::OnDiscard, TriggerPayload{player, state.slot_to_def[slot], slot, 0U});
+    if (!trigger_table_clean_empty(state)) {
+        emit(state, TriggerKind::OnDiscard, TriggerPayload{player, state.slot_to_def[slot], slot, 0U});
+    }
     return true;
+}
+
+void do_discard_all_hand(GameState& state, PlayerId player) noexcept {
+    assert(player < state.num_players);
+    if (!trigger_table_clean_empty(state)) {
+        for (std::uint8_t slot = 0; slot < state.num_slots; ++slot) {
+            const std::uint8_t count = state.players[player].hand[slot];
+            for (std::uint8_t i = 0; i < count; ++i) {
+                const bool discarded = do_discard(state, player, slot, MoveZone::Hand);
+                (void)discarded;
+                assert(discarded);
+            }
+        }
+        return;
+    }
+
+    PlayerState& player_state = state.players[player];
+    for (std::uint8_t slot = 0; slot < state.num_slots; ++slot) {
+        const std::uint8_t count = player_state.hand[slot];
+        player_state.hand[slot] = 0;
+        for (std::uint8_t i = 0; i < count; ++i) {
+            append_discard(player_state, slot);
+        }
+    }
+}
+
+void do_discard_all_in_play(GameState& state, PlayerId player) noexcept {
+    assert(player < state.num_players);
+    if (!trigger_table_clean_empty(state)) {
+        while (state.players[player].in_play_size > 0U) {
+            const Slot slot = state.players[player].in_play[0].slot;
+            const bool discarded = do_discard(state, player, slot, MoveZone::InPlay);
+            (void)discarded;
+            assert(discarded);
+        }
+        return;
+    }
+
+    PlayerState& player_state = state.players[player];
+    for (std::uint8_t i = 0; i < player_state.in_play_size; ++i) {
+        append_discard(player_state, player_state.in_play[i].slot);
+        player_state.in_play[i] = InPlayEntry{};
+    }
+    player_state.in_play_size = 0;
 }

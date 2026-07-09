@@ -548,6 +548,13 @@ ordering window covered by a conformance test even though base set rarely hits i
 **Exit:** full base set; 10M fuzz steps clean under ASan/UBSan; ≥50K
 games/sec random-agent; golden replays locked.
 
+> **3.4 outcome (2026-07):** perf pass landed 15.6K→38.8K random-agent
+> games/sec (BM 80K, step 42ns, mask 26ns). The 50K random-agent target was
+> not met: profiling shows no remaining local hotspot — random games simply
+> average ~440 decisions. Closing the gap would require coarsening the
+> decision decomposition (changes the NN action space), rejected. Accepted
+> deviation; revisit only if self-play throughput proves insufficient.
+
 ### Phase 4 — RL surface
 
 | # | Task | Size |

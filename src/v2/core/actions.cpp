@@ -26,14 +26,14 @@ namespace {
     return state.slot_to_def[pile_top_slot(pile)];
 }
 
-[[nodiscard]] Pile* find_buy_pile(GameState& state, DefId def) noexcept {
+[[nodiscard]] std::uint8_t find_buy_pile_index(const GameState& state, DefId def) noexcept {
     for (std::uint8_t i = 0; i < state.num_piles; ++i) {
-        Pile& pile = state.piles[i];
+        const Pile& pile = state.piles[i];
         if (pile_has_cards(pile) && pile_top_def(state, pile) == def) {
-            return &pile;
+            return i;
         }
     }
-    return nullptr;
+    return MAX_PILES;
 }
 
 [[nodiscard]] std::int8_t budget_component(std::int16_t value) noexcept {
@@ -55,10 +55,8 @@ namespace {
 }
 
 void add_action(ActionMask& out, int& count, Action action) noexcept {
-    if (!out.test(action)) {
-        out.set(action);
-        ++count;
-    }
+    out.set(action);
+    ++count;
 }
 
 void add_buy_actions(const GameState& state, ActionMask& out, int& count) noexcept {
@@ -306,7 +304,9 @@ void play_card_to_in_play(GameState& state, DefId def) noexcept {
     assert(player.in_play_size < MAX_IN_PLAY);
     player.in_play[player.in_play_size] = InPlayEntry{slot, slot, 0};
     ++player.in_play_size;
-    mark_trigger_table_dirty(state);
+    if (card_def(def).trigger_mask != 0U) {
+        mark_trigger_table_dirty(state);
+    }
 }
 
 [[nodiscard]] std::uint8_t in_play_count(const GameState& state, PlayerId player_id, DefId def) noexcept {
@@ -323,17 +323,23 @@ void play_card_to_in_play(GameState& state, DefId def) noexcept {
 void play_treasure(GameState& state, DefId def) noexcept {
     const PlayerId player = current_player(state);
     play_card_to_in_play(state, def);
+    const CardDef& defn = card_def(def);
     if (def == DEF_POTION) {
         ++state.potion_coins;
     } else {
-        state.coins = static_cast<std::int16_t>(state.coins + card_def(def).coin_value);
+        state.coins = static_cast<std::int16_t>(state.coins + defn.coin_value);
     }
-    const bool pushed = push_effect(state, def, current_player(state));
-    (void)pushed;
-    assert(pushed);
-    emit(state, TriggerKind::OnPlayTreasure, TriggerPayload{player, def, slot_of(state, def), 0U});
-    if (def == DEF_SILVER && in_play_count(state, player, DEF_SILVER) == 1U) {
-        emit(state, TriggerKind::OnFirstPlay, TriggerPayload{player, def, slot_of(state, def), 0U});
+    if (defn.on_play.len != 0U || defn.custom != nullptr) {
+        const bool pushed = push_effect(state, def, player);
+        (void)pushed;
+        assert(pushed);
+    }
+    if (!trigger_table_clean_empty(state)) {
+        const Slot slot = slot_of(state, def);
+        emit(state, TriggerKind::OnPlayTreasure, TriggerPayload{player, def, slot, 0U});
+        if (def == DEF_SILVER && in_play_count(state, player, DEF_SILVER) == 1U) {
+            emit(state, TriggerKind::OnFirstPlay, TriggerPayload{player, def, slot, 0U});
+        }
     }
 }
 
@@ -345,22 +351,23 @@ void play_action_card(GameState& state, DefId def) noexcept {
     const bool pushed = push_effect(state, def, player);
     (void)pushed;
     assert(pushed);
-    emit(state, TriggerKind::OnPlayAction, TriggerPayload{player, def, slot_of(state, def), 0U});
+    if (!trigger_table_clean_empty(state)) {
+        emit(state, TriggerKind::OnPlayAction, TriggerPayload{player, def, slot_of(state, def), 0U});
+    }
 }
 
 void buy_card(GameState& state, DefId def) noexcept {
-    Pile* pile = find_buy_pile(state, def);
-    assert(pile != nullptr);
-    if (pile == nullptr) {
+    const std::uint8_t pile_index = find_buy_pile_index(state, def);
+    assert(pile_index < state.num_piles);
+    if (pile_index >= state.num_piles) {
         return;
     }
 
-    const Slot gained_slot = pile_top_slot(*pile);
     const Cost cost = effective_cost(state, def);
     assert(cost.fits_within(current_budget(state)));
     spend_cost(state, cost);
     --state.buys;
-    const bool gained = do_gain(state, current_player(state), gained_slot, GainDestination::Discard);
+    const bool gained = do_gain_from_supply_pile(state, current_player(state), pile_index, GainDestination::Discard);
     (void)gained;
     assert(gained);
 }
@@ -470,28 +477,24 @@ void apply_action(GameState& state, Action action) noexcept {
         } else if (phase == Phase::Buy || phase == Phase::Night) {
             state.phase = static_cast<std::uint8_t>(Phase::Cleanup);
         }
-        refresh_current_decision(state);
         return;
     }
 
     if (phase == Phase::Buy && action_is_play(action)) {
         const DefId def = action_def(action, A_PLAY_BASE);
         play_treasure(state, def);
-        refresh_current_decision(state);
         return;
     }
 
     if (phase == Phase::Action && action_is_play(action)) {
         const DefId def = action_def(action, A_PLAY_BASE);
         play_action_card(state, def);
-        refresh_current_decision(state);
         return;
     }
 
     if (phase == Phase::Buy && action_is_buy(action)) {
         const DefId def = action_def(action, A_BUY_BASE);
         buy_card(state, def);
-        refresh_current_decision(state);
         return;
     }
 
