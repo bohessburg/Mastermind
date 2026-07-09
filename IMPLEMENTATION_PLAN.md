@@ -623,9 +623,12 @@ efficiency, not FLOPs.
 | T.1 | Batched-leaf NN-MCTS: C++ `SelfPlayRunner` (N parallel games, per-game Mcts with virtual loss; `collect_leaves()` → stacked obs, `provide_evaluations(policy, value)` resumes search; emits finished-game records: per-decision obs, visit-count policy targets, outcome) + pybind surface | L |
 | T.2 | Python training loop `src/v2/train/`: PyTorch MLP (masked policy over ACTION_SPACE + tanh value), MPS; replay buffer; self-play → train → checkpoint cycle from a config file; deterministic seeding | M |
 | T.3 | Eval ladder: periodic checkpoint eval vs EngineBot/BigMoney (NN-MCTS at eval sims), win-rate tracking; gate = ≥50% vs EngineBot excl. ties, ≥200 random-kingdom seat-swapped games | M |
+| T.4 | Training container: `Dockerfile.train` (CUDA base, builds dominion_v2_py, torch, entrypoint = training config), `--device auto` (cuda/mps/cpu), `--smoke` validation mode (~2 min), resume-from-checkpoint, artifacts (checkpoints/replay/metrics CSV) on a mounted volume | M |
+| T.5 | Remote-run orchestration (`scripts/infra/`): provider tooling (vast.ai/RunPod CLI wrappers) to (a) search offers by GPU/vCPU/price and provision, (b) bootstrap the training image on the box, (c) launch a run and stream logs locally, (d) periodic + final checkpoint/metrics sync back to local `checkpoints/`, (e) status (GPU util, games/hr, latest eval), (f) teardown with artifact-sync guarantee + idle-cost guard. Orchestration stays LOCAL — the box is a disposable worker. API keys via env/keychain only, never in repo. | L |
 
 **Exit:** a trained checkpoint beats EngineBot; the run is reproducible from
-config + seed.
+config + seed; a full run can execute on a rented GPU box end-to-end (provision
+→ train → sync → teardown) driven from the local session.
 
 ### Phase 7 — Durations & mats (Seaside/Adventures core mechanics)
 
