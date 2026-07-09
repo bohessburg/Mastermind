@@ -14,7 +14,7 @@ from fastapi.staticfiles import StaticFiles
 
 import dominion_v2_py as dz
 
-from .defs import def_by_id, def_id, load_defs
+from .defs import def_by_id, def_id, kingdom_def_ids, load_defs
 from .observer import capture_public_snapshot, decision_kind_name, legal_options, prompt_for, public_log_lines
 
 
@@ -65,8 +65,11 @@ def _make_setup(players: int, kingdom: list[int]) -> dz.Setup:
     return dz.Setup(players=players, kingdom=kingdom)
 
 
-def _parse_kingdom(payload: dict[str, Any]) -> list[int]:
+def _parse_kingdom(payload: dict[str, Any], seed: int) -> list[int]:
     raw = payload.get("kingdom") or DEFAULT_KINGDOM
+    if raw == "random":
+        # Seeded so the same session seed reproduces the same kingdom.
+        return sorted(random.Random(seed).sample(kingdom_def_ids(), 10))
     kingdom: list[int] = []
     for item in raw:
         if isinstance(item, str):
@@ -422,7 +425,7 @@ async def create_session(payload: dict[str, Any]) -> dict[str, Any]:
     thinking_delay_ms = int(payload.get("thinking_delay_ms", payload.get("thinkingDelayMs", 600)))
     if thinking_delay_ms < 0:
         raise HTTPException(status_code=400, detail="thinking delay must be non-negative")
-    kingdom = _parse_kingdom(payload)
+    kingdom = _parse_kingdom(payload, seed)
     setup = _make_setup(len(seat_kinds), kingdom)
     session_id = secrets.token_urlsafe(12)
     seats = [Seat(kind=kind, token=secrets.token_urlsafe(16)) for kind in seat_kinds]

@@ -413,6 +413,7 @@ function JoinScreen({ onJoin }: { onJoin: (credentials: Credentials) => void }) 
   const [sessionId, setSessionId] = useState('');
   const [seatToken, setSeatToken] = useState('');
   const [mode, setMode] = useState<'human-bot' | 'human-human'>('human-bot');
+  const [kingdomMode, setKingdomMode] = useState<'preset' | 'random'>('preset');
   const [seed, setSeed] = useState('2026');
   const [created, setCreated] = useState<CreatedSession | undefined>();
   const [error, setError] = useState<string | undefined>();
@@ -425,7 +426,7 @@ function JoinScreen({ onJoin }: { onJoin: (credentials: Credentials) => void }) 
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         seats,
-        kingdom: kingdomPreset(),
+        kingdom: kingdomMode === 'random' ? 'random' : kingdomPreset(),
         seed: seed.trim() === '' ? undefined : Number(seed),
       }),
     });
@@ -454,6 +455,16 @@ function JoinScreen({ onJoin }: { onJoin: (credentials: Credentials) => void }) 
             <select value={mode} onChange={(event) => setMode(event.target.value as 'human-bot' | 'human-human')}>
               <option value="human-bot">Human vs bot</option>
               <option value="human-human">Human vs human</option>
+            </select>
+          </label>
+          <label>
+            Kingdom
+            <select
+              value={kingdomMode}
+              onChange={(event) => setKingdomMode(event.target.value as 'preset' | 'random')}
+            >
+              <option value="preset">Preset</option>
+              <option value="random">Random</option>
             </select>
           </label>
           <label>

@@ -421,3 +421,26 @@ def test_export_endpoint_replays_deterministically() -> None:
     assert data["actions"]
     assert data["obs_version"] == dz.OBS_VERSION
     assert verify_export_data(data) == int(data["final_state_hash"], 16)
+
+
+def test_random_kingdom_is_seeded_and_valid() -> None:
+    from src.v2.web.server.defs import kingdom_def_ids
+
+    with TestClient(app) as client:
+        first = client.post(
+            "/api/session",
+            json={"seats": ["human", "bot"], "kingdom": "random", "seed": 99, "thinking_delay_ms": 0},
+        ).json()
+        second = client.post(
+            "/api/session",
+            json={"seats": ["human", "bot"], "kingdom": "random", "seed": 99, "thinking_delay_ms": 0},
+        ).json()
+        pool = set(kingdom_def_ids())
+        kingdoms = []
+        for created in (first, second):
+            session = sessions[created["session_id"]]
+            assert len(session.kingdom) == 10
+            assert len(set(session.kingdom)) == 10
+            assert set(session.kingdom) <= pool
+            kingdoms.append(list(session.kingdom))
+        assert kingdoms[0] == kingdoms[1]

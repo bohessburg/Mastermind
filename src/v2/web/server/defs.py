@@ -26,6 +26,16 @@ def def_id(name: str) -> int:
     return int(load_defs()["by_name"][name]["id"])
 
 
+def kingdom_def_ids() -> list[int]:
+    # Kingdom pool = everything except the basic cards (ids 0-9) and the
+    # engine's synthetic test defs (names ending in "Test").
+    return [
+        int(card["id"])
+        for card in load_defs()["defs"]
+        if int(card["id"]) >= 10 and not str(card["name"]).endswith("Test")
+    ]
+
+
 def def_name(def_id: int | None) -> str:
     if def_id is None:
         return ""
