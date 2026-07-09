@@ -33,7 +33,7 @@ jobs:
       - name: Create venv
         run: python3 -m venv .venv
       - name: Install Python deps
-        run: ./.venv/bin/python -m pip install --upgrade pip numpy pybind11
+        run: ./.venv/bin/python -m pip install --upgrade pip numpy pybind11 -r src/v2/web/server/requirements.txt
       - name: Configure
         run: |
           PYBIND11_DIR="$(./.venv/bin/python -m pybind11 --cmakedir)"
@@ -44,6 +44,26 @@ jobs:
         run: PYTHONPATH=build-py ./.venv/bin/python src/v2/py/test_smoke.py
       - name: Server tests
         run: PYTHONPATH=build-py ./.venv/bin/python -m pytest src/v2/web/server -q
+
+  web-client:
+    name: Web Client
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '23'
+          cache: npm
+          cache-dependency-path: src/v2/web/client/package-lock.json
+      - name: Install
+        working-directory: src/v2/web/client
+        run: npm ci
+      - name: Test
+        working-directory: src/v2/web/client
+        run: npm test
+      - name: Build
+        working-directory: src/v2/web/client
+        run: npm run build
 
   sanitizer:
     name: Debug Sanitizers
@@ -78,35 +98,9 @@ jobs:
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release
       - name: Build
         run: cmake --build build --target v2_bench
+      # Informational only: runner hardware differs from the baseline machine,
+      # so absolute thresholds are meaningless in CI. The ±15% regression gate
+      # runs on dev machines via bench/check_regression.py against a baseline
+      # recorded on the same machine.
       - name: Run
         run: ./build/v2_bench | tee bench/current.json
-      - name: Regression gate
-        run: |
-          python3 - <<'PY'
-          import json
-          import sys
-
-          with open("bench/baseline.json", "r", encoding="utf-8") as f:
-              baseline = json.load(f)
-          with open("bench/current.json", "r", encoding="utf-8") as f:
-              current = json.load(f)
-
-          failures = []
-          step_limit = baseline["step_median_ns"] * 1.15
-          random_limit = baseline["random_games_per_sec"] * 0.85
-
-          if current["step_median_ns"] > step_limit:
-              failures.append(
-                  f"step_median_ns {current['step_median_ns']} > {step_limit:.2f}"
-              )
-          if current["random_games_per_sec"] < random_limit:
-              failures.append(
-                  f"random_games_per_sec {current['random_games_per_sec']} < {random_limit:.2f}"
-              )
-
-          print("baseline:", json.dumps(baseline, sort_keys=True))
-          print("current:", json.dumps(current, sort_keys=True))
-          if failures:
-              print("bench regression:", "; ".join(failures), file=sys.stderr)
-              sys.exit(1)
-          PY
