@@ -611,6 +611,22 @@ root cause addressed).
 > 110/73/17, K=2 123/64/13 (65.8% excluding ties). MctsConfig now defaults to
 > EngineLike rollouts with K=2. Best-config vs BigMoney was 173/22/5.
 
+### Phase T — Base-set NN training (inserted 2026-07; runs before Phase 7)
+
+Goal: AlphaZero-style training on the base set to ≥ parity with EngineBot.
+Hardware target: local M1 Max (measured: 1.2M NN evals/sec MPS @ batch 4096
+on a 2.9M-param MLP; engine cost negligible). Bottleneck is batching
+efficiency, not FLOPs.
+
+| # | Task | Size |
+|---|------|------|
+| T.1 | Batched-leaf NN-MCTS: C++ `SelfPlayRunner` (N parallel games, per-game Mcts with virtual loss; `collect_leaves()` → stacked obs, `provide_evaluations(policy, value)` resumes search; emits finished-game records: per-decision obs, visit-count policy targets, outcome) + pybind surface | L |
+| T.2 | Python training loop `src/v2/train/`: PyTorch MLP (masked policy over ACTION_SPACE + tanh value), MPS; replay buffer; self-play → train → checkpoint cycle from a config file; deterministic seeding | M |
+| T.3 | Eval ladder: periodic checkpoint eval vs EngineBot/BigMoney (NN-MCTS at eval sims), win-rate tracking; gate = ≥50% vs EngineBot excl. ties, ≥200 random-kingdom seat-swapped games | M |
+
+**Exit:** a trained checkpoint beats EngineBot; the run is reproducible from
+config + seed.
+
 ### Phase 7 — Durations & mats (Seaside/Adventures core mechanics)
 
 | # | Task | Size |
