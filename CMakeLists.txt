@@ -77,6 +77,7 @@ endif()
 add_library(dominion_v2 STATIC
     src/v2/cards/base.cpp
     src/v2/core/actions.cpp
+    src/v2/core/determinize.cpp
     src/v2/core/game.cpp
     src/v2/core/interp.cpp
     src/v2/core/moves.cpp
@@ -118,31 +119,19 @@ if(BUILD_PYTHON)
     set(Python3_FIND_UNVERSIONED_NAMES FIRST)
     set(Python3_FIND_STRATEGY LOCATION)
     find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
-    execute_process(
-        COMMAND "${Python3_EXECUTABLE}" -c "import numpy; print(numpy.get_include())"
-        RESULT_VARIABLE NUMPY_INCLUDE_RESULT
-        OUTPUT_VARIABLE Python3_NumPy_INCLUDE_DIRS
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-    )
-    if(NOT NUMPY_INCLUDE_RESULT EQUAL 0)
-        message(FATAL_ERROR "BUILD_PYTHON=ON requires numpy for ${Python3_EXECUTABLE}")
+    if(NOT pybind11_DIR)
+        set(_local_pybind11_dir "${CMAKE_CURRENT_SOURCE_DIR}/.venv/lib/python3.11/site-packages/pybind11/share/cmake/pybind11")
+        if(EXISTS "${_local_pybind11_dir}")
+            set(pybind11_DIR "${_local_pybind11_dir}" CACHE PATH "pybind11 CMake config directory")
+        endif()
     endif()
-    execute_process(
-        COMMAND "${Python3_EXECUTABLE}" -c "import sysconfig; print(sysconfig.get_config_var('EXT_SUFFIX') or '.so')"
-        OUTPUT_VARIABLE PYTHON_EXTENSION_SUFFIX
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-    )
+    find_package(pybind11 CONFIG REQUIRED)
 
-    add_library(dominion_v2_py MODULE
+    pybind11_add_module(dominion_v2_py
         src/v2/py/module.cpp
     )
-    target_link_libraries(dominion_v2_py PRIVATE dominion_v2_drivers dominion_v2_encode Python3::Python)
-    target_include_directories(dominion_v2_py PRIVATE src ${Python3_NumPy_INCLUDE_DIRS})
-    set_target_properties(dominion_v2_py PROPERTIES
-        PREFIX ""
-        OUTPUT_NAME "dominion_v2_py"
-        SUFFIX "${PYTHON_EXTENSION_SUFFIX}"
-    )
+    target_link_libraries(dominion_v2_py PRIVATE dominion_v2_drivers dominion_v2_encode)
+    target_include_directories(dominion_v2_py PRIVATE src)
     configure_v2_target(dominion_v2_py)
 endif()
 
@@ -190,6 +179,7 @@ if(BUILD_TESTS)
         tests/v2/test_fuzz.cpp
         tests/v2/test_golden.cpp
         tests/v2/test_encoder.cpp
+        tests/v2/test_determinize.cpp
         tests/v2/test_specs_base.cpp
         tests/v2/test_attacks_triggers.cpp
     )

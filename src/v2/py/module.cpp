@@ -1,55 +1,80 @@
-#define PY_SSIZE_T_CLEAN
-#include <Python.h>
-
-#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION
-#include <numpy/arrayobject.h>
+#include <pybind11/numpy.h>
+#include <pybind11/pybind11.h>
+#include <pybind11/stl.h>
 
 #include "v2/core/actions.h"
 #include "v2/core/defs.h"
+#include "v2/core/determinize.h"
 #include "v2/core/game.h"
 #include "v2/core/score.h"
 #include "v2/encode/encoder.h"
 
 #include <cstdint>
-#include <cstdio>
 #include <cstring>
+#include <stdexcept>
+#include <string>
+#include <vector>
+
+namespace py = pybind11;
 
 namespace {
 
-struct PySetupObject {
-    PyObject_HEAD
-    Setup setup;
+[[nodiscard]] DefId parse_def(py::handle object);
+
+struct PySetup {
+    Setup setup{};
+
+    PySetup(int players, const py::object& kingdom, bool colony) {
+        if (players < 2 || players > MAX_PLAYERS) {
+            throw std::invalid_argument("players must be between 2 and MAX_PLAYERS");
+        }
+        setup = Setup{};
+        setup.num_players = static_cast<PlayerId>(players);
+        setup.use_colony_platinum = colony;
+        fill_kingdom(kingdom);
+    }
+
+    void fill_kingdom(const py::object& kingdom) {
+        if (kingdom.is_none()) {
+            return;
+        }
+        if (py::isinstance<py::str>(kingdom)) {
+            throw std::invalid_argument("kingdom must be a sequence");
+        }
+
+        const py::sequence sequence = py::reinterpret_borrow<py::sequence>(kingdom);
+        const std::size_t size = py::len(sequence);
+        if (size > MAX_KINGDOM_DEFS) {
+            throw std::invalid_argument("kingdom has too many cards");
+        }
+
+        setup.kingdom_count = static_cast<std::uint8_t>(size);
+        for (std::size_t i = 0; i < size; ++i) {
+            setup.kingdom[static_cast<std::uint8_t>(i)] = parse_def(sequence[i]);
+        }
+    }
 };
 
-struct PyGameObject {
-    PyObject_HEAD
-    GameState state;
+struct PyGame {
+    GameState state{};
 };
-
-#if defined(__clang__)
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wmissing-field-initializers"
-#elif defined(__GNUC__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wmissing-field-initializers"
-#endif
-PyTypeObject PySetupType = {PyVarObject_HEAD_INIT(nullptr, 0)};
-PyTypeObject PyGameType = {PyVarObject_HEAD_INIT(nullptr, 0)};
-#if defined(__clang__)
-#pragma clang diagnostic pop
-#elif defined(__GNUC__)
-#pragma GCC diagnostic pop
-#endif
 
 [[nodiscard]] bool valid_player(const GameState& state, int player) noexcept {
     return player >= 0 && player < static_cast<int>(state.num_players);
 }
 
-[[nodiscard]] PlayerId current_player_id(const GameState& state) noexcept {
+[[nodiscard]] PlayerId turn_player_id(const GameState& state) noexcept {
     if (state.turn_queue.size == 0U) {
         return 0U;
     }
     return state.turn_queue.entries[state.turn_queue.head].player;
+}
+
+[[nodiscard]] PlayerId decision_player_id(const GameState& state) noexcept {
+    if (state.decision.player < state.num_players) {
+        return state.decision.player;
+    }
+    return turn_player_id(state);
 }
 
 [[nodiscard]] int pile_count(const Pile& pile) noexcept {
@@ -60,9 +85,6 @@ PyTypeObject PyGameType = {PyVarObject_HEAD_INIT(nullptr, 0)};
     if (pile.mixed_len > 0U) {
         return pile.mixed[pile.mixed_len - 1U];
     }
-    if (pile.count > 0U) {
-        return pile.base;
-    }
     return pile.base;
 }
 
@@ -72,13 +94,10 @@ PyTypeObject PyGameType = {PyVarObject_HEAD_INIT(nullptr, 0)};
         | (static_cast<std::uint16_t>(player.vp_tokens_hi) << 8U));
 }
 
-[[nodiscard]] bool def_from_name(const char* name, DefId& out) noexcept {
-    if (name == nullptr) {
-        return false;
-    }
+[[nodiscard]] bool def_from_name(const std::string& name, DefId& out) noexcept {
     const std::uint16_t count = card_def_count();
     for (DefId def = 0; def < count; ++def) {
-        if (std::strcmp(card_def(def).name, name) == 0) {
+        if (std::strcmp(card_def(def).name, name.c_str()) == 0) {
             out = def;
             return true;
         }
@@ -86,396 +105,84 @@ PyTypeObject PyGameType = {PyVarObject_HEAD_INIT(nullptr, 0)};
     return false;
 }
 
-[[nodiscard]] bool parse_def(PyObject* object, DefId& out) {
-    if (PyUnicode_Check(object) != 0) {
-        const char* name = PyUnicode_AsUTF8(object);
-        if (name == nullptr) {
-            return false;
-        }
-        if (!def_from_name(name, out)) {
-            PyErr_Format(PyExc_ValueError, "unknown card name: %s", name);
-            return false;
-        }
-        return true;
-    }
-
-    const unsigned long value = PyLong_AsUnsignedLong(object);
-    if (PyErr_Occurred() != nullptr) {
-        return false;
-    }
-    if (value >= card_def_count()) {
-        PyErr_SetString(PyExc_ValueError, "def id out of range");
-        return false;
-    }
-    out = static_cast<DefId>(value);
-    return true;
-}
-
-[[nodiscard]] bool fill_kingdom(Setup& setup, PyObject* kingdom_object) {
-    if (kingdom_object == nullptr || kingdom_object == Py_None) {
-        return true;
-    }
-
-    PyObject* sequence = PySequence_Fast(kingdom_object, "kingdom must be a sequence");
-    if (sequence == nullptr) {
-        return false;
-    }
-
-    const Py_ssize_t size = PySequence_Fast_GET_SIZE(sequence);
-    if (size > MAX_KINGDOM_DEFS) {
-        Py_DECREF(sequence);
-        PyErr_SetString(PyExc_ValueError, "kingdom has too many cards");
-        return false;
-    }
-
-    setup.kingdom_count = static_cast<std::uint8_t>(size);
-    PyObject** items = PySequence_Fast_ITEMS(sequence);
-    for (Py_ssize_t i = 0; i < size; ++i) {
+[[nodiscard]] DefId parse_def(const py::handle object) {
+    if (py::isinstance<py::str>(object)) {
+        const std::string name = py::cast<std::string>(object);
         DefId def = 0;
-        if (!parse_def(items[i], def)) {
-            Py_DECREF(sequence);
-            return false;
+        if (!def_from_name(name, def)) {
+            throw std::invalid_argument("unknown card name: " + name);
         }
-        setup.kingdom[i] = def;
+        return def;
     }
 
-    Py_DECREF(sequence);
-    return true;
+    const auto value = py::cast<std::uint64_t>(object);
+    if (value >= card_def_count()) {
+        throw std::invalid_argument("def id out of range");
+    }
+    return static_cast<DefId>(value);
 }
 
-[[nodiscard]] PyObject* py_game_from_state(const GameState& state) {
-    auto* object = PyObject_New(PyGameObject, &PyGameType);
-    if (object == nullptr) {
-        return nullptr;
-    }
-    object->state = state;
-    return reinterpret_cast<PyObject*>(object);
+[[nodiscard]] py::dict decision_dict(const PendingDecision& decision) {
+    py::dict dict;
+    dict["player"] = decision.player;
+    dict["kind"] = decision.kind;
+    dict["source"] = decision.source;
+    dict["min"] = decision.min_left;
+    dict["max"] = decision.max_left;
+    return dict;
 }
 
-int PySetup_init(PySetupObject* self, PyObject* args, PyObject* kwargs) {
-    int players = 2;
-    PyObject* kingdom = nullptr;
-    int colony = 0;
-    static const char* kwlist[] = {"players", "kingdom", "use_colony_platinum", nullptr};
-    if (PyArg_ParseTupleAndKeywords(
-            args,
-            kwargs,
-            "|iOp",
-            const_cast<char**>(kwlist),
-            &players,
-            &kingdom,
-            &colony) == 0) {
-        return -1;
-    }
-    if (players < 2 || players > MAX_PLAYERS) {
-        PyErr_SetString(PyExc_ValueError, "players must be between 2 and MAX_PLAYERS");
-        return -1;
-    }
-
-    self->setup = Setup{};
-    self->setup.num_players = static_cast<PlayerId>(players);
-    self->setup.use_colony_platinum = colony != 0;
-    if (!fill_kingdom(self->setup, kingdom)) {
-        return -1;
-    }
-    return 0;
+[[nodiscard]] PyGame make_game(const GameState& state) noexcept {
+    PyGame game{};
+    game.state = state;
+    return game;
 }
 
-PyObject* PySetup_repr(PySetupObject* self) {
-    return PyUnicode_FromFormat(
-        "Setup(players=%u, kingdom_count=%u)",
-        static_cast<unsigned>(self->setup.num_players),
-        static_cast<unsigned>(self->setup.kingdom_count));
-}
-
-PyObject* py_def_id(PyObject*, PyObject* args) {
-    const char* name = nullptr;
-    if (PyArg_ParseTuple(args, "s", &name) == 0) {
-        return nullptr;
-    }
-    DefId def = 0;
-    if (!def_from_name(name, def)) {
-        PyErr_Format(PyExc_ValueError, "unknown card name: %s", name);
-        return nullptr;
-    }
-    return PyLong_FromUnsignedLong(def);
-}
-
-[[nodiscard]] bool set_dict_long(PyObject* dict, const char* key, long value) {
-    PyObject* object = PyLong_FromLong(value);
-    if (object == nullptr) {
-        return false;
-    }
-    const int result = PyDict_SetItemString(dict, key, object);
-    Py_DECREF(object);
-    return result == 0;
-}
-
-PyObject* py_new_game(PyObject*, PyObject* args) {
-    PyObject* setup_object = nullptr;
-    unsigned long long seed = 0;
-    if (PyArg_ParseTuple(args, "O!K", &PySetupType, &setup_object, &seed) == 0) {
-        return nullptr;
-    }
-
-    const auto* setup = reinterpret_cast<PySetupObject*>(setup_object);
+[[nodiscard]] PyGame py_new_game(const PySetup& setup, std::uint64_t seed) {
     GameState state{};
-    Py_BEGIN_ALLOW_THREADS
-    state = Game::new_game(setup->setup, static_cast<std::uint64_t>(seed));
-    Py_END_ALLOW_THREADS
-    return py_game_from_state(state);
+    {
+        py::gil_scoped_release release;
+        state = Game::new_game(setup.setup, seed);
+    }
+    return make_game(state);
 }
 
-PyObject* PyGame_step(PyGameObject* self, PyObject* args) {
-    unsigned long action_value = 0;
-    if (PyArg_ParseTuple(args, "k", &action_value) == 0) {
-        return nullptr;
-    }
-    if (action_value >= ACTION_SPACE_SIZE) {
-        PyErr_SetString(PyExc_ValueError, "action out of range");
-        return nullptr;
-    }
+[[nodiscard]] py::array_t<bool> legal_mask_array(const GameState& state) {
+    py::array_t<bool> array(static_cast<py::ssize_t>(ACTION_SPACE_SIZE));
+    bool* data = array.mutable_data();
 
     ActionMask legal{};
-    const int legal_count = Game::legal_actions(self->state, legal);
-    const Action action = static_cast<Action>(action_value);
-    if (legal_count <= 0 || !legal.test(action)) {
-        PyErr_SetString(PyExc_ValueError, "illegal action");
-        return nullptr;
+    {
+        py::gil_scoped_release release;
+        (void)Game::legal_actions(state, legal);
     }
 
-    bool done = false;
-    Py_BEGIN_ALLOW_THREADS
-    done = Game::step(self->state, action);
-    Py_END_ALLOW_THREADS
-    if (done) {
-        Py_RETURN_TRUE;
-    }
-    Py_RETURN_FALSE;
-}
-
-PyObject* PyGame_legal_mask(PyGameObject* self, PyObject*) {
-    npy_intp dims[1] = {static_cast<npy_intp>(ACTION_SPACE_SIZE)};
-    auto* array = reinterpret_cast<PyArrayObject*>(PyArray_SimpleNew(1, dims, NPY_BOOL));
-    if (array == nullptr) {
-        return nullptr;
-    }
-
-    ActionMask legal{};
-    int legal_count = 0;
-    Py_BEGIN_ALLOW_THREADS
-    legal_count = Game::legal_actions(self->state, legal);
-    Py_END_ALLOW_THREADS
-    (void)legal_count;
-
-    auto* data = static_cast<npy_bool*>(PyArray_DATA(array));
     for (Action action = 0; action < ACTION_SPACE_SIZE; ++action) {
-        data[action] = legal.test(action) ? NPY_TRUE : NPY_FALSE;
+        data[action] = legal.test(action);
     }
-    return reinterpret_cast<PyObject*>(array);
+    return array;
 }
 
-PyObject* PyGame_current_decision(PyGameObject* self, PyObject*) {
-    const PendingDecision decision = Game::current_decision(self->state);
-    PyObject* dict = PyDict_New();
-    if (dict == nullptr) {
-        return nullptr;
+[[nodiscard]] py::array_t<float> encode_array(const GameState& state, PlayerId player) {
+    py::array_t<float> array(static_cast<py::ssize_t>(OBS_SIZE));
+    float* data = array.mutable_data();
+    {
+        py::gil_scoped_release release;
+        encode(state, player, data);
     }
-
-    if (!set_dict_long(dict, "player", decision.player)
-        || !set_dict_long(dict, "kind", decision.kind)
-        || !set_dict_long(dict, "source", decision.source)
-        || !set_dict_long(dict, "min", decision.min_left)
-        || !set_dict_long(dict, "max", decision.max_left)) {
-        Py_DECREF(dict);
-        return nullptr;
-    }
-    return dict;
+    return array;
 }
 
-PyObject* PyGame_encode(PyGameObject* self, PyObject* args) {
-    int player = 0;
-    if (PyArg_ParseTuple(args, "i", &player) == 0) {
-        return nullptr;
-    }
-    if (!valid_player(self->state, player)) {
-        PyErr_SetString(PyExc_ValueError, "invalid player");
-        return nullptr;
-    }
-
-    npy_intp dims[1] = {static_cast<npy_intp>(OBS_SIZE)};
-    auto* array = reinterpret_cast<PyArrayObject*>(PyArray_SimpleNew(1, dims, NPY_FLOAT32));
-    if (array == nullptr) {
-        return nullptr;
-    }
-
-    auto* data = static_cast<float*>(PyArray_DATA(array));
-    Py_BEGIN_ALLOW_THREADS
-    encode(self->state, static_cast<PlayerId>(player), data);
-    Py_END_ALLOW_THREADS
-    return reinterpret_cast<PyObject*>(array);
-}
-
-PyObject* PyGame_clone(PyGameObject* self, PyObject*) {
-    return py_game_from_state(self->state);
-}
-
-PyObject* PyGame_score(PyGameObject* self, PyObject* args) {
-    int player = 0;
-    if (PyArg_ParseTuple(args, "i", &player) == 0) {
-        return nullptr;
-    }
-    if (!valid_player(self->state, player)) {
-        PyErr_SetString(PyExc_ValueError, "invalid player");
-        return nullptr;
-    }
-
-    const std::int16_t value = score(self->state, static_cast<PlayerId>(player));
-    return PyLong_FromLong(value);
-}
-
-PyObject* PyGame_hand(PyGameObject* self, PyObject* args) {
-    int player = 0;
-    if (PyArg_ParseTuple(args, "i", &player) == 0) {
-        return nullptr;
-    }
-    if (!valid_player(self->state, player)) {
-        PyErr_SetString(PyExc_ValueError, "invalid player");
-        return nullptr;
-    }
-
-    const PlayerState& player_state = self->state.players[player];
-    PyObject* dict = PyDict_New();
-    if (dict == nullptr) {
-        return nullptr;
-    }
-    for (std::uint8_t slot = 0; slot < self->state.num_slots; ++slot) {
-        const std::uint8_t count = player_state.hand[slot];
-        if (count == 0U) {
-            continue;
-        }
-        PyObject* key = PyLong_FromUnsignedLong(self->state.slot_to_def[slot]);
-        PyObject* value = PyLong_FromUnsignedLong(count);
-        if (key == nullptr || value == nullptr || PyDict_SetItem(dict, key, value) != 0) {
-            Py_XDECREF(key);
-            Py_XDECREF(value);
-            Py_DECREF(dict);
-            return nullptr;
-        }
-        Py_DECREF(key);
-        Py_DECREF(value);
-    }
-    return dict;
-}
-
-PyObject* PyGame_supply(PyGameObject* self, PyObject*) {
-    PyObject* list = PyList_New(self->state.num_piles);
-    if (list == nullptr) {
-        return nullptr;
-    }
-    for (std::uint8_t i = 0; i < self->state.num_piles; ++i) {
-        const Pile& pile = self->state.piles[i];
-        const Slot slot = pile_top_slot(pile);
-        const DefId def = slot < self->state.num_slots ? self->state.slot_to_def[slot] : 0U;
-        PyObject* tuple = Py_BuildValue("(ii)", static_cast<int>(def), pile_count(pile));
-        if (tuple == nullptr) {
-            Py_DECREF(list);
-            return nullptr;
-        }
-        PyList_SET_ITEM(list, i, tuple);
-    }
-    return list;
-}
-
-PyObject* PyGame_in_play(PyGameObject* self, PyObject* args) {
-    int player = 0;
-    if (PyArg_ParseTuple(args, "i", &player) == 0) {
-        return nullptr;
-    }
-    if (!valid_player(self->state, player)) {
-        PyErr_SetString(PyExc_ValueError, "invalid player");
-        return nullptr;
-    }
-
-    const PlayerState& player_state = self->state.players[player];
-    PyObject* list = PyList_New(player_state.in_play_size);
-    if (list == nullptr) {
-        return nullptr;
-    }
-    for (std::uint8_t i = 0; i < player_state.in_play_size; ++i) {
-        const Slot slot = player_state.in_play[i].slot;
-        const DefId def = slot < self->state.num_slots ? self->state.slot_to_def[slot] : 0U;
-        PyObject* value = PyLong_FromUnsignedLong(def);
-        if (value == nullptr) {
-            Py_DECREF(list);
-            return nullptr;
-        }
-        PyList_SET_ITEM(list, i, value);
-    }
-    return list;
-}
-
-PyObject* PyGame_resources(PyGameObject* self, PyObject* args) {
-    int player = -1;
-    if (PyArg_ParseTuple(args, "|i", &player) == 0) {
-        return nullptr;
-    }
-    if (player < 0) {
-        player = static_cast<int>(current_player_id(self->state));
-    }
-    if (!valid_player(self->state, player)) {
-        PyErr_SetString(PyExc_ValueError, "invalid player");
-        return nullptr;
-    }
-
-    const PlayerState& player_state = self->state.players[player];
-    return Py_BuildValue(
-        "{s:i,s:i,s:i,s:i,s:i,s:i,s:i,s:i,s:i}",
-        "actions",
-        static_cast<int>(self->state.actions),
-        "buys",
-        static_cast<int>(self->state.buys),
-        "coins",
-        static_cast<int>(self->state.coins),
-        "potion",
-        static_cast<int>(self->state.potion_coins),
-        "debt",
-        static_cast<int>(player_state.debt),
-        "coffers",
-        static_cast<int>(player_state.coffers),
-        "villagers",
-        static_cast<int>(player_state.villagers),
-        "favors",
-        static_cast<int>(player_state.favors),
-        "vp_tokens",
-        static_cast<int>(vp_tokens(player_state)));
-}
-
-PyObject* PyGame_phase(PyGameObject* self, PyObject*) {
-    return PyLong_FromUnsignedLong(self->state.phase);
-}
-
-PyObject* PyGame_turn(PyGameObject* self, PyObject*) {
-    return PyLong_FromUnsignedLong(self->state.turn_counter);
-}
-
-PyObject* PyGame_game_over(PyGameObject* self, PyObject*) {
-    if (self->state.phase == static_cast<std::uint8_t>(Phase::Over)) {
-        Py_RETURN_TRUE;
-    }
-    Py_RETURN_FALSE;
-}
-
-PyObject* PyGame_winner(PyGameObject* self, PyObject*) {
-    if (self->state.phase != static_cast<std::uint8_t>(Phase::Over)) {
-        Py_RETURN_NONE;
+[[nodiscard]] py::object winner_object(const GameState& state) {
+    if (state.phase != static_cast<std::uint8_t>(Phase::Over)) {
+        return py::none();
     }
 
     PlayerId winner = 0;
     bool tied = false;
-    for (PlayerId player = 1; player < self->state.num_players; ++player) {
-        const std::int16_t player_score = score(self->state, player);
-        const std::int16_t winner_score = score(self->state, winner);
+    for (PlayerId player = 1; player < state.num_players; ++player) {
+        const std::int16_t player_score = score(state, player);
+        const std::int16_t winner_score = score(state, winner);
         if (player_score > winner_score) {
             winner = player;
             tied = false;
@@ -485,129 +192,381 @@ PyObject* PyGame_winner(PyGameObject* self, PyObject*) {
     }
 
     if (tied) {
-        Py_RETURN_NONE;
+        return py::none();
     }
-    return PyLong_FromUnsignedLong(winner);
+    return py::int_(winner);
 }
 
-PyMethodDef PyGame_methods[] = {
-    {"step", reinterpret_cast<PyCFunction>(PyGame_step), METH_VARARGS, "Apply an action and return done."},
-    {"legal_mask", reinterpret_cast<PyCFunction>(PyGame_legal_mask), METH_NOARGS, "Return legal actions as a numpy bool array."},
-    {"current_decision", reinterpret_cast<PyCFunction>(PyGame_current_decision), METH_NOARGS, "Return the current decision metadata."},
-    {"encode", reinterpret_cast<PyCFunction>(PyGame_encode), METH_VARARGS, "Return an observation for a player."},
-    {"clone", reinterpret_cast<PyCFunction>(PyGame_clone), METH_NOARGS, "Clone the game state."},
-    {"score", reinterpret_cast<PyCFunction>(PyGame_score), METH_VARARGS, "Return player score."},
-    {"hand", reinterpret_cast<PyCFunction>(PyGame_hand), METH_VARARGS, "Return hand counts by def id."},
-    {"supply", reinterpret_cast<PyCFunction>(PyGame_supply), METH_NOARGS, "Return supply piles as (def, count)."},
-    {"in_play", reinterpret_cast<PyCFunction>(PyGame_in_play), METH_VARARGS, "Return in-play def ids."},
-    {"resources", reinterpret_cast<PyCFunction>(PyGame_resources), METH_VARARGS, "Return resource scalars."},
-    {"phase", reinterpret_cast<PyCFunction>(PyGame_phase), METH_NOARGS, "Return phase enum value."},
-    {"turn", reinterpret_cast<PyCFunction>(PyGame_turn), METH_NOARGS, "Return completed turn count."},
-    {"game_over", reinterpret_cast<PyCFunction>(PyGame_game_over), METH_NOARGS, "Return whether the game is over."},
-    {"winner", reinterpret_cast<PyCFunction>(PyGame_winner), METH_NOARGS, "Return winner or None."},
-    {nullptr, nullptr, 0, nullptr},
-};
+[[nodiscard]] float terminal_reward(const GameState& state, PlayerId perspective) noexcept {
+    if (perspective >= state.num_players) {
+        return 0.0F;
+    }
 
-PyMethodDef module_methods[] = {
-    {"new_game", py_new_game, METH_VARARGS, "Create a new game."},
-    {"def_id", py_def_id, METH_VARARGS, "Look up a card definition id by name."},
-    {nullptr, nullptr, 0, nullptr},
-};
+    const std::int16_t perspective_score = score(state, perspective);
+    std::int16_t best_score = perspective_score;
+    PlayerId best_player = perspective;
+    bool tied_best = false;
+    for (PlayerId player = 0; player < state.num_players; ++player) {
+        const std::int16_t value = score(state, player);
+        if (value > best_score) {
+            best_score = value;
+            best_player = player;
+            tied_best = false;
+        } else if (player != best_player && value == best_score) {
+            tied_best = true;
+        }
+    }
 
-PyModuleDef module_def = {
-    PyModuleDef_HEAD_INIT,
-    "dominion_v2_py",
-    "DominionZero v2 Python bindings.",
-    -1,
-    module_methods,
-    nullptr,
-    nullptr,
-    nullptr,
-    nullptr,
-};
-
-int add_int_constant(PyObject* module, const char* name, long value) {
-    return PyModule_AddIntConstant(module, name, value);
+    if (perspective_score == best_score && tied_best) {
+        return 0.0F;
+    }
+    return perspective_score == best_score ? 1.0F : -1.0F;
 }
 
-bool add_def_constants(PyObject* module) {
+[[nodiscard]] std::uint64_t batch_seed(
+    std::uint64_t seed_base,
+    std::uint64_t generation,
+    std::uint64_t index) noexcept {
+    return seed_base
+        + (generation * 0x9E37'79B9'7F4A'7C15ULL)
+        + (index * 0xD1B5'4A32'D192'ED03ULL);
+}
+
+[[nodiscard]] std::vector<Setup> parse_batch_setups(const py::object& object) {
+    std::vector<Setup> setups;
+    if (py::isinstance<PySetup>(object)) {
+        setups.push_back(py::cast<const PySetup&>(object).setup);
+        return setups;
+    }
+
+    if (!object.is_none() && !py::isinstance<py::str>(object)) {
+        const py::sequence sequence = py::reinterpret_borrow<py::sequence>(object);
+        const std::size_t size = py::len(sequence);
+        if (size > 0 && py::isinstance<PySetup>(sequence[0])) {
+            setups.reserve(size);
+            for (std::size_t i = 0; i < size; ++i) {
+                if (!py::isinstance<PySetup>(sequence[i])) {
+                    throw std::invalid_argument("setup sequence must contain only Setup objects");
+                }
+                setups.push_back(py::cast<const PySetup&>(sequence[i]).setup);
+            }
+            return setups;
+        }
+    }
+
+    PySetup setup(2, object, false);
+    setups.push_back(setup.setup);
+    return setups;
+}
+
+struct PyBatchRunner {
+    std::vector<Setup> setups;
+    std::vector<GameState> states;
+    std::vector<std::uint64_t> generations;
+    std::uint64_t seed_base = 0;
+    std::uint64_t completed = 0;
+
+    PyBatchRunner(const py::object& setups_or_kingdom, std::size_t n_games, std::uint64_t seed)
+        : setups(parse_batch_setups(setups_or_kingdom)),
+          states(n_games),
+          generations(n_games),
+          seed_base(seed) {
+        if (n_games == 0U) {
+            throw std::invalid_argument("n_games must be positive");
+        }
+        reset();
+    }
+
+    void reset() {
+        completed = 0;
+        for (std::size_t i = 0; i < states.size(); ++i) {
+            generations[i] = 0;
+        }
+        {
+            py::gil_scoped_release release;
+            for (std::size_t i = 0; i < states.size(); ++i) {
+                states[i] = Game::new_game(setup_for(i), batch_seed(seed_base, generations[i], i));
+            }
+        }
+    }
+
+    [[nodiscard]] py::array_t<float> observations() const {
+        py::array_t<float> array({
+            static_cast<py::ssize_t>(states.size()),
+            static_cast<py::ssize_t>(OBS_SIZE),
+        });
+        float* data = array.mutable_data();
+        {
+            py::gil_scoped_release release;
+            for (std::size_t i = 0; i < states.size(); ++i) {
+                encode(states[i], decision_player_id(states[i]), data + (i * OBS_SIZE));
+            }
+        }
+        return array;
+    }
+
+    [[nodiscard]] py::array_t<bool> legal_masks() const {
+        py::array_t<bool> array({
+            static_cast<py::ssize_t>(states.size()),
+            static_cast<py::ssize_t>(ACTION_SPACE_SIZE),
+        });
+        bool* data = array.mutable_data();
+        {
+            py::gil_scoped_release release;
+            for (std::size_t i = 0; i < states.size(); ++i) {
+                ActionMask legal{};
+                (void)Game::legal_actions(states[i], legal);
+                bool* row = data + (i * ACTION_SPACE_SIZE);
+                for (Action action = 0; action < ACTION_SPACE_SIZE; ++action) {
+                    row[action] = legal.test(action);
+                }
+            }
+        }
+        return array;
+    }
+
+    [[nodiscard]] py::array_t<std::int32_t> current_players() const {
+        py::array_t<std::int32_t> array(static_cast<py::ssize_t>(states.size()));
+        std::int32_t* data = array.mutable_data();
+        {
+            py::gil_scoped_release release;
+            for (std::size_t i = 0; i < states.size(); ++i) {
+                data[i] = static_cast<std::int32_t>(decision_player_id(states[i]));
+            }
+        }
+        return array;
+    }
+
+    [[nodiscard]] py::tuple step(py::array_t<std::int32_t, py::array::c_style | py::array::forcecast> actions) {
+        if (actions.ndim() != 1 || actions.shape(0) != static_cast<py::ssize_t>(states.size())) {
+            throw std::invalid_argument("actions must have shape [N]");
+        }
+
+        const std::int32_t* action_data = actions.data();
+        for (std::size_t i = 0; i < states.size(); ++i) {
+            if (action_data[i] < 0 || action_data[i] >= static_cast<std::int32_t>(ACTION_SPACE_SIZE)) {
+                throw std::invalid_argument("action out of range");
+            }
+            ActionMask legal{};
+            const int legal_count = Game::legal_actions(states[i], legal);
+            const Action action = static_cast<Action>(action_data[i]);
+            if (legal_count <= 0 || !legal.test(action)) {
+                throw std::invalid_argument("illegal action");
+            }
+        }
+
+        py::array_t<bool> dones(static_cast<py::ssize_t>(states.size()));
+        py::array_t<float> rewards(static_cast<py::ssize_t>(states.size()));
+        bool* done_data = dones.mutable_data();
+        float* reward_data = rewards.mutable_data();
+
+        {
+            py::gil_scoped_release release;
+            for (std::size_t i = 0; i < states.size(); ++i) {
+                GameState& state = states[i];
+                const PlayerId perspective = decision_player_id(state);
+                const bool done = Game::step(state, static_cast<Action>(action_data[i]));
+                done_data[i] = done;
+                reward_data[i] = done ? terminal_reward(state, perspective) : 0.0F;
+                if (done) {
+                    ++completed;
+                    ++generations[i];
+                    state = Game::new_game(setup_for(i), batch_seed(seed_base, generations[i], i));
+                }
+            }
+        }
+
+        return py::make_tuple(dones, rewards);
+    }
+
+    [[nodiscard]] std::uint64_t games_completed() const noexcept {
+        return completed;
+    }
+
+private:
+    [[nodiscard]] const Setup& setup_for(std::size_t index) const noexcept {
+        return setups[index % setups.size()];
+    }
+};
+
+[[nodiscard]] std::string def_constant_name(const char* name) {
+    std::string constant = "DEF_";
+    if (name != nullptr) {
+        constant += name;
+    }
+    for (char& ch : constant) {
+        if (ch == ' ') {
+            ch = '_';
+        } else if (ch >= 'a' && ch <= 'z') {
+            ch = static_cast<char>(ch - ('a' - 'A'));
+        }
+    }
+    return constant;
+}
+
+void add_def_constants(py::module_& module) {
     for (DefId def = 0; def < card_def_count(); ++def) {
         const char* name = card_def(def).name;
         if (name == nullptr || name[0] == '\0') {
             continue;
         }
-        char constant[96]{};
-        int write = std::snprintf(constant, sizeof(constant), "DEF_%s", name);
-        if (write <= 0 || write >= static_cast<int>(sizeof(constant))) {
-            continue;
-        }
-        for (int i = 4; constant[i] != '\0'; ++i) {
-            if (constant[i] == ' ') {
-                constant[i] = '_';
-            } else if (constant[i] >= 'a' && constant[i] <= 'z') {
-                constant[i] = static_cast<char>(constant[i] - ('a' - 'A'));
-            }
-        }
-        if (add_int_constant(module, constant, def) != 0) {
-            return false;
-        }
+        module.attr(def_constant_name(name).c_str()) = py::int_(def);
     }
-    return true;
 }
 
 } // namespace
 
-PyMODINIT_FUNC PyInit_dominion_v2_py() {
-    import_array();
+PYBIND11_MODULE(dominion_v2_py, module) {
+    module.doc() = "DominionZero v2 Python bindings.";
 
-    PySetupType.tp_name = "dominion_v2_py.Setup";
-    PySetupType.tp_basicsize = sizeof(PySetupObject);
-    PySetupType.tp_flags = Py_TPFLAGS_DEFAULT;
-    PySetupType.tp_doc = "Dominion v2 setup.";
-    PySetupType.tp_init = reinterpret_cast<initproc>(PySetup_init);
-    PySetupType.tp_new = PyType_GenericNew;
-    PySetupType.tp_repr = reinterpret_cast<reprfunc>(PySetup_repr);
-    if (PyType_Ready(&PySetupType) < 0) {
-        return nullptr;
-    }
+    py::class_<PySetup>(module, "Setup")
+        .def(
+            py::init<int, py::object, bool>(),
+            py::arg("players") = 2,
+            py::arg("kingdom") = py::none(),
+            py::arg("use_colony_platinum") = false)
+        .def("__repr__", [](const PySetup& self) {
+            return "Setup(players=" + std::to_string(self.setup.num_players)
+                + ", kingdom_count=" + std::to_string(self.setup.kingdom_count) + ")";
+        });
 
-    PyGameType.tp_name = "dominion_v2_py.Game";
-    PyGameType.tp_basicsize = sizeof(PyGameObject);
-    PyGameType.tp_flags = Py_TPFLAGS_DEFAULT;
-    PyGameType.tp_doc = "Dominion v2 game state.";
-    PyGameType.tp_methods = PyGame_methods;
-    if (PyType_Ready(&PyGameType) < 0) {
-        return nullptr;
-    }
+    py::class_<PyGame>(module, "Game")
+        .def("step", [](PyGame& self, std::uint32_t action_value) {
+            if (action_value >= ACTION_SPACE_SIZE) {
+                throw std::invalid_argument("action out of range");
+            }
+            ActionMask legal{};
+            const int legal_count = Game::legal_actions(self.state, legal);
+            const Action action = static_cast<Action>(action_value);
+            if (legal_count <= 0 || !legal.test(action)) {
+                throw std::invalid_argument("illegal action");
+            }
 
-    PyObject* module = PyModule_Create(&module_def);
-    if (module == nullptr) {
-        return nullptr;
-    }
+            bool done = false;
+            {
+                py::gil_scoped_release release;
+                done = Game::step(self.state, action);
+            }
+            return done;
+        })
+        .def("legal_mask", [](const PyGame& self) {
+            return legal_mask_array(self.state);
+        })
+        .def("current_decision", [](const PyGame& self) {
+            return decision_dict(Game::current_decision(self.state));
+        })
+        .def("encode", [](const PyGame& self, int player) {
+            if (!valid_player(self.state, player)) {
+                throw std::invalid_argument("invalid player");
+            }
+            return encode_array(self.state, static_cast<PlayerId>(player));
+        })
+        .def("clone", [](const PyGame& self) {
+            return make_game(self.state);
+        })
+        .def("determinize", [](PyGame& self, std::uint64_t seed) {
+            const PlayerId player = decision_player_id(self.state);
+            py::gil_scoped_release release;
+            determinize(self.state, player, seed);
+        })
+        .def("score", [](const PyGame& self, int player) {
+            if (!valid_player(self.state, player)) {
+                throw std::invalid_argument("invalid player");
+            }
+            return score(self.state, static_cast<PlayerId>(player));
+        })
+        .def("hand", [](const PyGame& self, int player) {
+            if (!valid_player(self.state, player)) {
+                throw std::invalid_argument("invalid player");
+            }
+            py::dict dict;
+            const PlayerState& player_state = self.state.players[player];
+            for (std::uint8_t slot = 0; slot < self.state.num_slots; ++slot) {
+                const std::uint8_t count = player_state.hand[slot];
+                if (count != 0U) {
+                    dict[py::int_(self.state.slot_to_def[slot])] = py::int_(count);
+                }
+            }
+            return dict;
+        })
+        .def("supply", [](const PyGame& self) {
+            py::list list;
+            for (std::uint8_t i = 0; i < self.state.num_piles; ++i) {
+                const Pile& pile = self.state.piles[i];
+                const Slot slot = pile_top_slot(pile);
+                const DefId def = slot < self.state.num_slots ? self.state.slot_to_def[slot] : 0U;
+                list.append(py::make_tuple(def, pile_count(pile)));
+            }
+            return list;
+        })
+        .def("in_play", [](const PyGame& self, int player) {
+            if (!valid_player(self.state, player)) {
+                throw std::invalid_argument("invalid player");
+            }
+            py::list list;
+            const PlayerState& player_state = self.state.players[player];
+            for (std::uint8_t i = 0; i < player_state.in_play_size; ++i) {
+                const Slot slot = player_state.in_play[i].slot;
+                const DefId def = slot < self.state.num_slots ? self.state.slot_to_def[slot] : 0U;
+                list.append(py::int_(def));
+            }
+            return list;
+        })
+        .def("resources", [](const PyGame& self, int player) {
+            if (player < 0) {
+                player = static_cast<int>(turn_player_id(self.state));
+            }
+            if (!valid_player(self.state, player)) {
+                throw std::invalid_argument("invalid player");
+            }
+            const PlayerState& player_state = self.state.players[player];
+            py::dict dict;
+            dict["actions"] = py::int_(self.state.actions);
+            dict["buys"] = py::int_(self.state.buys);
+            dict["coins"] = py::int_(self.state.coins);
+            dict["potion"] = py::int_(self.state.potion_coins);
+            dict["debt"] = py::int_(player_state.debt);
+            dict["coffers"] = py::int_(player_state.coffers);
+            dict["villagers"] = py::int_(player_state.villagers);
+            dict["favors"] = py::int_(player_state.favors);
+            dict["vp_tokens"] = py::int_(vp_tokens(player_state));
+            return dict;
+        }, py::arg("player") = -1)
+        .def("phase", [](const PyGame& self) {
+            return self.state.phase;
+        })
+        .def("turn", [](const PyGame& self) {
+            return self.state.turn_counter;
+        })
+        .def("game_over", [](const PyGame& self) {
+            return self.state.phase == static_cast<std::uint8_t>(Phase::Over);
+        })
+        .def("winner", [](const PyGame& self) {
+            return winner_object(self.state);
+        });
 
-    Py_INCREF(&PySetupType);
-    if (PyModule_AddObject(module, "Setup", reinterpret_cast<PyObject*>(&PySetupType)) != 0) {
-        Py_DECREF(&PySetupType);
-        Py_DECREF(module);
-        return nullptr;
-    }
+    py::class_<PyBatchRunner>(module, "BatchRunner")
+        .def(py::init<const py::object&, std::size_t, std::uint64_t>(), py::arg("setups_or_kingdom"), py::arg("n_games"), py::arg("seed_base"))
+        .def("reset", &PyBatchRunner::reset)
+        .def("observations", &PyBatchRunner::observations)
+        .def("legal_masks", &PyBatchRunner::legal_masks)
+        .def("current_players", &PyBatchRunner::current_players)
+        .def("step", &PyBatchRunner::step)
+        .def("games_completed", &PyBatchRunner::games_completed);
 
-    Py_INCREF(&PyGameType);
-    if (PyModule_AddObject(module, "Game", reinterpret_cast<PyObject*>(&PyGameType)) != 0) {
-        Py_DECREF(&PyGameType);
-        Py_DECREF(module);
-        return nullptr;
-    }
+    module.def("new_game", &py_new_game, py::arg("setup"), py::arg("seed"));
+    module.def("def_id", [](const std::string& name) {
+        DefId def = 0;
+        if (!def_from_name(name, def)) {
+            throw std::invalid_argument("unknown card name: " + name);
+        }
+        return def;
+    });
 
-    if (add_int_constant(module, "OBS_VERSION", OBS_VERSION) != 0
-        || add_int_constant(module, "OBS_SIZE", static_cast<long>(OBS_SIZE)) != 0
-        || add_int_constant(module, "ACTION_SPACE_SIZE", ACTION_SPACE_SIZE) != 0
-        || add_int_constant(module, "MAX_PLAYERS", MAX_PLAYERS) != 0
-        || add_int_constant(module, "MAX_SLOTS", MAX_SLOTS) != 0
-        || !add_def_constants(module)) {
-        Py_DECREF(module);
-        return nullptr;
-    }
-
-    return module;
+    module.attr("OBS_VERSION") = py::int_(OBS_VERSION);
+    module.attr("OBS_SIZE") = py::int_(OBS_SIZE);
+    module.attr("ACTION_SPACE_SIZE") = py::int_(ACTION_SPACE_SIZE);
+    module.attr("MAX_PLAYERS") = py::int_(MAX_PLAYERS);
+    module.attr("MAX_SLOTS") = py::int_(MAX_SLOTS);
+    add_def_constants(module);
 }

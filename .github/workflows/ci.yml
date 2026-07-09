@@ -32,10 +32,12 @@ jobs:
       - uses: actions/checkout@v4
       - name: Create venv
         run: python3 -m venv .venv
-      - name: Install numpy
-        run: ./.venv/bin/python -m pip install --upgrade pip numpy
+      - name: Install Python deps
+        run: ./.venv/bin/python -m pip install --upgrade pip numpy pybind11
       - name: Configure
-        run: cmake -B build-py -DCMAKE_BUILD_TYPE=Release -DBUILD_PYTHON=ON -DPython3_EXECUTABLE="$PWD/.venv/bin/python"
+        run: |
+          PYBIND11_DIR="$(./.venv/bin/python -m pybind11 --cmakedir)"
+          cmake -B build-py -DCMAKE_BUILD_TYPE=Release -DBUILD_PYTHON=ON -DPython3_EXECUTABLE="$PWD/.venv/bin/python" -Dpybind11_DIR="$PYBIND11_DIR"
       - name: Build
         run: cmake --build build-py --target dominion_v2_py
       - name: Smoke

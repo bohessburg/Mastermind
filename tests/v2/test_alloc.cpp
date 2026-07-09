@@ -1,5 +1,7 @@
 #include "v2/drivers/bots.h"
 
+#include "v2/core/determinize.h"
+
 #include <catch2/catch_test_macros.hpp>
 #include <cstddef>
 #include <cstdlib>
@@ -77,6 +79,9 @@ TEST_CASE("v2 new_game and BigMoney loops allocate nothing", "[v2][alloc]") {
             if (result.truncated) {
                 ++truncated;
             }
+
+            GameState state = Game::new_game(Setup{}, 0xD373'C000ULL + seed);
+            determinize(state, 0U, 0xD373'D000ULL + seed);
         }
         allocations = scope.count();
     }
