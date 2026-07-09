@@ -10,6 +10,8 @@
   "server_max_batch": 8192,
   "server_max_wait_ms": 2.0,
   "server_fp16": false,
+  "server_transport": "shm",
+  "server_shm_slots": 2,
   "_comment_parallel": "2048 games are split exactly across workers: eight produce 86 games and sixteen produce 85 games per generation. One shared CUDA inference server batches their requests.",
   "checkpoint_dir": "/workspace/checkpoints",
   "metrics_csv": "/workspace/checkpoints/metrics.csv",

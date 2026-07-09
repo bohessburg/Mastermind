@@ -85,6 +85,9 @@ class TrainConfig:
     server_max_wait_ms: float = 2.0
     server_fp16: bool = False
     server_response_timeout_s: float = 30.0
+    # Shared memory is the fast path; queue is retained for unsupported hosts.
+    server_transport: str = "shm"
+    server_shm_slots: int = 2
     checkpoint_dir: str = "checkpoints"
     metrics_csv: str = "checkpoints/metrics.csv"
     model: ModelConfig = field(default_factory=ModelConfig)

@@ -272,6 +272,8 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
         config.server_max_wait_ms = requested.server_max_wait_ms
         config.server_fp16 = requested.server_fp16
         config.server_response_timeout_s = requested.server_response_timeout_s
+        config.server_transport = requested.server_transport
+        config.server_shm_slots = requested.server_shm_slots
         if config.device == "auto":
             config.device = device.type
     else:

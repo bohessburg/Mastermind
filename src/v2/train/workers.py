@@ -26,6 +26,7 @@ from .config import TrainConfig
 from .inference_server import (
     InferenceServer,
     InferenceServerEndpoints,
+    WorkerSharedMemoryViews,
     deserialize_cpu_state_dict,
     serialize_cpu_state_dict,
 )
@@ -148,20 +149,34 @@ def _local_evaluator(model: torch.nn.Module, device: torch.device) -> Callable[[
 def _server_evaluator(
     endpoints: InferenceServerEndpoints,
     worker_index: int,
-) -> Callable[[np.ndarray, np.ndarray], tuple[np.ndarray, np.ndarray]]:
+) -> tuple[Callable[[np.ndarray, np.ndarray], tuple[np.ndarray, np.ndarray]], WorkerSharedMemoryViews | None]:
     response_queue = endpoints.response_queues[worker_index]
     request_id = 0
+    shared_views = (
+        WorkerSharedMemoryViews(endpoints.shared_memory_specs[worker_index])
+        if endpoints.transport == "shm"
+        else None
+    )
 
     def evaluate(obs: np.ndarray, masks: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         nonlocal request_id
         request_id += 1
         deadline = time.monotonic() + endpoints.response_timeout_s
-        request = (
-            worker_index,
-            request_id,
-            np.ascontiguousarray(obs, dtype=np.float32),
-            np.ascontiguousarray(masks, dtype=np.bool_),
-        )
+        count = int(obs.shape[0])
+        if count <= 0 or count > endpoints.request_batch_size:
+            raise RuntimeError("worker attempted an invalid inference-server request batch")
+        if shared_views is not None:
+            slot = request_id % shared_views.spec.slots
+            np.copyto(shared_views.request_obs[slot, :count], np.asarray(obs, dtype=np.float32))
+            np.copyto(shared_views.request_masks[slot, :count], np.asarray(masks, dtype=np.uint8))
+            request: tuple[Any, ...] = (worker_index, slot, count, request_id)
+        else:
+            request = (
+                worker_index,
+                request_id,
+                np.ascontiguousarray(obs, dtype=np.float32),
+                np.ascontiguousarray(masks, dtype=np.uint8),
+            )
         while True:
             if not endpoints.alive_event.is_set():
                 raise RuntimeError("inference server is not alive while submitting a leaf batch")
@@ -179,11 +194,20 @@ def _server_evaluator(
             if remaining <= 0.0:
                 raise RuntimeError("timed out waiting for an inference-server response")
             try:
-                kind, response_id, values, policies = response_queue.get(timeout=min(0.25, remaining))
+                response = response_queue.get(timeout=min(0.25, remaining))
             except queue.Empty:
                 if not endpoints.alive_event.is_set():
                     raise RuntimeError("inference server died while a worker awaited a response")
                 continue
+            if shared_views is not None:
+                response_slot, response_count, response_id = response
+                if response_slot != slot or response_count != count or response_id != request_id:
+                    raise RuntimeError("inference server routed a shared-memory response to the wrong request")
+                return (
+                    shared_views.response_policies[slot, :count],
+                    shared_views.response_values[slot, :count],
+                )
+            kind, response_id, values, policies = response
             if kind == "error":
                 raise RuntimeError(f"inference server rejected request {request_id}: {values}")
             if kind != "response" or response_id != request_id:
@@ -193,7 +217,7 @@ def _server_evaluator(
                 np.asarray(values, dtype=np.float32),
             )
 
-    return evaluate
+    return evaluate, shared_views
 
 
 def _generate_games(
@@ -267,6 +291,7 @@ def _worker_main(
 ) -> None:
     """Worker entry point. Kept module-level for the spawn start method."""
     generation = -1
+    shared_views: WorkerSharedMemoryViews | None = None
     try:
         worker_seed = int(config.seed) + worker_index
         server_mode = config.worker_device.lower() == "server"
@@ -281,7 +306,7 @@ def _worker_main(
         runner = dz.SelfPlayRunner(make_runner_config(worker_selfplay, worker_seed))
         if server_mode:
             assert inference_endpoints is not None
-            evaluate = _server_evaluator(inference_endpoints, worker_index)
+            evaluate, shared_views = _server_evaluator(inference_endpoints, worker_index)
             collect_max_batch = inference_endpoints.request_batch_size
             model: DominionNet | None = None
         else:
@@ -334,6 +359,9 @@ def _worker_main(
         # queue failure is still visible through the worker's non-zero exit.
         result_queue.put(("error", worker_index, generation, traceback.format_exc()))
         raise
+    finally:
+        if shared_views is not None:
+            shared_views.close()
 
 
 class ParallelSelfPlayPool:

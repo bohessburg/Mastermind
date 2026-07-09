@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import threading
 import time
+from multiprocessing import shared_memory
 from pathlib import Path
 
 import numpy as np
 import pytest
 import torch
 
-from .inference_server import InferenceServer
+from .inference_server import InferenceServer, WorkerSharedMemoryViews
 from .test_train_smoke import read_metrics, tiny_config
 from .train import build_objects, run_training
 from .workers import ParallelSelfPlayPool
@@ -71,7 +72,13 @@ def test_inference_server_routes_fixed_weight_requests_under_concurrent_load(tmp
     expected_value_np = expected_value.numpy()
 
     server = InferenceServer(cfg, worker_count=2)
+    views: list[WorkerSharedMemoryViews] = []
+    names: list[str] = []
     try:
+        if server.transport != "shm":
+            pytest.skip("POSIX shared memory is unavailable on this host")
+        names = server.shared_memory_names
+        views = [WorkerSharedMemoryViews(spec) for spec in server.endpoints.shared_memory_specs or []]
         server.sync_weights(model, generation=1)
         # Submit from separate callers at once. Per-worker queues must still
         # receive only their matching request id and equal fixed outputs.
@@ -79,7 +86,11 @@ def test_inference_server_routes_fixed_weight_requests_under_concurrent_load(tmp
 
         def submit(worker_id: int, request_id: int) -> None:
             barrier.wait()
-            server.request_queue.put((worker_id, request_id, obs, masks))
+            view = views[worker_id]
+            slot = request_id % view.spec.slots
+            np.copyto(view.request_obs[slot, : obs.shape[0]], obs)
+            np.copyto(view.request_masks[slot, : obs.shape[0]], masks.astype(np.uint8, copy=False))
+            server.request_queue.put((worker_id, slot, obs.shape[0], request_id))
 
         submitters = [
             threading.Thread(target=submit, args=(0, 11)),
@@ -93,9 +104,13 @@ def test_inference_server_routes_fixed_weight_requests_under_concurrent_load(tmp
             assert not submitter.is_alive()
         first = server.endpoints.response_queues[0].get(timeout=5.0)
         second = server.endpoints.response_queues[1].get(timeout=5.0)
-        for expected_request_id, (kind, request_id, values, policies) in zip((11, 22), (first, second)):
-            assert kind == "response"
+        for worker_id, expected_request_id, response in ((0, 11, first), (1, 22, second)):
+            slot, count, request_id = response
+            assert slot == expected_request_id % views[worker_id].spec.slots
+            assert count == obs.shape[0]
             assert request_id == expected_request_id
+            values = views[worker_id].response_values[slot, :count]
+            policies = views[worker_id].response_policies[slot, :count]
             # GEMM row tiling may differ between a 3-row direct call and the
             # server's concatenated batch by a few fp32 ulps.
             np.testing.assert_allclose(values, expected_value_np, rtol=1.0e-6, atol=1.0e-6)
@@ -103,7 +118,21 @@ def test_inference_server_routes_fixed_weight_requests_under_concurrent_load(tmp
         metrics = server.collect_metrics(generation=1)
         assert metrics["server_mean_batch_size"] >= float(obs.shape[0])
     finally:
+        for view in views:
+            view.close()
         server.close()
+    for name in names:
+        with pytest.raises(FileNotFoundError):
+            shared_memory.SharedMemory(name=name)
+
+
+def test_queue_transport_fallback_smoke(tmp_path: Path) -> None:
+    cfg = server_config(tmp_path, generations=1)
+    cfg.server_transport = "queue"
+    result = run_training(cfg)
+    assert result["metrics"][0]["games"] == 2
+    rows = read_metrics(Path(cfg.metrics_csv))
+    assert float(rows[0]["server_evals_per_sec"]) > 0.0
 
 
 def test_server_death_propagates_to_parent_without_hanging(tmp_path: Path) -> None:
