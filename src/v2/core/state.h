@@ -26,6 +26,7 @@ struct EffectFrame {
     std::uint8_t pc = 0;
     PlayerId player = 0;
     std::uint8_t flags = 0;
+    std::uint8_t repeats_left = 1;
     std::int16_t data[8]{};
 };
 

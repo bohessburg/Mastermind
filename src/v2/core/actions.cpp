@@ -79,6 +79,16 @@ void add_buy_actions(const GameState& state, ActionMask& out, int& count) noexce
     }
 }
 
+[[nodiscard]] bool def_matches(DefId def, const Filter& filter) noexcept {
+    if (filter.exact_def != ANY_DEF && def != filter.exact_def) {
+        return false;
+    }
+    if (filter.exclude_def != ANY_DEF && def == filter.exclude_def) {
+        return false;
+    }
+    return true;
+}
+
 [[nodiscard]] bool type_matches(DefId def, std::uint16_t type_mask) noexcept {
     return type_mask == 0U || (card_def(def).types & type_mask) != 0U;
 }
@@ -113,6 +123,19 @@ void add_buy_actions(const GameState& state, ActionMask& out, int& count) noexce
     Slot slot) noexcept {
     const DefId def = state.slot_to_def[slot];
     return filter.zone == ZoneSelector::Hand
+        && def_matches(def, filter)
+        && type_matches(def, filter.type_mask)
+        && cost_matches(state, frame, filter, def);
+}
+
+[[nodiscard]] bool discard_matches_filter(
+    const GameState& state,
+    const EffectFrame& frame,
+    const Filter& filter,
+    Slot slot) noexcept {
+    const DefId def = state.slot_to_def[slot];
+    return filter.zone == ZoneSelector::Discard
+        && def_matches(def, filter)
         && type_matches(def, filter.type_mask)
         && cost_matches(state, frame, filter, def);
 }
@@ -126,7 +149,7 @@ void add_buy_actions(const GameState& state, ActionMask& out, int& count) noexce
         return false;
     }
     const DefId def = pile_top_def(state, pile);
-    return type_matches(def, filter.type_mask) && cost_matches(state, frame, filter, def);
+    return def_matches(def, filter) && type_matches(def, filter.type_mask) && cost_matches(state, frame, filter, def);
 }
 
 [[nodiscard]] const Instr& current_decision_instr(const GameState& state) noexcept {
@@ -149,8 +172,31 @@ void add_buy_actions(const GameState& state, ActionMask& out, int& count) noexce
         }
         return state.players[state.decision.player].hand[slot] > chosen;
     }
+    if (instr.op == Op::BanditAttack) {
+        const DefId def = state.slot_to_def[slot];
+        if (def == DEF_COPPER || (card_def(def).types & TYPE_TREASURE) == 0U) {
+            return false;
+        }
+        const std::uint8_t revealed_count = frame.data[3] < 0 ? 0U : static_cast<std::uint8_t>(frame.data[3]);
+        for (std::uint8_t i = 0; i < revealed_count && i < 2U; ++i) {
+            const std::int16_t revealed = frame.data[1 + i];
+            if (revealed >= 0 && state.slot_to_def[static_cast<Slot>(revealed)] == def) {
+                return true;
+            }
+        }
+        return false;
+    }
 
     const Filter& filter = filter_def(instr.a);
+    if (filter.zone == ZoneSelector::Discard) {
+        const PlayerState& player = state.players[frame.player];
+        for (std::uint8_t i = 0; i < player.discard.size; ++i) {
+            if (player.discard.cards[i] == slot && discard_matches_filter(state, frame, filter, slot)) {
+                return true;
+            }
+        }
+        return false;
+    }
     return state.players[frame.player].hand[slot] > 0U && hand_matches_filter(state, frame, filter, slot);
 }
 

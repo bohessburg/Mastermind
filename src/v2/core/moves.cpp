@@ -79,11 +79,45 @@ void append_topdeck(PlayerState& player, Slot slot) noexcept {
     return false;
 }
 
-[[nodiscard]] bool remove_from_zone(PlayerState& player, Slot slot, MoveZone from_zone) noexcept {
-    if (from_zone == MoveZone::Hand) {
-        return remove_from_hand(player, slot);
+[[nodiscard]] bool remove_from_deck(PlayerState& player, Slot slot) noexcept {
+    if (player.deck.size == 0U || player.deck.cards[player.deck.size - 1U] != slot) {
+        return false;
     }
-    return remove_from_in_play(player, slot);
+    --player.deck.size;
+    player.deck.cards[player.deck.size] = 0;
+    return true;
+}
+
+[[nodiscard]] bool remove_from_discard(PlayerState& player, Slot slot) noexcept {
+    for (std::uint8_t i = player.discard.size; i > 0U; --i) {
+        const std::uint8_t index = static_cast<std::uint8_t>(i - 1U);
+        if (player.discard.cards[index] != slot) {
+            continue;
+        }
+        for (std::uint8_t j = index; static_cast<std::uint8_t>(j + 1U) < player.discard.size; ++j) {
+            player.discard.cards[j] = player.discard.cards[j + 1U];
+        }
+        --player.discard.size;
+        player.discard.cards[player.discard.size] = 0;
+        return true;
+    }
+    return false;
+}
+
+[[nodiscard]] bool remove_from_zone(PlayerState& player, Slot slot, MoveZone from_zone) noexcept {
+    switch (from_zone) {
+    case MoveZone::Hand:
+        return remove_from_hand(player, slot);
+    case MoveZone::InPlay:
+        return remove_from_in_play(player, slot);
+    case MoveZone::Deck:
+        return remove_from_deck(player, slot);
+    case MoveZone::Discard:
+        return remove_from_discard(player, slot);
+    case MoveZone::Revealed:
+        return true;
+    }
+    return false;
 }
 
 void gain_to_destination(PlayerState& player, Slot slot, GainDestination destination) noexcept {

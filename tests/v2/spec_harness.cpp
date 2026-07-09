@@ -1,6 +1,7 @@
 #include "spec_harness.h"
 
 #include "v2/core/defs.h"
+#include "v2/core/score.h"
 #include "v2/core/turns.h"
 
 #include <cstring>
@@ -9,17 +10,41 @@ namespace {
 
 [[nodiscard]] Setup full_phase2_setup() {
     Setup setup{};
-    setup.kingdom_count = 7;
-    setup.kingdom[0] = DEF_CELLAR;
-    setup.kingdom[1] = DEF_CHAPEL;
-    setup.kingdom[2] = DEF_VILLAGE;
-    setup.kingdom[3] = DEF_SMITHY;
-    setup.kingdom[4] = DEF_WORKSHOP;
-    setup.kingdom[5] = DEF_REMODEL;
-    setup.kingdom[6] = DEF_MINE;
-    setup.kingdom[7] = DEF_EXACT_TWO_TEST;
-    setup.kingdom[8] = DEF_REPEAT_CHOOSE_TEST;
-    setup.kingdom_count = 9;
+    constexpr DefId kKingdom[] = {
+        DEF_CELLAR,
+        DEF_CHAPEL,
+        DEF_VILLAGE,
+        DEF_SMITHY,
+        DEF_WORKSHOP,
+        DEF_REMODEL,
+        DEF_MINE,
+        DEF_MERCHANT,
+        DEF_MILITIA,
+        DEF_WITCH,
+        DEF_MOAT,
+        DEF_BUREAUCRAT,
+        DEF_MARKET,
+        DEF_FESTIVAL,
+        DEF_LABORATORY,
+        DEF_GARDENS,
+        DEF_MONEYLENDER,
+        DEF_POACHER,
+        DEF_VASSAL,
+        DEF_HARBINGER,
+        DEF_THRONE_ROOM,
+        DEF_COUNCIL_ROOM,
+        DEF_ARTISAN,
+        DEF_BANDIT,
+        DEF_EXACT_TWO_TEST,
+        DEF_REPEAT_CHOOSE_TEST,
+        DEF_ORDER_ALPHA_TEST,
+        DEF_ORDER_BETA_TEST,
+        DEF_ORDER_GAMMA_TEST,
+    };
+    setup.kingdom_count = static_cast<std::uint8_t>(sizeof(kKingdom) / sizeof(kKingdom[0]));
+    for (std::uint8_t i = 0; i < setup.kingdom_count; ++i) {
+        setup.kingdom[i] = kKingdom[i];
+    }
     return setup;
 }
 
@@ -51,6 +76,23 @@ namespace {
     return pile.mixed_len > 0U ? pile.mixed_len : pile.count;
 }
 
+[[nodiscard]] int count_bandit_revealed(const GameState& state) {
+    int total = 0;
+    for (std::uint8_t i = 0; i < state.effect_depth; ++i) {
+        const EffectFrame& frame = state.effect_stack[i];
+        if (frame.source != DEF_BANDIT) {
+            continue;
+        }
+        const std::uint8_t revealed_count = frame.data[3] < 0 ? 0U : static_cast<std::uint8_t>(frame.data[3]);
+        for (std::uint8_t j = 0; j < revealed_count && j < 2U; ++j) {
+            if (frame.data[1 + j] >= 0) {
+                ++total;
+            }
+        }
+    }
+    return total;
+}
+
 [[nodiscard]] std::uint8_t ordered_count(const OrderedZone& zone, Slot slot) {
     std::uint8_t total = 0;
     for (std::uint8_t i = 0; i < zone.size; ++i) {
@@ -70,22 +112,29 @@ SpecHarness::ExpectBuilder::ExpectBuilder(SpecHarness& harness)
     : harness_(harness) {}
 
 SpecHarness::ExpectBuilder& SpecHarness::ExpectBuilder::hand_has(const char* name) {
-    REQUIRE(harness_.hand_count(name) > 0U);
+    REQUIRE(harness_.hand_count(0U, name) > 0U);
     return *this;
 }
 
 SpecHarness::ExpectBuilder& SpecHarness::ExpectBuilder::hand_lacks(const char* name) {
-    REQUIRE(harness_.hand_count(name) == 0U);
+    REQUIRE(harness_.hand_count(0U, name) == 0U);
     return *this;
 }
 
 SpecHarness::ExpectBuilder& SpecHarness::ExpectBuilder::discard_has(const char* name) {
-    REQUIRE(harness_.discard_count(name) > 0U);
+    REQUIRE(harness_.discard_count(0U, name) > 0U);
     return *this;
 }
 
 SpecHarness::ExpectBuilder& SpecHarness::ExpectBuilder::discard_lacks(const char* name) {
-    REQUIRE(harness_.discard_count(name) == 0U);
+    REQUIRE(harness_.discard_count(0U, name) == 0U);
+    return *this;
+}
+
+SpecHarness::ExpectBuilder& SpecHarness::ExpectBuilder::deck_top(const char* name) {
+    const PlayerState& player = harness_.state_.players[0];
+    REQUIRE(player.deck.size > 0U);
+    REQUIRE(player.deck.cards[player.deck.size - 1U] == harness_.slot_named(name));
     return *this;
 }
 
@@ -104,6 +153,36 @@ SpecHarness::ExpectBuilder& SpecHarness::ExpectBuilder::coins(std::int16_t coins
     return *this;
 }
 
+SpecHarness::ExpectBuilder& SpecHarness::ExpectBuilder::actions(std::uint8_t actions) {
+    REQUIRE(harness_.state_.actions == actions);
+    return *this;
+}
+
+SpecHarness::ExpectBuilder& SpecHarness::ExpectBuilder::buys(std::uint8_t buys) {
+    REQUIRE(harness_.state_.buys == buys);
+    return *this;
+}
+
+SpecHarness::ExpectBuilder& SpecHarness::ExpectBuilder::score(PlayerId player, std::int16_t expected_score) {
+    REQUIRE(::score(harness_.state_, player) == expected_score);
+    return *this;
+}
+
+SpecHarness::ExpectBuilder& SpecHarness::ExpectBuilder::player_hand_has(PlayerId player, const char* name) {
+    REQUIRE(harness_.hand_count(player, name) > 0U);
+    return *this;
+}
+
+SpecHarness::ExpectBuilder& SpecHarness::ExpectBuilder::player_discard_has(PlayerId player, const char* name) {
+    REQUIRE(harness_.discard_count(player, name) > 0U);
+    return *this;
+}
+
+SpecHarness::ExpectBuilder& SpecHarness::ExpectBuilder::player_trash_count(const char* name, std::uint8_t count) {
+    REQUIRE(harness_.trash_count_for(name) == count);
+    return *this;
+}
+
 SpecHarness::SpecHarness()
     : state_(Game::new_game(full_phase2_setup(), 0x5'EC5'0001ULL)),
       baseline_(0),
@@ -113,7 +192,7 @@ SpecHarness::SpecHarness()
 }
 
 SpecHarness::GivenBuilder& SpecHarness::given() {
-    clear_player_zero();
+    clear_players();
     state_.phase = static_cast<std::uint8_t>(Phase::Action);
     state_.actions = 1;
     state_.buys = 1;
@@ -121,6 +200,7 @@ SpecHarness::GivenBuilder& SpecHarness::given() {
     state_.potion_coins = 0;
     state_.effect_depth = 0;
     state_.decision = PendingDecision{0, static_cast<std::uint8_t>(DecisionKind::PhaseAction), 0, 0, 0};
+    state_.trigger_table.dirty = 1U;
     refresh_baseline();
     return given_;
 }
@@ -160,6 +240,18 @@ void SpecHarness::empty_supply_up_to(std::int8_t coins) {
     refresh_baseline();
 }
 
+void SpecHarness::empty_supply(const char* name) {
+    const Slot slot = slot_named(name);
+    for (std::uint8_t i = 0; i < state_.num_piles; ++i) {
+        Pile& pile = state_.piles[i];
+        if (pile.mixed_len == 0U && pile.base == slot) {
+            pile.count = 0;
+            break;
+        }
+    }
+    refresh_baseline();
+}
+
 void SpecHarness::expect_conservation() const {
     REQUIRE(total_cards() == baseline_);
 }
@@ -194,24 +286,48 @@ int SpecHarness::total_cards() const {
         total += count_pile_cards(state_.nonsupply[i]);
     }
     total += count_zone(state_.trash);
+    total += count_bandit_revealed(state_);
     return total;
 }
 
 void SpecHarness::add_hand(const char* name) {
+    add_hand(0U, name);
+}
+
+void SpecHarness::add_hand(PlayerId player_id, const char* name) {
+    REQUIRE(player_id < state_.num_players);
     const Slot slot = ensure_slot_named(name);
-    ++state_.players[0].hand[slot];
+    ++state_.players[player_id].hand[slot];
 }
 
 void SpecHarness::add_deck(const char* name) {
+    add_deck(0U, name);
+}
+
+void SpecHarness::add_deck(PlayerId player_id, const char* name) {
+    REQUIRE(player_id < state_.num_players);
     const Slot slot = ensure_slot_named(name);
-    PlayerState& player = state_.players[0];
+    PlayerState& player = state_.players[player_id];
     REQUIRE(player.deck.size < MAX_DECK_CARDS);
     player.deck.cards[player.deck.size] = slot;
     ++player.deck.size;
 }
 
-void SpecHarness::clear_player_zero() {
-    PlayerState& player = state_.players[0];
+void SpecHarness::add_discard(const char* name) {
+    add_discard(0U, name);
+}
+
+void SpecHarness::add_discard(PlayerId player_id, const char* name) {
+    REQUIRE(player_id < state_.num_players);
+    const Slot slot = ensure_slot_named(name);
+    PlayerState& player = state_.players[player_id];
+    REQUIRE(player.discard.size < MAX_DECK_CARDS);
+    player.discard.cards[player.discard.size] = slot;
+    ++player.discard.size;
+}
+
+void SpecHarness::clear_player(PlayerId player_id) {
+    PlayerState& player = state_.players[player_id];
     for (std::uint8_t slot = 0; slot < MAX_SLOTS; ++slot) {
         player.hand[slot] = 0;
         player.exile[slot] = 0;
@@ -222,6 +338,12 @@ void SpecHarness::clear_player_zero() {
     player.discard.size = 0;
     player.in_play_size = 0;
     player.pending_size = 0;
+}
+
+void SpecHarness::clear_players() {
+    for (PlayerId player = 0; player < state_.num_players; ++player) {
+        clear_player(player);
+    }
 }
 
 void SpecHarness::refresh_baseline() {
@@ -255,12 +377,14 @@ Slot SpecHarness::slot_named(const char* name) const {
     return slot;
 }
 
-std::uint8_t SpecHarness::hand_count(const char* name) const {
-    return state_.players[0].hand[slot_named(name)];
+std::uint8_t SpecHarness::hand_count(PlayerId player, const char* name) const {
+    REQUIRE(player < state_.num_players);
+    return state_.players[player].hand[slot_named(name)];
 }
 
-std::uint8_t SpecHarness::discard_count(const char* name) const {
-    return ordered_count(state_.players[0].discard, slot_named(name));
+std::uint8_t SpecHarness::discard_count(PlayerId player, const char* name) const {
+    REQUIRE(player < state_.num_players);
+    return ordered_count(state_.players[player].discard, slot_named(name));
 }
 
 std::uint8_t SpecHarness::trash_count_for(const char* name) const {

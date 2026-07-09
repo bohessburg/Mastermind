@@ -20,6 +20,8 @@ constexpr std::int16_t ACTIVE_PC_NONE = -1;
 //   [5] choice/order owner: active op pc, or ACTIVE_PC_NONE
 //   [6] choice/order owner: selections made in the active op
 //   [7] control owner: Repeat completed-iteration count
+//   BanditAttack active-op overlay:
+//     [1], [2] revealed set-aside slots, [3] revealed count, [4] trashable count
 constexpr int DATA_LAST_COUNT = 0;
 constexpr int DATA_LAST_DEF = 1;
 constexpr int DATA_LAST_COST_COINS = 2;
@@ -28,6 +30,11 @@ constexpr int DATA_LAST_COST_DEBT = 4;
 constexpr int DATA_ACTIVE_PC = 5;
 constexpr int DATA_ACTIVE_COUNT = 6;
 constexpr int DATA_REPEAT_COUNT = 7;
+constexpr int DATA_BANDIT_REVEALED_0 = DATA_LAST_DEF;
+constexpr int DATA_BANDIT_REVEALED_1 = DATA_LAST_COST_COINS;
+constexpr int DATA_BANDIT_REVEALED_COUNT = DATA_LAST_COST_POTION;
+constexpr int DATA_BANDIT_TRASHABLE_COUNT = DATA_LAST_COST_DEBT;
+constexpr std::int16_t DATA_NO_SLOT = -1;
 constexpr std::uint8_t CHOOSE_MAX_ALL = 0xFFU;
 
 void shuffle_zone(OrderedZone& zone, Xoshiro256pp& rng) noexcept {
@@ -71,10 +78,50 @@ void reshuffle_discard_into_deck(GameState& state, PlayerId player_id) noexcept 
     return true;
 }
 
+[[nodiscard]] bool prepare_deck_top(GameState& state, PlayerId player_id) noexcept {
+    PlayerState& player = state.players[player_id];
+    if (player.deck.size == 0U) {
+        reshuffle_discard_into_deck(state, player_id);
+    }
+    return player.deck.size > 0U;
+}
+
+[[nodiscard]] Slot deck_top_slot(GameState& state, PlayerId player_id) noexcept {
+    if (!prepare_deck_top(state, player_id)) {
+        return NONE;
+    }
+    const PlayerState& player = state.players[player_id];
+    return player.deck.cards[player.deck.size - 1U];
+}
+
+[[nodiscard]] Slot take_deck_top_slot(GameState& state, PlayerId player_id) noexcept {
+    if (!prepare_deck_top(state, player_id)) {
+        return NONE;
+    }
+
+    PlayerState& player = state.players[player_id];
+    --player.deck.size;
+    const Slot slot = player.deck.cards[player.deck.size];
+    player.deck.cards[player.deck.size] = 0;
+    return slot;
+}
+
 void pop_frame(GameState& state) noexcept {
     assert(state.effect_depth > 0U);
     state.effect_stack[state.effect_depth - 1U] = EffectFrame{};
     --state.effect_depth;
+}
+
+void complete_frame(GameState& state, EffectFrame& frame) noexcept {
+    if (frame.repeats_left > 1U && (frame.flags & FRAME_ABSOLUTE_PROGRAM) == 0U) {
+        --frame.repeats_left;
+        frame.pc = 0;
+        frame.data[DATA_ACTIVE_PC] = ACTIVE_PC_NONE;
+        frame.data[DATA_ACTIVE_COUNT] = 0;
+        state.decision = PendingDecision{};
+        return;
+    }
+    pop_frame(state);
 }
 
 void add_uint8(std::uint8_t& value, std::int16_t delta) noexcept {
@@ -96,6 +143,16 @@ void add_uint8(std::uint8_t& value, std::int16_t delta) noexcept {
         return 127;
     }
     return static_cast<std::int8_t>(value);
+}
+
+[[nodiscard]] bool def_matches(DefId def, const Filter& filter) noexcept {
+    if (filter.exact_def != ANY_DEF && def != filter.exact_def) {
+        return false;
+    }
+    if (filter.exclude_def != ANY_DEF && def == filter.exclude_def) {
+        return false;
+    }
+    return true;
 }
 
 [[nodiscard]] bool type_matches(DefId def, std::uint16_t type_mask) noexcept {
@@ -131,6 +188,19 @@ void add_uint8(std::uint8_t& value, std::int16_t delta) noexcept {
     Slot slot) noexcept {
     const DefId def = state.slot_to_def[slot];
     return filter.zone == ZoneSelector::Hand
+        && def_matches(def, filter)
+        && type_matches(def, filter.type_mask)
+        && cost_matches(state, frame, filter, def);
+}
+
+[[nodiscard]] bool discard_matches_filter(
+    const GameState& state,
+    const EffectFrame& frame,
+    const Filter& filter,
+    Slot slot) noexcept {
+    const DefId def = state.slot_to_def[slot];
+    return filter.zone == ZoneSelector::Discard
+        && def_matches(def, filter)
         && type_matches(def, filter.type_mask)
         && cost_matches(state, frame, filter, def);
 }
@@ -159,7 +229,7 @@ void add_uint8(std::uint8_t& value, std::int16_t delta) noexcept {
         return false;
     }
     const DefId def = pile_top_def(state, pile);
-    return type_matches(def, filter.type_mask) && cost_matches(state, frame, filter, def);
+    return def_matches(def, filter) && type_matches(def, filter.type_mask) && cost_matches(state, frame, filter, def);
 }
 
 [[nodiscard]] Pile* find_matching_supply_pile(
@@ -203,6 +273,29 @@ void add_uint8(std::uint8_t& value, std::int16_t delta) noexcept {
     return total;
 }
 
+[[nodiscard]] std::uint8_t count_matching_discard(
+    const GameState& state,
+    const EffectFrame& frame,
+    const Filter& filter) noexcept {
+    const PlayerState& player = state.players[frame.player];
+    std::uint8_t total = 0;
+    for (std::uint8_t i = 0; i < player.discard.size; ++i) {
+        if (discard_matches_filter(state, frame, filter, player.discard.cards[i])) {
+            ++total;
+        }
+    }
+    return total;
+}
+
+[[nodiscard]] bool discard_contains_slot(const PlayerState& player, Slot slot) noexcept {
+    for (std::uint8_t i = 0; i < player.discard.size; ++i) {
+        if (player.discard.cards[i] == slot) {
+            return true;
+        }
+    }
+    return false;
+}
+
 [[nodiscard]] bool begin_active_op(EffectFrame& frame) noexcept {
     if (frame.data[DATA_ACTIVE_PC] != frame.pc) {
         frame.data[DATA_ACTIVE_PC] = frame.pc;
@@ -230,6 +323,9 @@ void finish_active_op(GameState& state, EffectFrame& frame) noexcept {
     const Filter& filter) noexcept {
     if (filter.zone == ZoneSelector::Supply) {
         return count_matching_supply(state, frame, filter);
+    }
+    if (filter.zone == ZoneSelector::Discard) {
+        return count_matching_discard(state, frame, filter);
     }
     return count_matching_hand(state, frame, filter);
 }
@@ -309,6 +405,57 @@ void append_topdeck(PlayerState& player, Slot slot) noexcept {
     ++player.deck.size;
 }
 
+[[nodiscard]] bool topdeck_from_discard(GameState& state, PlayerId player_id, Slot slot) noexcept {
+    PlayerState& player = state.players[player_id];
+    for (std::uint8_t i = player.discard.size; i > 0U; --i) {
+        const std::uint8_t index = static_cast<std::uint8_t>(i - 1U);
+        if (player.discard.cards[index] != slot) {
+            continue;
+        }
+        for (std::uint8_t j = index; static_cast<std::uint8_t>(j + 1U) < player.discard.size; ++j) {
+            player.discard.cards[j] = player.discard.cards[j + 1U];
+        }
+        --player.discard.size;
+        player.discard.cards[player.discard.size] = 0;
+        append_topdeck(player, slot);
+        return true;
+    }
+    return false;
+}
+
+void add_to_in_play(GameState& state, PlayerId player_id, Slot slot) noexcept {
+    PlayerState& player = state.players[player_id];
+    assert(player.in_play_size < MAX_IN_PLAY);
+    player.in_play[player.in_play_size] = InPlayEntry{slot, slot, 0U};
+    ++player.in_play_size;
+    mark_trigger_table_dirty(state);
+}
+
+void play_slot_from_hand(GameState& state, PlayerId player_id, Slot slot) noexcept {
+    PlayerState& player = state.players[player_id];
+    assert(player.hand[slot] > 0U);
+    --player.hand[slot];
+    add_to_in_play(state, player_id, slot);
+}
+
+[[nodiscard]] bool play_slot_from_discard(GameState& state, PlayerId player_id, Slot slot) noexcept {
+    PlayerState& player = state.players[player_id];
+    for (std::uint8_t i = player.discard.size; i > 0U; --i) {
+        const std::uint8_t index = static_cast<std::uint8_t>(i - 1U);
+        if (player.discard.cards[index] != slot) {
+            continue;
+        }
+        for (std::uint8_t j = index; static_cast<std::uint8_t>(j + 1U) < player.discard.size; ++j) {
+            player.discard.cards[j] = player.discard.cards[j + 1U];
+        }
+        --player.discard.size;
+        player.discard.cards[player.discard.size] = 0;
+        add_to_in_play(state, player_id, slot);
+        return true;
+    }
+    return false;
+}
+
 void record_last_choice(GameState& state, EffectFrame& frame, DefId def) noexcept {
     const Cost cost = card_def(def).cost;
     frame.data[DATA_LAST_DEF] = static_cast<std::int16_t>(def);
@@ -318,29 +465,39 @@ void record_last_choice(GameState& state, EffectFrame& frame, DefId def) noexcep
     (void)state;
 }
 
-void apply_then(GameState& state, EffectFrame& frame, Then then_kind, DefId def) noexcept {
+void apply_then(GameState& state, EffectFrame& frame, const Instr& instr, Then then_kind, DefId def) noexcept {
     const Slot slot = slot_of(state, def);
     assert(slot != NONE);
-    PlayerState& player = state.players[frame.player];
-    assert(player.hand[slot] > 0U);
 
     switch (then_kind) {
     case Then::Discard:
+        assert(state.players[frame.player].hand[slot] > 0U);
         (void)do_discard(state, frame.player, slot, MoveZone::Hand);
         break;
     case Then::Trash:
+        assert(state.players[frame.player].hand[slot] > 0U);
         (void)do_trash(state, frame.player, slot, MoveZone::Hand);
         break;
     case Then::Topdeck:
-        --player.hand[slot];
-        append_topdeck(player, slot);
+        if (filter_def(instr.a).zone == ZoneSelector::Discard) {
+            (void)topdeck_from_discard(state, frame.player, slot);
+        } else {
+            PlayerState& player = state.players[frame.player];
+            assert(player.hand[slot] > 0U);
+            --player.hand[slot];
+            append_topdeck(player, slot);
+        }
+        break;
+    case Then::Play:
+        assert(state.players[frame.player].hand[slot] > 0U);
+        play_slot_from_hand(state, frame.player, slot);
+        emit(state, TriggerKind::OnPlayAction, TriggerPayload{frame.player, def, slot, 0U});
         break;
     case Then::PutInHand:
     case Then::Keep:
         break;
     case Then::Reveal:
     case Then::SetAside:
-    case Then::Play:
     case Then::Exile:
         assert(false);
         break;
@@ -406,6 +563,9 @@ void execute_multiplied_instr(GameState& state, EffectFrame& frame, const Instr&
         return frame.data[DATA_LAST_DEF] == instr.arg;
     case PredicateId::CoinsAtLeastArg:
         return state.coins >= instr.arg;
+    case PredicateId::LastChosenIsAction:
+        return frame.data[DATA_LAST_DEF] >= 0
+            && (card_def(static_cast<DefId>(frame.data[DATA_LAST_DEF])).types & TYPE_ACTION) != 0U;
     }
     return false;
 }
@@ -529,6 +689,266 @@ void gain_curse(GameState& state, EffectFrame& frame, const Instr& instr) noexce
     ++frame.pc;
 }
 
+[[nodiscard]] std::uint8_t empty_supply_piles(const GameState& state) noexcept {
+    std::uint8_t empty = 0;
+    for (std::uint8_t i = 0; i < state.num_piles; ++i) {
+        if (state.piles[i].mixed_len == 0U && state.piles[i].count == 0U) {
+            ++empty;
+        }
+    }
+    return empty;
+}
+
+[[nodiscard]] bool suspend_discard_per_empty_supply(
+    GameState& state,
+    EffectFrame& frame,
+    const Instr& instr) noexcept {
+    (void)begin_active_op(frame);
+    const std::uint8_t needed = empty_supply_piles(state);
+    const std::uint8_t chosen = active_count(frame);
+    if (chosen >= needed) {
+        finish_active_op(state, frame);
+        return false;
+    }
+
+    const std::uint8_t available = count_matching_hand(state, frame, filter_def(instr.a));
+    const std::uint8_t remaining = static_cast<std::uint8_t>(needed - chosen);
+    const std::uint8_t picks = min_u8(remaining, available);
+    if (picks == 0U) {
+        finish_active_op(state, frame);
+        return false;
+    }
+
+    state.decision = PendingDecision{
+        frame.player,
+        static_cast<std::uint8_t>(DecisionKind::Choose),
+        frame.source,
+        picks,
+        picks,
+    };
+    return true;
+}
+
+void discard_deck_top(GameState& state, EffectFrame& frame) noexcept {
+    const Slot slot = deck_top_slot(state, frame.player);
+    if (slot == NONE) {
+        frame.data[DATA_LAST_COUNT] = 0;
+        frame.data[DATA_LAST_DEF] = -1;
+        frame.data[DATA_LAST_COST_DEBT] = -1;
+        ++frame.pc;
+        return;
+    }
+
+    const DefId def = state.slot_to_def[slot];
+    const bool discarded = do_discard(state, frame.player, slot, MoveZone::Deck);
+    (void)discarded;
+    assert(discarded);
+    record_last_choice(state, frame, def);
+    frame.data[DATA_LAST_COST_DEBT] = static_cast<std::int16_t>(def);
+    frame.data[DATA_LAST_COUNT] = 1;
+    ++frame.pc;
+}
+
+void play_last_from_discard(GameState& state, EffectFrame& frame) noexcept {
+    const DefId def = static_cast<DefId>(frame.data[DATA_LAST_COST_DEBT]);
+    const Slot slot = slot_of(state, def);
+    if (slot != NONE && play_slot_from_discard(state, frame.player, slot)) {
+        emit(state, TriggerKind::OnPlayAction, TriggerPayload{frame.player, def, slot, 0U});
+        const bool pushed = push_effect(state, def, frame.player);
+        (void)pushed;
+        assert(pushed);
+    }
+    ++frame.pc;
+}
+
+void play_chosen_repeated(GameState& state, EffectFrame& frame, const Instr& instr) noexcept {
+    if (frame.data[DATA_LAST_COUNT] == 0) {
+        ++frame.pc;
+        return;
+    }
+
+    const DefId def = static_cast<DefId>(frame.data[DATA_LAST_DEF]);
+    const std::uint8_t repeats = static_cast<std::uint8_t>(
+        static_cast<std::uint8_t>(instr.arg) * (frame.repeats_left == 0U ? 1U : frame.repeats_left));
+    const std::uint8_t old_depth = state.effect_depth;
+    const bool pushed = push_effect(state, def, frame.player);
+    (void)pushed;
+    assert(pushed);
+    if (pushed && state.effect_depth > old_depth) {
+        state.effect_stack[state.effect_depth - 1U].repeats_left = repeats;
+    }
+    frame.repeats_left = 1U;
+    ++frame.pc;
+}
+
+void push_each_other_frames(GameState& state, EffectFrame& frame, const Instr& instr) noexcept {
+    const PlayerId source = frame.player;
+    for (std::uint8_t offset = static_cast<std::uint8_t>(state.num_players - 1U); offset > 0U; --offset) {
+        const PlayerId target = static_cast<PlayerId>((source + offset) % state.num_players);
+        assert(state.effect_depth < MAX_EFFECT_DEPTH);
+        if (state.effect_depth >= MAX_EFFECT_DEPTH) {
+            return;
+        }
+        EffectFrame each{};
+        each.source = frame.source;
+        each.pc = instr.a;
+        each.player = target;
+        each.flags = FRAME_ABSOLUTE_PROGRAM;
+        each.repeats_left = 1U;
+        each.data[DATA_ACTIVE_PC] = ACTIVE_PC_NONE;
+        state.effect_stack[state.effect_depth] = each;
+        ++state.effect_depth;
+    }
+}
+
+[[nodiscard]] Slot bandit_revealed_slot(const EffectFrame& frame, std::uint8_t index) noexcept {
+    const std::int16_t value = index == 0U
+        ? frame.data[DATA_BANDIT_REVEALED_0]
+        : frame.data[DATA_BANDIT_REVEALED_1];
+    return value < 0 ? NONE : static_cast<Slot>(value);
+}
+
+void set_bandit_revealed_slot(EffectFrame& frame, std::uint8_t index, Slot slot) noexcept {
+    if (index == 0U) {
+        frame.data[DATA_BANDIT_REVEALED_0] = static_cast<std::int16_t>(slot);
+    } else {
+        frame.data[DATA_BANDIT_REVEALED_1] = static_cast<std::int16_t>(slot);
+    }
+}
+
+[[nodiscard]] bool bandit_slot_is_trashable(const GameState& state, Slot slot) noexcept {
+    if (slot == NONE) {
+        return false;
+    }
+    const DefId def = state.slot_to_def[slot];
+    return def != DEF_COPPER && (card_def(def).types & TYPE_TREASURE) != 0U;
+}
+
+[[nodiscard]] std::uint8_t bandit_distinct_trashable_count(const GameState& state, const EffectFrame& frame) noexcept {
+    const std::uint8_t revealed_count = static_cast<std::uint8_t>(frame.data[DATA_BANDIT_REVEALED_COUNT]);
+    std::uint8_t total = 0;
+    DefId seen[2]{NONE, NONE};
+    for (std::uint8_t i = 0; i < revealed_count; ++i) {
+        const Slot slot = bandit_revealed_slot(frame, i);
+        if (!bandit_slot_is_trashable(state, slot)) {
+            continue;
+        }
+        const DefId def = state.slot_to_def[slot];
+        bool duplicate = false;
+        for (std::uint8_t j = 0; j < total; ++j) {
+            if (seen[j] == def) {
+                duplicate = true;
+            }
+        }
+        if (!duplicate) {
+            seen[total] = def;
+            ++total;
+        }
+    }
+    return total;
+}
+
+[[nodiscard]] Slot first_bandit_trashable_slot(const GameState& state, const EffectFrame& frame) noexcept {
+    const std::uint8_t revealed_count = static_cast<std::uint8_t>(frame.data[DATA_BANDIT_REVEALED_COUNT]);
+    for (std::uint8_t i = 0; i < revealed_count; ++i) {
+        const Slot slot = bandit_revealed_slot(frame, i);
+        if (bandit_slot_is_trashable(state, slot)) {
+            return slot;
+        }
+    }
+    return NONE;
+}
+
+[[nodiscard]] Slot first_bandit_trashable_slot_matching(
+    const GameState& state,
+    const EffectFrame& frame,
+    DefId def) noexcept {
+    const std::uint8_t revealed_count = static_cast<std::uint8_t>(frame.data[DATA_BANDIT_REVEALED_COUNT]);
+    for (std::uint8_t i = 0; i < revealed_count; ++i) {
+        const Slot slot = bandit_revealed_slot(frame, i);
+        if (bandit_slot_is_trashable(state, slot) && state.slot_to_def[slot] == def) {
+            return slot;
+        }
+    }
+    return NONE;
+}
+
+void resolve_bandit_revealed(GameState& state, EffectFrame& frame, Slot trash_slot) noexcept {
+    bool trashed = false;
+    const std::uint8_t revealed_count = static_cast<std::uint8_t>(frame.data[DATA_BANDIT_REVEALED_COUNT]);
+    for (std::uint8_t i = 0; i < revealed_count; ++i) {
+        const Slot slot = bandit_revealed_slot(frame, i);
+        if (slot == NONE) {
+            continue;
+        }
+        if (!trashed && slot == trash_slot) {
+            const bool moved = do_trash(state, frame.player, slot, MoveZone::Revealed);
+            (void)moved;
+            assert(moved);
+            trashed = true;
+        } else {
+            const bool moved = do_discard(state, frame.player, slot, MoveZone::Revealed);
+            (void)moved;
+            assert(moved);
+        }
+    }
+    frame.data[DATA_BANDIT_REVEALED_0] = DATA_NO_SLOT;
+    frame.data[DATA_BANDIT_REVEALED_1] = DATA_NO_SLOT;
+    frame.data[DATA_BANDIT_REVEALED_COUNT] = 0;
+    frame.data[DATA_BANDIT_TRASHABLE_COUNT] = 0;
+}
+
+[[nodiscard]] bool suspend_bandit_attack(GameState& state, EffectFrame& frame) noexcept {
+    const bool fresh = begin_active_op(frame);
+    if (fresh) {
+        frame.data[DATA_BANDIT_REVEALED_0] = DATA_NO_SLOT;
+        frame.data[DATA_BANDIT_REVEALED_1] = DATA_NO_SLOT;
+        frame.data[DATA_BANDIT_REVEALED_COUNT] = 0;
+        frame.data[DATA_BANDIT_TRASHABLE_COUNT] = 0;
+        for (std::uint8_t i = 0; i < 2U; ++i) {
+            const Slot slot = take_deck_top_slot(state, frame.player);
+            if (slot == NONE) {
+                continue;
+            }
+            const std::uint8_t revealed_count = static_cast<std::uint8_t>(frame.data[DATA_BANDIT_REVEALED_COUNT]);
+            set_bandit_revealed_slot(frame, revealed_count, slot);
+            frame.data[DATA_BANDIT_REVEALED_COUNT] = static_cast<std::int16_t>(revealed_count + 1U);
+            if (bandit_slot_is_trashable(state, slot)) {
+                ++frame.data[DATA_BANDIT_TRASHABLE_COUNT];
+            }
+        }
+    }
+
+    if (frame.data[DATA_BANDIT_TRASHABLE_COUNT] <= 0) {
+        resolve_bandit_revealed(state, frame, NONE);
+        finish_active_op(state, frame);
+        return false;
+    }
+    if (bandit_distinct_trashable_count(state, frame) <= 1U) {
+        resolve_bandit_revealed(state, frame, first_bandit_trashable_slot(state, frame));
+        finish_active_op(state, frame);
+        return false;
+    }
+
+    state.decision = PendingDecision{
+        frame.player,
+        static_cast<std::uint8_t>(DecisionKind::Choose),
+        frame.source,
+        1,
+        1,
+    };
+    return true;
+}
+
+void resume_bandit_attack(GameState& state, EffectFrame& frame, Action action) noexcept {
+    assert(action_is_select(action));
+    const DefId def = action_def(action, A_SELECT_BASE);
+    const Slot slot = first_bandit_trashable_slot_matching(state, frame, def);
+    assert(slot != NONE);
+    resolve_bandit_revealed(state, frame, slot);
+    finish_active_op(state, frame);
+}
+
 void resume_discard_down_to(GameState& state, EffectFrame& frame, Action action) noexcept {
     assert(action_is_select(action));
     const DefId def = action_def(action, A_SELECT_BASE);
@@ -552,6 +972,10 @@ void resume_choose(GameState& state, EffectFrame& frame, const Instr& instr, Act
         resume_discard_down_to(state, frame, action);
         return;
     }
+    if (instr.op == Op::BanditAttack) {
+        resume_bandit_attack(state, frame, action);
+        return;
+    }
 
     const Filter& filter = filter_def(instr.a);
     if (action_is_pass(action)) {
@@ -564,13 +988,19 @@ void resume_choose(GameState& state, EffectFrame& frame, const Instr& instr, Act
     const DefId def = action_def(action, A_SELECT_BASE);
     const Slot slot = slot_of(state, def);
     assert(slot != NONE);
-    if (slot == NONE
-        || state.players[frame.player].hand[slot] == 0U
-        || !hand_matches_filter(state, frame, filter, slot)) {
+    const bool valid_hand = filter.zone == ZoneSelector::Hand
+        && slot != NONE
+        && state.players[frame.player].hand[slot] > 0U
+        && hand_matches_filter(state, frame, filter, slot);
+    const bool valid_discard = filter.zone == ZoneSelector::Discard
+        && slot != NONE
+        && discard_contains_slot(state.players[frame.player], slot)
+        && discard_matches_filter(state, frame, filter, slot);
+    if (!valid_hand && !valid_discard) {
         assert(false);
         return;
     }
-    apply_then(state, frame, static_cast<Then>(instr.arg), def);
+    apply_then(state, frame, instr, static_cast<Then>(instr.arg), def);
     state.decision = PendingDecision{};
 }
 
@@ -799,7 +1229,7 @@ RunResult interp_run(GameState& state) noexcept {
         }
 
         if (!absolute && frame.pc >= def.on_play.len) {
-            pop_frame(state);
+            complete_frame(state, frame);
             continue;
         }
 
@@ -828,7 +1258,7 @@ RunResult interp_run(GameState& state) noexcept {
             ++frame.pc;
             break;
         case Op::End:
-            pop_frame(state);
+            complete_frame(state, frame);
             break;
         case Op::Choose:
             if (suspend_choice(state, frame, instr, DecisionKind::Choose)) {
@@ -850,16 +1280,47 @@ RunResult interp_run(GameState& state) noexcept {
             push_attack_frames(state, frame, instr);
             ++frame.pc;
             break;
+        case Op::EachOtherPlayer:
+            push_each_other_frames(state, frame, instr);
+            ++frame.pc;
+            break;
         case Op::DiscardDownTo:
             if (suspend_discard_down_to(state, frame, instr)) {
                 return RunResult::NeedDecision;
             }
             break;
+        case Op::DiscardPerEmptySupply:
+            if (suspend_discard_per_empty_supply(state, frame, instr)) {
+                return RunResult::NeedDecision;
+            }
+            break;
+        case Op::DiscardDeckTop:
+            discard_deck_top(state, frame);
+            break;
+        case Op::PlayLastFromDiscard:
+            play_last_from_discard(state, frame);
+            break;
+        case Op::PlayChosenRepeated:
+            play_chosen_repeated(state, frame, instr);
+            break;
+        case Op::TrashSelf: {
+            const Slot slot = slot_of(state, frame.source);
+            if (slot != NONE) {
+                (void)do_trash(state, frame.player, slot, MoveZone::InPlay);
+            }
+            ++frame.pc;
+            break;
+        }
         case Op::GainSpecific:
             gain_specific(state, frame, instr);
             break;
         case Op::GainCurse:
             gain_curse(state, frame, instr);
+            break;
+        case Op::BanditAttack:
+            if (suspend_bandit_attack(state, frame)) {
+                return RunResult::NeedDecision;
+            }
             break;
         case Op::PerChosen: {
             const std::uint16_t next_offset = static_cast<std::uint16_t>(instr_offset + 1U);

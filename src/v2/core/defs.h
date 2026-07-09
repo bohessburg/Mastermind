@@ -30,6 +30,11 @@ enum class Op : std::uint8_t {
     DrawTo,
     GainSpecific,
     TrashSelf,
+    PlayChosenRepeated,
+    DiscardPerEmptySupply,
+    DiscardDeckTop,
+    PlayLastFromDiscard,
+    BanditAttack,
     DiscardSelf,
     TopdeckSelf,
     ExileSelf,
@@ -61,7 +66,10 @@ struct Instr {
 enum class ZoneSelector : std::uint8_t {
     Hand,
     Supply,
+    Discard,
 };
+
+inline constexpr DefId ANY_DEF = 0xFFFFU;
 
 enum class CostLimitKind : std::uint8_t {
     None,
@@ -75,6 +83,8 @@ struct Filter {
     CostLimitKind cost_kind = CostLimitKind::None;
     Cost max_cost{};
     std::int8_t coin_delta = 0;
+    DefId exact_def = ANY_DEF;
+    DefId exclude_def = ANY_DEF;
 };
 
 enum class Then : std::uint8_t {
@@ -101,6 +111,7 @@ enum class PredicateId : std::uint8_t {
     ChosenAny,
     LastOptionEqualsArg,
     CoinsAtLeastArg,
+    LastChosenIsAction,
 };
 
 struct EffectSpan {
@@ -182,7 +193,19 @@ inline constexpr DefId DEF_BUREAUCRAT = 23;
 inline constexpr DefId DEF_ORDER_ALPHA_TEST = 24;
 inline constexpr DefId DEF_ORDER_BETA_TEST = 25;
 inline constexpr DefId DEF_ORDER_GAMMA_TEST = 26;
-inline constexpr std::uint16_t BASIC_CARD_COUNT = 27;
+inline constexpr DefId DEF_MARKET = 27;
+inline constexpr DefId DEF_FESTIVAL = 28;
+inline constexpr DefId DEF_LABORATORY = 29;
+inline constexpr DefId DEF_GARDENS = 30;
+inline constexpr DefId DEF_MONEYLENDER = 31;
+inline constexpr DefId DEF_POACHER = 32;
+inline constexpr DefId DEF_VASSAL = 33;
+inline constexpr DefId DEF_HARBINGER = 34;
+inline constexpr DefId DEF_THRONE_ROOM = 35;
+inline constexpr DefId DEF_COUNCIL_ROOM = 36;
+inline constexpr DefId DEF_ARTISAN = 37;
+inline constexpr DefId DEF_BANDIT = 38;
+inline constexpr std::uint16_t BASIC_CARD_COUNT = 39;
 
 [[nodiscard]] const CardDef* card_defs() noexcept;
 [[nodiscard]] std::uint16_t card_def_count() noexcept;

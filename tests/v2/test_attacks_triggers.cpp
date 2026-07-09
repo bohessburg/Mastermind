@@ -119,6 +119,23 @@ void add_in_play(GameState& state, PlayerId player_id, DefId def) {
     return pile.mixed_len > 0U ? pile.mixed_len : pile.count;
 }
 
+[[nodiscard]] int count_bandit_revealed(const GameState& state) {
+    int total = 0;
+    for (std::uint8_t i = 0; i < state.effect_depth; ++i) {
+        const EffectFrame& frame = state.effect_stack[i];
+        if (frame.source != DEF_BANDIT) {
+            continue;
+        }
+        const std::uint8_t revealed_count = frame.data[3] < 0 ? 0U : static_cast<std::uint8_t>(frame.data[3]);
+        for (std::uint8_t j = 0; j < revealed_count && j < 2U; ++j) {
+            if (frame.data[1 + j] >= 0) {
+                ++total;
+            }
+        }
+    }
+    return total;
+}
+
 [[nodiscard]] int total_cards(const GameState& state) {
     int total = 0;
     for (PlayerId player = 0; player < state.num_players; ++player) {
@@ -131,6 +148,7 @@ void add_in_play(GameState& state, PlayerId player_id, DefId def) {
         total += count_pile_cards(state.nonsupply[i]);
     }
     total += count_zone(state.trash);
+    total += count_bandit_revealed(state);
     return total;
 }
 

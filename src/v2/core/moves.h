@@ -7,6 +7,9 @@
 enum class MoveZone : std::uint8_t {
     Hand,
     InPlay,
+    Deck,
+    Discard,
+    Revealed,
 };
 
 [[nodiscard]] bool do_gain(
