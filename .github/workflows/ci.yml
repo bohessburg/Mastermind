@@ -33,7 +33,7 @@ jobs:
       - name: Create venv
         run: python3 -m venv .venv
       - name: Install Python deps
-        run: ./.venv/bin/python -m pip install --upgrade pip numpy pybind11 -r src/v2/web/server/requirements.txt
+        run: ./.venv/bin/python -m pip install --upgrade pip numpy pybind11 torch -r src/v2/web/server/requirements.txt
       - name: Configure
         run: |
           PYBIND11_DIR="$(./.venv/bin/python -m pybind11 --cmakedir)"
@@ -42,6 +42,8 @@ jobs:
         run: cmake --build build-py --target dominion_v2_py
       - name: Smoke
         run: PYTHONPATH=build-py ./.venv/bin/python src/v2/py/test_smoke.py
+      - name: Training smoke
+        run: PYTHONPATH=build-py ./.venv/bin/python -m pytest src/v2/train -q
       - name: Server tests
         run: PYTHONPATH=build-py ./.venv/bin/python -m pytest src/v2/web/server -q
 

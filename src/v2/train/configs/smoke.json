@@ -1,0 +1,30 @@
+{
+  "seed": 20260709,
+  "generations": 2,
+  "device": "cpu",
+  "checkpoint_dir": "checkpoints/smoke",
+  "metrics_csv": "checkpoints/smoke/metrics.csv",
+  "model": {
+    "hidden_sizes": [64]
+  },
+  "selfplay": {
+    "n_games": 8,
+    "sims_per_move": 32,
+    "games_per_generation": 8,
+    "max_batch": 64,
+    "dirichlet_frac": 0.0,
+    "temp_moves": 4,
+    "kingdom_mode": "fixed",
+    "max_recorded_moves": 256,
+    "max_tree_nodes": 1024
+  },
+  "optim": {
+    "lr": 0.001,
+    "weight_decay": 0.0001,
+    "batch_size": 32,
+    "train_steps_per_generation": 2
+  },
+  "replay": {
+    "capacity": 4096
+  }
+}

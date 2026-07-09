@@ -3,6 +3,7 @@ build/
 build-*/
 cmake-build-*/
 Testing/
+checkpoints/
 .venv/
 src/v2/web/client/node_modules/
 src/v2/web/client/dist/
