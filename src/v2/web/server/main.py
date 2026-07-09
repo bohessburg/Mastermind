@@ -4,10 +4,13 @@ import asyncio
 import random
 import secrets
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 import numpy as np
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 import dominion_v2_py as dz
 
@@ -106,6 +109,7 @@ def _state_view(session: Session, seat: int) -> dict[str, Any]:
                 "discardCount": game.discard_count(player),
                 "discardTop": game.discard_top(player),
                 "inPlay": game.in_play(player),
+                "resources": game.resources(player),
                 "vp": game.score(player) if game.game_over() else None,
             }
         )
@@ -117,6 +121,7 @@ def _state_view(session: Session, seat: int) -> dict[str, Any]:
         "myDeckCount": game.deck_count(seat),
         "myDiscardCount": game.discard_count(seat),
         "myDiscardTop": game.discard_top(seat),
+        "mySetAside": game.set_aside(seat),
         "opponents": opponents,
         "trash": _trash_entries(game),
         "trashTop": _trash_entries(game)[-1]["def"] if _trash_entries(game) else None,
@@ -308,3 +313,17 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, seat_token: 
         async with session.lock:
             if session.connections.get(seat_token) is websocket:
                 session.connections.pop(seat_token, None)
+
+
+CLIENT_DIST = Path(__file__).resolve().parents[1] / "client" / "dist"
+if CLIENT_DIST.exists():
+    assets_dir = CLIENT_DIST / "assets"
+    if assets_dir.exists():
+        app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def serve_client(full_path: str) -> FileResponse:
+        candidate = (CLIENT_DIST / full_path).resolve()
+        if full_path and candidate.is_file() and CLIENT_DIST in candidate.parents:
+            return FileResponse(candidate)
+        return FileResponse(CLIENT_DIST / "index.html")

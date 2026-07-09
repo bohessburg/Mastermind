@@ -563,6 +563,19 @@ PYBIND11_MODULE(dominion_v2_py, module) {
             }
             return list;
         })
+        .def("set_aside", [](const PyGame& self, int player) {
+            if (!valid_player(self.state, player)) {
+                throw std::invalid_argument("invalid player");
+            }
+            py::list list;
+            const OrderedZone& set_aside = self.state.players[player].set_aside;
+            for (std::uint8_t i = 0; i < set_aside.size; ++i) {
+                const Slot slot = set_aside.cards[i];
+                const DefId def = slot < self.state.num_slots ? self.state.slot_to_def[slot] : 0U;
+                list.append(py::int_(def));
+            }
+            return list;
+        })
         .def("resources", [](const PyGame& self, int player) {
             if (player < 0) {
                 player = static_cast<int>(turn_player_id(self.state));

@@ -2,6 +2,8 @@
 build/
 cmake-build-*/
 .venv/
+src/v2/web/client/node_modules/
+src/v2/web/client/dist/
 
 # IDE
 .idea/
