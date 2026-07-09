@@ -39,6 +39,8 @@ enum class Op : std::uint8_t {
     ChooseOption,
     ChooseOrder,
     Attack,
+    DiscardDownTo,
+    GainCurse,
     EachOtherPlayer,
     Repeat,
     PerChosen,
@@ -98,6 +100,7 @@ enum class PredicateId : std::uint8_t {
     AlwaysTrue,
     ChosenAny,
     LastOptionEqualsArg,
+    CoinsAtLeastArg,
 };
 
 struct EffectSpan {
@@ -171,7 +174,15 @@ inline constexpr DefId DEF_REMODEL = 15;
 inline constexpr DefId DEF_MINE = 16;
 inline constexpr DefId DEF_EXACT_TWO_TEST = 17;
 inline constexpr DefId DEF_REPEAT_CHOOSE_TEST = 18;
-inline constexpr std::uint16_t BASIC_CARD_COUNT = 19;
+inline constexpr DefId DEF_MERCHANT = 19;
+inline constexpr DefId DEF_MILITIA = 20;
+inline constexpr DefId DEF_WITCH = 21;
+inline constexpr DefId DEF_MOAT = 22;
+inline constexpr DefId DEF_BUREAUCRAT = 23;
+inline constexpr DefId DEF_ORDER_ALPHA_TEST = 24;
+inline constexpr DefId DEF_ORDER_BETA_TEST = 25;
+inline constexpr DefId DEF_ORDER_GAMMA_TEST = 26;
+inline constexpr std::uint16_t BASIC_CARD_COUNT = 27;
 
 [[nodiscard]] const CardDef* card_defs() noexcept;
 [[nodiscard]] std::uint16_t card_def_count() noexcept;

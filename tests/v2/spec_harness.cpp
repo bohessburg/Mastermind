@@ -198,12 +198,12 @@ int SpecHarness::total_cards() const {
 }
 
 void SpecHarness::add_hand(const char* name) {
-    const Slot slot = slot_named(name);
+    const Slot slot = ensure_slot_named(name);
     ++state_.players[0].hand[slot];
 }
 
 void SpecHarness::add_deck(const char* name) {
-    const Slot slot = slot_named(name);
+    const Slot slot = ensure_slot_named(name);
     PlayerState& player = state_.players[0];
     REQUIRE(player.deck.size < MAX_DECK_CARDS);
     player.deck.cards[player.deck.size] = slot;
@@ -234,6 +234,19 @@ void SpecHarness::step_checked(Action action) {
     REQUIRE(action < ACTION_SPACE_SIZE);
     REQUIRE(legal.test(action));
     (void)Game::step(state_, action);
+}
+
+Slot SpecHarness::ensure_slot_named(const char* name) {
+    const DefId def = def_named(name);
+    Slot slot = slot_of(state_, def);
+    if (slot != NONE) {
+        return slot;
+    }
+    REQUIRE(state_.num_slots < MAX_SLOTS);
+    slot = state_.num_slots;
+    state_.slot_to_def[slot] = def;
+    ++state_.num_slots;
+    return slot;
 }
 
 Slot SpecHarness::slot_named(const char* name) const {

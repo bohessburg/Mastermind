@@ -1,4 +1,5 @@
 #include "v2/core/defs.h"
+#include "v2/core/triggers.h"
 
 namespace {
 
@@ -8,6 +9,7 @@ enum FilterId : std::uint8_t {
     FILTER_SUPPLY_COST_4 = 2,
     FILTER_SUPPLY_LAST_PLUS_2 = 3,
     FILTER_SUPPLY_TREASURE_LAST_PLUS_3 = 4,
+    FILTER_HAND_VICTORY = 5,
 };
 
 constexpr std::uint8_t CHOOSE_MAX_ALL = 0xFFU;
@@ -21,6 +23,15 @@ constexpr EffectSpan SPAN_REMODEL{14, 4};
 constexpr EffectSpan SPAN_MINE{18, 4};
 constexpr EffectSpan SPAN_EXACT_TWO_TEST{22, 2};
 constexpr EffectSpan SPAN_REPEAT_CHOOSE_TEST{24, 4};
+constexpr EffectSpan SPAN_MERCHANT{28, 3};
+constexpr EffectSpan SPAN_MERCHANT_ON_FIRST_PLAY{31, 2};
+constexpr EffectSpan SPAN_MILITIA{33, 3};
+constexpr EffectSpan SPAN_WITCH{38, 3};
+constexpr EffectSpan SPAN_MOAT{43, 2};
+constexpr EffectSpan SPAN_BUREAUCRAT{45, 3};
+constexpr EffectSpan SPAN_ORDER_ALPHA_ON_FIRST_PLAY{50, 2};
+constexpr EffectSpan SPAN_ORDER_BETA_ON_FIRST_PLAY{52, 5};
+constexpr EffectSpan SPAN_ORDER_GAMMA_ON_FIRST_PLAY{57, 5};
 
 constexpr CardDef kBaseCards[] = {
     DOMINION_V2_DEF(Copper, (Cost{0, 0, 0}), TYPE_TREASURE, 0, 1),
@@ -42,6 +53,70 @@ constexpr CardDef kBaseCards[] = {
     DOMINION_V2_DEF_EFFECT(Mine, (Cost{5, 0, 0}), TYPE_ACTION, 0, 0, SPAN_MINE),
     DOMINION_V2_DEF_EFFECT(ExactTwoTest, (Cost{0, 0, 0}), TYPE_ACTION, 0, 0, SPAN_EXACT_TWO_TEST),
     DOMINION_V2_DEF_EFFECT(RepeatChooseTest, (Cost{0, 0, 0}), TYPE_ACTION, 0, 0, SPAN_REPEAT_CHOOSE_TEST),
+    CardDef{
+        "Merchant",
+        Cost{3, 0, 0},
+        TYPE_ACTION,
+        0,
+        0,
+        SPAN_MERCHANT,
+        SPAN_MERCHANT_ON_FIRST_PLAY,
+        NO_EFFECT,
+        NO_EFFECT,
+        NO_EFFECT,
+        trigger_mask(TriggerKind::OnFirstPlay),
+        nullptr,
+        nullptr,
+    },
+    DOMINION_V2_DEF_EFFECT(Militia, (Cost{4, 0, 0}), static_cast<std::uint16_t>(TYPE_ACTION | TYPE_ATTACK), 0, 0, SPAN_MILITIA),
+    DOMINION_V2_DEF_EFFECT(Witch, (Cost{5, 0, 0}), static_cast<std::uint16_t>(TYPE_ACTION | TYPE_ATTACK), 0, 0, SPAN_WITCH),
+    DOMINION_V2_DEF_EFFECT(Moat, (Cost{2, 0, 0}), static_cast<std::uint16_t>(TYPE_ACTION | TYPE_REACTION), 0, 0, SPAN_MOAT),
+    DOMINION_V2_DEF_EFFECT(Bureaucrat, (Cost{4, 0, 0}), static_cast<std::uint16_t>(TYPE_ACTION | TYPE_ATTACK), 0, 0, SPAN_BUREAUCRAT),
+    CardDef{
+        "OrderAlphaTest",
+        Cost{0, 0, 0},
+        TYPE_ACTION,
+        0,
+        0,
+        NO_EFFECT,
+        SPAN_ORDER_ALPHA_ON_FIRST_PLAY,
+        NO_EFFECT,
+        NO_EFFECT,
+        NO_EFFECT,
+        trigger_mask(TriggerKind::OnFirstPlay),
+        nullptr,
+        nullptr,
+    },
+    CardDef{
+        "OrderBetaTest",
+        Cost{0, 0, 0},
+        TYPE_ACTION,
+        0,
+        0,
+        NO_EFFECT,
+        SPAN_ORDER_BETA_ON_FIRST_PLAY,
+        NO_EFFECT,
+        NO_EFFECT,
+        NO_EFFECT,
+        trigger_mask(TriggerKind::OnFirstPlay),
+        nullptr,
+        nullptr,
+    },
+    CardDef{
+        "OrderGammaTest",
+        Cost{0, 0, 0},
+        TYPE_ACTION,
+        0,
+        0,
+        NO_EFFECT,
+        SPAN_ORDER_GAMMA_ON_FIRST_PLAY,
+        NO_EFFECT,
+        NO_EFFECT,
+        NO_EFFECT,
+        trigger_mask(TriggerKind::OnFirstPlay),
+        nullptr,
+        nullptr,
+    },
 };
 
 constexpr Instr kEffectInstrs[] = {
@@ -73,6 +148,40 @@ constexpr Instr kEffectInstrs[] = {
     Instr{Op::PlusCoins, 0, 0, 0, 1},
     Instr{Op::Repeat, 0, 2, 0, 0},
     Instr{Op::End, 0, 0, 0, 0},
+    Instr{Op::PlusCards, 0, 0, 0, 1},
+    Instr{Op::PlusActions, 0, 0, 0, 1},
+    Instr{Op::End, 0, 0, 0, 0},
+    Instr{Op::PlusCoins, 0, 0, 0, 1},
+    Instr{Op::End, 0, 0, 0, 0},
+    Instr{Op::PlusCoins, 0, 0, 0, 2},
+    Instr{Op::Attack, 36, 0, 0, 0},
+    Instr{Op::End, 0, 0, 0, 0},
+    Instr{Op::DiscardDownTo, 0, 0, 0, 3},
+    Instr{Op::End, 0, 0, 0, 0},
+    Instr{Op::PlusCards, 0, 0, 0, 2},
+    Instr{Op::Attack, 41, 0, 0, 0},
+    Instr{Op::End, 0, 0, 0, 0},
+    Instr{Op::GainCurse, static_cast<std::uint8_t>(GainDestination::Discard), 0, 0, DEF_CURSE},
+    Instr{Op::End, 0, 0, 0, 0},
+    Instr{Op::PlusCards, 0, 0, 0, 2},
+    Instr{Op::End, 0, 0, 0, 0},
+    Instr{Op::GainSpecific, static_cast<std::uint8_t>(GainDestination::Topdeck), 0, 0, DEF_SILVER},
+    Instr{Op::Attack, 48, 0, 0, 0},
+    Instr{Op::End, 0, 0, 0, 0},
+    Instr{Op::Choose, FILTER_HAND_VICTORY, 1, 1, static_cast<std::int16_t>(Then::Topdeck)},
+    Instr{Op::End, 0, 0, 0, 0},
+    Instr{Op::PlusCoins, 0, 0, 0, 2},
+    Instr{Op::End, 0, 0, 0, 0},
+    Instr{Op::IfElse, static_cast<std::uint8_t>(PredicateId::CoinsAtLeastArg), 1, 3, 3},
+    Instr{Op::PlusCoins, 0, 0, 0, 10},
+    Instr{Op::End, 0, 0, 0, 0},
+    Instr{Op::PlusCoins, 0, 0, 0, 1},
+    Instr{Op::End, 0, 0, 0, 0},
+    Instr{Op::IfElse, static_cast<std::uint8_t>(PredicateId::CoinsAtLeastArg), 1, 3, 10},
+    Instr{Op::PlusCoins, 0, 0, 0, 100},
+    Instr{Op::End, 0, 0, 0, 0},
+    Instr{Op::PlusCoins, 0, 0, 0, 5},
+    Instr{Op::End, 0, 0, 0, 0},
 };
 
 constexpr Filter kFilters[] = {
@@ -81,10 +190,11 @@ constexpr Filter kFilters[] = {
     Filter{ZoneSelector::Supply, 0, CostLimitKind::Fixed, Cost{4, 0, 0}, 0},
     Filter{ZoneSelector::Supply, 0, CostLimitKind::LastChosenPlus, Cost{}, 2},
     Filter{ZoneSelector::Supply, TYPE_TREASURE, CostLimitKind::LastChosenPlus, Cost{}, 3},
+    Filter{ZoneSelector::Hand, TYPE_VICTORY, CostLimitKind::None, Cost{}, 0},
 };
 
 static_assert(sizeof(kBaseCards) / sizeof(kBaseCards[0]) == BASIC_CARD_COUNT);
-static_assert(sizeof(kFilters) / sizeof(kFilters[0]) == 5U);
+static_assert(sizeof(kFilters) / sizeof(kFilters[0]) == 6U);
 
 } // namespace
 

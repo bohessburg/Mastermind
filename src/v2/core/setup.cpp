@@ -112,6 +112,7 @@ GameState new_game(const Setup& setup, std::uint64_t seed) noexcept {
     std::memset(&state, 0, sizeof(state));
     state.num_players = sanitize_player_count(setup.num_players);
     state.rng = Xoshiro256pp::seeded(seed);
+    state.trigger_table.dirty = 1U;
 
     for (int i = 0; i < NUM_ARTIFACTS; ++i) {
         state.artifact_holder[i] = NONE;

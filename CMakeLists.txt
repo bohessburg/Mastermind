@@ -78,8 +78,10 @@ add_library(dominion_v2 STATIC
     src/v2/core/actions.cpp
     src/v2/core/game.cpp
     src/v2/core/interp.cpp
+    src/v2/core/moves.cpp
     src/v2/core/score.cpp
     src/v2/core/setup.cpp
+    src/v2/core/triggers.cpp
     src/v2/core/turns.cpp
 )
 target_include_directories(dominion_v2 PUBLIC src)
@@ -134,6 +136,7 @@ if(BUILD_TESTS)
         tests/v2/test_conservation.cpp
         tests/v2/test_alloc.cpp
         tests/v2/test_specs_base.cpp
+        tests/v2/test_attacks_triggers.cpp
     )
     target_link_libraries(v2_tests PRIVATE dominion_v2_drivers Catch2::Catch2WithMain)
     configure_v2_target(v2_tests)

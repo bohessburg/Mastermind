@@ -73,6 +73,7 @@ private:
     void clear_player_zero();
     void refresh_baseline();
     void step_checked(Action action);
+    [[nodiscard]] Slot ensure_slot_named(const char* name);
     [[nodiscard]] Slot slot_named(const char* name) const;
     [[nodiscard]] std::uint8_t hand_count(const char* name) const;
     [[nodiscard]] std::uint8_t discard_count(const char* name) const;

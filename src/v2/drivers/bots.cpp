@@ -68,6 +68,51 @@ struct BotController {
     return A_PASS;
 }
 
+[[nodiscard]] Action first_legal_reaction(const ActionMask& legal) noexcept {
+    const Action moat = select_action(DEF_MOAT);
+    if (legal.test(moat)) {
+        return moat;
+    }
+    return A_PASS;
+}
+
+[[nodiscard]] Action choose_highest_coin_keep(const ActionMask& legal) noexcept {
+    Action best = A_PASS;
+    std::int8_t best_value = -1;
+    for (DefId def = 0; def < ACTION_DEF_COUNT; ++def) {
+        const Action action = select_action(def);
+        if (!legal.test(action)) {
+            continue;
+        }
+        const std::int8_t value = card_def(def).coin_value;
+        if (best == A_PASS || value > best_value) {
+            best = action;
+            best_value = value;
+        }
+    }
+    return best;
+}
+
+[[nodiscard]] Action choose_cheapest_victory(const ActionMask& legal) noexcept {
+    Action best = A_PASS;
+    Cost best_cost{127, 127, 32767};
+    for (DefId def = 0; def < ACTION_DEF_COUNT; ++def) {
+        const Action action = select_action(def);
+        if (!legal.test(action)) {
+            continue;
+        }
+        const CardDef& defn = card_def(def);
+        if ((defn.types & TYPE_VICTORY) == 0U) {
+            continue;
+        }
+        if (best == A_PASS || defn.cost.coins < best_cost.coins) {
+            best = action;
+            best_cost = defn.cost;
+        }
+    }
+    return best;
+}
+
 [[nodiscard]] PlayerId winner_for(const GameState& state, const std::int16_t (&scores)[MAX_PLAYERS]) noexcept {
     PlayerId winner = 0;
     bool tied = false;
@@ -116,6 +161,26 @@ Action BigMoneyBot::choose_action(
     (void)state;
     if (legal_count <= 0) {
         return A_PASS;
+    }
+
+    const DecisionKind decision = static_cast<DecisionKind>(state.decision.kind);
+    if (decision == DecisionKind::ReactWindow) {
+        return first_legal_reaction(legal);
+    }
+    if (decision == DecisionKind::Choose && state.decision.source == DEF_MILITIA) {
+        const Action keep = choose_highest_coin_keep(legal);
+        if (keep != A_PASS) {
+            return keep;
+        }
+    }
+    if (decision == DecisionKind::Choose && state.decision.source == DEF_BUREAUCRAT) {
+        const Action topdeck = choose_cheapest_victory(legal);
+        if (topdeck != A_PASS) {
+            return topdeck;
+        }
+    }
+    if (decision == DecisionKind::OrderTriggers) {
+        return first_legal(legal);
     }
 
     const Action treasure = first_legal_play_treasure(legal);

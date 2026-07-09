@@ -1,7 +1,9 @@
 #include "v2/core/actions.h"
 
 #include "v2/core/interp.h"
+#include "v2/core/moves.h"
 #include "v2/core/setup.h"
+#include "v2/core/triggers.h"
 #include "v2/core/turns.h"
 
 #include <cassert>
@@ -128,17 +130,33 @@ void add_buy_actions(const GameState& state, ActionMask& out, int& count) noexce
 }
 
 [[nodiscard]] const Instr& current_decision_instr(const GameState& state) noexcept {
-    assert(state.effect_depth > 0U);
-    const EffectFrame& frame = state.effect_stack[state.effect_depth - 1U];
-    const CardDef& def = card_def(frame.source);
-    assert(frame.pc < def.on_play.len);
-    return effect_instr(static_cast<std::uint16_t>(def.on_play.offset + frame.pc));
+    return current_effect_instr(state);
+}
+
+[[nodiscard]] bool hand_selectable_for_decision(
+    const GameState& state,
+    const EffectFrame& frame,
+    const Instr& instr,
+    Slot slot) noexcept {
+    if (instr.op == Op::DiscardDownTo) {
+        const DefId def = state.slot_to_def[slot];
+        std::uint8_t chosen = 0;
+        const std::uint8_t active = frame.data[6] < 0 ? 0U : static_cast<std::uint8_t>(frame.data[6]);
+        for (std::uint8_t i = 0; i < active && i < 3U; ++i) {
+            if (frame.data[1 + i] == static_cast<std::int16_t>(def)) {
+                ++chosen;
+            }
+        }
+        return state.players[state.decision.player].hand[slot] > chosen;
+    }
+
+    const Filter& filter = filter_def(instr.a);
+    return state.players[frame.player].hand[slot] > 0U && hand_matches_filter(state, frame, filter, slot);
 }
 
 void add_choose_actions(const GameState& state, ActionMask& out, int& count) noexcept {
     const EffectFrame& frame = state.effect_stack[state.effect_depth - 1U];
     const Instr& instr = current_decision_instr(state);
-    const Filter& filter = filter_def(instr.a);
 
     if (state.decision.min_left == 0U) {
         add_action(out, count, A_PASS);
@@ -147,9 +165,8 @@ void add_choose_actions(const GameState& state, ActionMask& out, int& count) noe
         return;
     }
 
-    const PlayerState& player = state.players[frame.player];
     for (std::uint8_t slot = 0; slot < state.num_slots; ++slot) {
-        if (player.hand[slot] > 0U && hand_matches_filter(state, frame, filter, slot)) {
+        if (hand_selectable_for_decision(state, frame, instr, slot)) {
             add_action(out, count, select_action(state.slot_to_def[slot]));
         }
     }
@@ -178,6 +195,20 @@ void add_option_actions(const GameState& state, ActionMask& out, int& count) noe
     const std::uint8_t options = state.decision.max_left;
     for (std::uint8_t i = 0; i < options && i < 16U; ++i) {
         add_action(out, count, option_action(i));
+    }
+}
+
+void add_react_actions(const GameState& state, ActionMask& out, int& count) noexcept {
+    add_action(out, count, A_PASS);
+    const PlayerState& player = state.players[state.decision.player];
+    for (std::uint8_t slot = 0; slot < state.num_slots; ++slot) {
+        if (player.hand[slot] == 0U) {
+            continue;
+        }
+        const DefId def = state.slot_to_def[slot];
+        if ((card_def(def).types & TYPE_REACTION) != 0U) {
+            add_action(out, count, select_action(def));
+        }
     }
 }
 
@@ -211,22 +242,6 @@ void add_treasure_actions(const GameState& state, ActionMask& out, int& count) n
     }
 }
 
-void gain_to_discard(GameState& state, PlayerId player_id, Slot slot) noexcept {
-    PlayerState& player = state.players[player_id];
-    assert(player.discard.size < MAX_DECK_CARDS);
-    player.discard.cards[player.discard.size] = slot;
-    ++player.discard.size;
-}
-
-void decrement_pile(Pile& pile) noexcept {
-    if (pile.mixed_len > 0U) {
-        --pile.mixed_len;
-    } else {
-        assert(pile.count > 0U);
-        --pile.count;
-    }
-}
-
 void spend_cost(GameState& state, const Cost& cost) noexcept {
     state.coins = static_cast<std::int16_t>(state.coins - cost.coins);
     state.potion_coins = static_cast<std::uint8_t>(state.potion_coins - cost.potion);
@@ -245,9 +260,22 @@ void play_card_to_in_play(GameState& state, DefId def) noexcept {
     assert(player.in_play_size < MAX_IN_PLAY);
     player.in_play[player.in_play_size] = InPlayEntry{slot, slot, 0};
     ++player.in_play_size;
+    mark_trigger_table_dirty(state);
+}
+
+[[nodiscard]] std::uint8_t in_play_count(const GameState& state, PlayerId player_id, DefId def) noexcept {
+    const PlayerState& player = state.players[player_id];
+    std::uint8_t total = 0;
+    for (std::uint8_t i = 0; i < player.in_play_size; ++i) {
+        if (state.slot_to_def[player.in_play[i].slot] == def) {
+            ++total;
+        }
+    }
+    return total;
 }
 
 void play_treasure(GameState& state, DefId def) noexcept {
+    const PlayerId player = current_player(state);
     play_card_to_in_play(state, def);
     if (def == DEF_POTION) {
         ++state.potion_coins;
@@ -257,15 +285,21 @@ void play_treasure(GameState& state, DefId def) noexcept {
     const bool pushed = push_effect(state, def, current_player(state));
     (void)pushed;
     assert(pushed);
+    emit(state, TriggerKind::OnPlayTreasure, TriggerPayload{player, def, slot_of(state, def), 0U});
+    if (def == DEF_SILVER && in_play_count(state, player, DEF_SILVER) == 1U) {
+        emit(state, TriggerKind::OnFirstPlay, TriggerPayload{player, def, slot_of(state, def), 0U});
+    }
 }
 
 void play_action_card(GameState& state, DefId def) noexcept {
     assert(state.actions > 0U);
+    const PlayerId player = current_player(state);
     --state.actions;
     play_card_to_in_play(state, def);
-    const bool pushed = push_effect(state, def, current_player(state));
+    const bool pushed = push_effect(state, def, player);
     (void)pushed;
     assert(pushed);
+    emit(state, TriggerKind::OnPlayAction, TriggerPayload{player, def, slot_of(state, def), 0U});
 }
 
 void buy_card(GameState& state, DefId def) noexcept {
@@ -280,8 +314,9 @@ void buy_card(GameState& state, DefId def) noexcept {
     assert(cost.fits_within(current_budget(state)));
     spend_cost(state, cost);
     --state.buys;
-    decrement_pile(*pile);
-    gain_to_discard(state, current_player(state), gained_slot);
+    const bool gained = do_gain(state, current_player(state), gained_slot, GainDestination::Discard);
+    (void)gained;
+    assert(gained);
 }
 
 } // namespace
@@ -337,6 +372,14 @@ int legal_actions(const GameState& state, ActionMask& out) noexcept {
         add_option_actions(state, out, count);
         return count;
     }
+    if (decision_kind == DecisionKind::ReactWindow) {
+        add_react_actions(state, out, count);
+        return count;
+    }
+    if (decision_kind == DecisionKind::OrderTriggers) {
+        add_option_actions(state, out, count);
+        return count;
+    }
 
     switch (phase) {
     case Phase::Action:
@@ -366,7 +409,9 @@ void apply_action(GameState& state, Action action) noexcept {
     if (decision_kind == DecisionKind::Choose
         || decision_kind == DecisionKind::ChooseGain
         || decision_kind == DecisionKind::ChooseOption
-        || decision_kind == DecisionKind::ChooseOrder) {
+        || decision_kind == DecisionKind::ChooseOrder
+        || decision_kind == DecisionKind::ReactWindow
+        || decision_kind == DecisionKind::OrderTriggers) {
         interp_resume(state, action);
         return;
     }
