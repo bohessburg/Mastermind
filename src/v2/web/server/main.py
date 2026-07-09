@@ -15,7 +15,7 @@ from fastapi.staticfiles import StaticFiles
 import dominion_v2_py as dz
 
 from .defs import def_by_id, def_id, load_defs
-from .observer import decision_kind_name, legal_options, log_line, prompt_for
+from .observer import capture_public_snapshot, decision_kind_name, legal_options, prompt_for, public_log_lines
 
 
 DEFAULT_KINGDOM = [
@@ -47,6 +47,7 @@ class Session:
     kingdom: list[int]
     game: Any
     action_log: list[int] = field(default_factory=list)
+    action_log_line_counts: list[int] = field(default_factory=list)
     human_decision_prefixes: list[int] = field(default_factory=list)
     log_lines: list[str] = field(default_factory=list)
     connections: dict[str, WebSocket] = field(default_factory=dict)
@@ -324,18 +325,23 @@ def _choose_bot_action(session: Session, seat: int) -> int:
     return _choose_bigmoney_action(session.game, legal)
 
 
-def _apply_action(session: Session, seat: int, action: int) -> str:
+def _apply_action(session: Session, seat: int, action: int) -> list[str]:
     decision = session.game.current_decision()
-    line = log_line(seat, action, decision)
+    before = capture_public_snapshot(session.game)
     done = session.game.step(action)
+    after = capture_public_snapshot(session.game)
+    after_decision = session.game.current_decision()
+    lines = public_log_lines(seat, action, decision, before, after, after_decision)
     session.action_log.append(action)
-    session.log_lines.append(line)
+    session.action_log_line_counts.append(len(lines) + (1 if done else 0))
+    session.log_lines.extend(lines)
     if done:
         session.log_lines.append("Game over")
-    return line
+        lines = [*lines, "Game over"]
+    return lines
 
 
-def _apply_validated_action(session: Session, seat: int, action: int) -> str:
+def _apply_validated_action(session: Session, seat: int, action: int) -> list[str]:
     current = _current_player(session.game)
     if current != seat:
         raise ValueError("not your turn")
@@ -352,8 +358,8 @@ async def _run_bots(session: Session) -> None:
         if session.thinking_delay_ms > 0:
             await asyncio.sleep(session.thinking_delay_ms / 1000.0)
         action = _choose_bot_action(session, player)
-        line = _apply_validated_action(session, player, action)
-        await _broadcast(session, [line])
+        lines = _apply_validated_action(session, player, action)
+        await _broadcast(session, lines)
 
 
 def _replay_game(session: Session, actions: list[int]) -> Any:
@@ -374,12 +380,14 @@ def _undo_previous_human_decision(session: Session, seat: int) -> str:
         raise ValueError("nothing to undo")
 
     prefix = session.human_decision_prefixes.pop()
+    log_prefix = sum(session.action_log_line_counts[:prefix])
     session.action_log = session.action_log[:prefix]
+    session.action_log_line_counts = session.action_log_line_counts[:prefix]
     session.human_decision_prefixes = [
         previous for previous in session.human_decision_prefixes if previous < prefix
     ]
     session.game = _replay_game(session, session.action_log)
-    session.log_lines = session.log_lines[:prefix]
+    session.log_lines = session.log_lines[:log_prefix]
     line = "Undo: rewound to previous human decision"
     session.log_lines.append(line)
     return line
@@ -487,14 +495,14 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, seat_token: 
                 try:
                     if session.seats[seat].kind == "human":
                         session.human_decision_prefixes.append(len(session.action_log))
-                    line = _apply_validated_action(session, seat, action)
+                    lines = _apply_validated_action(session, seat, action)
                 except ValueError as error:
                     if session.human_decision_prefixes and session.human_decision_prefixes[-1] == len(session.action_log):
                         session.human_decision_prefixes.pop()
                     await websocket.send_json({"type": "error", "message": str(error)})
                     continue
 
-                await _broadcast(session, [line])
+                await _broadcast(session, lines)
                 await _run_bots(session)
     except WebSocketDisconnect:
         async with session.lock:

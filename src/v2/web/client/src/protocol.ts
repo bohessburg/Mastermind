@@ -18,6 +18,7 @@ export interface CardDef {
   types: string[];
   vp: number;
   coin_value: number;
+  is_basic_treasure: boolean;
   text: string;
 }
 

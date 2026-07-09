@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import type { DecisionMessage, LogMessage, StateMessage, TableMessage } from '../protocol';
-import { canSendDone, initialClientState, reduceServerMessage } from '../state';
+import type { CardDef, DecisionMessage, LogMessage, StateMessage, TableMessage } from '../protocol';
+import {
+  canSendDone,
+  findNextBasicTreasurePlay,
+  indexDecisionOptionsByDef,
+  initialClientState,
+  reduceServerMessage,
+} from '../state';
 
 describe('client state reducer', () => {
   it('stores table and state redraw messages', () => {
@@ -67,5 +73,56 @@ describe('client state reducer', () => {
     };
     expect(canSendDone(decision)).toBe(true);
     expect(canSendDone(undefined)).toBe(false);
+  });
+
+  it('indexes play and buy options by def for tile clicks', () => {
+    const decision: DecisionMessage = {
+      type: 'decision',
+      seat: 0,
+      kind: 'PhaseBuy',
+      source: { def: 0, name: 'Copper' },
+      prompt: 'Buy phase',
+      min: 0,
+      max: 0,
+      options: [
+        { action: 100, label: 'Play Copper', def: 0 },
+        { action: 200, label: 'Buy Silver', def: 1 },
+      ],
+    };
+
+    expect(indexDecisionOptionsByDef(decision, 'Play').get(0)?.action).toBe(100);
+    expect(indexDecisionOptionsByDef(decision, 'Buy').get(1)?.action).toBe(200);
+    expect(indexDecisionOptionsByDef(decision, 'Play').has(1)).toBe(false);
+  });
+
+  it('selects only legal basic treasure plays and stops when none remain or seat is inactive', () => {
+    const defs = new Map<number, Pick<CardDef, 'is_basic_treasure'>>([
+      [0, { is_basic_treasure: true }],
+      [1, { is_basic_treasure: true }],
+      [2, { is_basic_treasure: true }],
+      [16, { is_basic_treasure: false }],
+    ]);
+    const buyDecision: DecisionMessage = {
+      type: 'decision',
+      seat: 0,
+      kind: 'PhaseBuy',
+      source: { def: 0, name: 'Copper' },
+      prompt: 'Buy phase',
+      min: 0,
+      max: 0,
+      options: [
+        { action: 100, label: 'Play Copper', def: 0 },
+        { action: 102, label: 'Play Gold', def: 2 },
+        { action: 116, label: 'Play Mine', def: 16 },
+        { action: 201, label: 'Buy Silver', def: 1 },
+      ],
+    };
+
+    expect(findNextBasicTreasurePlay(buyDecision, defs)?.action).toBe(102);
+    expect(
+      findNextBasicTreasurePlay({ ...buyDecision, options: [{ action: 116, label: 'Play Mine', def: 16 }] }, defs),
+    ).toBeUndefined();
+    expect(findNextBasicTreasurePlay({ ...buyDecision, kind: 'PhaseAction' }, defs)).toBeUndefined();
+    expect(findNextBasicTreasurePlay({ ...buyDecision, options: [] }, defs)).toBeUndefined();
   });
 });

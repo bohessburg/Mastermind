@@ -522,6 +522,19 @@ PYBIND11_MODULE(dominion_v2_py, module) {
             }
             return self.state.players[player].discard.size;
         })
+        .def("discard", [](const PyGame& self, int player) {
+            if (!valid_player(self.state, player)) {
+                throw std::invalid_argument("invalid player");
+            }
+            py::list list;
+            const OrderedZone& discard = self.state.players[player].discard;
+            for (std::uint8_t i = 0; i < discard.size; ++i) {
+                const Slot slot = discard.cards[i];
+                const DefId def = slot < self.state.num_slots ? self.state.slot_to_def[slot] : 0U;
+                list.append(py::int_(def));
+            }
+            return list;
+        })
         .def("discard_top", [](const PyGame& self, int player) {
             if (!valid_player(self.state, player)) {
                 throw std::invalid_argument("invalid player");

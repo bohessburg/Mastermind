@@ -69,6 +69,10 @@ void write_type_list(std::ostream& out, std::uint16_t types) {
     out << ']';
 }
 
+[[nodiscard]] bool is_basic_treasure(DefId def) noexcept {
+    return def == DEF_COPPER || def == DEF_SILVER || def == DEF_GOLD || def == DEF_PLATINUM;
+}
+
 bool dump_defs(const std::filesystem::path& output_path) {
     std::filesystem::create_directories(output_path.parent_path());
 
@@ -90,6 +94,7 @@ bool dump_defs(const std::filesystem::path& output_path) {
         write_type_list(out, card.types);
         out << ", \"vp\": " << static_cast<int>(card.vp)
             << ", \"coin_value\": " << static_cast<int>(card.coin_value)
+            << ", \"is_basic_treasure\": " << (is_basic_treasure(def) ? "true" : "false")
             << ", \"text\": ";
         write_json_string(out, card_text(def));
         out << '}';

@@ -1,6 +1,6 @@
-import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { FormEvent, KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { GameSocket } from './connection';
-import { cardDef, defTable, kingdomPreset } from './defs';
+import { cardDef, defTable, defsById, kingdomPreset } from './defs';
 import type {
   CountedCard,
   CreateSessionResponse,
@@ -11,7 +11,13 @@ import type {
   SeatKind,
   ServerMessage,
 } from './protocol';
-import { ClientState, initialClientState, reduceServerMessage } from './state';
+import {
+  ClientState,
+  findNextBasicTreasurePlay,
+  indexDecisionOptionsByDef,
+  initialClientState,
+  reduceServerMessage,
+} from './state';
 
 interface Credentials {
   sessionId: string;
@@ -45,21 +51,39 @@ function CardTile({
   count,
   compact = false,
   empty = false,
+  clickable = false,
+  onActivate,
 }: {
   def: number | null | undefined;
   count?: number;
   compact?: boolean;
   empty?: boolean;
+  clickable?: boolean;
+  onActivate?: () => void;
 }) {
   const card = cardDef(def);
   if (!card) {
     return <div className={`card-tile unknown ${compact ? 'compact' : ''}`}>Empty</div>;
   }
 
+  function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    if (!clickable || !onActivate) {
+      return;
+    }
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      onActivate();
+    }
+  }
+
   return (
     <div
-      className={`card-tile ${typeClass(card.types)} ${compact ? 'compact' : ''} ${empty ? 'empty' : ''}`}
+      className={`card-tile ${typeClass(card.types)} ${compact ? 'compact' : ''} ${empty ? 'empty' : ''} ${clickable ? 'clickable' : ''}`}
       tabIndex={0}
+      role={clickable ? 'button' : undefined}
+      aria-label={clickable ? `Act with ${card.name}` : undefined}
+      onClick={clickable ? onActivate : undefined}
+      onKeyDown={onKeyDown}
     >
       <div className="card-title-row">
         <strong>{card.name}</strong>
@@ -103,11 +127,31 @@ function ResourceBar({ resources }: { resources: ResourceView }) {
   );
 }
 
-function SupplyGrid({ piles }: { piles: CountedCard[] }) {
+function SupplyGrid({
+  piles,
+  buyActionsByDef,
+  onAction,
+}: {
+  piles: CountedCard[];
+  buyActionsByDef: Map<number, DecisionOption>;
+  onAction: (option: DecisionOption) => void;
+}) {
   return (
     <section className="supply-grid" aria-label="Supply">
       {piles.map((pile) => (
-        <CardTile key={pile.def} def={pile.def} count={pile.count} empty={pile.count === 0} />
+        <CardTile
+          key={pile.def}
+          def={pile.def}
+          count={pile.count}
+          empty={pile.count === 0}
+          clickable={buyActionsByDef.has(pile.def)}
+          onActivate={() => {
+            const option = buyActionsByDef.get(pile.def);
+            if (option) {
+              onAction(option);
+            }
+          }}
+        />
       ))}
     </section>
   );
@@ -159,14 +203,33 @@ function TrashAndResources({ trashTop, resources, turn }: { trashTop: number | n
   );
 }
 
-function CountedCardRow({ cards }: { cards: CountedCard[] }) {
+function CountedCardRow({
+  cards,
+  playActionsByDef,
+  onAction,
+}: {
+  cards: CountedCard[];
+  playActionsByDef: Map<number, DecisionOption>;
+  onAction: (option: DecisionOption) => void;
+}) {
   if (cards.length === 0) {
     return <div className="empty-row">No cards</div>;
   }
   return (
     <div className="tile-row hand-row">
       {cards.map((card) => (
-        <CardTile key={card.def} def={card.def} count={card.count} />
+        <CardTile
+          key={card.def}
+          def={card.def}
+          count={card.count}
+          clickable={playActionsByDef.has(card.def)}
+          onActivate={() => {
+            const option = playActionsByDef.get(card.def);
+            if (option) {
+              onAction(option);
+            }
+          }}
+        />
       ))}
     </div>
   );
@@ -192,6 +255,8 @@ function PlayerArea({
   deckCount,
   discardCount,
   discardTop,
+  playActionsByDef,
+  onAction,
 }: {
   hand: CountedCard[];
   inPlay: number[];
@@ -199,6 +264,8 @@ function PlayerArea({
   deckCount: number;
   discardCount: number;
   discardTop: number | null;
+  playActionsByDef: Map<number, DecisionOption>;
+  onAction: (option: DecisionOption) => void;
 }) {
   return (
     <section className="player-area">
@@ -208,7 +275,7 @@ function PlayerArea({
       </div>
       <div className="zone-block hand-block">
         <div className="zone-title">Hand</div>
-        <CountedCardRow cards={hand} />
+        <CountedCardRow cards={hand} playActionsByDef={playActionsByDef} onAction={onAction} />
       </div>
       <details className="mats-tray" open={setAside.length > 0}>
         <summary>Mats and private counts</summary>
@@ -233,10 +300,16 @@ function DecisionPanel({
   decision,
   picked,
   onAct,
+  canPlayAllTreasures,
+  autoPlayingTreasures,
+  onPlayAllTreasures,
 }: {
   decision?: DecisionMessage;
   picked: string[];
   onAct: (option: DecisionOption) => void;
+  canPlayAllTreasures: boolean;
+  autoPlayingTreasures: boolean;
+  onPlayAllTreasures: () => void;
 }) {
   if (!decision) {
     return (
@@ -266,6 +339,16 @@ function DecisionPanel({
             <em key={`${label}-${index}`}>{label}</em>
           ))}
         </div>
+      )}
+      {decision.kind === 'PhaseBuy' && (
+        <button
+          className="primary-option treasure-sequence"
+          type="button"
+          disabled={!canPlayAllTreasures || autoPlayingTreasures}
+          onClick={onPlayAllTreasures}
+        >
+          {autoPlayingTreasures ? 'Playing treasures...' : 'Play all treasures'}
+        </button>
       )}
       <div className="option-stack">
         {decision.options.map((option) => (
@@ -411,7 +494,9 @@ export function App() {
   const [clientState, setClientState] = useState<ClientState>(initialClientState);
   const [status, setStatus] = useState<'idle' | 'connecting' | 'open' | 'closed'>('idle');
   const [picked, setPicked] = useState<string[]>([]);
+  const [autoPlayingTreasures, setAutoPlayingTreasures] = useState(false);
   const socketRef = useRef<GameSocket | null>(null);
+  const lastAutoDecisionRef = useRef<DecisionMessage | undefined>(undefined);
 
   const decisionKey = useMemo(() => {
     const decision = clientState.decision;
@@ -421,6 +506,24 @@ export function App() {
   useEffect(() => {
     setPicked([]);
   }, [decisionKey]);
+
+  useEffect(() => {
+    if (!autoPlayingTreasures) {
+      lastAutoDecisionRef.current = undefined;
+      return;
+    }
+    const decision = clientState.decision;
+    if (!decision || lastAutoDecisionRef.current === decision) {
+      return;
+    }
+    lastAutoDecisionRef.current = decision;
+    const option = findNextBasicTreasurePlay(decision, defsById);
+    if (!option) {
+      setAutoPlayingTreasures(false);
+      return;
+    }
+    socketRef.current?.send({ type: 'act', action: option.action });
+  }, [autoPlayingTreasures, clientState.decision]);
 
   useEffect(() => {
     if (!credentials) {
@@ -440,6 +543,7 @@ export function App() {
 
   function act(option: DecisionOption) {
     socketRef.current?.send({ type: 'act', action: option.action });
+    setAutoPlayingTreasures(false);
     if (option.label !== 'Done' && option.label !== 'Pass') {
       setPicked((current) => [...current, option.label]);
     }
@@ -448,7 +552,24 @@ export function App() {
   function undo() {
     socketRef.current?.send({ type: 'undo_request' });
     setPicked([]);
+    setAutoPlayingTreasures(false);
   }
+
+  const playActionsByDef = useMemo(() => {
+    const decision = clientState.decision;
+    if (decision?.kind !== 'PhaseAction' && decision?.kind !== 'PhaseBuy') {
+      return new Map<number, DecisionOption>();
+    }
+    return indexDecisionOptionsByDef(decision, 'Play');
+  }, [clientState.decision]);
+  const buyActionsByDef = useMemo(() => {
+    const decision = clientState.decision;
+    if (decision?.kind !== 'PhaseBuy') {
+      return new Map<number, DecisionOption>();
+    }
+    return indexDecisionOptionsByDef(decision, 'Buy');
+  }, [clientState.decision]);
+  const canPlayAllTreasures = Boolean(findNextBasicTreasurePlay(clientState.decision, defsById));
 
   if (!credentials) {
     return <JoinScreen onJoin={setCredentials} />;
@@ -470,7 +591,7 @@ export function App() {
       {clientState.error && <div className="error-banner">{clientState.error}</div>}
       <div className="game-layout">
         <div className="main-table">
-          {view && <SupplyGrid piles={view.piles} />}
+          {view && <SupplyGrid piles={view.piles} buyActionsByDef={buyActionsByDef} onAction={act} />}
           {view && <OpponentStrip opponents={view.opponents} />}
           {view && <TrashAndResources trashTop={view.trashTop} resources={view.resources} turn={view.turn} />}
           {view && (
@@ -481,12 +602,21 @@ export function App() {
               deckCount={view.myDeckCount}
               discardCount={view.myDiscardCount}
               discardTop={view.myDiscardTop}
+              playActionsByDef={playActionsByDef}
+              onAction={act}
             />
           )}
         </div>
         <aside className="right-rail">
           <LogRail lines={clientState.log} />
-          <DecisionPanel decision={clientState.decision} picked={picked} onAct={act} />
+          <DecisionPanel
+            decision={clientState.decision}
+            picked={picked}
+            onAct={act}
+            canPlayAllTreasures={canPlayAllTreasures}
+            autoPlayingTreasures={autoPlayingTreasures}
+            onPlayAllTreasures={() => setAutoPlayingTreasures(true)}
+          />
         </aside>
       </div>
       <GameOverOverlay gameover={clientState.gameover} onPlayAgain={() => setCredentials(undefined)} />

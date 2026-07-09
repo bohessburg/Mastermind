@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 import dominion_v2_py as dz
 
 from src.v2.web.server.main import app, sessions
+from src.v2.web.server.observer import PlayerPublicSnapshot, PublicSnapshot, public_log_lines
 from tests.v2.replay_export import verify_export_data
 
 
@@ -65,6 +66,30 @@ def active_decision(decisions: dict[int, dict]) -> tuple[int, dict]:
     raise AssertionError(f"no active decision: {decisions}")
 
 
+def player_snapshot(
+    *,
+    hand_count: int = 5,
+    deck_count: int = 0,
+    discard: tuple[int, ...] = (),
+    set_aside_count: int = 0,
+) -> PlayerPublicSnapshot:
+    return PlayerPublicSnapshot(
+        hand_count=hand_count,
+        deck_count=deck_count,
+        discard=discard,
+        discard_top=discard[-1] if discard else None,
+        set_aside_count=set_aside_count,
+    )
+
+
+def snapshot(players: tuple[PlayerPublicSnapshot, ...], trash: dict[int, int] | None = None) -> PublicSnapshot:
+    return PublicSnapshot(players=players, trash=trash or {})
+
+
+def decision(source: int, kind: int = 4, player: int = 0) -> dict:
+    return {"player": player, "kind": kind, "source": source, "min": 0, "max": 0}
+
+
 def assert_filtered_state(message: dict) -> None:
     assert message["type"] == "state"
     view = message["view"]
@@ -75,6 +100,98 @@ def assert_filtered_state(message: dict) -> None:
         assert "handCount" in opponent
         assert "deckCount" in opponent
         assert "discardTop" in opponent
+
+
+def test_public_effect_logs_describe_bandit_militia_and_witch_without_private_leaks() -> None:
+    bandit_before = snapshot(
+        (
+            player_snapshot(discard=()),
+            player_snapshot(deck_count=2, discard=()),
+        )
+    )
+    bandit_after = snapshot(
+        (
+            player_snapshot(discard=(dz.DEF_GOLD,)),
+            player_snapshot(deck_count=0, discard=(dz.DEF_ESTATE,)),
+        ),
+        {dz.DEF_SILVER: 1},
+    )
+    bandit_lines = public_log_lines(
+        0,
+        dz.A_PLAY_BASE + dz.DEF_BANDIT,
+        decision(dz.DEF_BANDIT, kind=1),
+        bandit_before,
+        bandit_after,
+    )
+    assert "P2 reveals Silver and Estate; trashes Silver" in bandit_lines
+
+    militia_before = snapshot(
+        (
+            player_snapshot(),
+            player_snapshot(discard=(dz.DEF_DUCHY,)),
+        )
+    )
+    militia_after = snapshot(
+        (
+            player_snapshot(),
+            player_snapshot(discard=(dz.DEF_DUCHY, dz.DEF_COPPER, dz.DEF_ESTATE)),
+        )
+    )
+    militia_lines = public_log_lines(
+        1,
+        dz.A_SELECT_BASE + dz.DEF_GOLD,
+        decision(dz.DEF_MILITIA, player=1),
+        militia_before,
+        militia_after,
+    )
+    assert militia_lines == ["P2 discards 2 cards; discard top is now Estate"]
+    assert "Gold" not in " ".join(militia_lines)
+    assert "Copper" not in " ".join(militia_lines)
+
+    witch_before = snapshot(
+        (
+            player_snapshot(discard=()),
+            player_snapshot(discard=()),
+        )
+    )
+    witch_after = snapshot(
+        (
+            player_snapshot(discard=()),
+            player_snapshot(discard=(dz.DEF_CURSE,)),
+        )
+    )
+    witch_lines = public_log_lines(
+        0,
+        dz.A_PLAY_BASE + dz.DEF_WITCH,
+        decision(dz.DEF_WITCH, kind=1),
+        witch_before,
+        witch_after,
+    )
+    assert "P2 gains a Curse" in witch_lines
+
+
+def test_sentry_public_log_never_names_kept_topdecked_cards() -> None:
+    before = snapshot(
+        (
+            player_snapshot(deck_count=5, discard=(), set_aside_count=1),
+            player_snapshot(),
+        )
+    )
+    after = snapshot(
+        (
+            player_snapshot(deck_count=6, discard=(), set_aside_count=0),
+            player_snapshot(),
+        )
+    )
+    lines = public_log_lines(
+        0,
+        dz.A_OPTION_BASE + 2,
+        decision(dz.DEF_SENTRY, kind=6),
+        before,
+        after,
+    )
+    assert "P1 puts 1 card back (Sentry)" in lines
+    assert "Silver" not in " ".join(lines)
 
 
 def choose_big_money_action(decision: dict) -> int:

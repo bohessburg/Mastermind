@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections import Counter
+from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
@@ -186,3 +188,200 @@ def log_line(seat: int, action: int, decision: dict[str, Any]) -> str:
     if verb == "done":
         return f"P{seat + 1} finishes choosing"
     return f"P{seat + 1} {verb}s{rest}"
+
+
+@dataclass(frozen=True)
+class PlayerPublicSnapshot:
+    hand_count: int
+    deck_count: int
+    discard: tuple[int, ...]
+    discard_top: int | None
+    set_aside_count: int
+
+
+@dataclass(frozen=True)
+class PublicSnapshot:
+    players: tuple[PlayerPublicSnapshot, ...]
+    trash: dict[int, int]
+
+
+@dataclass(frozen=True)
+class LogContext:
+    seat: int
+    action: int
+    decision: dict[str, Any]
+    after_decision: dict[str, Any] | None
+    before: PublicSnapshot
+    after: PublicSnapshot
+    generic: str
+    source_name: str
+
+
+def capture_public_snapshot(game: Any) -> PublicSnapshot:
+    players: list[PlayerPublicSnapshot] = []
+    for player in range(int(game.num_players())):
+        discard = tuple(int(def_value) for def_value in game.discard(player))
+        players.append(
+            PlayerPublicSnapshot(
+                hand_count=int(game.hand_count(player)),
+                deck_count=int(game.deck_count(player)),
+                discard=discard,
+                discard_top=int(game.discard_top(player)) if game.discard_top(player) is not None else None,
+                set_aside_count=len(game.set_aside(player)),
+            )
+        )
+    return PublicSnapshot(
+        players=tuple(players),
+        trash={int(def_value): int(count) for def_value, count in game.trash().items()},
+    )
+
+
+def _card_list(defs: list[int]) -> str:
+    if not defs:
+        return "nothing"
+    names = [def_name(def_value) for def_value in defs]
+    if len(names) == 1:
+        return names[0]
+    return f"{', '.join(names[:-1])} and {names[-1]}"
+
+
+def _discard_added(before: PlayerPublicSnapshot, after: PlayerPublicSnapshot) -> list[int]:
+    if len(after.discard) >= len(before.discard) and after.discard[: len(before.discard)] == before.discard:
+        return list(after.discard[len(before.discard) :])
+
+    before_counts = Counter(before.discard)
+    added: list[int] = []
+    for def_value in after.discard:
+        if before_counts[def_value] > 0:
+            before_counts[def_value] -= 1
+        else:
+            added.append(def_value)
+    return added
+
+
+def _trash_added(before: PublicSnapshot, after: PublicSnapshot) -> list[int]:
+    added: list[int] = []
+    for def_value, count in sorted(after.trash.items()):
+        delta = count - before.trash.get(def_value, 0)
+        added.extend([def_value] * max(0, delta))
+    return added
+
+
+def _source_name(action: int, decision: dict[str, Any]) -> str:
+    if action_category(action) == "play":
+        return def_name(action_def(action, dz.A_PLAY_BASE))
+    source = int(decision.get("source", -1))
+    return def_name(source) if source >= 0 else ""
+
+
+def _format_bandit(context: LogContext) -> list[str]:
+    trash_added = _trash_added(context.before, context.after)
+    category = action_category(context.action)
+    lines: list[str] = []
+    for player, (before, after) in enumerate(zip(context.before.players, context.after.players)):
+        if category == "play" and player == context.seat:
+            continue
+        discard_added = _discard_added(before, after)
+        if not discard_added and not trash_added:
+            continue
+        revealed = trash_added + discard_added
+        trashed = _card_list(trash_added) if trash_added else "nothing"
+        lines.append(f"P{player + 1} reveals {_card_list(revealed)}; trashes {trashed}")
+    return lines
+
+
+def _format_militia(context: LogContext) -> list[str]:
+    lines: list[str] = []
+    for player, (before, after) in enumerate(zip(context.before.players, context.after.players)):
+        discarded_count = max(0, len(after.discard) - len(before.discard))
+        if discarded_count == 0:
+            continue
+        top = def_name(after.discard_top) if after.discard_top is not None else "nothing"
+        plural = "card" if discarded_count == 1 else "cards"
+        lines.append(f"P{player + 1} discards {discarded_count} {plural}; discard top is now {top}")
+    return lines
+
+
+def _format_witch(context: LogContext) -> list[str]:
+    lines: list[str] = []
+    curse = int(dz.DEF_CURSE)
+    for player, (before, after) in enumerate(zip(context.before.players, context.after.players)):
+        if player == context.seat:
+            continue
+        if curse in _discard_added(before, after):
+            lines.append(f"P{player + 1} gains a Curse")
+    return lines
+
+
+def _format_bureaucrat(context: LogContext) -> list[str]:
+    category = action_category(context.action)
+    after_kind = decision_kind_name(context.after_decision or {})
+    after_source = int((context.after_decision or {}).get("source", -1))
+    attack_still_pending = after_source == int(dz.DEF_BUREAUCRAT) and after_kind in {
+        "ReactWindow",
+        "Choose",
+    }
+    lines: list[str] = []
+    for player, (before, after) in enumerate(zip(context.before.players, context.after.players)):
+        if category == "play" and player == context.seat:
+            continue
+        if after.hand_count < before.hand_count and after.deck_count > before.deck_count:
+            lines.append(f"P{player + 1} topdecks a Victory card")
+        elif category == "play" and not attack_still_pending and after.hand_count == before.hand_count:
+            lines.append(f"P{player + 1} reveals a hand with no Victory cards")
+    return lines
+
+
+def _format_sentry(context: LogContext) -> list[str]:
+    before = context.before.players[context.seat]
+    after = context.after.players[context.seat]
+    trash_added = _trash_added(context.before, context.after)
+    discard_added = _discard_added(before, after)
+    parts: list[str] = []
+    if trash_added:
+        parts.append(f"trashes {_card_list(trash_added)}")
+    if discard_added:
+        parts.append(f"discards {_card_list(discard_added)}")
+    if parts:
+        return [f"P{context.seat + 1} {' and '.join(parts)} (Sentry)"]
+
+    put_back = max(0, after.deck_count - before.deck_count)
+    if put_back > 0:
+        plural = "card" if put_back == 1 else "cards"
+        return [f"P{context.seat + 1} puts {put_back} {plural} back (Sentry)"]
+    return []
+
+
+PUBLIC_FORMATTERS = {
+    "Bandit": _format_bandit,
+    "Militia": _format_militia,
+    "Witch": _format_witch,
+    "Bureaucrat": _format_bureaucrat,
+    "Sentry": _format_sentry,
+}
+
+
+def _generic_line_is_private(context: LogContext) -> bool:
+    category = action_category(context.action)
+    return (
+        (context.source_name == "Militia" and category == "select")
+        or (context.source_name == "Bureaucrat" and category == "select")
+    )
+
+
+def public_log_lines(
+    seat: int,
+    action: int,
+    decision: dict[str, Any],
+    before: PublicSnapshot,
+    after: PublicSnapshot,
+    after_decision: dict[str, Any] | None = None,
+) -> list[str]:
+    generic = log_line(seat, action, decision)
+    source_name = _source_name(action, decision)
+    context = LogContext(seat, action, decision, after_decision, before, after, generic, source_name)
+    formatter = PUBLIC_FORMATTERS.get(source_name)
+    details = formatter(context) if formatter is not None else []
+    if _generic_line_is_private(context):
+        return details
+    return [generic, *details] if details else [generic]

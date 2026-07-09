@@ -338,6 +338,16 @@ code {
   opacity: 0.45;
 }
 
+.card-tile.clickable {
+  cursor: pointer;
+  box-shadow: 0 0 0 1px #7dd3fc, 0 0 18px rgba(125, 211, 252, 0.16);
+}
+
+.card-tile.clickable:hover,
+.card-tile.clickable:focus {
+  background: #213047;
+}
+
 .card-tile.unknown {
   border-style: dashed;
   color: #7f8b9a;

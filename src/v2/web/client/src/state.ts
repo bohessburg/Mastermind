@@ -1,5 +1,7 @@
 import type {
+  CardDef,
   DecisionMessage,
+  DecisionOption,
   GameOverMessage,
   ServerMessage,
   StateMessage,
@@ -42,4 +44,44 @@ export function reduceServerMessage(state: ClientState, message: ServerMessage):
 
 export function canSendDone(decision: DecisionMessage | undefined): boolean {
   return Boolean(decision?.options.some((option) => option.label === 'Done' || option.label === 'Pass'));
+}
+
+export function indexDecisionOptionsByDef(
+  decision: DecisionMessage | undefined,
+  verb: 'Play' | 'Buy',
+): Map<number, DecisionOption> {
+  const byDef = new Map<number, DecisionOption>();
+  if (!decision?.options.length) {
+    return byDef;
+  }
+  for (const option of decision.options) {
+    if (option.def === undefined || !option.label.startsWith(`${verb} `)) {
+      continue;
+    }
+    byDef.set(option.def, option);
+  }
+  return byDef;
+}
+
+export function findNextBasicTreasurePlay(
+  decision: DecisionMessage | undefined,
+  defsById: ReadonlyMap<number, Pick<CardDef, 'is_basic_treasure'>>,
+): DecisionOption | undefined {
+  if (!decision || decision.kind !== 'PhaseBuy' || decision.options.length === 0) {
+    return undefined;
+  }
+
+  let best: DecisionOption | undefined;
+  for (const option of decision.options) {
+    if (option.def === undefined || !option.label.startsWith('Play ')) {
+      continue;
+    }
+    if (!defsById.get(option.def)?.is_basic_treasure) {
+      continue;
+    }
+    if (!best || option.def > (best.def ?? -1)) {
+      best = option;
+    }
+  }
+  return best;
 }
