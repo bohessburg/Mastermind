@@ -102,6 +102,29 @@ target_link_libraries(dominion_v2_encode PUBLIC dominion_v2)
 target_include_directories(dominion_v2_encode PUBLIC src)
 configure_v2_target(dominion_v2_encode)
 
+add_library(dominion_v2_observe STATIC
+    src/v2/observe/card_text.cpp
+)
+target_link_libraries(dominion_v2_observe PUBLIC dominion_v2)
+target_include_directories(dominion_v2_observe PUBLIC src)
+configure_v2_target(dominion_v2_observe)
+
+add_executable(v2_dump_defs
+    src/v2/observe/dump_defs.cpp
+)
+target_link_libraries(v2_dump_defs PRIVATE dominion_v2_observe)
+configure_v2_target(v2_dump_defs)
+
+set(V2_DEFS_JSON "${CMAKE_CURRENT_SOURCE_DIR}/src/v2/web/client-data/defs.gen.json")
+add_custom_command(
+    OUTPUT "${V2_DEFS_JSON}"
+    COMMAND "$<TARGET_FILE:v2_dump_defs>" "${V2_DEFS_JSON}"
+    DEPENDS v2_dump_defs
+    COMMENT "Generating v2 web card definition JSON"
+    VERBATIM
+)
+add_custom_target(v2_client_defs ALL DEPENDS "${V2_DEFS_JSON}")
+
 add_executable(v2_bench
     src/v2/bench/bench.cpp
 )
@@ -132,6 +155,7 @@ if(BUILD_PYTHON)
     )
     target_link_libraries(dominion_v2_py PRIVATE dominion_v2_drivers dominion_v2_encode)
     target_include_directories(dominion_v2_py PRIVATE src)
+    add_dependencies(dominion_v2_py v2_client_defs)
     configure_v2_target(dominion_v2_py)
 endif()
 
@@ -185,6 +209,7 @@ if(BUILD_TESTS)
     )
     target_link_libraries(v2_tests PRIVATE dominion_engine dominion_v2_drivers dominion_v2_encode Catch2::Catch2WithMain)
     target_compile_definitions(v2_tests PRIVATE V2_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/v2/golden")
+    add_dependencies(v2_tests v2_client_defs)
     configure_v2_target(v2_tests)
 
     include(Catch)

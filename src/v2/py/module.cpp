@@ -197,6 +197,15 @@ struct PyGame {
     return py::int_(winner);
 }
 
+[[nodiscard]] py::object discard_top_object(const GameState& state, PlayerId player) {
+    const OrderedZone& discard = state.players[player].discard;
+    if (discard.size == 0U) {
+        return py::none();
+    }
+    const Slot slot = discard.cards[discard.size - 1U];
+    return py::int_(slot < state.num_slots ? state.slot_to_def[slot] : 0U);
+}
+
 [[nodiscard]] float terminal_reward(const GameState& state, PlayerId perspective) noexcept {
     if (perspective >= state.num_players) {
         return 0.0F;
@@ -475,6 +484,38 @@ PYBIND11_MODULE(dominion_v2_py, module) {
             }
             return score(self.state, static_cast<PlayerId>(player));
         })
+        .def("num_players", [](const PyGame& self) {
+            return self.state.num_players;
+        })
+        .def("hand_count", [](const PyGame& self, int player) {
+            if (!valid_player(self.state, player)) {
+                throw std::invalid_argument("invalid player");
+            }
+            int total = 0;
+            const PlayerState& player_state = self.state.players[player];
+            for (std::uint8_t slot = 0; slot < self.state.num_slots; ++slot) {
+                total += player_state.hand[slot];
+            }
+            return total;
+        })
+        .def("deck_count", [](const PyGame& self, int player) {
+            if (!valid_player(self.state, player)) {
+                throw std::invalid_argument("invalid player");
+            }
+            return self.state.players[player].deck.size;
+        })
+        .def("discard_count", [](const PyGame& self, int player) {
+            if (!valid_player(self.state, player)) {
+                throw std::invalid_argument("invalid player");
+            }
+            return self.state.players[player].discard.size;
+        })
+        .def("discard_top", [](const PyGame& self, int player) {
+            if (!valid_player(self.state, player)) {
+                throw std::invalid_argument("invalid player");
+            }
+            return discard_top_object(self.state, static_cast<PlayerId>(player));
+        })
         .def("hand", [](const PyGame& self, int player) {
             if (!valid_player(self.state, player)) {
                 throw std::invalid_argument("invalid player");
@@ -483,6 +524,16 @@ PYBIND11_MODULE(dominion_v2_py, module) {
             const PlayerState& player_state = self.state.players[player];
             for (std::uint8_t slot = 0; slot < self.state.num_slots; ++slot) {
                 const std::uint8_t count = player_state.hand[slot];
+                if (count != 0U) {
+                    dict[py::int_(self.state.slot_to_def[slot])] = py::int_(count);
+                }
+            }
+            return dict;
+        })
+        .def("trash", [](const PyGame& self) {
+            py::dict dict;
+            for (std::uint8_t slot = 0; slot < self.state.num_slots; ++slot) {
+                const std::uint8_t count = self.state.trash[slot];
                 if (count != 0U) {
                     dict[py::int_(self.state.slot_to_def[slot])] = py::int_(count);
                 }
@@ -543,6 +594,9 @@ PYBIND11_MODULE(dominion_v2_py, module) {
         })
         .def("winner", [](const PyGame& self) {
             return winner_object(self.state);
+        })
+        .def("truncated", [](const PyGame& self) {
+            return self.state.truncated != 0U;
         });
 
     py::class_<PyBatchRunner>(module, "BatchRunner")
@@ -566,6 +620,13 @@ PYBIND11_MODULE(dominion_v2_py, module) {
     module.attr("OBS_VERSION") = py::int_(OBS_VERSION);
     module.attr("OBS_SIZE") = py::int_(OBS_SIZE);
     module.attr("ACTION_SPACE_SIZE") = py::int_(ACTION_SPACE_SIZE);
+    module.attr("A_PASS") = py::int_(A_PASS);
+    module.attr("A_PLAY_BASE") = py::int_(A_PLAY_BASE);
+    module.attr("A_BUY_BASE") = py::int_(A_BUY_BASE);
+    module.attr("A_SELECT_BASE") = py::int_(A_SELECT_BASE);
+    module.attr("A_OPTION_BASE") = py::int_(A_OPTION_BASE);
+    module.attr("A_CALL_BASE") = py::int_(A_CALL_BASE);
+    module.attr("ACTION_DEF_COUNT") = py::int_(ACTION_DEF_COUNT);
     module.attr("MAX_PLAYERS") = py::int_(MAX_PLAYERS);
     module.attr("MAX_SLOTS") = py::int_(MAX_SLOTS);
     add_def_constants(module);

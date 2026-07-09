@@ -42,6 +42,8 @@ jobs:
         run: cmake --build build-py --target dominion_v2_py
       - name: Smoke
         run: PYTHONPATH=build-py ./.venv/bin/python src/v2/py/test_smoke.py
+      - name: Server tests
+        run: PYTHONPATH=build-py ./.venv/bin/python -m pytest src/v2/web/server -q
 
   sanitizer:
     name: Debug Sanitizers
