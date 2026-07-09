@@ -48,6 +48,9 @@ void add_to_discard(GameState& state, PlayerId player_id, DefId def, std::uint8_
 
 [[nodiscard]] GameState buy_position(std::int16_t coins) {
     GameState state = Game::new_game(Setup{}, 101U);
+    for (Slot slot = 0; slot < MAX_SLOTS; ++slot) {
+        state.players[0].hand[slot] = 0;
+    }
     state.phase = static_cast<std::uint8_t>(Phase::Buy);
     state.actions = 0U;
     state.buys = 1U;

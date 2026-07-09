@@ -53,7 +53,7 @@ TEST_CASE("v2 MCTS phase gate beats EngineBot on random kingdoms", "[v2][mcts][e
     options.kingdoms = MctsEvalKingdoms::Random;
     options.seed = 0x600D'600DULL;
     options.determinizations = 8U;
-    options.threads = 2U;
+    options.threads = 0U;
 
     const MctsEvalResult result = run_mcts_eval(options);
     INFO("wins=" << result.mcts_wins << " losses=" << result.opponent_wins

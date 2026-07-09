@@ -115,10 +115,7 @@ struct EvalBot {
 
 [[nodiscard]] std::uint32_t default_threads() noexcept {
     const std::uint32_t hardware = std::thread::hardware_concurrency();
-    if (hardware <= 1U) {
-        return 1U;
-    }
-    return std::max(1U, hardware / 2U);
+    return hardware == 0U ? 1U : hardware;
 }
 
 [[nodiscard]] MctsConfig config_for_game(const MctsEvalOptions& options, std::uint64_t seed) noexcept {

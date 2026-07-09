@@ -588,6 +588,21 @@ root cause addressed).
 
 **Exit:** MCTS beats EngineBot; per-move sim throughput reported by bench.
 
+> **6.3 outcome (2026-07):** uniform-random rollouts are empirically
+> uninformative in Dominion — MCTS(1K sims) lost ~200/200 to EngineBot AND
+> BigMoney with a flat 100→3000-sim scaling curve, while beating RandomBot
+> 40/0 with 37/40 truncations (search learns treasure-hoarding because
+> greening never converts under random continuations; predicted by README).
+> Gate revised: rollouts use a fast scripted policy (BigMoney-class), the
+> standard card-game MCTS remedy; the NN value head later replaces rollouts
+> entirely.
+>
+> **Heuristic-rollout rerun:** the scripted rollout fixed the finish-game
+> pathology (RandomBot truncations 37/40 → 0/40) and made MCTS competitive
+> with BigMoney (91/82/27 at 1K sims), but the Phase 6 EngineBot gate still
+> failed (47/141/12 at 1K sims, random kingdoms). Remaining gap is strategy
+> quality/action valuation, not tree correctness or terminal greening.
+
 ### Phase 7 — Durations & mats (Seaside/Adventures core mechanics)
 
 | # | Task | Size |

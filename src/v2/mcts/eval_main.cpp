@@ -136,7 +136,7 @@ int main(int argc, char** argv) {
     MctsEvalOptions options{};
     if (options.threads == 0U) {
         const std::uint32_t hardware = std::thread::hardware_concurrency();
-        options.threads = hardware <= 1U ? 1U : hardware / 2U;
+        options.threads = hardware == 0U ? 1U : hardware;
     }
     if (!parse_args(argc, argv, options)) {
         return 2;
