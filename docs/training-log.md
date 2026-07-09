@@ -1,0 +1,54 @@
+# Training Log
+
+Running record of NN training work (Phase T). Newest entries last.
+Engine/bot benchmarks: see `docs/benchmarks.md`. Architecture: `REFACTOR_PLAN.md`.
+
+## MCTS scaffold trials (Phase 6, 2026-07-09)
+
+All trials: 1K sims/move, root-sampled determinizations, uniform priors,
+200 seat-swapped games vs EngineBot on random kingdoms unless noted.
+
+| Rollout policy | K | vs EngineBot (excl. ties) | Note |
+|---|---|---|---|
+| Uniform random | 8 | 0% | 37/40 truncations vs RandomBot: search learns treasure-hoarding — random rollouts can't convert greening into wins |
+| BigMoney (no action plays) | 8 | 23.5% | parity with BigMoney itself; engines dead weight in playouts |
+| Heuristic + action-playing | 8/4/2 | 33.3 / 43.2 / 51.0% | rollouts piloting engines makes action buys visible |
+| EngineLike | 8/4/2 | 58.8 / 60.1 / **65.8%** | gate passed; default = EngineLike K=2 |
+
+Lesson: scaffold-MCTS strength is bounded by rollout quality (sims-scaling
+curves flat at every tier). Fewer determinizations → deeper trees won at this
+budget. NN value head replaces rollouts entirely.
+
+## Throughput engineering (RTX 5090 box, 24-vCPU quota, 2026-07-09)
+
+2.9M-param MLP (1141→1024→1024→512, policy 357 + value). Self-play cost =
+NN inference; engine steps negligible (42ns).
+
+| Config | Games/hr | Bottleneck identified |
+|---|---|---|
+| M1 Max single pipeline (128 sims) | ~4.5–5.9K | 50/50 inference/plumbing |
+| Box single pipeline | 4,486 | single-thread leaf collection (88%) |
+| 8 workers, per-worker CUDA | 12,826 | GPU context contention beyond 8 |
+| 24 workers, per-worker CUDA | 4,729 | contention collapse |
+| 20 workers, CPU inference | 7,084 | EPYC per-core inference too slow |
+| Inference server, queue transport | 3,601 | pickle IPC (~1.5MB/request) |
+| Inference server, shm transport | 4,650 | server Python loop ~4ms/batch; queue header RTT 375µs–1.2ms |
+| **Campaign config: 8 workers × 128 games, per-worker CUDA** | **62K+** | large concurrent-game count batches well; see campaign1 |
+
+Server-loop optimization (single drain queue + spin-poll on shm counters)
+committed but CUDA-unverified — bench with
+`inference_server.py --bench-server --transport shm --poll spin` on a GPU box.
+
+## Campaign 1 (in progress, 2026-07-09)
+
+Config `campaign1.json` (on-box): 100 gens × 1,024 games, 128 sims, 8 CUDA
+workers, replay 2M positions (run-1 whipsaw fix), lr 2e-4 cosine decay,
+eval 200 games vs EngineBot @400 sims every 5 gens.
+
+Run 1 (local M1, cut at gen 5): pipeline shakedown. Found value-loss whipsaw
+0.68→0.087→0.53 from undersized replay buffer; 0/100 vs EngineBot at gen 5
+(expected).
+
+Campaign 1 progress:
+- Gen 1: value 1.727, 0/200 vs EngineBot (baseline)
+- Gen 5: value 1.474, 0/200; 62K games/hr aggregate; vitals healthy
