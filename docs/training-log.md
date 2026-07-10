@@ -110,3 +110,26 @@ exit 0, orphan wrapper in do_wait. Fix: always resume with BOTH
 NOT in the requested-override list so checkpoint patches to it survive
 resume. Follow-up for the backlog: make bare --resume either inherit the
 checkpoint's generations or fail loudly.
+
+Campaign 3 outcome (CLOSED at gen 45, 2026-07-10 morning): best of the three
+runs, still failed the hold. Full arc: 6%(10) → 9%(15) → 23%(20) → 26.3%(25)
+→ 19.9%(30) → 20.0%(35, threshold 0.53→0.55 mid-course) → 14.7%(40, lineage
+frozen at 33) → 9.1%(45, decline locked in after the gen-43 forced-accept
+promoted an already-degraded candidate). Valve fired as designed but during
+decay it entrenches decay. Peak checkpoint ~gen 25-27 (26.3%). Artifacts:
+checkpoints/remote/campaign3/ (local, 1.9GB).
+
+Three-campaign synthesis:
+- c1 (no gate): fastest learning, peak 30.3%, then cycling collapse.
+- c2 (strict gate, temp-0): frozen lineage, memorization, never left 0%.
+- c3 (graded gate + league + valve): fastest EARLY curve (league seeding
+  worth ~5 gens), best stability at the dip, but the gate threshold window
+  between noise-promotion (0.53) and freeze (0.55) is razor-thin, and the
+  valve back-fires during decay.
+- Constant across ALL runs: strength erodes after ~gen 25-30 regardless of
+  gating regime. The common factors — 2.9M-param net capacity, 128-sim
+  search depth for data generation, and outcome-only value targets — are
+  now the prime suspects, not lineage management. Candidate next steps
+  (for discussion, NOT auto-run): more sims for data gen (256-400),
+  bigger/wider net, eval-selected best (gate vs ENGINEBOT instead of
+  self-relative), value target = score differential not just win/loss.
