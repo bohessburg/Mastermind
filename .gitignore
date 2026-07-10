@@ -29,3 +29,4 @@ compile_commands.json
 .cache/
 Dominion_CompleteRules_v11.1.pdf
 __pycache__/
+exports/

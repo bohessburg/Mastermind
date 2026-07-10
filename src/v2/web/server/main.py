@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import random
 import secrets
@@ -296,7 +297,30 @@ def _decision_message(session: Session, seat: int) -> dict[str, Any]:
     return message
 
 
+def _export_payload(session: Session) -> dict[str, Any]:
+    return {
+        "seed": session.seed,
+        "kingdom": session.kingdom,
+        "seats": [seat.kind for seat in session.seats],
+        "actions": session.action_log,
+        "obs_version": int(dz.OBS_VERSION),
+        "final_state_hash": f"0x{session.game.state_hash():016x}",
+    }
+
+
+def _persist_export(session: Session) -> None:
+    """Write finished games to disk so exports survive server restarts."""
+    out_dir = Path("exports")
+    try:
+        out_dir.mkdir(exist_ok=True)
+        path = out_dir / f"{session.session_id}.json"
+        path.write_text(json.dumps(_export_payload(session)))
+    except OSError:
+        pass  # persistence is best-effort; never break the game flow
+
+
 def _gameover_message(session: Session) -> dict[str, Any]:
+    _persist_export(session)
     scores = [session.game.score(player) for player in range(session.game.num_players())]
     return {
         "type": "gameover",
@@ -613,14 +637,7 @@ async def export_session(session_id: str) -> dict[str, Any]:
     if session is None:
         raise HTTPException(status_code=404, detail="session not found")
     async with session.lock:
-        return {
-            "seed": session.seed,
-            "kingdom": session.kingdom,
-            "seats": [seat.kind for seat in session.seats],
-            "actions": session.action_log,
-            "obs_version": int(dz.OBS_VERSION),
-            "final_state_hash": f"0x{session.game.state_hash():016x}",
-        }
+        return _export_payload(session)
 
 
 @app.websocket("/ws/{session_id}/{seat_token}")
