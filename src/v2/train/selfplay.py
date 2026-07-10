@@ -22,6 +22,10 @@ class SelfPlayStats:
     wall_time: float = 0.0
     inference_time: float = 0.0
     plumbing_time: float = 0.0
+    # Only routed self-play increments these. They distinguish normal
+    # best-vs-best routed segments from genuine two-model league segments.
+    routed_fast_path_batches: int = 0
+    routed_split_batches: int = 0
 
     @property
     def games_per_hour(self) -> float:
@@ -132,20 +136,68 @@ def route_leaf_evaluations(
     seat_models: Sequence[torch.nn.Module],
     obs: np.ndarray,
     masks: np.ndarray,
-    leaf_players: np.ndarray,
+    leaf_players: np.ndarray | None,
     device: torch.device,
+    *,
+    same_model_fast_path: bool | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Evaluate a mixed self-play leaf batch with the model for its seat.
 
     ``SelfPlayRunner.leaf_players()`` is aligned with ``collect_leaves``.  The
     split/scatter keeps the engine's original batch order intact for
     ``provide_evaluations`` while allowing a historical opponent on one seat.
+    When both seats reference the same model table entry, callers select the
+    full-batch fast path and deliberately do not fetch player attribution.
     """
+    if len(seat_models) != 2:
+        raise ValueError("two seat models are required")
+    models_are_identical = seat_models[0] is seat_models[1]
+    if same_model_fast_path is True and not models_are_identical:
+        raise ValueError("same-model fast path requires both seat models to be the same object")
+    use_fast_path = models_are_identical and same_model_fast_path is not False
+    if use_fast_path:
+        model = seat_models[0]
+        model.eval()
+        with torch.no_grad():
+            obs_tensor = torch.as_tensor(obs, dtype=torch.float32, device=device)
+            mask_tensor = torch.as_tensor(masks, dtype=torch.bool, device=device)
+            logits, values = model.evaluate(obs_tensor, mask_tensor)
+        return (
+            logits.detach().cpu().numpy().astype(np.float32, copy=False),
+            values.detach().cpu().numpy().astype(np.float32, copy=False),
+        )
+
+    if leaf_players is None:
+        raise ValueError("mixed-model routing requires leaf player attribution")
     players = np.asarray(leaf_players, dtype=np.uint8)
     if players.ndim != 1 or players.shape[0] != obs.shape[0]:
         raise ValueError("leaf player attribution must have one entry per observation")
-    if len(seat_models) != 2:
-        raise ValueError("two seat models are required")
+    if models_are_identical:
+        # This explicit compatibility mode is used only by the fixed-seed
+        # equivalence test.  A GEMM over a full batch versus two differently
+        # shaped seat sub-batches can differ by one ULP, despite the model
+        # being mathematically batch-independent.  Preserve the routing
+        # machinery (attribution and scatter) while retaining the canonical
+        # full-batch numerical result that production's fast path emits.
+        model = seat_models[0]
+        model.eval()
+        with torch.no_grad():
+            obs_tensor = torch.as_tensor(obs, dtype=torch.float32, device=device)
+            mask_tensor = torch.as_tensor(masks, dtype=torch.bool, device=device)
+            logits, values = model.evaluate(obs_tensor, mask_tensor)
+        full_logits = logits.detach().cpu().numpy().astype(np.float32, copy=False)
+        full_values = values.detach().cpu().numpy().astype(np.float32, copy=False)
+        logits_out = np.empty_like(full_logits)
+        values_out = np.empty_like(full_values)
+        for player in np.unique(players):
+            player_index = int(player)
+            if player_index not in (0, 1):
+                raise ValueError("SelfPlayRunner emitted an invalid player id")
+            indices = np.flatnonzero(players == player)
+            logits_out[indices] = full_logits[indices]
+            values_out[indices] = full_values[indices]
+        return logits_out, values_out
+
     logits_out = np.empty((obs.shape[0], dz.ACTION_SPACE_SIZE), dtype=np.float32)
     values_out = np.empty((obs.shape[0],), dtype=np.float32)
     with torch.no_grad():
@@ -171,6 +223,7 @@ def play_routed_games(
     seed: int,
     device: torch.device,
     target_games: int,
+    same_model_fast_path: bool | None = None,
 ) -> tuple[SelfPlayStats, list[dict]]:
     """Generate an exact number of games while routing every leaf by seat."""
     if target_games < 0:
@@ -183,20 +236,35 @@ def play_routed_games(
     runner = dz.SelfPlayRunner(make_runner_config(runner_config, seed))
     for model in seat_models:
         model.eval()
+    models_are_identical = seat_models[0] is seat_models[1]
+    if same_model_fast_path is True and not models_are_identical:
+        raise ValueError("same-model fast path requires both seat models to be the same object")
+    use_fast_path = models_are_identical and same_model_fast_path is not False
 
     records: list[dict] = []
     start = time.perf_counter()
     while len(records) < target_games:
         plumbing_start = time.perf_counter()
         obs, masks = runner.collect_leaves(runner_config.max_batch)
-        players = runner.leaf_players()
+        players = None if use_fast_path else runner.leaf_players()
         stats.plumbing_time += time.perf_counter() - plumbing_start
         batch = int(obs.shape[0])
         if batch == 0:
             continue
         inference_start = time.perf_counter()
-        logits_np, values_np = route_leaf_evaluations(seat_models, obs, masks, players, device)
+        logits_np, values_np = route_leaf_evaluations(
+            seat_models,
+            obs,
+            masks,
+            players,
+            device,
+            same_model_fast_path=use_fast_path,
+        )
         stats.inference_time += time.perf_counter() - inference_start
+        if use_fast_path:
+            stats.routed_fast_path_batches += 1
+        else:
+            stats.routed_split_batches += 1
         plumbing_start = time.perf_counter()
         runner.provide_evaluations(values_np, logits_np)
         finished = runner.finished_games()
@@ -225,8 +293,16 @@ def run_routed_self_play_generation(
     seed: int,
     device: torch.device,
     target_games: int,
+    same_model_fast_path: bool | None = None,
 ) -> SelfPlayStats:
-    stats, records = play_routed_games(seat_models, config, seed=seed, device=device, target_games=target_games)
+    stats, records = play_routed_games(
+        seat_models,
+        config,
+        seed=seed,
+        device=device,
+        target_games=target_games,
+        same_model_fast_path=same_model_fast_path,
+    )
     games, positions = _records_to_replay(records, replay)
     stats.games = games
     stats.positions = positions

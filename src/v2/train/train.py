@@ -281,6 +281,8 @@ def append_metrics(path: str | Path, row: dict[str, Any]) -> None:
         "gate_win_pct",
         "best_generation",
         "league_games",
+        "routed_fast_path_batches",
+        "routed_split_batches",
     ]
     with out.open("a", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
@@ -297,6 +299,8 @@ def _add_stats(total: SelfPlayStats, update: SelfPlayStats) -> None:
     total.wall_time += update.wall_time
     total.inference_time += update.inference_time
     total.plumbing_time += update.plumbing_time
+    total.routed_fast_path_batches += update.routed_fast_path_batches
+    total.routed_split_batches += update.routed_split_batches
 
 
 def _run_segmented_single_pipeline(
@@ -570,6 +574,8 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
                 "checkpoint": str(path),
                 **gate_row,
                 "league_games": planned_league_games if use_gating else 0,
+                "routed_fast_path_batches": sp_stats.routed_fast_path_batches,
+                "routed_split_batches": sp_stats.routed_split_batches,
             }
             row.update(eval_row)
             append_metrics(config.metrics_csv, row)

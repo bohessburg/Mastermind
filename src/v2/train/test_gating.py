@@ -21,8 +21,8 @@ from .gating import (
     save_best_checkpoint,
 )
 from .inference_server import serialize_cpu_state_dict
-from .selfplay import make_runner_config, route_leaf_evaluations
-from .test_train_smoke import state_tensors, tiny_config
+from .selfplay import make_runner_config, play_routed_games, route_leaf_evaluations
+from .test_train_smoke import read_metrics, state_tensors, tiny_config
 from .train import build_objects, load_checkpoint, run_training, save_checkpoint
 from .workers import ParallelSelfPlayPool
 
@@ -130,6 +130,69 @@ def test_per_seat_model_routing_uses_leaf_attribution() -> None:
     )
     np.testing.assert_array_equal(values, np.asarray([3.0, -2.0, -2.0, 3.0, -2.0], dtype=np.float32))
     np.testing.assert_array_equal(logits[:, 0], values)
+
+
+def test_same_model_routing_fast_path_is_bit_exact_for_outputs_and_games(tmp_path: Path) -> None:
+    """A same-model route must be exactly equivalent to legacy split/scatter."""
+    cfg = tiny_config(tmp_path, seed=9191, generations=1)
+    cfg.model.hidden_sizes = [16]
+    cfg.selfplay.n_games = 2
+    cfg.selfplay.games_per_generation = 2
+    cfg.selfplay.sims_per_move = 2
+    cfg.selfplay.max_batch = 4
+    cfg.selfplay.max_recorded_moves = 64
+    cfg.selfplay.max_tree_nodes = 256
+    model, _, _ = build_objects(cfg, torch.device("cpu"))
+    model.eval()
+    rng = np.random.default_rng(12345)
+    obs = rng.standard_normal((7, dz.OBS_SIZE), dtype=np.float32)
+    masks = np.ones((7, dz.ACTION_SPACE_SIZE), dtype=np.bool_)
+    players = np.asarray([0, 1, 0, 1, 1, 0, 1], dtype=np.uint8)
+
+    fast_logits, fast_values = route_leaf_evaluations(
+        (model, model),
+        obs,
+        masks,
+        None,
+        torch.device("cpu"),
+        same_model_fast_path=True,
+    )
+    split_logits, split_values = route_leaf_evaluations(
+        (model, model),
+        obs,
+        masks,
+        players,
+        torch.device("cpu"),
+        same_model_fast_path=False,
+    )
+    np.testing.assert_array_equal(fast_logits, split_logits)
+    np.testing.assert_array_equal(fast_values, split_values)
+
+    fast_stats, fast_records = play_routed_games(
+        (model, model),
+        cfg.selfplay,
+        seed=cfg.seed,
+        device=torch.device("cpu"),
+        target_games=2,
+        same_model_fast_path=True,
+    )
+    split_stats, split_records = play_routed_games(
+        (model, model),
+        cfg.selfplay,
+        seed=cfg.seed,
+        device=torch.device("cpu"),
+        target_games=2,
+        same_model_fast_path=False,
+    )
+    assert fast_stats.routed_fast_path_batches > 0
+    assert fast_stats.routed_split_batches == 0
+    assert split_stats.routed_fast_path_batches == 0
+    assert split_stats.routed_split_batches > 0
+    assert len(fast_records) == len(split_records) == 2
+    for fast_record, split_record in zip(fast_records, split_records):
+        assert fast_record.keys() == split_record.keys()
+        for field in ("observations", "policy_targets", "values"):
+            np.testing.assert_array_equal(fast_record[field], split_record[field])
 
 
 def test_per_seat_model_routing_uses_real_runner_leaf_seats(tmp_path: Path) -> None:
@@ -268,4 +331,13 @@ def test_parallel_cpu_gated_pool_uses_archived_best_after_warmup(monkeypatch, tm
     assert (Path(cfg.checkpoint_dir) / "league" / "best_0000.pt").exists()
     assert [row["games"] for row in result["metrics"]] == [2, 2]
     assert [row["league_games"] for row in result["metrics"]] == [0, 1]
+    assert result["metrics"][0]["routed_fast_path_batches"] > 0
+    assert result["metrics"][0]["routed_split_batches"] == 0
+    assert result["metrics"][1]["routed_fast_path_batches"] > 0
+    assert result["metrics"][1]["routed_split_batches"] > 0
+    csv_rows = read_metrics(Path(cfg.metrics_csv))
+    assert int(csv_rows[0]["routed_fast_path_batches"]) > 0
+    assert int(csv_rows[0]["routed_split_batches"]) == 0
+    assert int(csv_rows[1]["routed_fast_path_batches"]) > 0
+    assert int(csv_rows[1]["routed_split_batches"]) > 0
     assert all(float(row["aggregate_games_per_hour"]) > 0.0 for row in result["metrics"])

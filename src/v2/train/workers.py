@@ -387,6 +387,7 @@ def _generate_routed_games(
     generation: int,
     seat_model_ids: tuple[int, int] | None = None,
     route_audit: dict[tuple[int, int], int] | None = None,
+    same_model_fast_path: bool | None = None,
 ) -> SelfPlayStats:
     """Generate a task with fixed models for player zero and player one."""
     if target_games <= 0:
@@ -396,25 +397,41 @@ def _generate_routed_games(
     runner = dz.SelfPlayRunner(make_runner_config(task_config, seed))
     for model in seat_models:
         model.eval()
+    same_model = (
+        seat_model_ids[0] == seat_model_ids[1]
+        if same_model_fast_path is None and seat_model_ids is not None
+        else (seat_models[0] is seat_models[1] if same_model_fast_path is None else same_model_fast_path)
+    )
     stats = SelfPlayStats()
     sent = 0
     start = time.perf_counter()
     while sent < target_games:
         plumbing_start = time.perf_counter()
         obs, masks = runner.collect_leaves(task_config.max_batch)
-        players = runner.leaf_players()
+        players = None if same_model else runner.leaf_players()
         stats.plumbing_time += time.perf_counter() - plumbing_start
         batch = int(obs.shape[0])
         if batch == 0:
             continue
-        if route_audit is not None and seat_model_ids is not None:
+        if route_audit is not None and seat_model_ids is not None and players is not None:
             for player in np.unique(players):
                 player_index = int(player)
                 key = (player_index, seat_model_ids[player_index])
                 route_audit[key] = route_audit.get(key, 0) + int(np.count_nonzero(players == player))
         inference_start = time.perf_counter()
-        logits_np, values_np = route_leaf_evaluations(seat_models, obs, masks, players, device)
+        logits_np, values_np = route_leaf_evaluations(
+            seat_models,
+            obs,
+            masks,
+            players,
+            device,
+            same_model_fast_path=same_model,
+        )
         stats.inference_time += time.perf_counter() - inference_start
+        if same_model:
+            stats.routed_fast_path_batches += 1
+        else:
+            stats.routed_split_batches += 1
         plumbing_start = time.perf_counter()
         runner.provide_evaluations(values_np, logits_np)
         finished = runner.finished_games()
@@ -443,6 +460,8 @@ def _accumulate_stats(total: SelfPlayStats, update: SelfPlayStats) -> None:
     total.wall_time += update.wall_time
     total.inference_time += update.inference_time
     total.plumbing_time += update.plumbing_time
+    total.routed_fast_path_batches += update.routed_fast_path_batches
+    total.routed_split_batches += update.routed_split_batches
 
 
 def _worker_main(
@@ -541,6 +560,7 @@ def _worker_main(
                             int(generation),
                             (segment.seat0_model_id, segment.seat1_model_id),
                             route_audit,
+                            segment.seat0_model_id == segment.seat1_model_id,
                         )
                         if segment.is_league:
                             league_games += task_stats.games
@@ -572,6 +592,8 @@ def _worker_main(
                         stats.wall_time,
                         stats.inference_time,
                         stats.plumbing_time,
+                        stats.routed_fast_path_batches,
+                        stats.routed_split_batches,
                         league_games,
                         route_audit,
                     ),
@@ -689,6 +711,8 @@ class ParallelSelfPlayPool:
                 wall,
                 inference,
                 plumbing,
+                worker_fast_path_batches,
+                worker_split_batches,
                 worker_league_games,
                 worker_route_audit,
             ) = payload
@@ -705,6 +729,8 @@ class ParallelSelfPlayPool:
             stats.wall_time += wall
             stats.inference_time += inference
             stats.plumbing_time += plumbing
+            stats.routed_fast_path_batches += worker_fast_path_batches
+            stats.routed_split_batches += worker_split_batches
             league_games += worker_league_games
             for key, count in worker_route_audit.items():
                 normalized = (int(key[0]), int(key[1]))
