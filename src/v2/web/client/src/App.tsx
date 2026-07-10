@@ -623,10 +623,53 @@ function LogRail({ lines }: { lines: string[] }) {
   );
 }
 
-function GameOverOverlay({ gameover, onPlayAgain }: { gameover?: ClientState['gameover']; onPlayAgain: () => void }) {
+function GameOverOverlay({
+  gameover,
+  sessionId,
+  onPlayAgain,
+}: {
+  gameover?: ClientState['gameover'];
+  sessionId: string;
+  onPlayAgain: () => void;
+}) {
+  const [exportStatus, setExportStatus] = useState<'idle' | 'exporting' | 'saved'>('idle');
+  const [exportPath, setExportPath] = useState<string | undefined>();
+  const [exportError, setExportError] = useState<string | undefined>();
+
+  useEffect(() => {
+    setExportStatus('idle');
+    setExportPath(undefined);
+    setExportError(undefined);
+  }, [gameover, sessionId]);
+
   if (!gameover) {
     return null;
   }
+
+  async function exportGame() {
+    setExportStatus('exporting');
+    setExportError(undefined);
+    try {
+      const response = await fetch(`/api/session/${encodeURIComponent(sessionId)}/export-file`, { method: 'POST' });
+      if (!response.ok) {
+        let message = 'export could not be written';
+        try {
+          const body = (await response.json()) as { detail?: string };
+          message = body.detail ?? message;
+        } catch {
+          // Use the fallback when the server did not return a JSON error body.
+        }
+        throw new Error(message);
+      }
+      const body = (await response.json()) as { path: string };
+      setExportPath(body.path);
+      setExportStatus('saved');
+    } catch (error) {
+      setExportError(error instanceof Error ? error.message : 'export could not be written');
+      setExportStatus('idle');
+    }
+  }
+
   return (
     <div className="gameover-overlay">
       <div className="gameover-dialog">
@@ -640,7 +683,14 @@ function GameOverOverlay({ gameover, onPlayAgain }: { gameover?: ClientState['ga
         </div>
         <p>{gameover.winner === null ? 'Tie game' : `Winner: P${gameover.winner + 1}`}</p>
         {gameover.truncated && <p>Truncated at turn cap.</p>}
-        <button type="button" onClick={onPlayAgain}>Play again</button>
+        <div className="gameover-actions">
+          <button type="button" onClick={onPlayAgain}>Play again</button>
+          <button type="button" onClick={exportGame} disabled={exportStatus !== 'idle'}>
+            {exportStatus === 'exporting' ? 'Exporting...' : exportStatus === 'saved' ? 'Saved' : 'Export game'}
+          </button>
+        </div>
+        {exportPath && <p className="export-path">Saved to {exportPath}</p>}
+        {exportError && <p className="export-error">{exportError}</p>}
       </div>
     </div>
   );
@@ -926,7 +976,11 @@ export function App() {
           />
         </aside>
       </div>
-      <GameOverOverlay gameover={clientState.gameover} onPlayAgain={() => setCredentials(undefined)} />
+      <GameOverOverlay
+        gameover={clientState.gameover}
+        sessionId={credentials.sessionId}
+        onPlayAgain={() => setCredentials(undefined)}
+      />
       <footer className="def-count">{defTable.defs.length} defs loaded</footer>
     </main>
   );

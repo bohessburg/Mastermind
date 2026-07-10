@@ -1105,6 +1105,34 @@ def test_export_endpoint_replays_deterministically() -> None:
     assert verify_export_data(data) == int(data["final_state_hash"], 16)
 
 
+def test_export_file_endpoint_writes_finished_game() -> None:
+    sessions.clear()
+    client = TestClient(app)
+
+    unknown_response = client.post("/api/session/unknown/export-file")
+    assert unknown_response.status_code == 404
+    assert unknown_response.json() == {"detail": "session not found"}
+
+    response = client.post(
+        "/api/session",
+        json={"seats": ["human", "human"], "kingdom": KINGDOM, "seed": 0x5109},
+    )
+    assert response.status_code == 200
+    created = response.json()
+    session_id = created["session_id"]
+
+    unfinished_response = client.post(f"/api/session/{session_id}/export-file")
+    assert unfinished_response.status_code == 409
+    assert unfinished_response.json() == {"detail": "game is not over"}
+
+    finish_direct_game(sessions[session_id].game)
+    export_response = client.post(f"/api/session/{session_id}/export-file")
+    assert export_response.status_code == 200
+    path = Path(export_response.json()["path"])
+    assert path.exists()
+    assert json.loads(path.read_text()) == client.get(f"/api/session/{session_id}/export").json()
+
+
 def test_random_kingdom_is_seeded_and_valid() -> None:
     from src.v2.web.server.defs import kingdom_def_ids
 

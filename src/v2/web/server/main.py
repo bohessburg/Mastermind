@@ -318,15 +318,16 @@ def _export_payload(session: Session) -> dict[str, Any]:
     }
 
 
-def _persist_export(session: Session) -> None:
+def _persist_export(session: Session) -> str | None:
     """Write finished games to disk so exports survive server restarts."""
     out_dir = Path("exports")
     try:
         out_dir.mkdir(exist_ok=True)
         path = out_dir / f"{session.session_id}.json"
         path.write_text(json.dumps(_export_payload(session)))
+        return str(path)
     except OSError:
-        pass  # persistence is best-effort; never break the game flow
+        return None  # persistence is best-effort; never break the game flow
 
 
 def _gameover_message(session: Session) -> dict[str, Any]:
@@ -698,6 +699,20 @@ async def export_session(session_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail="session not found")
     async with session.lock:
         return _export_payload(session)
+
+
+@app.post("/api/session/{session_id}/export-file")
+async def export_session_file(session_id: str) -> dict[str, str]:
+    session = sessions.get(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="session not found")
+    async with session.lock:
+        if not session.game.game_over():
+            raise HTTPException(status_code=409, detail="game is not over")
+        path = _persist_export(session)
+        if path is None:
+            raise HTTPException(status_code=500, detail="export could not be written")
+        return {"path": path}
 
 
 @app.websocket("/ws/{session_id}/{seat_token}")

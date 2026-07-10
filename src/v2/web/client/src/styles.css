@@ -784,6 +784,26 @@ h2 {
   flex-wrap: wrap;
 }
 
+.gameover-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.export-path,
+.export-error {
+  margin: 6px 0 0;
+  font-size: 13px;
+}
+
+.export-path {
+  color: var(--muted);
+}
+
+.export-error {
+  color: #e58d97;
+}
+
 .def-count {
   padding: 6px 12px;
 }
