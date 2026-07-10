@@ -229,3 +229,25 @@ of the uniform -1 flood that collapsed c5. Schedule is patchable at
 resume (config+resume both required). New standing instrument: behavioral
 probe (argmax buy distribution + value-head range vs BM) on synced
 checkpoints ~gen 15-20 — eval columns alone can hide a collapse.
+
+Campaign 6 closeout (2026-07-10): cut at gen ~27. Curriculum worked as
+dosed (fractions tracked schedule exactly; value head stayed healthy,
+context-aware, BM-pessimistic without pinning) but every eval gens 1-25
+was 0/200 vs engine and 0/N vs BigMoney. Diagnosis: improvement loop
+stalled at SEARCH, not learning — policy_loss == entropy every gen (net
+fully fits its targets; the targets are flat), and a 400-sim search-driven
+probe at gen 20 still bought only Coppers. 256 sims over ~30 flat-prior
+actions cannot resolve small value differences; c4 only escaped via the
+huge (and rotten) pile-race value gradients. Artifacts:
+checkpoints/campaign6 on box + gens 10/14/15/20 synced locally.
+
+Campaign 7 (launched 2026-07-10 ~13:30, running): c6 config + treasure
+search collapse (commit 537ce98): auto_play_treasures (root treasure plays
+forced, unsearched, unrecorded — in selfplay/eval/DecisionSearcher) +
+prune_treasure_plays (in-tree: treasures forced before buys, canonical
+non-decreasing def order — one path per treasure multiset). Both were
+default-off; enabled in campaign7.json. Seed 20260715,
+checkpoints/campaign7. Intent: concentrate all sims on real decisions to
+un-stall search-target sharpening; treasure plays were ~half of all
+searched decisions. Caveat on record: both features assume base-set
+treasure commutativity — revisit for Storyteller/Grand Market-class cards.
