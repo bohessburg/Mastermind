@@ -37,6 +37,7 @@ if __package__ in (None, ""):
         plan_selfplay_segments,
         run_gate_match,
         save_best_checkpoint,
+        seed_league_checkpoints,
     )
     from src.v2.train.inference_server import InferenceServer, serialize_cpu_state_dict
     from src.v2.train.model import DominionNet, count_parameters, masked_policy_loss
@@ -57,6 +58,7 @@ else:
         plan_selfplay_segments,
         run_gate_match,
         save_best_checkpoint,
+        seed_league_checkpoints,
     )
     from .inference_server import InferenceServer, serialize_cpu_state_dict
     from .model import DominionNet, count_parameters, masked_policy_loss
@@ -352,9 +354,12 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
         config.gate_games = requested.gate_games
         config.gate_sims = requested.gate_sims
         config.gate_threshold = requested.gate_threshold
+        config.gate_temp_moves = requested.gate_temp_moves
         config.league_fraction = requested.league_fraction
         config.league_pool_size = requested.league_pool_size
+        config.league_seed_checkpoints = requested.league_seed_checkpoints
         config.gate_warmup_generations = requested.gate_warmup_generations
+        config.gate_force_accept_every = requested.gate_force_accept_every
         if config.device == "auto":
             config.device = device.type
     else:
@@ -382,6 +387,9 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
     best_generation: int | None = None
     best_path: Path | None = None
     if use_gating:
+        # Explicit external opponents must be available before generation one;
+        # no accepted candidate is needed to start sampling them.
+        seed_league_checkpoints(config, device)
         # A fresh run seeds best from the initial candidate. On resume, best.pt
         # is authoritative because rejected generation checkpoints are still
         # candidate checkpoints and must not silently become self-play policy.
@@ -497,8 +505,15 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
                     result = "warmup_accepted"
                 else:
                     gate_stats = run_gate_match(model, best_model, config, generation, device)
-                    result = gate_result(gate_stats, config.gate_threshold)
-                if result in ("accepted", "warmup_accepted"):
+                    stale_generations = generation - best_generation - 1
+                    if (
+                        int(config.gate_force_accept_every) > 0
+                        and stale_generations >= int(config.gate_force_accept_every)
+                    ):
+                        result = "forced_accepted"
+                    else:
+                        result = gate_result(gate_stats, config.gate_threshold)
+                if result in ("accepted", "warmup_accepted", "forced_accepted"):
                     archive_previous_best(config, best_path, best_generation)
                     best_model.load_state_dict(model.state_dict())
                     best_model.eval()

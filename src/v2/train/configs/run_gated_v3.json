@@ -1,0 +1,61 @@
+{
+  "_comment": "Campaign 3: sampled-temperature gates, a standing campaign-1 seed, and a bounded gate-stall refresh valve.",
+  "seed": 20260711,
+  "generations": 200,
+  "device": "auto",
+  "parallel_workers": 8,
+  "worker_device": "cuda",
+  "checkpoint_dir": "checkpoints/gated",
+  "metrics_csv": "checkpoints/gated/metrics.csv",
+  "gate_games": 150,
+  "gate_sims": 64,
+  "gate_threshold": 0.53,
+  "gate_temp_moves": 8,
+  "gate_warmup_generations": 8,
+  "gate_force_accept_every": 10,
+  "league_fraction": 0.25,
+  "league_pool_size": 8,
+  "league_seed_checkpoints": [
+    "checkpoints/remote/campaign1/gen_0025.pt"
+  ],
+  "model": {
+    "hidden_sizes": [
+      1024,
+      1024,
+      512
+    ]
+  },
+  "selfplay": {
+    "n_games": 128,
+    "sims_per_move": 128,
+    "games_per_generation": 1024,
+    "max_batch": 4096,
+    "c_puct": 1.25,
+    "dirichlet_alpha": 0.3,
+    "dirichlet_frac": 0.25,
+    "temp_moves": 12,
+    "kingdom_mode": "random",
+    "max_recorded_moves": 512,
+    "max_tree_nodes": 4096
+  },
+  "optim": {
+    "lr": 0.0002,
+    "lr_schedule": "cosine",
+    "min_lr": 5e-05,
+    "weight_decay": 0.0001,
+    "batch_size": 2048,
+    "train_steps_per_generation": 750
+  },
+  "replay": {
+    "capacity": 2000000
+  },
+  "eval": {
+    "eval_every_n_generations": 5,
+    "eval_games": 200,
+    "eval_sims": 400,
+    "eval_opponent": "engine",
+    "eval_kingdoms": "random",
+    "eval_n_games": 128,
+    "eval_max_batch": 4096
+  }
+}

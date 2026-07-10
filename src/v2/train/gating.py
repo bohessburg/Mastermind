@@ -113,6 +113,74 @@ def load_best_checkpoint(config: TrainConfig, device: torch.device, path: str | 
     return model, int(payload["generation"])
 
 
+def _load_league_seed_checkpoint(config: TrainConfig, device: torch.device, path: Path) -> None:
+    """Validate that an external standard checkpoint exactly fits this run.
+
+    Seed checkpoints are deliberately validated from their saved architecture
+    metadata before ``load_state_dict``.  A partially compatible state dict is
+    worse than a missing league member: it would silently change the intended
+    external opponent.
+    """
+    try:
+        payload = torch.load(path, map_location=device, weights_only=False)
+    except TypeError:  # pragma: no cover - older supported Torch versions
+        payload = torch.load(path, map_location=device)
+    if not isinstance(payload, dict) or "model" not in payload or "config" not in payload:
+        raise ValueError(
+            f"league seed checkpoint {path} must use the standard payload format "
+            "with 'model' and 'config' keys"
+        )
+    checkpoint_config = payload["config"]
+    if not isinstance(checkpoint_config, dict):
+        raise ValueError(f"league seed checkpoint {path} has a non-object 'config' payload")
+    checkpoint_model = checkpoint_config.get("model")
+    checkpoint_hidden_sizes = checkpoint_model.get("hidden_sizes") if isinstance(checkpoint_model, dict) else None
+    if not isinstance(checkpoint_hidden_sizes, list):
+        raise ValueError(
+            f"league seed checkpoint {path} is missing config.model.hidden_sizes; "
+            "cannot validate its architecture"
+        )
+    expected_hidden_sizes = list(config.model.hidden_sizes)
+    if checkpoint_hidden_sizes != expected_hidden_sizes:
+        raise ValueError(
+            f"league seed checkpoint {path} has hidden_sizes {checkpoint_hidden_sizes}, "
+            f"but the current run requires {expected_hidden_sizes}; refusing to truncate or pad weights"
+        )
+
+    # Model dimensions are protocol constants; import lazily to keep this
+    # module usable by its pure persistence/sampling tests without pybind.
+    import dominion_v2_py as dz
+
+    model = DominionNet(dz.OBS_SIZE, dz.ACTION_SPACE_SIZE, expected_hidden_sizes).to(device)
+    try:
+        model.load_state_dict(payload["model"])
+    except (RuntimeError, TypeError, KeyError) as exc:
+        raise ValueError(
+            f"league seed checkpoint {path} cannot be loaded with the current model architecture; "
+            "refusing to truncate or pad weights"
+        ) from exc
+
+
+def seed_league_checkpoints(config: TrainConfig, device: torch.device) -> list[Path]:
+    """Validate and copy configured external opponents into the league pool."""
+    sources = config.league_seed_checkpoints
+    if not isinstance(sources, list) or not all(isinstance(source, str) for source in sources):
+        raise ValueError("league_seed_checkpoints must be a list of checkpoint paths")
+    destination_dir = league_directory(config.checkpoint_dir)
+    destinations: list[Path] = []
+    for index, source_name in enumerate(sources):
+        source = Path(source_name)
+        if not source.is_file():
+            raise FileNotFoundError(f"league seed checkpoint does not exist: {source}")
+        _load_league_seed_checkpoint(config, device, source)
+        destination = destination_dir / f"seed_{index}.pt"
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        if source.resolve() != destination.resolve():
+            shutil.copy2(source, destination)
+        destinations.append(destination)
+    return destinations
+
+
 def clone_model(config: TrainConfig, source: torch.nn.Module, device: torch.device) -> DominionNet:
     import dominion_v2_py as dz
 
@@ -173,9 +241,12 @@ def archive_previous_best(
 
 def league_checkpoint_paths(config: TrainConfig) -> list[Path]:
     keep = int(config.league_pool_size)
-    if keep <= 0:
-        return []
-    return sorted(league_directory(config.checkpoint_dir).glob("best_*.pt"))[-keep:]
+    directory = league_directory(config.checkpoint_dir)
+    # Seeds are standing external opponents; archive retention applies only to
+    # accepted-best history, not to the explicitly requested seed list.
+    seeds = sorted(directory.glob("seed_*.pt"))
+    archived = sorted(directory.glob("best_*.pt"))
+    return [*seeds, *archived[-keep:]] if keep > 0 else seeds
 
 
 def sample_league_games(
@@ -286,7 +357,7 @@ def run_gate_match(
     gate_config = copy.deepcopy(config.selfplay)
     gate_config.sims_per_move = int(config.gate_sims)
     gate_config.dirichlet_frac = 0.0
-    gate_config.temp_moves = 0
+    gate_config.temp_moves = int(config.gate_temp_moves)
     gate_config.kingdom_mode = "random"
     first_half = (games + 1) // 2
     second_half = games - first_half

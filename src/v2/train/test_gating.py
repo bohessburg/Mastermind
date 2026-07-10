@@ -4,10 +4,12 @@ from collections import Counter
 from pathlib import Path
 
 import numpy as np
+import pytest
 import torch
 
 import dominion_v2_py as dz
 
+from .config import TrainConfig
 from .gating import (
     GateStats,
     SelfPlaySegment,
@@ -15,10 +17,13 @@ from .gating import (
     compact_selfplay_segments,
     gate_result,
     initialize_best_checkpoint,
+    league_checkpoint_paths,
     load_best_checkpoint,
     plan_selfplay_segments,
+    run_gate_match,
     sample_league_games,
     save_best_checkpoint,
+    seed_league_checkpoints,
 )
 from .inference_server import serialize_cpu_state_dict
 from .selfplay import make_runner_config, play_routed_games, route_leaf_evaluations
@@ -341,3 +346,113 @@ def test_parallel_cpu_gated_pool_uses_archived_best_after_warmup(monkeypatch, tm
     assert int(csv_rows[1]["routed_fast_path_batches"]) > 0
     assert int(csv_rows[1]["routed_split_batches"]) > 0
     assert all(float(row["aggregate_games_per_hour"]) > 0.0 for row in result["metrics"])
+
+
+def test_temperature_sampled_gate_match_is_seeded_and_noise_free(monkeypatch, tmp_path: Path) -> None:
+    """Temperature sampling remains reproducible for a fixed match seed."""
+    from . import selfplay as selfplay_module
+
+    cfg = tiny_config(tmp_path, seed=8181, generations=1)
+    cfg.model.hidden_sizes = [16]
+    cfg.gate_games = 2
+    cfg.gate_sims = 1
+    cfg.gate_temp_moves = 8
+    cfg.selfplay.n_games = 1
+    cfg.selfplay.max_batch = 4
+    cfg.selfplay.max_recorded_moves = 64
+    cfg.selfplay.max_tree_nodes = 256
+    candidate, _, _ = build_objects(cfg, torch.device("cpu"))
+    best, _, _ = build_objects(cfg, torch.device("cpu"))
+
+    # The engine's normal temperature sampler is deterministic when its seed
+    # is fixed, unlike temp-zero argmax behavior per position.
+    first = run_gate_match(candidate, best, cfg, generation=3, device=torch.device("cpu"))
+    second = run_gate_match(candidate, best, cfg, generation=3, device=torch.device("cpu"))
+    assert first == second
+
+    # Inspect the cloned gate config at the self-play boundary: gate sampling
+    # uses the requested first-move window while Dirichlet exploration stays
+    # disabled for every gate game.
+    captured: list[tuple[int, float, int]] = []
+
+    def capture_play(_models, gate_config, *, seed, device, target_games):
+        del device
+        captured.append((gate_config.temp_moves, gate_config.dirichlet_frac, seed))
+        return None, [{"winner": 0} for _ in range(target_games)]
+
+    monkeypatch.setattr(selfplay_module, "play_routed_games", capture_play)
+    replayed = run_gate_match(candidate, best, cfg, generation=3, device=torch.device("cpu"))
+    assert replayed == GateStats(wins=1, losses=1, ties=0)
+    assert [(temp_moves, noise) for temp_moves, noise, _seed in captured] == [(8, 0.0), (8, 0.0)]
+    assert captured[1][2] - captured[0][2] == 0x10001
+
+
+def _small_gated_config(tmp_path: Path, *, generations: int) -> TrainConfig:
+    cfg = tiny_config(tmp_path, seed=9292, generations=generations)
+    cfg.model.hidden_sizes = [16]
+    cfg.selfplay.n_games = 1
+    cfg.selfplay.games_per_generation = 1
+    cfg.selfplay.sims_per_move = 1
+    cfg.selfplay.max_batch = 4
+    cfg.selfplay.max_recorded_moves = 64
+    cfg.selfplay.max_tree_nodes = 256
+    cfg.optim.batch_size = 8
+    cfg.optim.train_steps_per_generation = 1
+    cfg.replay.capacity = 512
+    cfg.gate_games = 2
+    cfg.gate_sims = 1
+    return cfg
+
+
+def test_league_seed_checkpoint_is_available_and_sampled_from_generation_one(monkeypatch, tmp_path: Path) -> None:
+    from . import train as train_module
+
+    source_cfg = _small_gated_config(tmp_path / "source", generations=1)
+    source_model, source_optimizer, source_replay = build_objects(source_cfg, torch.device("cpu"))
+    with torch.no_grad():
+        for parameter in source_model.parameters():
+            parameter.fill_(0.125)
+    source_checkpoint = save_checkpoint(source_cfg, 25, source_model, source_optimizer, source_replay)
+
+    cfg = _small_gated_config(tmp_path / "target", generations=1)
+    cfg.league_fraction = 1.0
+    cfg.league_seed_checkpoints = [str(source_checkpoint)]
+    monkeypatch.setattr(train_module, "run_gate_match", lambda *_args, **_kwargs: GateStats(0, 2, 0))
+
+    result = run_training(cfg)
+    seed_path = Path(cfg.checkpoint_dir) / "league" / "seed_0.pt"
+    assert seed_path.exists()
+    assert league_checkpoint_paths(cfg) == [seed_path]
+    assert all(game is not None and game.opponent_index == 0 for game in sample_league_games(4, 1.0, 1, seed=17))
+    assert result["metrics"][0]["league_games"] == 1
+    seeded = state_tensors(seed_path)
+    source = state_tensors(source_checkpoint)
+    for key in source:
+        torch.testing.assert_close(seeded[key], source[key], rtol=0.0, atol=0.0)
+
+
+def test_league_seed_width_mismatch_raises_hard_clear_error(tmp_path: Path) -> None:
+    source_cfg = _small_gated_config(tmp_path / "source", generations=1)
+    source_model, source_optimizer, source_replay = build_objects(source_cfg, torch.device("cpu"))
+    source_checkpoint = save_checkpoint(source_cfg, 1, source_model, source_optimizer, source_replay)
+
+    target_cfg = _small_gated_config(tmp_path / "target", generations=1)
+    target_cfg.model.hidden_sizes = [32]
+    target_cfg.league_seed_checkpoints = [str(source_checkpoint)]
+    with pytest.raises(ValueError, match=r"league seed checkpoint .*hidden_sizes \[16\].*current run requires \[32\]"):
+        seed_league_checkpoints(target_cfg, torch.device("cpu"))
+
+
+def test_gate_force_accepts_only_after_configured_stale_generations(monkeypatch, tmp_path: Path) -> None:
+    from . import train as train_module
+
+    cfg = _small_gated_config(tmp_path, generations=3)
+    cfg.gate_force_accept_every = 2
+    monkeypatch.setattr(train_module, "run_gate_match", lambda *_args, **_kwargs: GateStats(0, 2, 0))
+
+    result = run_training(cfg)
+    rows = result["metrics"]
+    assert [row["gate_result"] for row in rows] == ["rejected", "rejected", "forced_accepted"]
+    assert [row["best_generation"] for row in rows] == [0, 0, 3]
+    csv_rows = read_metrics(Path(cfg.metrics_csv))
+    assert [row["gate_result"] for row in csv_rows] == ["rejected", "rejected", "forced_accepted"]

@@ -95,6 +95,10 @@ class TrainConfig:
     gate_games: int = 0
     gate_sims: int = 64
     gate_threshold: float = 0.55
+    # Gate matches normally use temperature-zero moves. A positive value
+    # reuses self-play's seeded temperature sampling for this many moves per
+    # player, while still disabling Dirichlet noise in the gate itself.
+    gate_temp_moves: int = 0
     # Accept candidates unconditionally for the first N generations so the
     # data pool bootstraps past random play before strict gating engages
     # (strict gating from random init deadlocks — see docs/training-log.md).
@@ -103,6 +107,14 @@ class TrainConfig:
     # accepted best checkpoints exist in checkpoint_dir/league/.
     league_fraction: float = 0.0
     league_pool_size: int = 8
+    # External standard-format checkpoints copied into checkpoint_dir/league/
+    # before generation one. They remain standing league opponents alongside
+    # archived accepted bests.
+    league_seed_checkpoints: list[str] = field(default_factory=list)
+    # After this many consecutive rejected gated candidates, force-accept the
+    # following candidate to refresh a stale self-play lineage. Zero disables
+    # this pressure valve.
+    gate_force_accept_every: int = 0
     checkpoint_dir: str = "checkpoints"
     metrics_csv: str = "checkpoints/metrics.csv"
     model: ModelConfig = field(default_factory=ModelConfig)
