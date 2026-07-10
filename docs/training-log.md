@@ -179,6 +179,15 @@ power, 48-29 human, ended on Provinces T37. Bot bought all 8 Duchies
 it only wins if piles end the game first — true in duchy-mirror self-play,
 false vs any Province buyer. The exploit in one game.
 
+Scaffold matchup (2026-07-10, local, 60 games, both sides 400 sims):
+c4 gen-15 vs scaffold-MCTS (EngineLike K=2) = 0-60. Endings: 58 province,
+2 piles — the scaffold defends piles and plays Provinces, so the duchy bot
+never gets its ending and loses every completed Province game. Standings
+vs EngineBot (scaffold 65.8%, c4 gen-15 35.2%) invert to 0% head-to-head:
+single-opponent eval numbers are not transitive strength. Adds the third
+leg of evidence (self-play forensics, human playtests, scaffold matchup).
+Note: ~30 games/hr single-threaded local; keep counts small.
+
 Campaign 5 (launched 2026-07-10, running): c4 recipe + scripted_opponents
 {"bigmoney": 0.20} — 20% of each generation's games vs scripted BigMoney,
 records from the NN seat only, seat-swapped. Purpose: put Province-regime
