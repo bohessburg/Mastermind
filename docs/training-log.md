@@ -217,4 +217,15 @@ gradients vanish (all leaves equally bad), policy degenerates, self-play
 data quality craters, collapse self-reinforces. The medicine was right,
 the dose was wrong: opponent injection needs a curriculum (start ~5% or
 introduce after the net can win SOME games; anneal up), not 20% from
-cold start.
+cold start. c5 cut at gen ~21.
+
+Campaign 6 (launched 2026-07-10 ~12:20, running): c5 recipe with the
+BigMoney curriculum — new scripted_opponent_schedule config (breakpoint
+list per opponent, linear interpolation; commit 1c6db6e): pure self-play
+through gen 10, 5% BigMoney at gen 11, ramping linearly to 20% by gen 25.
+Seed 20260714, checkpoints/campaign6 on box. Rationale: let the net learn
+money->points->wins from mirrors first so BM games carry gradient instead
+of the uniform -1 flood that collapsed c5. Schedule is patchable at
+resume (config+resume both required). New standing instrument: behavioral
+probe (argmax buy distribution + value-head range vs BM) on synced
+checkpoints ~gen 15-20 — eval columns alone can hide a collapse.

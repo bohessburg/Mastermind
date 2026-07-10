@@ -125,12 +125,21 @@ Decision rules agreed with Jack:
 
 ## State update (2026-07-10 midday)
 
-- RUNNING: **Campaign 5** on the box — checkpoints/campaign5/, config
-  campaign5.json (c4 recipe: [1536,1536,768] net, 256 sims, ungated + 20%
-  scripted BigMoney opponents). Watch metrics for scripted_wins/
-  scripted_games per gen + eval rows. Campaigns 1-4 all closed and synced
-  locally under checkpoints/remote/ (c1 peak 30.3%@25; c4 peak 35.2%@15,
-  both slid — full story in training-log).
+- RUNNING: **Campaign 6** on the box (launched 2026-07-10 ~12:20) —
+  checkpoints/campaign6/, config campaign6.json, /root/launch6.sh. c5
+  recipe + BigMoney curriculum via new scripted_opponent_schedule (commit
+  1c6db6e): pure self-play gens 1-10, 5% at gen 11 → linear to 20% by 25.
+  Seed 20260714.
+- CLOSED: Campaign 5 cut at gen ~21 — pessimism collapse (value head
+  pinned -0.9..-1.0, policy degenerated to Copper-only buys; 20% BM from
+  cold start fed pure -1 into the value head). Full diagnosis in
+  training-log. Also closed: campaigns 1-4, synced locally under
+  checkpoints/remote/ (c1 peak 30.3%@25; c4 peak 35.2%@15, both slid).
+  c4-gen15 vs scaffold-MCTS head-to-head: 0-60 — EngineBot win% is not
+  transitive strength.
+- STANDING INSTRUMENT: behavioral probe on synced checkpoints ~gen 15-20
+  (argmax buy distribution + value-head min/mean/max vs BigMoney, control
+  against c4-gen15) — eval columns alone hid the c5 collapse.
 - ROOT-CAUSE FINDING: pile-out/money local optimum lives in the VALUE HEAD;
   search can't escape it (human beat c4-gen15-full-power easily). c5 tests
   scripted-opponent data as the cure.
