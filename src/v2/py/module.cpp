@@ -11,9 +11,13 @@
 #include "v2/encode/encoder.h"
 #include "v2/mcts/eval_runner.h"
 #include "v2/mcts/selfplay.h"
+#include "v2/mcts/tree.h"
 
+#include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -513,6 +517,302 @@ private:
     }
 };
 
+/*
+ * A one-decision, externally evaluated information-set MCTS.  It lives in
+ * the binding layer so callers that need an interactive decision (the web
+ * server and evaluation helpers) use exactly the same leaf parking/resume
+ * mechanism as SelfPlayRunner without changing the core Mcts behavior.
+ */
+struct PyDecisionSearcher {
+    struct World {
+        explicit World(const MctsConfig& config) : mcts(config) {}
+
+        Mcts mcts;
+        MctsPendingLeaf pending_leaf{};
+        std::uint32_t sims_target = 0;
+        std::uint32_t sims_started = 0;
+        std::uint32_t sims_completed = 0;
+        bool waiting_for_evaluation = false;
+    };
+
+    PyDecisionSearcher(const PyGame& game, int perspective_player, const py::dict& config)
+        : root_(game.state) {
+        if (!valid_player(root_, perspective_player)) {
+            throw std::invalid_argument("perspective_player is invalid for this game");
+        }
+        if (!config.contains("sims") || !config.contains("c_puct")
+            || !config.contains("determinizations") || !config.contains("seed")) {
+            throw std::invalid_argument(
+                "DecisionSearcher config requires sims, c_puct, determinizations, and seed");
+        }
+
+        const std::uint32_t sims = py::cast<std::uint32_t>(config["sims"]);
+        const float c_puct = py::cast<float>(config["c_puct"]);
+        const std::uint32_t determinizations = py::cast<std::uint32_t>(config["determinizations"]);
+        const std::uint64_t seed = py::cast<std::uint64_t>(config["seed"]);
+        if (sims == 0U) {
+            throw std::invalid_argument("DecisionSearcher config sims must be positive");
+        }
+        if (c_puct < 0.0F) {
+            throw std::invalid_argument("DecisionSearcher config c_puct must be non-negative");
+        }
+        if (determinizations == 0U || determinizations > 255U) {
+            throw std::invalid_argument("DecisionSearcher config determinizations must be between 1 and 255");
+        }
+
+        perspective_ = static_cast<PlayerId>(perspective_player);
+        root_legal_count_ = Game::legal_actions(root_, root_legal_);
+
+        MctsConfig mcts_config{};
+        mcts_config.sims_per_move = sims;
+        mcts_config.c_puct = c_puct;
+        mcts_config.determinizations = 1U;
+        mcts_config.max_tree_nodes = 4096U;
+        mcts_config.rollout_policy = MctsRolloutPolicy::External;
+        mcts_config.rollout_seed = seed;
+
+        const std::uint32_t base_sims = sims / determinizations;
+        const std::uint32_t extra_sims = sims % determinizations;
+        worlds_.reserve(determinizations);
+        for (std::uint32_t det = 0; det < determinizations; ++det) {
+            auto world = std::make_unique<World>(mcts_config);
+            GameState sampled = root_;
+            determinize(
+                sampled,
+                perspective_,
+                seed + (0x9E37'79B9ULL * static_cast<std::uint64_t>(det + 1U)));
+            world->mcts.reset(sampled, perspective_);
+            const std::uint32_t allocated = base_sims + (det < extra_sims ? 1U : 0U);
+            // Keep the same low-simulation behavior as mcts_choose: every
+            // determinization gets at least one simulation.
+            world->sims_target = allocated == 0U ? 1U : allocated;
+            worlds_.push_back(std::move(world));
+        }
+    }
+
+    [[nodiscard]] std::uint32_t collect() noexcept {
+        if (!pending_worlds_.empty() || done()) {
+            return static_cast<std::uint32_t>(pending_worlds_.size());
+        }
+
+        // A terminal leaf does not need a network round trip.  Keep advancing
+        // until we have leaves for Python or every world has its quota.
+        while (pending_worlds_.empty() && !done()) {
+            bool progressed = false;
+            for (std::uint32_t index = 0; index < worlds_.size(); ++index) {
+                World& world = *worlds_[index];
+                if (world.waiting_for_evaluation || world.sims_started >= world.sims_target) {
+                    continue;
+                }
+                MctsPendingLeaf leaf{};
+                const bool need_evaluation = world.mcts.collect_external_leaf(leaf);
+                ++world.sims_started;
+                progressed = true;
+                if (need_evaluation) {
+                    world.pending_leaf = leaf;
+                    world.waiting_for_evaluation = true;
+                    pending_worlds_.push_back(index);
+                } else {
+                    ++world.sims_completed;
+                }
+            }
+            if (!progressed) {
+                break;
+            }
+        }
+        return static_cast<std::uint32_t>(pending_worlds_.size());
+    }
+
+    void provide(
+        const float* values,
+        const float* policies,
+        std::uint32_t count) noexcept {
+        if (count != pending_worlds_.size()) {
+            return;
+        }
+        for (std::uint32_t i = 0; i < count; ++i) {
+            World& world = *worlds_[pending_worlds_[i]];
+            float normalized[ACTION_SPACE_SIZE]{};
+            normalize_policy(
+                policies == nullptr ? nullptr : policies + (static_cast<std::size_t>(i) * ACTION_SPACE_SIZE),
+                world.pending_leaf.legal,
+                world.pending_leaf.legal_count,
+                normalized);
+            world.mcts.provide_external_evaluation(
+                world.pending_leaf,
+                values == nullptr ? 0.0F : values[i],
+                normalized);
+            world.waiting_for_evaluation = false;
+            ++world.sims_completed;
+        }
+        pending_worlds_.clear();
+    }
+
+    [[nodiscard]] bool done() const noexcept {
+        if (!pending_worlds_.empty()) {
+            return false;
+        }
+        for (const auto& world : worlds_) {
+            if (world->waiting_for_evaluation || world->sims_completed < world->sims_target) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    [[nodiscard]] Action best_action() const noexcept {
+        if (!done()) {
+            return A_PASS;
+        }
+
+        const int root_count = root_legal_count_;
+        if (root_count <= 0) {
+            return A_PASS;
+        }
+
+        float action_value[ACTION_SPACE_SIZE]{};
+        std::uint32_t action_visits[ACTION_SPACE_SIZE]{};
+        std::uint32_t action_seen[ACTION_SPACE_SIZE]{};
+        for (const auto& world : worlds_) {
+            for (int i = 0; i < root_count; ++i) {
+                const Action action = root_legal_.nth_set(static_cast<std::uint32_t>(i));
+                const std::uint32_t visits = world->mcts.root_visits_for(action);
+                action_value[action] += world->mcts.root_value_for(action) * static_cast<float>(visits);
+                action_visits[action] += visits;
+                // After the initial external evaluation Mcts expands every
+                // legal root action, matching mcts_choose's action_seen tie
+                // handling.  A terminal root has no legal actions above.
+                if (world->sims_completed != 0U) {
+                    ++action_seen[action];
+                }
+            }
+        }
+
+        Action best = root_legal_.nth_set(0U);
+        std::uint32_t best_visits = 0U;
+        float best_value = -2.0F;
+        for (int i = 0; i < root_count; ++i) {
+            const Action action = root_legal_.nth_set(static_cast<std::uint32_t>(i));
+            const std::uint32_t visits = action_visits[action];
+            const float value = visits == 0U ? -2.0F : action_value[action] / static_cast<float>(visits);
+            if (visits > best_visits || (visits == best_visits && value > best_value)) {
+                best = action;
+                best_visits = visits;
+                best_value = value;
+            } else if (visits == 0U && best_visits == 0U && action_seen[action] > action_seen[best]) {
+                best = action;
+            }
+        }
+        return best;
+    }
+
+    [[nodiscard]] const MctsPendingLeaf& pending_leaf(std::uint32_t index) const noexcept {
+        return worlds_[pending_worlds_[index]]->pending_leaf;
+    }
+
+    [[nodiscard]] const GameState& pending_state(std::uint32_t index) const noexcept {
+        const World& world = *worlds_[pending_worlds_[index]];
+        return world.mcts.state_for(world.pending_leaf.state_index);
+    }
+
+private:
+    static void normalize_policy(
+        const float* logits,
+        const ActionMask& legal,
+        int legal_count,
+        float* out) noexcept {
+        if (legal_count <= 0) {
+            out[A_PASS] = 1.0F;
+            return;
+        }
+        float max_logit = -3.4e38F;
+        for (Action action = 0; action < ACTION_SPACE_SIZE; ++action) {
+            if (legal.test(action)) {
+                const float value = logits == nullptr ? 0.0F : logits[action];
+                if (value > max_logit) {
+                    max_logit = value;
+                }
+            }
+        }
+        double sum = 0.0;
+        for (Action action = 0; action < ACTION_SPACE_SIZE; ++action) {
+            if (!legal.test(action)) {
+                continue;
+            }
+            const float value = logits == nullptr ? 0.0F : logits[action];
+            const double weight = std::exp(static_cast<double>(value - max_logit));
+            out[action] = static_cast<float>(weight);
+            sum += weight;
+        }
+        if (sum <= 0.0) {
+            const float uniform = 1.0F / static_cast<float>(legal_count);
+            for (Action action = 0; action < ACTION_SPACE_SIZE; ++action) {
+                out[action] = legal.test(action) ? uniform : 0.0F;
+            }
+            return;
+        }
+        const float inverse_sum = static_cast<float>(1.0 / sum);
+        for (Action action = 0; action < ACTION_SPACE_SIZE; ++action) {
+            out[action] *= inverse_sum;
+        }
+    }
+
+    GameState root_{};
+    PlayerId perspective_ = 0U;
+    ActionMask root_legal_{};
+    int root_legal_count_ = 0;
+    std::vector<std::unique_ptr<World>> worlds_;
+    std::vector<std::uint32_t> pending_worlds_;
+};
+
+[[nodiscard]] py::tuple decision_search_collect(PyDecisionSearcher& searcher) {
+    std::uint32_t count = 0U;
+    {
+        py::gil_scoped_release release;
+        count = searcher.collect();
+    }
+    py::array_t<float> obs({
+        static_cast<py::ssize_t>(count),
+        static_cast<py::ssize_t>(OBS_SIZE),
+    });
+    py::array_t<bool> masks({
+        static_cast<py::ssize_t>(count),
+        static_cast<py::ssize_t>(ACTION_SPACE_SIZE),
+    });
+    for (std::uint32_t i = 0; i < count; ++i) {
+        const MctsPendingLeaf& leaf = searcher.pending_leaf(i);
+        encode(searcher.pending_state(i), leaf.player, obs.mutable_data(i, 0));
+        bool* row = masks.mutable_data(i, 0);
+        for (Action action = 0; action < ACTION_SPACE_SIZE; ++action) {
+            row[action] = leaf.legal.test(action);
+        }
+    }
+    return py::make_tuple(obs, masks);
+}
+
+void decision_search_provide(
+    PyDecisionSearcher& searcher,
+    py::array_t<float, py::array::c_style | py::array::forcecast> values,
+    py::array_t<float, py::array::c_style | py::array::forcecast> policies) {
+    if (values.ndim() != 1) {
+        throw std::invalid_argument("values must have shape [B]");
+    }
+    if (policies.ndim() != 2 || policies.shape(1) != static_cast<py::ssize_t>(ACTION_SPACE_SIZE)) {
+        throw std::invalid_argument("policies must have shape [B, ACTION_SPACE]");
+    }
+    if (policies.shape(0) != values.shape(0)) {
+        throw std::invalid_argument("values and policies batch sizes differ");
+    }
+    const auto count = static_cast<std::uint32_t>(values.shape(0));
+    if (count != searcher.collect()) {
+        throw std::invalid_argument("evaluation batch size does not match pending leaves");
+    }
+    {
+        py::gil_scoped_release release;
+        searcher.provide(values.data(), policies.data(), count);
+    }
+}
+
 [[nodiscard]] py::tuple selfplay_collect(SelfPlayRunner& runner, std::uint32_t max_batch) {
     std::uint32_t count = 0;
     {
@@ -675,6 +975,15 @@ void eval_provide(
     dict["ties"] = py::int_(result.ties);
     dict["truncated"] = py::int_(result.truncated);
     return dict;
+}
+
+[[nodiscard]] py::list eval_finished_games(EvalRunner& runner) {
+    std::vector<GameState> states = runner.take_finished_games();
+    py::list out;
+    for (const GameState& state : states) {
+        out.append(make_game(state));
+    }
+    return out;
 }
 
 [[nodiscard]] std::string def_constant_name(const char* name) {
@@ -919,6 +1228,22 @@ PYBIND11_MODULE(dominion_v2_py, module) {
         .def("step", &PyBatchRunner::step)
         .def("games_completed", &PyBatchRunner::games_completed);
 
+    py::class_<PyDecisionSearcher>(module, "DecisionSearcher")
+        .def(
+            py::init<const PyGame&, int, const py::dict&>(),
+            py::arg("game"),
+            py::arg("perspective_player"),
+            py::arg("config"))
+        .def("collect_leaves", &decision_search_collect)
+        .def("provide_evaluations", &decision_search_provide, py::arg("values"), py::arg("policies"))
+        .def("done", &PyDecisionSearcher::done)
+        .def("best_action", [](const PyDecisionSearcher& searcher) {
+            if (!searcher.done()) {
+                throw std::runtime_error("DecisionSearcher is not done");
+            }
+            return static_cast<std::uint32_t>(searcher.best_action());
+        });
+
     py::enum_<SelfPlayKingdomMode>(module, "SelfPlayKingdomMode")
         .value("Fixed", SelfPlayKingdomMode::Fixed)
         .value("Random", SelfPlayKingdomMode::Random);
@@ -992,7 +1317,8 @@ PYBIND11_MODULE(dominion_v2_py, module) {
         .value("Engine", EvalScriptedBotKind::Engine)
         .value("BigMoney", EvalScriptedBotKind::BigMoney)
         .value("Heuristic", EvalScriptedBotKind::Heuristic)
-        .value("Random", EvalScriptedBotKind::Random);
+        .value("Random", EvalScriptedBotKind::Random)
+        .value("Mcts", EvalScriptedBotKind::Mcts);
 
     py::class_<EvalRunnerConfig>(module, "EvalRunnerConfig")
         .def(py::init([](
@@ -1005,7 +1331,8 @@ PYBIND11_MODULE(dominion_v2_py, module) {
             SelfPlayKingdomMode kingdom_mode,
             py::object kingdom,
             std::uint32_t max_tree_nodes,
-            EvalScriptedBotKind opponent) {
+            EvalScriptedBotKind opponent,
+            bool retain_finished_games) {
             EvalRunnerConfig config{};
             config.n_games = n_games;
             config.sims_per_move = sims_per_move;
@@ -1016,6 +1343,7 @@ PYBIND11_MODULE(dominion_v2_py, module) {
             config.kingdom_mode = kingdom_mode;
             config.max_tree_nodes = max_tree_nodes;
             config.opponent = opponent;
+            config.retain_finished_games = retain_finished_games;
             if (!kingdom.is_none()) {
                 PySetup setup(2, kingdom, false);
                 config.fixed_setup = setup.setup;
@@ -1031,7 +1359,8 @@ PYBIND11_MODULE(dominion_v2_py, module) {
             py::arg("kingdom_mode") = SelfPlayKingdomMode::Random,
             py::arg("kingdom") = py::none(),
             py::arg("max_tree_nodes") = 4096,
-            py::arg("opponent") = EvalScriptedBotKind::Engine)
+            py::arg("opponent") = EvalScriptedBotKind::Engine,
+            py::arg("retain_finished_games") = false)
         .def_readwrite("n_games", &EvalRunnerConfig::n_games)
         .def_readwrite("sims_per_move", &EvalRunnerConfig::sims_per_move)
         .def_readwrite("c_puct", &EvalRunnerConfig::c_puct)
@@ -1040,7 +1369,8 @@ PYBIND11_MODULE(dominion_v2_py, module) {
         .def_readwrite("target_games", &EvalRunnerConfig::target_games)
         .def_readwrite("kingdom_mode", &EvalRunnerConfig::kingdom_mode)
         .def_readwrite("max_tree_nodes", &EvalRunnerConfig::max_tree_nodes)
-        .def_readwrite("opponent", &EvalRunnerConfig::opponent);
+        .def_readwrite("opponent", &EvalRunnerConfig::opponent)
+        .def_readwrite("retain_finished_games", &EvalRunnerConfig::retain_finished_games);
 
     py::class_<EvalRunner>(module, "EvalRunner")
         .def(py::init<const EvalRunnerConfig&>(), py::arg("config"))
@@ -1051,7 +1381,8 @@ PYBIND11_MODULE(dominion_v2_py, module) {
         .def("total_virtual_loss", &EvalRunner::total_virtual_loss)
         .def("active_nn_player", &EvalRunner::active_nn_player, py::arg("index"))
         .def("active_sequence", &EvalRunner::active_sequence, py::arg("index"))
-        .def("last_scripted_action", &EvalRunner::last_scripted_action);
+        .def("last_scripted_action", &EvalRunner::last_scripted_action)
+        .def("finished_games", &eval_finished_games);
 
     module.def("new_game", &py_new_game, py::arg("setup"), py::arg("seed"));
     module.def("def_id", [](const std::string& name) {

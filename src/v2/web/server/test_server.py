@@ -957,6 +957,57 @@ def test_human_vs_nn_bot_completes_with_legal_nn_actions(tiny_nn_checkpoint: Pat
     assert nn_actions
 
 
+def test_human_vs_nnmcts_bot_completes_with_legal_search_actions(
+    monkeypatch: pytest.MonkeyPatch,
+    tiny_nn_checkpoint: Path,
+) -> None:
+    """A scripted human game exercises the full parked-leaf NN-MCTS loop."""
+    sessions.clear()
+    monkeypatch.setenv("NN_MCTS_SIMS", "8")
+    client = TestClient(app)
+    response = client.post(
+        "/api/session",
+        json={
+            "seats": ["human", f"bot:nnmcts:{tiny_nn_checkpoint}"],
+            "kingdom": KINGDOM,
+            "seed": 0x5108,
+            "thinking_delay_ms": 0,
+        },
+    )
+    assert response.status_code == 200
+    created = response.json()
+    session = sessions[created["session_id"]]
+    assert session.seats[1].kind.startswith("bot:nnmcts")
+    assert 1 in session.nn_policies
+
+    with client.websocket_connect(f"/ws/{created['session_id']}/{created['seat_tokens'][0]}") as websocket:
+        messages = read_initial(websocket)
+        for _ in range(4000):
+            if any(message["type"] == "gameover" for message in messages):
+                break
+            decision = by_type(messages, "decision")
+            if not decision["options"]:
+                messages = read_until_decision_or_gameover(websocket)
+                continue
+            websocket.send_json({"type": "act", "action": choose_big_money_action(decision)})
+            messages = read_until_decision_or_gameover(websocket)
+        else:
+            raise AssertionError("web game against NN-MCTS bot did not complete")
+
+    replay = dz.new_game(session.setup, session.seed)
+    nnmcts_actions: list[int] = []
+    for action in session.action_log:
+        player = int(replay.current_decision()["player"])
+        assert bool(replay.legal_mask()[action])
+        if player == 1:
+            nnmcts_actions.append(action)
+        replay.step(action)
+
+    assert session.game.game_over()
+    assert replay.game_over()
+    assert nnmcts_actions
+
+
 def test_nn_bot_uses_configured_default_checkpoint(
     monkeypatch: pytest.MonkeyPatch,
     tiny_nn_checkpoint: Path,

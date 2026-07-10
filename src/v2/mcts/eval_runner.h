@@ -9,12 +9,14 @@
 
 #include <cstdint>
 #include <memory>
+#include <vector>
 
 enum class EvalScriptedBotKind : std::uint8_t {
     Engine,
     BigMoney,
     Heuristic,
     Random,
+    Mcts,
 };
 
 struct EvalRunnerConfig {
@@ -28,6 +30,7 @@ struct EvalRunnerConfig {
     Setup fixed_setup{};
     std::uint32_t max_tree_nodes = 4096;
     EvalScriptedBotKind opponent = EvalScriptedBotKind::Engine;
+    bool retain_finished_games = false;
 };
 
 struct EvalRunnerResult {
@@ -54,6 +57,7 @@ public:
     [[nodiscard]] PlayerId active_nn_player(std::uint32_t index) const noexcept;
     [[nodiscard]] std::uint64_t active_sequence(std::uint32_t index) const noexcept;
     [[nodiscard]] Action last_scripted_action() const noexcept;
+    std::vector<GameState> take_finished_games();
 
 private:
     struct GameSlot;
@@ -70,6 +74,7 @@ private:
 
     EvalRunnerConfig config_{};
     MctsConfig mcts_config_{};
+    MctsConfig scaffold_mcts_config_{};
     std::unique_ptr<GameSlot[]> games_;
     std::unique_ptr<PendingLeaf[]> pending_;
     std::unique_ptr<float[]> leaf_obs_;
@@ -80,6 +85,7 @@ private:
     std::uint32_t next_collect_game_ = 0;
     std::uint64_t next_sequence_ = 0;
     Action last_scripted_action_ = A_PASS;
+    std::vector<GameState> finished_games_;
 };
 
 [[nodiscard]] Action eval_scripted_action(

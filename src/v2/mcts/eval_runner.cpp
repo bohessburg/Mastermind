@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <optional>
 #include <stdexcept>
 
 namespace {
@@ -624,6 +625,7 @@ struct EvalRunner::GameSlot {
     GameState state{};
     Setup setup{};
     Mcts mcts;
+    std::optional<Mcts> scripted_mcts{};
     Xoshiro256pp rng{};
     std::uint64_t seed = 0;
     std::uint64_t sequence = 0;
@@ -730,6 +732,28 @@ Action eval_scripted_action(
     return first_legal(legal);
 }
 
+[[nodiscard]] Action eval_scaffold_mcts_action(
+    Mcts& search,
+    const GameState& state,
+    const ActionMask& legal,
+    int legal_count) noexcept {
+    if (legal_count <= 0) {
+        return A_PASS;
+    }
+    if (legal_count == 1) {
+        return legal.nth_set(0U);
+    }
+    // Preserve MctsBot's Phase-6 treasure fast path; this is a forced,
+    // non-strategic subdecision and leaves search budget for meaningful ones.
+    if (static_cast<DecisionKind>(state.decision.kind) == DecisionKind::PhaseBuy) {
+        const Action treasure = first_legal_play_treasure(legal);
+        if (treasure != A_PASS) {
+            return treasure;
+        }
+    }
+    return search.choose(state, decision_player(state));
+}
+
 EvalRunner::EvalRunner(const EvalRunnerConfig& config)
     : config_(config),
       mcts_config_(),
@@ -757,6 +781,12 @@ EvalRunner::EvalRunner(const EvalRunnerConfig& config)
     mcts_config_.determinizations = 1U;
     mcts_config_.max_tree_nodes = config_.max_tree_nodes == 0U ? 4096U : config_.max_tree_nodes;
     mcts_config_.rollout_policy = MctsRolloutPolicy::External;
+
+    scaffold_mcts_config_.sims_per_move = config_.sims_per_move;
+    scaffold_mcts_config_.c_puct = config_.c_puct;
+    scaffold_mcts_config_.determinizations = 2U;
+    scaffold_mcts_config_.max_tree_nodes = mcts_config_.max_tree_nodes;
+    scaffold_mcts_config_.rollout_policy = MctsRolloutPolicy::EngineLike;
 
     for (std::uint32_t i = 0; i < config_.n_games; ++i) {
         games_[i].mcts = Mcts(mcts_config_);
@@ -899,6 +929,12 @@ Action EvalRunner::last_scripted_action() const noexcept {
     return last_scripted_action_;
 }
 
+std::vector<GameState> EvalRunner::take_finished_games() {
+    std::vector<GameState> out = std::move(finished_games_);
+    finished_games_.clear();
+    return out;
+}
+
 void EvalRunner::reset_game(std::uint32_t index) noexcept {
     GameSlot& game = games_[index];
     if (config_.target_games != 0U && next_sequence_ >= config_.target_games) {
@@ -912,6 +948,7 @@ void EvalRunner::reset_game(std::uint32_t index) noexcept {
         game.nn_player = NONE;
         game.search_active = false;
         game.active = false;
+        game.scripted_mcts.reset();
         return;
     }
     game.sequence = next_sequence_++;
@@ -919,6 +956,13 @@ void EvalRunner::reset_game(std::uint32_t index) noexcept {
     game.seed = game_seed(config_, game.sequence);
     game.state = Game::new_game(game.setup, game.seed);
     game.rng = Xoshiro256pp::seeded(game.seed ^ 0xE0A1'600D'0000'0001ULL);
+    if (config_.opponent == EvalScriptedBotKind::Mcts) {
+        MctsConfig scaffold_config = scaffold_mcts_config_;
+        scaffold_config.rollout_seed = game.seed ^ 0x5CAFF01D'0000'0001ULL;
+        game.scripted_mcts.emplace(scaffold_config);
+    } else {
+        game.scripted_mcts.reset();
+    }
     game.nn_player = static_cast<PlayerId>((game.sequence & 1ULL) == 0ULL ? 0U : 1U);
     game.sims_started = 0;
     game.sims_completed = 0;
@@ -945,7 +989,9 @@ void EvalRunner::drive_scripted(GameSlot& game) noexcept {
         if (legal_count <= 0) {
             break;
         }
-        Action action = eval_scripted_action(game.state, legal, legal_count, config_.opponent, game.rng);
+        Action action = config_.opponent == EvalScriptedBotKind::Mcts
+            ? eval_scaffold_mcts_action(*game.scripted_mcts, game.state, legal, legal_count)
+            : eval_scripted_action(game.state, legal, legal_count, config_.opponent, game.rng);
         if (!legal.test(action)) {
             action = first_legal(legal);
         }
@@ -978,6 +1024,9 @@ void EvalRunner::maybe_finish_move(GameSlot& game) noexcept {
 }
 
 void EvalRunner::finish_game(GameSlot& game) noexcept {
+    if (config_.retain_finished_games) {
+        finished_games_.push_back(game.state);
+    }
     ++result_.games;
     if (game.state.truncated != 0U) {
         ++result_.truncated;
@@ -1067,7 +1116,9 @@ void EvalRunner::normalize_policy(
 
 bool EvalRunner::resolve_scripted_tree_leaf(GameSlot& game, const MctsPendingLeaf& leaf) noexcept {
     const GameState& leaf_state = game.mcts.state_for(leaf.state_index);
-    Action action = eval_scripted_action(leaf_state, leaf.legal, leaf.legal_count, config_.opponent, game.rng);
+    Action action = config_.opponent == EvalScriptedBotKind::Mcts
+        ? eval_scaffold_mcts_action(*game.scripted_mcts, leaf_state, leaf.legal, leaf.legal_count)
+        : eval_scripted_action(leaf_state, leaf.legal, leaf.legal_count, config_.opponent, game.rng);
     if (!leaf.legal.test(action)) {
         action = leaf.legal_count > 0 ? leaf.legal.nth_set(0U) : A_PASS;
     }

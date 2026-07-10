@@ -122,8 +122,16 @@ def _is_nn_kind(kind: str) -> bool:
     return kind == "bot:nn" or kind.startswith("bot:nn:")
 
 
+def _is_nnmcts_kind(kind: str) -> bool:
+    return kind == "bot:nnmcts" or kind.startswith("bot:nnmcts:")
+
+
+def _is_neural_kind(kind: str) -> bool:
+    return _is_nn_kind(kind) or _is_nnmcts_kind(kind)
+
+
 def _is_valid_seat_kind(kind: object) -> bool:
-    return isinstance(kind, str) and (kind in SEAT_KINDS or _is_nn_kind(kind))
+    return isinstance(kind, str) and (kind in SEAT_KINDS or _is_neural_kind(kind))
 
 
 def _bot_policy(kind: str) -> str:
@@ -135,7 +143,9 @@ def _bot_policy(kind: str) -> str:
 
 
 def _nn_checkpoint_path(kind: str) -> Path:
-    if kind.startswith("bot:nn:"):
+    if kind.startswith("bot:nnmcts:"):
+        configured = kind.removeprefix("bot:nnmcts:")
+    elif kind.startswith("bot:nn:"):
         configured = kind.removeprefix("bot:nn:")
     else:
         configured = ""
@@ -175,7 +185,7 @@ def _load_nn_policies(seat_kinds: list[str]) -> dict[int, _NNPolicy]:
     return {
         index: _load_nn_policy(_nn_checkpoint_path(kind))
         for index, kind in enumerate(seat_kinds)
-        if _is_nn_kind(kind)
+        if _is_neural_kind(kind)
     }
 
 
@@ -463,12 +473,57 @@ def _choose_nn_action(session: Session, seat: int) -> int:
     return int(torch.argmax(masked_logits, dim=-1).item())
 
 
+def _nn_mcts_sims() -> int:
+    """Read the interactive search budget without making a bad env fatal."""
+    try:
+        sims = int(os.environ.get("NN_MCTS_SIMS", "400"))
+    except ValueError:
+        return 400
+    return sims if sims > 0 else 400
+
+
+def _choose_nnmcts_action(session: Session, seat: int) -> int:
+    """Run one CPU NN-MCTS decision through the binding's parked leaves."""
+    policy = session.nn_policies[seat]
+    torch = policy.torch
+    searcher = dz.DecisionSearcher(
+        session.game,
+        seat,
+        {
+            "sims": _nn_mcts_sims(),
+            "c_puct": 1.25,
+            "determinizations": 2,
+            # State-derived seeding also makes replay/undo decisions stable.
+            "seed": (
+                int(session.game.state_hash()) ^ ((seat + 1) * 0x9E3779B97F4A7C15)
+            ) & 0xFFFFFFFFFFFFFFFF,
+        },
+    )
+    while not searcher.done():
+        obs, masks = searcher.collect_leaves()
+        if obs.shape[0] == 0:
+            continue
+        with torch.no_grad():
+            logits, values = policy.model.evaluate(
+                torch.as_tensor(obs, dtype=torch.float32, device="cpu"),
+                torch.as_tensor(masks, dtype=torch.bool, device="cpu"),
+            )
+        searcher.provide_evaluations(
+            values.detach().cpu().numpy().astype(np.float32, copy=False),
+            logits.detach().cpu().numpy().astype(np.float32, copy=False),
+        )
+    action = int(searcher.best_action())
+    return action if _is_legal(session.game, action) else _first_legal(_legal_actions(session.game))
+
+
 def _choose_bot_action(session: Session, seat: int) -> int:
     legal = _legal_actions(session.game)
     if not legal:
         return int(dz.A_PASS)
 
     kind = session.seats[seat].kind
+    if _is_nnmcts_kind(kind):
+        return _choose_nnmcts_action(session, seat)
     if _is_nn_kind(kind):
         return _choose_nn_action(session, seat)
 
@@ -528,7 +583,9 @@ async def _run_bots(session: Session) -> None:
         player = _current_player(session.game)
         if player >= len(session.seats) or not _is_bot_kind(session.seats[player].kind):
             break
-        if session.thinking_delay_ms > 0:
+        # NN-MCTS's synchronous search is the thinking interval.  Other bots
+        # retain the established pacing delay.
+        if session.thinking_delay_ms > 0 and not _is_nnmcts_kind(session.seats[player].kind):
             await asyncio.sleep(session.thinking_delay_ms / 1000.0)
         action = _choose_bot_action(session, player)
         lines, private_lines = _apply_validated_action(session, player, action)
@@ -597,7 +654,10 @@ async def create_session(payload: dict[str, Any]) -> dict[str, Any]:
         if not _is_valid_seat_kind(kind):
             raise HTTPException(
                 status_code=400,
-                detail="seat kind must be human, bot, bot:bigmoney, bot:random, bot:nn, or bot:nn:<path>",
+                detail=(
+                    "seat kind must be human, bot, bot:bigmoney, bot:random, bot:nn, bot:nn:<path>, "
+                    "bot:nnmcts, or bot:nnmcts:<path>"
+                ),
             )
 
     try:

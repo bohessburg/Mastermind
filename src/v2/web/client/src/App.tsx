@@ -249,12 +249,27 @@ function SupplyGrid({
   );
 }
 
-function OpponentStrip({ opponents }: { opponents: OpponentView[] }) {
+function seatKindLabel(kind: string | undefined): string {
+  if (kind === 'bot:nnmcts' || kind?.startsWith('bot:nnmcts:')) {
+    return 'neural net + search';
+  }
+  if (kind === 'bot:nn' || kind?.startsWith('bot:nn:')) {
+    return 'neural net';
+  }
+  if (kind?.startsWith('bot:')) {
+    return kind.slice('bot:'.length);
+  }
+  return kind ?? 'opponent';
+}
+
+function OpponentStrip({ opponents, seatKinds }: { opponents: OpponentView[]; seatKinds: ReadonlyMap<number, string> }) {
   return (
     <section className="opponent-strip" aria-label="Opponents">
       {opponents.map((opponent) => (
         <div className="opponent-panel" key={opponent.seat}>
-          <div className="panel-heading">P{opponent.seat + 1}</div>
+          <div className="panel-heading">
+            P{opponent.seat + 1} · {seatKindLabel(seatKinds.get(opponent.seat))}
+          </div>
           <div className="public-counts">
             <span>Hand {opponent.handCount}</span>
             <span>Deck {opponent.deckCount}</span>
@@ -634,7 +649,7 @@ function GameOverOverlay({ gameover, onPlayAgain }: { gameover?: ClientState['ga
 function JoinScreen({ onJoin }: { onJoin: (credentials: Credentials) => void }) {
   const [sessionId, setSessionId] = useState('');
   const [seatToken, setSeatToken] = useState('');
-  const [mode, setMode] = useState<'human-bot' | 'human-nn' | 'human-human'>('human-bot');
+  const [mode, setMode] = useState<'human-bot' | 'human-nn' | 'human-nnmcts' | 'human-human'>('human-bot');
   const [kingdomMode, setKingdomMode] = useState<'preset' | 'random'>('preset');
   const [seed, setSeed] = useState('2026');
   const [created, setCreated] = useState<CreatedSession | undefined>();
@@ -643,7 +658,13 @@ function JoinScreen({ onJoin }: { onJoin: (credentials: Credentials) => void }) 
   async function createSession() {
     setError(undefined);
     const seats: SeatKind[] =
-      mode === 'human-bot' ? ['human', 'bot'] : mode === 'human-nn' ? ['human', 'bot:nn'] : ['human', 'human'];
+      mode === 'human-bot'
+        ? ['human', 'bot']
+        : mode === 'human-nn'
+          ? ['human', 'bot:nn']
+          : mode === 'human-nnmcts'
+            ? ['human', 'bot:nnmcts']
+            : ['human', 'human'];
     const response = await fetch('/api/session', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -675,9 +696,15 @@ function JoinScreen({ onJoin }: { onJoin: (credentials: Credentials) => void }) 
         <div className="create-row">
           <label>
             Seat config
-            <select value={mode} onChange={(event) => setMode(event.target.value as 'human-bot' | 'human-nn' | 'human-human')}>
+            <select
+              value={mode}
+              onChange={(event) =>
+                setMode(event.target.value as 'human-bot' | 'human-nn' | 'human-nnmcts' | 'human-human')
+              }
+            >
               <option value="human-bot">Human vs bot</option>
               <option value="human-nn">Human vs neural net</option>
+              <option value="human-nnmcts">Human vs neural net + search</option>
               <option value="human-human">Human vs human</option>
             </select>
           </label>
@@ -829,6 +856,7 @@ export function App() {
   }
 
   const view = clientState.state?.view;
+  const seatKinds = new Map((clientState.table?.seats ?? []).map((seat) => [seat.index, seat.kind]));
   const connectionStatus =
     status === 'open'
       ? { label: 'Connected', className: 'connected' }
@@ -861,7 +889,7 @@ export function App() {
               onAction={act}
             />
           )}
-          {view && <OpponentStrip opponents={view.opponents} />}
+          {view && <OpponentStrip opponents={view.opponents} seatKinds={seatKinds} />}
           {view && (
             <TrashAndResources
               trash={view.trash}

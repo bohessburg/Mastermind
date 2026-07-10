@@ -35,6 +35,9 @@ class EvalStats:
     losses: int
     ties: int
     truncated: int
+    end_province: int
+    end_piles: int
+    end_trunc: int
     wall_time: float
 
     @property
@@ -57,6 +60,9 @@ class EvalStats:
             "losses": self.losses,
             "ties": self.ties,
             "truncated": self.truncated,
+            "end_province": self.end_province,
+            "end_piles": self.end_piles,
+            "end_trunc": self.end_trunc,
             "win_pct_excl_ties": self.win_pct_excl_ties,
             "games_per_hour": self.games_per_hour,
             "wall_time": self.wall_time,
@@ -97,7 +103,21 @@ def _opponent_kind(name: str):
         return dz.EvalScriptedBotKind.Heuristic
     if normalized == "random":
         return dz.EvalScriptedBotKind.Random
+    if normalized == "mcts":
+        return dz.EvalScriptedBotKind.Mcts
     raise ValueError(f"unknown opponent: {name}")
+
+
+def classify_game_end(game: Any) -> str:
+    """Classify a completed binding Game without adding engine end-state APIs."""
+    if game.truncated():
+        return "trunc"
+    supply = {int(def_id): int(count) for def_id, count in game.supply()}
+    if supply.get(int(dz.DEF_PROVINCE), 1) == 0:
+        return "province"
+    if sum(count == 0 for count in supply.values()) >= 3:
+        return "piles"
+    raise ValueError("completed eval game has no recognized end condition")
 
 
 def make_eval_runner_config(
@@ -124,6 +144,7 @@ def make_eval_runner_config(
         kingdom=fixed_kingdom,
         max_tree_nodes=int(max_tree_nodes),
         opponent=_opponent_kind(opponent),
+        retain_finished_games=True,
     )
 
 
@@ -190,6 +211,20 @@ def evaluate_model(
             runner.provide_evaluations(values_np, logits_np)
 
     result = runner.result()
+    finished_games = runner.finished_games()
+    if len(finished_games) != int(result["games"]):
+        raise RuntimeError("eval runner did not retain every completed game for end forensics")
+    end_province = 0
+    end_piles = 0
+    end_trunc = 0
+    for game in finished_games:
+        outcome = classify_game_end(game)
+        if outcome == "province":
+            end_province += 1
+        elif outcome == "piles":
+            end_piles += 1
+        else:
+            end_trunc += 1
     wall = time.perf_counter() - start
     return EvalStats(
         opponent=opponent,
@@ -198,6 +233,9 @@ def evaluate_model(
         losses=int(result["scripted_wins"]),
         ties=int(result["ties"]),
         truncated=int(result["truncated"]),
+        end_province=end_province,
+        end_piles=end_piles,
+        end_trunc=end_trunc,
         wall_time=wall,
     )
 
@@ -234,27 +272,34 @@ def evaluate_checkpoint(
 
 
 def print_table(rows: list[EvalStats]) -> None:
-    print("opponent,games,wins,losses,ties,truncated,win_pct_excl_ties,games_per_hour")
+    print(
+        "opponent,games,wins,losses,ties,truncated,end_province,end_piles,end_trunc,"
+        "win_pct_excl_ties,games_per_hour"
+    )
     for row in rows:
         print(
             f"{row.opponent},{row.games},{row.wins},{row.losses},{row.ties},{row.truncated},"
+            f"{row.end_province},{row.end_piles},{row.end_trunc},"
             f"{row.win_pct_excl_ties:.2f},{row.games_per_hour:.2f}"
         )
 
 
 def ladder_counts(args: argparse.Namespace) -> list[tuple[str, int]]:
-    return [
+    counts = [
         ("random", args.ladder_random_games),
         ("bigmoney", args.ladder_bigmoney_games),
         ("heuristic", args.ladder_heuristic_games),
         ("engine", args.ladder_engine_games),
     ]
+    if args.ladder_mcts_games > 0:
+        counts.append(("mcts", args.ladder_mcts_games))
+    return counts
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--checkpoint", required=True)
-    parser.add_argument("--opponent", default="engine", choices=["engine", "bigmoney", "heuristic", "random"])
+    parser.add_argument("--opponent", default="engine", choices=["engine", "bigmoney", "heuristic", "random", "mcts"])
     parser.add_argument("--games", type=int, default=200)
     parser.add_argument("--sims", type=int, default=400)
     parser.add_argument("--kingdoms", default="random", choices=["random", "fixed"])
@@ -267,6 +312,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--ladder-bigmoney-games", type=int, default=100)
     parser.add_argument("--ladder-heuristic-games", type=int, default=100)
     parser.add_argument("--ladder-engine-games", type=int, default=200)
+    parser.add_argument("--ladder-mcts-games", type=int, default=0)
     args = parser.parse_args(argv)
 
     device = select_device(args.device)
