@@ -203,3 +203,18 @@ end_province fraction should rise with it. New instruments this cycle:
 DecisionSearcher pybind (single-decision NN-MCTS), bot:nnmcts web seat,
 eval --opponent mcts (scaffold; NOTE: very slow, both sides search — use
 small game counts), end-condition forensics columns.
+
+c5 gens 1-20: 0/200 vs engine and 0/205 vs BigMoney at every eval (c4 had
+69/200 at gen 15). Scripted-pipeline plumbing audited clean (records carry
+winner + scripted_nn_player; scripted seats never recorded; value targets
+per recorded player). Behavioral probe of gen-20 (policy argmax vs BM,
+local): buys ONLY Copper (25-29/game), value head pinned -0.9..-1.0
+through entire games — same probe shows c4 gen-15 playing estate/silver/
+duchy with a live value range. Diagnosis: pessimism collapse / learned
+helplessness. 20% unwinnable-from-the-start BigMoney games feed pure -1
+into the value head from gen 1; value flattens to "always losing", search
+gradients vanish (all leaves equally bad), policy degenerates, self-play
+data quality craters, collapse self-reinforces. The medicine was right,
+the dose was wrong: opponent injection needs a curriculum (start ~5% or
+introduce after the net can win SOME games; anneal up), not 20% from
+cold start.
