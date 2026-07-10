@@ -65,3 +65,11 @@ training) and mini-league (20% of self-play games vs a pool of the last 8
 accepted bests). Config: configs/run_gated.json → campaign2.json on-box.
 Hypothesis under test: gating pins the data-generating policy to monotonic
 external strength and prevents the gen-25 regression pattern.
+
+Campaign 2 addendum (2026-07-09): first launch hit a GATING DEADLOCK at cold
+start — with best.pt = random init, candidates train exclusively on random-play
+data, learn confidently-wrong priors, and lose gate matches to the random
+net's uniform-prior search (gate 33% gen 1 → 0% gen 5; verified NOT a scoring
+inversion via a known-strength gate match: campaign-1 gen-25 vs random = 20/0).
+Fix: gate_warmup_generations=8 — unconditional acceptance while the data pool
+bootstraps, strict gating after. Campaign relaunched.

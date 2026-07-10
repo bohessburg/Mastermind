@@ -95,6 +95,10 @@ class TrainConfig:
     gate_games: int = 0
     gate_sims: int = 64
     gate_threshold: float = 0.55
+    # Accept candidates unconditionally for the first N generations so the
+    # data pool bootstraps past random play before strict gating engages
+    # (strict gating from random init deadlocks — see docs/training-log.md).
+    gate_warmup_generations: int = 0
     # Historical-opponent games are only sampled when gating is enabled and
     # accepted best checkpoints exist in checkpoint_dir/league/.
     league_fraction: float = 0.0

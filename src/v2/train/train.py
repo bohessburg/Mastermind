@@ -26,6 +26,7 @@ if __package__ in (None, ""):
     sys.path.append(str(Path(__file__).resolve().parents[3]))
     from src.v2.train.config import TrainConfig, add_config_args, load_config, save_config
     from src.v2.train.gating import (
+        GateStats,
         archive_previous_best,
         gate_result,
         gating_enabled,
@@ -44,6 +45,7 @@ if __package__ in (None, ""):
 else:
     from .config import TrainConfig, add_config_args, load_config, save_config
     from .gating import (
+        GateStats,
         archive_previous_best,
         gate_result,
         gating_enabled,
@@ -491,9 +493,17 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
                 assert best_model is not None
                 assert best_generation is not None
                 assert best_path is not None
-                gate_stats = run_gate_match(model, best_model, config, generation, device)
-                result = gate_result(gate_stats, config.gate_threshold)
-                if result == "accepted":
+                if generation <= config.gate_warmup_generations:
+                    # Cold-start warmup: strict gating from a random-init best
+                    # deadlocks (candidates train on random-play data and lose
+                    # gate matches to uniform-prior search). Accept
+                    # unconditionally until the data pool is net-guided.
+                    gate_stats = GateStats(wins=0, losses=0, ties=0)
+                    result = "warmup_accepted"
+                else:
+                    gate_stats = run_gate_match(model, best_model, config, generation, device)
+                    result = gate_result(gate_stats, config.gate_threshold)
+                if result in ("accepted", "warmup_accepted"):
                     archive_previous_best(config, best_path, best_generation)
                     best_model.load_state_dict(model.state_dict())
                     best_model.eval()
