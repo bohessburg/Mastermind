@@ -4,12 +4,13 @@ from collections import Counter
 from pathlib import Path
 
 import numpy as np
+import pytest
 import torch
 
 import dominion_v2_py as dz
 
 from .config import load_config
-from .gating import SelfPlaySegment, plan_training_selfplay_segments
+from .gating import SelfPlaySegment, effective_scripted_fractions, plan_training_selfplay_segments
 from .inference_server import serialize_cpu_state_dict
 from .test_train_smoke import read_metrics, tiny_config
 from .train import build_objects, run_training
@@ -82,6 +83,42 @@ def test_scripted_segment_fractions_account_exactly_and_seat_swap() -> None:
     assert sum(segment.n_games for segment in segments if not segment.is_league and not segment.is_scripted) == 24
 
 
+def test_effective_scripted_fractions_interpolates_breakpoints() -> None:
+    schedule = {"bigmoney": [[10, 0.0], [11, 0.05], [25, 0.20]]}
+
+    assert effective_scripted_fractions(schedule, {}, 0) == {}
+    assert effective_scripted_fractions(schedule, {}, 10) == {}
+    assert effective_scripted_fractions(schedule, {}, 11) == {"bigmoney": 0.05}
+    assert effective_scripted_fractions(schedule, {}, 18) == pytest.approx({"bigmoney": 0.125})
+    assert effective_scripted_fractions(schedule, {}, 25) == {"bigmoney": 0.20}
+    assert effective_scripted_fractions(schedule, {}, 100) == {"bigmoney": 0.20}
+
+
+def test_effective_scripted_fractions_schedule_wins_over_constant() -> None:
+    fractions = effective_scripted_fractions(
+        {"bigmoney": [[1, 0.0], [2, 0.25]]},
+        {"bigmoney": 0.8, "engine": 0.1},
+        2,
+    )
+
+    assert fractions == {"bigmoney": 0.25, "engine": 0.1}
+
+
+@pytest.mark.parametrize(
+    "schedule",
+    [
+        {"bigmoney": []},
+        {"bigmoney": [[0, 0.0, 1.0]]},
+        {"bigmoney": [[-1, 0.0]]},
+        {"bigmoney": [[0, -0.1]]},
+        {"bigmoney": [[0, 0.0], [0, 0.1]]},
+    ],
+)
+def test_effective_scripted_fractions_rejects_invalid_breakpoints(schedule: dict[str, list]) -> None:
+    with pytest.raises(ValueError):
+        effective_scripted_fractions(schedule, {}, 1)
+
+
 def test_parallel_workers_collect_scripted_segments(tmp_path: Path) -> None:
     cfg = tiny_config(tmp_path, seed=5151, generations=1)
     cfg.parallel_workers = 2
@@ -142,6 +179,27 @@ def test_ungated_training_accepts_scripted_opponents_and_reports_metrics(tmp_pat
     assert 0 <= int(csv_row["scripted_wins"]) <= 2
 
 
+def test_ungated_training_uses_scripted_opponent_schedule_each_generation(tmp_path: Path) -> None:
+    cfg = tiny_config(tmp_path, seed=6262, generations=2)
+    cfg.model.hidden_sizes = [16]
+    cfg.selfplay.n_games = 2
+    cfg.selfplay.games_per_generation = 4
+    cfg.selfplay.sims_per_move = 2
+    cfg.selfplay.max_batch = 8
+    cfg.selfplay.max_recorded_moves = 64
+    cfg.selfplay.max_tree_nodes = 256
+    cfg.optim.batch_size = 8
+    cfg.optim.train_steps_per_generation = 1
+    cfg.replay.capacity = 512
+    cfg.scripted_opponent_schedule = {"bigmoney": [[1, 0.0], [2, 0.5]]}
+
+    result = run_training(cfg)
+
+    assert [row["scripted_games"] for row in result["metrics"]] == [0, 2]
+    assert "scripted_opponent_fractions" not in result["metrics"][0]
+    assert result["metrics"][1]["scripted_opponent_fractions"] == {"bigmoney": 0.5}
+
+
 def test_campaign5_config_loads_with_scripted_bigmoney_mix() -> None:
     config = load_config(Path(__file__).resolve().parents[3] / "configs" / "run_c5.json")
     assert config.gate_games == 0
@@ -149,3 +207,11 @@ def test_campaign5_config_loads_with_scripted_bigmoney_mix() -> None:
     assert config.model.hidden_sizes == [1536, 1536, 768]
     assert config.selfplay.sims_per_move == 256
     assert config.replay.capacity == 2_000_000
+
+
+def test_campaign6_config_loads_with_scripted_bigmoney_schedule() -> None:
+    config = load_config(Path(__file__).resolve().parents[3] / "configs" / "run_c6.json")
+    assert config.seed == 20260714
+    assert config.checkpoint_dir == "/workspace/checkpoints/campaign6"
+    assert config.scripted_opponents == {}
+    assert config.scripted_opponent_schedule == {"bigmoney": [[10, 0.0], [11, 0.05], [25, 0.20]]}

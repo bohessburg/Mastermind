@@ -335,6 +335,79 @@ def scripted_opponent_game_counts(total_games: int, opponents: dict[str, float])
     return counts
 
 
+def effective_scripted_fractions(
+    schedule: dict[str, list],
+    scripted_opponents: dict[str, float],
+    generation: int,
+) -> dict[str, float]:
+    """Resolve per-generation scripted-opponent fractions from breakpoints."""
+    if not isinstance(schedule, dict):
+        raise ValueError("scripted_opponent_schedule must be an object mapping kind to breakpoints")
+    if not isinstance(scripted_opponents, dict):
+        raise ValueError("scripted_opponents must be an object mapping kind to fraction")
+    if not isinstance(generation, int) or isinstance(generation, bool):
+        raise ValueError("generation must be an integer")
+
+    fractions: dict[str, float] = {}
+    for raw_kind, raw_fraction in sorted(scripted_opponents.items(), key=lambda item: str(item[0])):
+        if raw_kind in schedule:
+            continue
+        if not isinstance(raw_kind, str) or raw_kind not in SCRIPTED_OPPONENT_KINDS:
+            allowed = ", ".join(sorted(SCRIPTED_OPPONENT_KINDS))
+            raise ValueError(f"unknown scripted opponent {raw_kind!r}; expected one of {allowed}")
+        if not isinstance(raw_fraction, (int, float)) or isinstance(raw_fraction, bool):
+            raise ValueError(f"scripted opponent fraction for {raw_kind} must be numeric")
+        fraction = float(raw_fraction)
+        if not 0.0 <= fraction <= 1.0:
+            raise ValueError(f"scripted opponent fraction for {raw_kind} must be between zero and one")
+        if fraction > 0.0:
+            fractions[raw_kind] = fraction
+
+    for raw_kind, raw_breakpoints in sorted(schedule.items(), key=lambda item: str(item[0])):
+        if not isinstance(raw_kind, str) or raw_kind not in SCRIPTED_OPPONENT_KINDS:
+            allowed = ", ".join(sorted(SCRIPTED_OPPONENT_KINDS))
+            raise ValueError(f"unknown scripted opponent {raw_kind!r}; expected one of {allowed}")
+        if not isinstance(raw_breakpoints, list) or not raw_breakpoints:
+            raise ValueError(f"scripted opponent schedule for {raw_kind} must be a non-empty list")
+
+        breakpoints: list[tuple[int, float]] = []
+        previous_generation: int | None = None
+        for raw_breakpoint in raw_breakpoints:
+            if not isinstance(raw_breakpoint, list) or len(raw_breakpoint) != 2:
+                raise ValueError(f"scripted opponent schedule for {raw_kind} must contain [generation, fraction] pairs")
+            raw_generation, raw_fraction = raw_breakpoint
+            if not isinstance(raw_generation, int) or isinstance(raw_generation, bool) or raw_generation < 0:
+                raise ValueError(
+                    f"scripted opponent schedule generation for {raw_kind} must be an integer at least zero"
+                )
+            if not isinstance(raw_fraction, (int, float)) or isinstance(raw_fraction, bool):
+                raise ValueError(f"scripted opponent schedule fraction for {raw_kind} must be numeric")
+            fraction = float(raw_fraction)
+            if not 0.0 <= fraction <= 1.0:
+                raise ValueError(f"scripted opponent schedule fraction for {raw_kind} must be between zero and one")
+            if previous_generation is not None and raw_generation <= previous_generation:
+                raise ValueError(f"scripted opponent schedule generations for {raw_kind} must be strictly increasing")
+            breakpoints.append((raw_generation, fraction))
+            previous_generation = raw_generation
+
+        if generation <= breakpoints[0][0]:
+            effective_fraction = breakpoints[0][1]
+        elif generation >= breakpoints[-1][0]:
+            effective_fraction = breakpoints[-1][1]
+        else:
+            for (start_generation, start_fraction), (end_generation, end_fraction) in zip(
+                breakpoints, breakpoints[1:]
+            ):
+                if generation <= end_generation:
+                    progress = (generation - start_generation) / (end_generation - start_generation)
+                    effective_fraction = start_fraction + (end_fraction - start_fraction) * progress
+                    break
+        if effective_fraction > 0.0:
+            fractions[raw_kind] = effective_fraction
+
+    return fractions
+
+
 def plan_training_selfplay_segments(
     total_games: int,
     league_fraction: float,
