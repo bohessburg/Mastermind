@@ -48,6 +48,19 @@ class LeagueGame:
     best_player: int
 
 
+@dataclass(frozen=True)
+class SelfPlaySegment:
+    """A contiguous pool work item referencing deduplicated model-table ids."""
+
+    n_games: int
+    seat0_model_id: int
+    seat1_model_id: int
+
+    @property
+    def is_league(self) -> bool:
+        return self.seat0_model_id != self.seat1_model_id
+
+
 def gating_enabled(config: TrainConfig) -> bool:
     return int(config.gate_games) > 0
 
@@ -182,13 +195,72 @@ def sample_league_games(
     league_games = min(total_games, int(round(total_games * float(fraction))))
     rng = random.Random(int(seed))
     indices = sorted(rng.sample(range(total_games), league_games))
-    first_best_player = rng.randrange(2)
-    for order, index in enumerate(indices):
+    for index in indices:
         plan[index] = LeagueGame(
             opponent_index=rng.randrange(pool_size),
-            best_player=(first_best_player + order) % 2,
+            # Self-play always places current best at seat zero and the
+            # sampled archived best at seat one. Gate matches separately
+            # seat-swap candidate and best for unbiased promotion decisions.
+            best_player=0,
         )
     return plan
+
+
+def plan_selfplay_segments(
+    total_games: int,
+    fraction: float,
+    pool_size: int,
+    seed: int,
+) -> list[SelfPlaySegment]:
+    """Collapse a deterministic league draw into deduplicated model segments.
+
+    Model id zero is always the current best. Historical opponent ids are one
+    plus their sampled-pool index. Grouping equal pairs means workers receive
+    each model state once per generation instead of one payload per game.
+    """
+    counts: dict[tuple[int, int], int] = {}
+    for game in sample_league_games(total_games, fraction, pool_size, seed):
+        pair = (0, 0) if game is None else (0, int(game.opponent_index) + 1)
+        counts[pair] = counts.get(pair, 0) + 1
+    return [
+        SelfPlaySegment(n_games=count, seat0_model_id=pair[0], seat1_model_id=pair[1])
+        for pair, count in sorted(counts.items())
+        if count > 0
+    ]
+
+
+def compact_selfplay_segments(
+    segments: list[SelfPlaySegment],
+) -> tuple[list[SelfPlaySegment], list[int]]:
+    """Make a segment plan's historical model ids a dense worker model table.
+
+    ``plan_selfplay_segments`` uses ``1 + opponent_index`` so its draw can be
+    inspected independently of checkpoint paths.  A particular generation
+    rarely uses every retained historical checkpoint, however.  Compacting
+    here lets the parent broadcast only the referenced historical weights;
+    returned indices select those weights from ``league_checkpoint_paths``.
+    Model id zero remains the current best in all plans.
+    """
+    historical_ids = sorted(
+        {
+            model_id
+            for segment in segments
+            for model_id in (segment.seat0_model_id, segment.seat1_model_id)
+            if model_id != 0
+        }
+    )
+    remap = {0: 0, **{model_id: index + 1 for index, model_id in enumerate(historical_ids)}}
+    return (
+        [
+            SelfPlaySegment(
+                n_games=segment.n_games,
+                seat0_model_id=remap[segment.seat0_model_id],
+                seat1_model_id=remap[segment.seat1_model_id],
+            )
+            for segment in segments
+        ],
+        [model_id - 1 for model_id in historical_ids],
+    )
 
 
 def gate_match_seed(config: TrainConfig, generation: int) -> int:

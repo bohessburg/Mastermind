@@ -10,16 +10,21 @@ import dominion_v2_py as dz
 
 from .gating import (
     GateStats,
+    SelfPlaySegment,
     best_checkpoint_path,
+    compact_selfplay_segments,
     gate_result,
     initialize_best_checkpoint,
     load_best_checkpoint,
+    plan_selfplay_segments,
     sample_league_games,
     save_best_checkpoint,
 )
+from .inference_server import serialize_cpu_state_dict
 from .selfplay import make_runner_config, route_leaf_evaluations
 from .test_train_smoke import state_tensors, tiny_config
 from .train import build_objects, load_checkpoint, run_training, save_checkpoint
+from .workers import ParallelSelfPlayPool
 
 
 def test_gate_accept_reject_uses_decisive_win_rate() -> None:
@@ -37,7 +42,67 @@ def test_league_sampling_is_exact_uniform_and_seeded() -> None:
     counts = Counter(game.opponent_index for game in sampled)
     assert set(counts) == {0, 1, 2, 3}
     assert max(counts.values()) - min(counts.values()) < 40
-    assert abs(sum(game.best_player == 0 for game in sampled) - 100) <= 1
+    # League self-play is deliberately routed current-best as player zero and
+    # the archived opponent as player one. Gate matches seat-swap separately.
+    assert all(game.best_player == 0 for game in sampled)
+
+
+def test_league_mix_segments_honor_fraction_and_compact_model_table() -> None:
+    raw_segments = plan_selfplay_segments(1000, 0.2, 4, seed=9876)
+    assert sum(segment.n_games for segment in raw_segments) == 1000
+    assert sum(segment.n_games for segment in raw_segments if segment.is_league) == 200
+    assert all(segment.seat0_model_id == 0 for segment in raw_segments)
+
+    segments, history_indices = compact_selfplay_segments(raw_segments)
+    assert sum(segment.n_games for segment in segments) == 1000
+    assert sum(segment.n_games for segment in segments if segment.is_league) == 200
+    assert history_indices == [0, 1, 2, 3]
+    assert {segment.seat1_model_id for segment in segments if segment.is_league} == {1, 2, 3, 4}
+
+
+def test_parallel_pool_routes_each_seat_to_its_model_table_entry(tmp_path: Path) -> None:
+    """The pool must retain per-seat routing when worker processes are used."""
+    cfg = tiny_config(tmp_path, seed=7171, generations=1)
+    cfg.parallel_workers = 2
+    cfg.worker_device = "cpu"
+    cfg.model.hidden_sizes = [16]
+    cfg.selfplay.n_games = 1
+    cfg.selfplay.games_per_generation = 2
+    cfg.selfplay.sims_per_move = 2
+    cfg.selfplay.max_batch = 4
+    cfg.selfplay.max_recorded_moves = 64
+    cfg.selfplay.max_tree_nodes = 256
+    cfg.replay.capacity = 512
+    best, _, replay = build_objects(cfg, torch.device("cpu"))
+    historical, _, _ = build_objects(cfg, torch.device("cpu"))
+    # Make the two serialized model tables observably distinct. The worker's
+    # routing audit is incremented next to route_leaf_evaluations, so it proves
+    # every collected leaf selected the matching per-seat table entry.
+    with torch.no_grad():
+        next(historical.parameters()).add_(0.125)
+
+    pool = ParallelSelfPlayPool(cfg)
+    try:
+        result = pool.generate(
+            best,
+            replay,
+            generation=1,
+            segments=[SelfPlaySegment(2, 0, 1)],
+            model_state_payloads=[
+                serialize_cpu_state_dict(best),
+                serialize_cpu_state_dict(historical),
+            ],
+        )
+    finally:
+        pool.close()
+
+    audit = result.seat_model_evals or {}
+    assert result.stats.games == 2
+    assert result.league_games == 2
+    assert audit.get((0, 0), 0) > 0
+    assert audit.get((1, 1), 0) > 0
+    assert audit.get((0, 1), 0) == 0
+    assert audit.get((1, 0), 0) == 0
 
 
 class _TaggedEvaluator(torch.nn.Module):
@@ -166,7 +231,7 @@ def test_gated_training_resume_keeps_rejected_best(monkeypatch, tmp_path: Path) 
         torch.testing.assert_close(before[key], after[key], rtol=0.0, atol=0.0)
 
 
-def test_parallel_cpu_league_uses_archived_best(monkeypatch, tmp_path: Path) -> None:
+def test_parallel_cpu_gated_pool_uses_archived_best_after_warmup(monkeypatch, tmp_path: Path) -> None:
     from . import train as train_module
 
     cfg = tiny_config(tmp_path, seed=7070, generations=2)
@@ -184,12 +249,23 @@ def test_parallel_cpu_league_uses_archived_best(monkeypatch, tmp_path: Path) -> 
     cfg.replay.capacity = 512
     cfg.gate_games = 2
     cfg.gate_sims = 1
+    cfg.gate_warmup_generations = 1
     cfg.league_fraction = 0.5
     cfg.league_pool_size = 2
-    outcomes = iter((GateStats(2, 0, 0), GateStats(0, 2, 0)))
-    monkeypatch.setattr(train_module, "run_gate_match", lambda *_args, **_kwargs: next(outcomes))
+    real_gate_match = train_module.run_gate_match
+    gate_calls: list[int] = []
+
+    def counted_gate_match(*args, **kwargs):
+        gate_calls.append(1)
+        return real_gate_match(*args, **kwargs)
+
+    monkeypatch.setattr(train_module, "run_gate_match", counted_gate_match)
 
     result = run_training(cfg)
-    assert [row["gate_result"] for row in result["metrics"]] == ["accepted", "rejected"]
+    assert result["metrics"][0]["gate_result"] == "warmup_accepted"
+    assert result["metrics"][1]["gate_result"] in {"accepted", "rejected"}
+    assert len(gate_calls) == 1
     assert (Path(cfg.checkpoint_dir) / "league" / "best_0000.pt").exists()
     assert [row["games"] for row in result["metrics"]] == [2, 2]
+    assert [row["league_games"] for row in result["metrics"]] == [0, 1]
+    assert all(float(row["aggregate_games_per_hour"]) > 0.0 for row in result["metrics"])

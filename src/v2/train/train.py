@@ -33,9 +33,10 @@ if __package__ in (None, ""):
         initialize_best_checkpoint,
         league_checkpoint_paths,
         load_best_checkpoint,
+        compact_selfplay_segments,
+        plan_selfplay_segments,
         run_gate_match,
         save_best_checkpoint,
-        sample_league_games,
     )
     from src.v2.train.inference_server import InferenceServer, serialize_cpu_state_dict
     from src.v2.train.model import DominionNet, count_parameters, masked_policy_loss
@@ -52,9 +53,10 @@ else:
         initialize_best_checkpoint,
         league_checkpoint_paths,
         load_best_checkpoint,
+        compact_selfplay_segments,
+        plan_selfplay_segments,
         run_gate_match,
         save_best_checkpoint,
-        sample_league_games,
     )
     from .inference_server import InferenceServer, serialize_cpu_state_dict
     from .model import DominionNet, count_parameters, masked_policy_loss
@@ -278,6 +280,7 @@ def append_metrics(path: str | Path, row: dict[str, Any]) -> None:
         "gate_result",
         "gate_win_pct",
         "best_generation",
+        "league_games",
     ]
     with out.open("a", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
@@ -296,39 +299,26 @@ def _add_stats(total: SelfPlayStats, update: SelfPlayStats) -> None:
     total.plumbing_time += update.plumbing_time
 
 
-def _league_tasks(assignments: list[tuple[int, int] | None]) -> dict[tuple[int | None, int], int]:
-    tasks: dict[tuple[int | None, int], int] = {}
-    for assignment in assignments:
-        key = (None, 0) if assignment is None else (int(assignment[0]), int(assignment[1]))
-        tasks[key] = tasks.get(key, 0) + 1
-    return tasks
-
-
-def _run_league_single_pipeline(
-    best_model: torch.nn.Module,
-    opponent_models: list[torch.nn.Module],
-    assignments: list[tuple[int, int] | None],
+def _run_segmented_single_pipeline(
+    model_table: list[torch.nn.Module],
+    segments: list[Any],
     replay: ReplayBuffer,
     config: TrainConfig,
     generation: int,
     device: torch.device,
 ) -> SelfPlayStats:
-    """Exact per-game league plan for the non-worker training path."""
+    """Exact segment fallback for one-worker gated test and CPU runs."""
     total = SelfPlayStats()
     base_seed = int(config.seed) + (int(generation) * 0x9E37)
-    for task_index, ((opponent_index, best_player), count) in enumerate(_league_tasks(assignments).items()):
-        if opponent_index is None:
-            seat_models = (best_model, best_model)
-        else:
-            opponent = opponent_models[opponent_index]
-            seat_models = (best_model, opponent) if best_player == 0 else (opponent, best_model)
+    for task_index, segment in enumerate(segments):
+        seat_models = (model_table[segment.seat0_model_id], model_table[segment.seat1_model_id])
         stats = run_routed_self_play_generation(
             seat_models,
             replay,
             config.selfplay,
             seed=base_seed ^ (task_index * 0x10001),
             device=device,
-            target_games=count,
+            target_games=segment.n_games,
         )
         _add_stats(total, stats)
     return total
@@ -360,6 +350,7 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
         config.gate_threshold = requested.gate_threshold
         config.league_fraction = requested.league_fraction
         config.league_pool_size = requested.league_pool_size
+        config.gate_warmup_generations = requested.gate_warmup_generations
         if config.device == "auto":
             config.device = device.type
     else:
@@ -425,26 +416,23 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
                 assert best_model is not None
                 assert best_generation is not None
                 assert best_path is not None
-                league_paths = league_checkpoint_paths(config)
-                sampled = sample_league_games(
+                all_league_paths = league_checkpoint_paths(config)
+                sampled_segments = plan_selfplay_segments(
                     config.selfplay.games_per_generation,
                     config.league_fraction,
-                    len(league_paths),
+                    len(all_league_paths),
                     config.seed ^ (generation * 0xC0FFEE),
                 )
-                assignments = [
-                    None if game is None else (game.opponent_index, game.best_player)
-                    for game in sampled
-                ]
-                has_league = any(assignment is not None for assignment in assignments)
-                if has_league and inference_server is not None:
+                segments, history_indices = compact_selfplay_segments(sampled_segments)
+                league_paths = [all_league_paths[index] for index in history_indices]
+                planned_league_games = sum(segment.n_games for segment in segments if segment.is_league)
+                if planned_league_games and inference_server is not None:
                     raise ValueError("mini-league self-play requires worker_device='cpu' or 'cuda', not 'server'")
                 if pool is None:
-                    opponent_models = [load_best_checkpoint(config, device, path)[0] for path in league_paths]
-                    sp_stats = _run_league_single_pipeline(
-                        best_model,
-                        opponent_models,
-                        assignments,
+                    model_table = [best_model, *[load_best_checkpoint(config, device, path)[0] for path in league_paths]]
+                    sp_stats = _run_segmented_single_pipeline(
+                        model_table,
+                        segments,
                         replay,
                         config,
                         generation,
@@ -454,19 +442,22 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
                 else:
                     if inference_server is not None:
                         inference_server.sync_weights(best_model, generation)
-                    payloads = [
-                        serialize_cpu_state_dict(load_best_checkpoint(config, device, path)[0])
-                        for path in league_paths
-                    ]
+                    payloads = [] if inference_server is not None else [serialize_cpu_state_dict(best_model)]
+                    if inference_server is None:
+                        payloads.extend(
+                            serialize_cpu_state_dict(load_best_checkpoint(config, device, path)[0])
+                            for path in league_paths
+                        )
                     parallel_result = pool.generate(
                         best_model,
                         replay,
                         generation,
-                        league_assignments=assignments if has_league else None,
-                        league_state_payloads=payloads,
+                        segments=segments,
+                        model_state_payloads=payloads,
                     )
                     sp_stats = parallel_result.stats
                     aggregate_games_per_hour = parallel_result.aggregate_games_per_hour
+                    planned_league_games = parallel_result.league_games
             server_metrics = (
                 inference_server.collect_metrics(generation)
                 if inference_server is not None
@@ -578,6 +569,7 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
                 "wall_time": time.perf_counter() - gen_start,
                 "checkpoint": str(path),
                 **gate_row,
+                "league_games": planned_league_games if use_gating else 0,
             }
             row.update(eval_row)
             append_metrics(config.metrics_csv, row)
