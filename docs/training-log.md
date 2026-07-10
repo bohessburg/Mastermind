@@ -146,3 +146,15 @@ reference; (2) pile-out was learned honestly from self-play (games between
 money-heavy nets end by piles) — it is a real strategy, just a local
 optimum; (3) win-conditioned ending split would sharpen this further
 (current columns count all games).
+
+Campaign 4 (c1 recipe + 256 sims + [1536,1536,768] net, launched 2026-07-10):
+evals 0(1) → 0(5) → 2.5%(10) → **35.2%(15) — new all-time best, above c1's
+full-campaign peak at gen 15.** Throughput ~18-20K games/hr (bigger net
+batches efficiently; ~1.9x params nearly free on the 5090).
+BUT gen-15 forensics (local, 100 games): 38% win rate with **81% pile-out
+endings** (c1 gen-25 was 66%). Capacity+search accelerated learning WITHIN
+the pile-out local optimum, not out of it. Key readouts for rest of run:
+end_province trend, and eval vs the scaffold-MCTS opponent (defends piles).
+Caveat now on record: the 50% EngineBot gate could be passed by a perfected
+pile-racer; treat any gate crossing as provisional pending forensics +
+scaffold-opponent confirmation.
