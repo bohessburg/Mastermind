@@ -32,6 +32,7 @@ struct MctsConfig {
     float rollout_epsilon = 0.10F;
     MctsPriorFn prior_fn = nullptr;
     void* prior_user = nullptr;
+    bool prune_treasure_plays = false;
 };
 
 struct MctsNode {
@@ -116,6 +117,10 @@ private:
 };
 
 [[nodiscard]] float mcts_terminal_value(const GameState& state, PlayerId player) noexcept;
+[[nodiscard]] ActionMask mcts_filter_treasure_plays(
+    const GameState& state,
+    const ActionMask& legal) noexcept;
+[[nodiscard]] Action mcts_canonical_treasure_play(const ActionMask& legal) noexcept;
 [[nodiscard]] Action mcts_choose(
     const GameState& state,
     PlayerId perspective,

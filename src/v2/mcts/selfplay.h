@@ -40,6 +40,8 @@ struct SelfPlayConfig {
     std::uint32_t max_tree_nodes = 4096;
     SelfPlayScriptedBotKind scripted_bot = SelfPlayScriptedBotKind::None;
     PlayerId scripted_nn_player = 0U;
+    bool auto_play_treasures = false;
+    bool prune_treasure_plays = false;
 };
 
 struct SelfPlayRecord {
@@ -82,6 +84,7 @@ private:
 
     void reset_game(std::uint32_t index) noexcept;
     void start_search(GameSlot& game) noexcept;
+    void auto_play_treasures(GameSlot& game) noexcept;
     void drive_scripted(GameSlot& game) noexcept;
     [[nodiscard]] bool game_has_pending(std::uint32_t index) const noexcept;
     void maybe_finish_move(GameSlot& game) noexcept;

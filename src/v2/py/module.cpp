@@ -84,6 +84,14 @@ struct PyGame {
     return turn_player_id(state);
 }
 
+[[nodiscard]] int action_mask_count(const ActionMask& legal) noexcept {
+    int count = 0;
+    for (Action action = 0; action < ACTION_SPACE_SIZE; ++action) {
+        count += legal.test(action) ? 1 : 0;
+    }
+    return count;
+}
+
 [[nodiscard]] int pile_count(const Pile& pile) noexcept {
     return pile.mixed_len > 0U ? static_cast<int>(pile.mixed_len) : static_cast<int>(pile.count);
 }
@@ -550,6 +558,10 @@ struct PyDecisionSearcher {
         const float c_puct = py::cast<float>(config["c_puct"]);
         const std::uint32_t determinizations = py::cast<std::uint32_t>(config["determinizations"]);
         const std::uint64_t seed = py::cast<std::uint64_t>(config["seed"]);
+        const bool auto_play_treasures = config.contains("auto_play_treasures")
+            && py::cast<bool>(config["auto_play_treasures"]);
+        const bool prune_treasure_plays = config.contains("prune_treasure_plays")
+            && py::cast<bool>(config["prune_treasure_plays"]);
         if (sims == 0U) {
             throw std::invalid_argument("DecisionSearcher config sims must be positive");
         }
@@ -562,6 +574,16 @@ struct PyDecisionSearcher {
 
         perspective_ = static_cast<PlayerId>(perspective_player);
         root_legal_count_ = Game::legal_actions(root_, root_legal_);
+        forced_action_ = auto_play_treasures
+            ? mcts_canonical_treasure_play(mcts_filter_treasure_plays(root_, root_legal_))
+            : A_PASS;
+        if (forced_action_ != A_PASS) {
+            return;
+        }
+        if (prune_treasure_plays) {
+            root_legal_ = mcts_filter_treasure_plays(root_, root_legal_);
+            root_legal_count_ = action_mask_count(root_legal_);
+        }
 
         MctsConfig mcts_config{};
         mcts_config.sims_per_move = sims;
@@ -570,6 +592,7 @@ struct PyDecisionSearcher {
         mcts_config.max_tree_nodes = 4096U;
         mcts_config.rollout_policy = MctsRolloutPolicy::External;
         mcts_config.rollout_seed = seed;
+        mcts_config.prune_treasure_plays = prune_treasure_plays;
 
         const std::uint32_t base_sims = sims / determinizations;
         const std::uint32_t extra_sims = sims % determinizations;
@@ -649,6 +672,9 @@ struct PyDecisionSearcher {
     }
 
     [[nodiscard]] bool done() const noexcept {
+        if (forced_action_ != A_PASS) {
+            return true;
+        }
         if (!pending_worlds_.empty()) {
             return false;
         }
@@ -663,6 +689,9 @@ struct PyDecisionSearcher {
     [[nodiscard]] Action best_action() const noexcept {
         if (!done()) {
             return A_PASS;
+        }
+        if (forced_action_ != A_PASS) {
+            return forced_action_;
         }
 
         const int root_count = root_legal_count_;
@@ -761,6 +790,7 @@ private:
     PlayerId perspective_ = 0U;
     ActionMask root_legal_{};
     int root_legal_count_ = 0;
+    Action forced_action_ = A_PASS;
     std::vector<std::unique_ptr<World>> worlds_;
     std::vector<std::uint32_t> pending_worlds_;
 };
@@ -1278,7 +1308,9 @@ PYBIND11_MODULE(dominion_v2_py, module) {
             std::uint16_t max_recorded_moves,
             std::uint32_t max_tree_nodes,
             SelfPlayScriptedBotKind scripted_bot,
-            PlayerId scripted_nn_player) {
+            PlayerId scripted_nn_player,
+            bool auto_play_treasures,
+            bool prune_treasure_plays) {
             SelfPlayConfig config{};
             config.n_games = n_games;
             config.sims_per_move = sims_per_move;
@@ -1293,6 +1325,8 @@ PYBIND11_MODULE(dominion_v2_py, module) {
             config.max_tree_nodes = max_tree_nodes;
             config.scripted_bot = scripted_bot;
             config.scripted_nn_player = scripted_nn_player;
+            config.auto_play_treasures = auto_play_treasures;
+            config.prune_treasure_plays = prune_treasure_plays;
             if (!kingdom.is_none()) {
                 PySetup setup(2, kingdom, false);
                 config.fixed_setup = setup.setup;
@@ -1312,7 +1346,9 @@ PYBIND11_MODULE(dominion_v2_py, module) {
             py::arg("max_recorded_moves") = 512,
             py::arg("max_tree_nodes") = 4096,
             py::arg("scripted_bot") = SelfPlayScriptedBotKind::None,
-            py::arg("scripted_nn_player") = 0U)
+            py::arg("scripted_nn_player") = 0U,
+            py::arg("auto_play_treasures") = false,
+            py::arg("prune_treasure_plays") = false)
         .def_readwrite("n_games", &SelfPlayConfig::n_games)
         .def_readwrite("sims_per_move", &SelfPlayConfig::sims_per_move)
         .def_readwrite("c_puct", &SelfPlayConfig::c_puct)
@@ -1325,7 +1361,9 @@ PYBIND11_MODULE(dominion_v2_py, module) {
         .def_readwrite("max_recorded_moves", &SelfPlayConfig::max_recorded_moves)
         .def_readwrite("max_tree_nodes", &SelfPlayConfig::max_tree_nodes)
         .def_readwrite("scripted_bot", &SelfPlayConfig::scripted_bot)
-        .def_readwrite("scripted_nn_player", &SelfPlayConfig::scripted_nn_player);
+        .def_readwrite("scripted_nn_player", &SelfPlayConfig::scripted_nn_player)
+        .def_readwrite("auto_play_treasures", &SelfPlayConfig::auto_play_treasures)
+        .def_readwrite("prune_treasure_plays", &SelfPlayConfig::prune_treasure_plays);
 
     py::class_<SelfPlayRunner>(module, "SelfPlayRunner")
         .def(py::init<const SelfPlayConfig&>(), py::arg("config"))
@@ -1355,7 +1393,9 @@ PYBIND11_MODULE(dominion_v2_py, module) {
             py::object kingdom,
             std::uint32_t max_tree_nodes,
             EvalScriptedBotKind opponent,
-            bool retain_finished_games) {
+            bool retain_finished_games,
+            bool auto_play_treasures,
+            bool prune_treasure_plays) {
             EvalRunnerConfig config{};
             config.n_games = n_games;
             config.sims_per_move = sims_per_move;
@@ -1367,6 +1407,8 @@ PYBIND11_MODULE(dominion_v2_py, module) {
             config.max_tree_nodes = max_tree_nodes;
             config.opponent = opponent;
             config.retain_finished_games = retain_finished_games;
+            config.auto_play_treasures = auto_play_treasures;
+            config.prune_treasure_plays = prune_treasure_plays;
             if (!kingdom.is_none()) {
                 PySetup setup(2, kingdom, false);
                 config.fixed_setup = setup.setup;
@@ -1383,7 +1425,9 @@ PYBIND11_MODULE(dominion_v2_py, module) {
             py::arg("kingdom") = py::none(),
             py::arg("max_tree_nodes") = 4096,
             py::arg("opponent") = EvalScriptedBotKind::Engine,
-            py::arg("retain_finished_games") = false)
+            py::arg("retain_finished_games") = false,
+            py::arg("auto_play_treasures") = false,
+            py::arg("prune_treasure_plays") = false)
         .def_readwrite("n_games", &EvalRunnerConfig::n_games)
         .def_readwrite("sims_per_move", &EvalRunnerConfig::sims_per_move)
         .def_readwrite("c_puct", &EvalRunnerConfig::c_puct)
@@ -1393,7 +1437,9 @@ PYBIND11_MODULE(dominion_v2_py, module) {
         .def_readwrite("kingdom_mode", &EvalRunnerConfig::kingdom_mode)
         .def_readwrite("max_tree_nodes", &EvalRunnerConfig::max_tree_nodes)
         .def_readwrite("opponent", &EvalRunnerConfig::opponent)
-        .def_readwrite("retain_finished_games", &EvalRunnerConfig::retain_finished_games);
+        .def_readwrite("retain_finished_games", &EvalRunnerConfig::retain_finished_games)
+        .def_readwrite("auto_play_treasures", &EvalRunnerConfig::auto_play_treasures)
+        .def_readwrite("prune_treasure_plays", &EvalRunnerConfig::prune_treasure_plays);
 
     py::class_<EvalRunner>(module, "EvalRunner")
         .def(py::init<const EvalRunnerConfig&>(), py::arg("config"))

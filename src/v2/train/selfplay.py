@@ -94,6 +94,8 @@ def make_runner_config(
         max_tree_nodes=config.max_tree_nodes,
         scripted_bot=_scripted_bot_kind(scripted_kind),
         scripted_nn_player=int(scripted_nn_player),
+        auto_play_treasures=config.auto_play_treasures,
+        prune_treasure_plays=config.prune_treasure_plays,
     )
 
 

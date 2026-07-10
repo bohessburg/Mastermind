@@ -781,6 +781,7 @@ EvalRunner::EvalRunner(const EvalRunnerConfig& config)
     mcts_config_.determinizations = 1U;
     mcts_config_.max_tree_nodes = config_.max_tree_nodes == 0U ? 4096U : config_.max_tree_nodes;
     mcts_config_.rollout_policy = MctsRolloutPolicy::External;
+    mcts_config_.prune_treasure_plays = config_.prune_treasure_plays;
 
     scaffold_mcts_config_.sims_per_move = config_.sims_per_move;
     scaffold_mcts_config_.c_puct = config_.c_puct;
@@ -818,6 +819,17 @@ std::uint32_t EvalRunner::collect_leaves(std::uint32_t max_batch) noexcept {
         }
         drive_scripted(game);
         if (game.pending != 0U) {
+            ++idle;
+            continue;
+        }
+        if (decision_player(game.state) != game.nn_player) {
+            ++idle;
+            continue;
+        }
+        if (!game.search_active) {
+            auto_play_treasures(game);
+        }
+        if (!game.active) {
             ++idle;
             continue;
         }
@@ -977,6 +989,29 @@ void EvalRunner::start_search(GameSlot& game) noexcept {
     game.sims_completed = 0;
     game.pending = 0;
     game.search_active = true;
+}
+
+void EvalRunner::auto_play_treasures(GameSlot& game) noexcept {
+    if (!config_.auto_play_treasures) {
+        return;
+    }
+
+    std::uint16_t guard = 0;
+    while (game.state.phase != static_cast<std::uint8_t>(Phase::Over) && guard < 512U) {
+        ActionMask legal{};
+        (void)Game::legal_actions(game.state, legal);
+        const Action action = mcts_canonical_treasure_play(
+            mcts_filter_treasure_plays(game.state, legal));
+        if (action == A_PASS) {
+            return;
+        }
+        const bool done = Game::step(game.state, action);
+        ++guard;
+        if (done || game.state.phase == static_cast<std::uint8_t>(Phase::Over)) {
+            finish_game(game);
+            return;
+        }
+    }
 }
 
 void EvalRunner::drive_scripted(GameSlot& game) noexcept {

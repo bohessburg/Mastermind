@@ -213,6 +213,7 @@ SelfPlayRunner::SelfPlayRunner(const SelfPlayConfig& config)
     mcts_config_.determinizations = 1U;
     mcts_config_.max_tree_nodes = config_.max_tree_nodes == 0U ? 4096U : config_.max_tree_nodes;
     mcts_config_.rollout_policy = MctsRolloutPolicy::External;
+    mcts_config_.prune_treasure_plays = config_.prune_treasure_plays;
 
     finished_.reserve(config_.n_games);
     for (std::uint32_t i = 0; i < config_.n_games; ++i) {
@@ -256,6 +257,21 @@ std::uint32_t SelfPlayRunner::collect_leaves(std::uint32_t max_batch) noexcept {
         }
         maybe_finish_move(game);
         if (game.pending != 0U) {
+            ++idle;
+            continue;
+        }
+        if (scripted_mode(config_) && decision_player(game.state) != game.nn_player) {
+            ++idle;
+            continue;
+        }
+        if (!game.search_active) {
+            auto_play_treasures(game);
+        }
+        if (game.pending != 0U) {
+            ++idle;
+            continue;
+        }
+        if (scripted_mode(config_) && decision_player(game.state) != game.nn_player) {
             ++idle;
             continue;
         }
@@ -395,6 +411,29 @@ void SelfPlayRunner::start_search(GameSlot& game) noexcept {
     game.sims_completed = 0;
     game.pending = 0;
     game.search_active = true;
+}
+
+void SelfPlayRunner::auto_play_treasures(GameSlot& game) noexcept {
+    if (!config_.auto_play_treasures) {
+        return;
+    }
+
+    std::uint16_t guard = 0;
+    while (game.state.phase != static_cast<std::uint8_t>(Phase::Over) && guard < 512U) {
+        ActionMask legal{};
+        (void)Game::legal_actions(game.state, legal);
+        const Action action = mcts_canonical_treasure_play(
+            mcts_filter_treasure_plays(game.state, legal));
+        if (action == A_PASS) {
+            return;
+        }
+        const bool done = Game::step(game.state, action);
+        ++guard;
+        if (done || game.state.phase == static_cast<std::uint8_t>(Phase::Over)) {
+            finish_game(game);
+            return;
+        }
+    }
 }
 
 void SelfPlayRunner::drive_scripted(GameSlot& game) noexcept {

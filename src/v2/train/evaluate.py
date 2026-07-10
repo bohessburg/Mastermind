@@ -131,6 +131,8 @@ def make_eval_runner_config(
     c_puct: float,
     fixed_kingdom: list[str],
     max_tree_nodes: int,
+    auto_play_treasures: bool = False,
+    prune_treasure_plays: bool = False,
 ):
     parallel_games = max(1, min(int(n_games), int(games)))
     return dz.EvalRunnerConfig(
@@ -145,6 +147,8 @@ def make_eval_runner_config(
         max_tree_nodes=int(max_tree_nodes),
         opponent=_opponent_kind(opponent),
         retain_finished_games=True,
+        auto_play_treasures=bool(auto_play_treasures),
+        prune_treasure_plays=bool(prune_treasure_plays),
     )
 
 
@@ -162,6 +166,8 @@ def evaluate_model(
     c_puct: float = 1.25,
     fixed_kingdom: list[str] | None = None,
     max_tree_nodes: int = 4096,
+    auto_play_treasures: bool = False,
+    prune_treasure_plays: bool = False,
 ) -> EvalStats:
     if fixed_kingdom is None:
         fixed_kingdom = [
@@ -188,6 +194,8 @@ def evaluate_model(
             c_puct,
             fixed_kingdom,
             max_tree_nodes,
+            auto_play_treasures,
+            prune_treasure_plays,
         )
     )
     model.eval()
@@ -251,6 +259,8 @@ def evaluate_checkpoint(
     device_name: str = "auto",
     n_games: int = 64,
     max_batch: int = 512,
+    auto_play_treasures: bool = False,
+    prune_treasure_plays: bool = False,
 ) -> EvalStats:
     device = select_device(device_name)
     seed_everything(seed, deterministic=device.type == "cpu")
@@ -268,6 +278,8 @@ def evaluate_checkpoint(
         c_puct=cfg.selfplay.c_puct,
         fixed_kingdom=cfg.selfplay.fixed_kingdom,
         max_tree_nodes=cfg.selfplay.max_tree_nodes,
+        auto_play_treasures=auto_play_treasures,
+        prune_treasure_plays=prune_treasure_plays,
     )
 
 
@@ -307,6 +319,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--device", default="auto")
     parser.add_argument("--n-games", type=int, default=64)
     parser.add_argument("--max-batch", type=int, default=512)
+    parser.add_argument("--auto-play-treasures", action="store_true")
+    parser.add_argument("--prune-treasure-plays", action="store_true")
     parser.add_argument("--ladder", action="store_true")
     parser.add_argument("--ladder-random-games", type=int, default=40)
     parser.add_argument("--ladder-bigmoney-games", type=int, default=100)
@@ -348,6 +362,8 @@ def main(argv: list[str] | None = None) -> int:
                     c_puct=cfg.selfplay.c_puct,
                     fixed_kingdom=cfg.selfplay.fixed_kingdom,
                     max_tree_nodes=cfg.selfplay.max_tree_nodes,
+                    auto_play_treasures=args.auto_play_treasures,
+                    prune_treasure_plays=args.prune_treasure_plays,
                 )
             )
     else:
@@ -365,6 +381,8 @@ def main(argv: list[str] | None = None) -> int:
                 c_puct=cfg.selfplay.c_puct,
                 fixed_kingdom=cfg.selfplay.fixed_kingdom,
                 max_tree_nodes=cfg.selfplay.max_tree_nodes,
+                auto_play_treasures=args.auto_play_treasures,
+                prune_treasure_plays=args.prune_treasure_plays,
             )
         )
     print_table(rows)

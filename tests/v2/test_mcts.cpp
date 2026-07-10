@@ -172,6 +172,34 @@ TEST_CASE("v2 MCTS slab exhaustion degrades to a legal action", "[v2][mcts]") {
     REQUIRE(legal_in_state(state, action));
 }
 
+TEST_CASE("v2 MCTS treasure pruning forces ascending treasure plays", "[v2][mcts]") {
+    GameState state = buy_position(6);
+    state.players[0].hand[slot_of(state, DEF_COPPER)] = 1U;
+    state.players[0].hand[slot_of(state, DEF_SILVER)] = 1U;
+    refresh_current_decision(state);
+
+    ActionMask legal{};
+    REQUIRE(Game::legal_actions(state, legal) > 0);
+    REQUIRE(legal.test(A_PASS));
+    REQUIRE(legal.test(play_action(DEF_COPPER)));
+    REQUIRE(legal.test(play_action(DEF_SILVER)));
+
+    ActionMask filtered = mcts_filter_treasure_plays(state, legal);
+    REQUIRE(filtered.test(play_action(DEF_COPPER)));
+    REQUIRE(filtered.test(play_action(DEF_SILVER)));
+    REQUIRE_FALSE(filtered.test(A_PASS));
+
+    (void)Game::step(state, mcts_canonical_treasure_play(filtered));
+    REQUIRE(state.players[0].in_play_size == 1U);
+    REQUIRE(state.slot_to_def[state.players[0].in_play[0].slot] == DEF_COPPER);
+
+    REQUIRE(Game::legal_actions(state, legal) > 0);
+    filtered = mcts_filter_treasure_plays(state, legal);
+    REQUIRE(filtered.test(play_action(DEF_SILVER)));
+    REQUIRE_FALSE(filtered.test(A_PASS));
+    REQUIRE(mcts_canonical_treasure_play(filtered) == play_action(DEF_SILVER));
+}
+
 TEST_CASE("v2 MCTS virtual loss bookkeeping is reversible", "[v2][mcts]") {
     GameState state = buy_position(3);
     MctsConfig config{};

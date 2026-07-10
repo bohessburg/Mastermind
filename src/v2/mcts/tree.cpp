@@ -51,6 +51,21 @@ namespace {
     return def < card_def_count() && (card_def(def).types & TYPE_TREASURE) != 0U;
 }
 
+[[nodiscard]] int action_mask_count(const ActionMask& legal) noexcept {
+    int count = 0;
+    for (Action action = 0; action < ACTION_SPACE_SIZE; ++action) {
+        count += legal.test(action) ? 1 : 0;
+    }
+    return count;
+}
+
+[[nodiscard]] PlayerId player_to_move(const GameState& state) noexcept {
+    if (state.decision.player < state.num_players) {
+        return state.decision.player;
+    }
+    return current_player(state);
+}
+
 [[nodiscard]] bool is_victory_def(DefId def) noexcept {
     return def < card_def_count() && (card_def(def).types & TYPE_VICTORY) != 0U;
 }
@@ -869,6 +884,69 @@ void count_ordered_zone(const GameState& state, const OrderedZone& zone, Rollout
 
 } // namespace
 
+ActionMask mcts_filter_treasure_plays(
+    const GameState& state,
+    const ActionMask& legal) noexcept {
+    bool has_legal_treasure = false;
+    for (DefId def = 0; def < ACTION_DEF_COUNT; ++def) {
+        if (is_treasure_def(def) && legal.test(play_action(def))) {
+            has_legal_treasure = true;
+            break;
+        }
+    }
+    if (!has_legal_treasure) {
+        return legal;
+    }
+
+    /*
+     * The engine's legal mask adds treasure plays and buys only in Phase::Buy;
+     * Phase::Action contains A_PASS and action-card plays. Therefore a legal
+     * treasure play identifies the buy-phase coexistence this filter targets.
+     */
+    DefId highest_in_play_treasure = 0;
+    bool has_in_play_treasure = false;
+    const PlayerId player = player_to_move(state);
+    if (player < state.num_players) {
+        const PlayerState& player_state = state.players[player];
+        for (std::uint8_t i = 0; i < player_state.in_play_size; ++i) {
+            const Slot slot = player_state.in_play[i].slot;
+            if (slot >= state.num_slots) {
+                continue;
+            }
+            const DefId def = state.slot_to_def[slot];
+            if (is_treasure_def(def)
+                && (!has_in_play_treasure || def > highest_in_play_treasure)) {
+                highest_in_play_treasure = def;
+                has_in_play_treasure = true;
+            }
+        }
+    }
+
+    ActionMask filtered{};
+    for (DefId def = 0; def < ACTION_DEF_COUNT; ++def) {
+        const Action action = play_action(def);
+        if (!is_treasure_def(def) || !legal.test(action)) {
+            continue;
+        }
+        if (!has_in_play_treasure || def >= highest_in_play_treasure) {
+            filtered.set(action);
+        }
+    }
+
+    // Defensive fallback: legal treasure plays should always leave a move.
+    return action_mask_count(filtered) > 0 ? filtered : legal;
+}
+
+Action mcts_canonical_treasure_play(const ActionMask& legal) noexcept {
+    for (DefId def = 0; def < ACTION_DEF_COUNT; ++def) {
+        const Action action = play_action(def);
+        if (is_treasure_def(def) && legal.test(action)) {
+            return action;
+        }
+    }
+    return A_PASS;
+}
+
 Mcts::Mcts(const MctsConfig& config)
     : config_(config),
       nodes_(new MctsNode[safe_capacity(config)]),
@@ -877,7 +955,11 @@ Mcts::Mcts(const MctsConfig& config)
 
 Action Mcts::choose(const GameState& root, PlayerId perspective) noexcept {
     ActionMask root_legal{};
-    const int root_count = Game::legal_actions(root, root_legal);
+    int root_count = Game::legal_actions(root, root_legal);
+    if (config_.prune_treasure_plays) {
+        root_legal = mcts_filter_treasure_plays(root, root_legal);
+        root_count = action_mask_count(root_legal);
+    }
     if (root_count <= 0) {
         return A_PASS;
     }
@@ -1116,7 +1198,11 @@ bool Mcts::collect_external_leaf(MctsPendingLeaf& leaf) noexcept {
     }
 
     ActionMask legal{};
-    const int legal_count = Game::legal_actions(state, legal);
+    int legal_count = Game::legal_actions(state, legal);
+    if (config_.prune_treasure_plays) {
+        legal = mcts_filter_treasure_plays(state, legal);
+        legal_count = action_mask_count(legal);
+    }
     if (legal_count <= 0) {
         node.terminal = true;
         backpropagate(path, depth, state);
@@ -1257,7 +1343,11 @@ bool Mcts::expand(std::uint32_t node_index) noexcept {
     }
 
     ActionMask legal{};
-    const int legal_count = Game::legal_actions(states_[node.state_index], legal);
+    int legal_count = Game::legal_actions(states_[node.state_index], legal);
+    if (config_.prune_treasure_plays) {
+        legal = mcts_filter_treasure_plays(states_[node.state_index], legal);
+        legal_count = action_mask_count(legal);
+    }
     if (legal_count <= 0) {
         node.terminal = true;
         node.expanded = true;
@@ -1344,7 +1434,11 @@ bool Mcts::expand_with_priors(std::uint32_t node_index, const float* priors) noe
     }
 
     ActionMask legal{};
-    const int legal_count = Game::legal_actions(states_[node.state_index], legal);
+    int legal_count = Game::legal_actions(states_[node.state_index], legal);
+    if (config_.prune_treasure_plays) {
+        legal = mcts_filter_treasure_plays(states_[node.state_index], legal);
+        legal_count = action_mask_count(legal);
+    }
     if (legal_count <= 0) {
         node.terminal = true;
         node.expanded = true;
@@ -1423,7 +1517,11 @@ void Mcts::rollout(GameState& state, Xoshiro256pp& rng) const noexcept {
     std::uint16_t guard = 0;
     while (!terminal_state(state) && guard < 4096U) {
         ActionMask legal{};
-        const int legal_count = Game::legal_actions(state, legal);
+        int legal_count = Game::legal_actions(state, legal);
+        if (config_.prune_treasure_plays) {
+            legal = mcts_filter_treasure_plays(state, legal);
+            legal_count = action_mask_count(legal);
+        }
         if (legal_count <= 0) {
             break;
         }

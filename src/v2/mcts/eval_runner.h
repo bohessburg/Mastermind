@@ -31,6 +31,8 @@ struct EvalRunnerConfig {
     std::uint32_t max_tree_nodes = 4096;
     EvalScriptedBotKind opponent = EvalScriptedBotKind::Engine;
     bool retain_finished_games = false;
+    bool auto_play_treasures = false;
+    bool prune_treasure_plays = false;
 };
 
 struct EvalRunnerResult {
@@ -65,6 +67,7 @@ private:
 
     void reset_game(std::uint32_t index) noexcept;
     void start_search(GameSlot& game) noexcept;
+    void auto_play_treasures(GameSlot& game) noexcept;
     void drive_scripted(GameSlot& game) noexcept;
     void maybe_finish_move(GameSlot& game) noexcept;
     void finish_game(GameSlot& game) noexcept;
