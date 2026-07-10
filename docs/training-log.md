@@ -73,3 +73,20 @@ net's uniform-prior search (gate 33% gen 1 → 0% gen 5; verified NOT a scoring
 inversion via a known-strength gate match: campaign-1 gen-25 vs random = 20/0).
 Fix: gate_warmup_generations=8 — unconditional acceptance while the data pool
 bootstraps, strict gating after. Campaign relaunched.
+
+Campaign 2 outcome (CLOSED at gen 20, 2026-07-09): OVER-DAMPED. After the
+warmup fix, gating (0.55 over 60 temp-0 games) admitted exactly one candidate
+(gen 12 at 1.00); gens 13-20 all rejected (scores 0.0-0.5); best lineage
+frozen at 12; value loss fell to 0.056 = candidates memorizing the frozen
+data distribution; eval 0/200 through gen 20 (campaign 1 had 15% here).
+Conclusion: c1 (no gate) under-damped, c2 (strict gate) over-damped.
+Artifacts: checkpoints/remote/campaign2/ (local, 917MB).
+
+Campaign 3 (launched 2026-07-09 ~midnight, running): threading the needle —
+gate 150 games @ threshold 0.53 with gate_temp_moves 8 (sampled-temperature
+gate matches kill the 0-or-1 score artifact), gate_force_accept_every 10
+(anti-freeze valve), league_fraction 0.25 seeded with campaign-1 gen_0025
+as a standing external anchor (league/seed_0.pt confirmed loaded), plus the
+same-model inference fast path. Config: configs/run_gated_v3.json →
+campaign3.json on-box, seed 20260711. Success bar: track c1's curve through
+gen 25 (5.5%@15/15%@20/30.3%@25) then HOLD past 25-40 where c1 collapsed.
