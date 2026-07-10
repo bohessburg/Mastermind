@@ -64,7 +64,7 @@ class Session:
     bandit_log_state: BanditLogState = field(default_factory=BanditLogState)
     connections: dict[str, WebSocket] = field(default_factory=dict)
     bot_rngs: list[random.Random] = field(default_factory=list)
-    thinking_delay_ms: int = 600
+    thinking_delay_ms: int = 60
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
 
@@ -493,7 +493,7 @@ async def create_session(payload: dict[str, Any]) -> dict[str, Any]:
             raise HTTPException(status_code=400, detail="seat kind must be human, bot, bot:bigmoney, or bot:random")
 
     seed = int(payload.get("seed", secrets.randbits(63)))
-    thinking_delay_ms = int(payload.get("thinking_delay_ms", payload.get("thinkingDelayMs", 600)))
+    thinking_delay_ms = int(payload.get("thinking_delay_ms", payload.get("thinkingDelayMs", 60)))
     if thinking_delay_ms < 0:
         raise HTTPException(status_code=400, detail="thinking delay must be non-negative")
     kingdom = _parse_kingdom(payload, seed)
