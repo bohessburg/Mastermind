@@ -24,8 +24,15 @@ is a separate session's domain — do not touch src/v2/web from here).
   eval rows or gate acceptances every 5-10 min; exits on new row → report to
   user → re-arm with a state file holding last reported generation.
   REPORTS MUST BE THE FINAL MESSAGE OF A TURN (mid-turn text may not render).
-- Stop the run: `pkill -f "venv/main/bin/python"` — NEVER pkill a pattern
-  that appears in your own ssh command line (self-kill; learned the hard way).
+- Stop the run: `bash /root/stop_train.sh` (kills parent AND spawn_main
+  workers — the parent-only kill orphaned 8x ~10GB workers per campaign cut
+  until the container's 256GB cgroup OOM-killed a live worker on 2026-07-10;
+  cgroup OOM kills are INVISIBLE in container dmesg and present as
+  "self-play worker exited unexpectedly"). NEVER pkill a pattern that
+  appears in your own ssh command line (self-kill; 4 occurrences now) —
+  script files on the box only. Memory watch: /sys/fs/cgroup/memory/
+  memory.usage_in_bytes vs memory.limit_in_bytes (~275GB); one run ≈
+  90-100GB (parent w/ replay buffer + 8 workers ~10GB each).
 - Launch pattern that works: `setsid nohup env OMP_NUM_THREADS=1
   PYTHONPATH=build /venv/main/bin/python -m src.v2.train.train --config X.json
   > log 2>&1 < /dev/null &` — the ssh session may hang after; that's cosmetic,
