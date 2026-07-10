@@ -251,3 +251,22 @@ checkpoints/campaign7. Intent: concentrate all sims on real decisions to
 un-stall search-target sharpening; treasure plays were ~half of all
 searched decisions. Caveat on record: both features assume base-set
 treasure commutativity — revisit for Storyteller/Grand Market-class cards.
+
+Campaign 7 closeout (2026-07-10): cut at gen ~16. Treasure collapse
+delivered: earliest liftoff of any run (10/188 vs engine at GEN 5; c4
+needed 10, c1 needed 15), throughput ~27K games/hr (vs 15-21K), and the
+first scripted BigMoney wins ever recorded (3/365 across gens 11-15; c5+c6
+total was 0). But the 5% ramp arriving at gen 11 coincided with eval decay
+10 -> 4 -> 0 by gen 15 — not a value collapse (vloss stable 0.55, no
+pinning), rather BM-loss dilution hitting a net whose policy targets were
+still flat (entropy == ploss throughout, both creeping up). Lesson: even
+5% at gen 11 is too much too early for a net at ~2-5% engine strength.
+Artifacts: checkpoints/campaign7 on box.
+
+Campaign 8 (launched 2026-07-10 ~15:00, running): c7 config, gentler
+curriculum — schedule [[14,0.0],[15,0.01],[34,0.20]]: 1% at gen 15,
++1%/gen to 20% at gen 34. Seed 20260716, checkpoints/campaign8. Gates
+(shifted for the longer ramp): gen 25 expect >=15-20% vs engine with
+vs_bm alive at the ~10% dose; gens 35-45 graveyard hold test at full 20%;
+gen 55 parity-trajectory check (>=35-40%). Kill-switch unchanged:
+value-head pinning on the behavioral probe.
