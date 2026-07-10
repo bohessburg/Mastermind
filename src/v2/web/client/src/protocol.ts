@@ -1,4 +1,4 @@
-export type SeatKind = 'human' | 'bot' | 'bot:bigmoney' | 'bot:random';
+export type SeatKind = 'human' | 'bot' | 'bot:bigmoney' | 'bot:random' | 'bot:nn' | (string & {});
 
 export interface SeatInfo {
   index: number;

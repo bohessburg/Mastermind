@@ -634,7 +634,7 @@ function GameOverOverlay({ gameover, onPlayAgain }: { gameover?: ClientState['ga
 function JoinScreen({ onJoin }: { onJoin: (credentials: Credentials) => void }) {
   const [sessionId, setSessionId] = useState('');
   const [seatToken, setSeatToken] = useState('');
-  const [mode, setMode] = useState<'human-bot' | 'human-human'>('human-bot');
+  const [mode, setMode] = useState<'human-bot' | 'human-nn' | 'human-human'>('human-bot');
   const [kingdomMode, setKingdomMode] = useState<'preset' | 'random'>('preset');
   const [seed, setSeed] = useState('2026');
   const [created, setCreated] = useState<CreatedSession | undefined>();
@@ -642,7 +642,8 @@ function JoinScreen({ onJoin }: { onJoin: (credentials: Credentials) => void }) 
 
   async function createSession() {
     setError(undefined);
-    const seats: SeatKind[] = mode === 'human-bot' ? ['human', 'bot'] : ['human', 'human'];
+    const seats: SeatKind[] =
+      mode === 'human-bot' ? ['human', 'bot'] : mode === 'human-nn' ? ['human', 'bot:nn'] : ['human', 'human'];
     const response = await fetch('/api/session', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -674,8 +675,9 @@ function JoinScreen({ onJoin }: { onJoin: (credentials: Credentials) => void }) 
         <div className="create-row">
           <label>
             Seat config
-            <select value={mode} onChange={(event) => setMode(event.target.value as 'human-bot' | 'human-human')}>
+            <select value={mode} onChange={(event) => setMode(event.target.value as 'human-bot' | 'human-nn' | 'human-human')}>
               <option value="human-bot">Human vs bot</option>
+              <option value="human-nn">Human vs neural net</option>
               <option value="human-human">Human vs human</option>
             </select>
           </label>
