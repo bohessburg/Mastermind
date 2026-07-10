@@ -49,6 +49,19 @@ Run 1 (local M1, cut at gen 5): pipeline shakedown. Found value-loss whipsaw
 0.68→0.087→0.53 from undersized replay buffer; 0/100 vs EngineBot at gen 5
 (expected).
 
-Campaign 1 progress:
-- Gen 1: value 1.727, 0/200 vs EngineBot (baseline)
-- Gen 5: value 1.474, 0/200; 62K games/hr aggregate; vitals healthy
+Campaign 1 outcome (CLOSED at gen 45, 2026-07-09): learning proven, then
+strategy cycling. Eval vs EngineBot: 0% (gens 1-10) → 5.5% (15) → 15% (20)
+→ **30.3% (25, peak — best.pt banked)** → 26.9% (30) → 16.6% (35) → 17.0%
+(40) → 16.9% (45). Value loss kept improving (0.65→0.39) while external
+eval fell: the net converged to a self-play equilibrium the fixed opponent
+punishes — classic naive-self-play cycling, invisible without the fixed-
+opponent ladder. ~46K games, ~$2 of box time. Artifacts:
+checkpoints/remote/campaign1/ (local sync, 54 files).
+
+Campaign 2 (launched 2026-07-09, running): same base config + the fixes —
+AlphaGo-style gating (candidate must beat best.pt at >=55% over 60
+seat-swapped games to become the data generator; rejected candidates keep
+training) and mini-league (20% of self-play games vs a pool of the last 8
+accepted bests). Config: configs/run_gated.json → campaign2.json on-box.
+Hypothesis under test: gating pins the data-generating policy to monotonic
+external strength and prevents the gen-25 regression pattern.
