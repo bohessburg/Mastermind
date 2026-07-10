@@ -158,3 +158,31 @@ end_province trend, and eval vs the scaffold-MCTS opponent (defends piles).
 Caveat now on record: the 50% EngineBot gate could be passed by a perfected
 pile-racer; treat any gate crossing as provisional pending forensics +
 scaffold-opponent confirmation.
+
+Campaign 4 closeout (2026-07-10): gen 20 eval 45/150/5 = 23.1% — down 12pts
+from the gen-15 peak (35.2%). Fastest rise and fastest slide of any run.
+Cut at gen ~22 for the c5 cutover. Artifacts: checkpoints/remote/campaign4/.
+
+Human validation of the value-bubble diagnosis: Jack played c4 gen-15 at
+FULL power (policy+value+400 sims, nnmcts seat) and won easily; it played
+duchy/big-money and made no attempt to contest his Province line. Search
+cannot escape the value head's worldview — it optimizes toward what the
+evaluator rewards, so the pile/money bubble lives in the VALUE FUNCTION,
+not the policy or the lineage. This is the root-cause finding of the whole
+campaign series.
+
+Campaign 5 (launched 2026-07-10, running): c4 recipe + scripted_opponents
+{"bigmoney": 0.20} — 20% of each generation's games vs scripted BigMoney,
+records from the NN seat only, seat-swapped. Purpose: put Province-regime
+punishment into the value head's training data (self-play mirrors never
+contain it). NOT pure self-play anymore (80/20) but still fully
+self-LEARNED — BigMoney is opposition, not supervision (no imitation
+targets). Mirrors the AlphaStar-league lesson: discrete-strategic-regime
+games need opponent diversity that pure mirrors can't provide. Purity is
+recoverable later: anneal fraction to 0 once the regime is internalized, or
+population-based self-play. Key metric: per-generation scripted_wins/
+scripted_games ("vs_bm thermometer") — should climb from ~0; eval
+end_province fraction should rise with it. New instruments this cycle:
+DecisionSearcher pybind (single-decision NN-MCTS), bot:nnmcts web seat,
+eval --opponent mcts (scaffold; NOTE: very slow, both sides search — use
+small game counts), end-condition forensics columns.

@@ -122,3 +122,30 @@ Decision rules agreed with Jack:
 - Comparison idea for campaign 2 checkpoints: replay Jack's exported games,
   asking each checkpoint "what would you buy here" — qualitative diff
   between training runs.
+
+## State update (2026-07-10 midday)
+
+- RUNNING: **Campaign 5** on the box — checkpoints/campaign5/, config
+  campaign5.json (c4 recipe: [1536,1536,768] net, 256 sims, ungated + 20%
+  scripted BigMoney opponents). Watch metrics for scripted_wins/
+  scripted_games per gen + eval rows. Campaigns 1-4 all closed and synced
+  locally under checkpoints/remote/ (c1 peak 30.3%@25; c4 peak 35.2%@15,
+  both slid — full story in training-log).
+- ROOT-CAUSE FINDING: pile-out/money local optimum lives in the VALUE HEAD;
+  search can't escape it (human beat c4-gen15-full-power easily). c5 tests
+  scripted-opponent data as the cure.
+- EVAL DISCIPLINE: EngineBot win% overstates strength (66-81% of games end
+  by 3-pile vs its pile-blindness). Always read end_province/end_piles
+  forensics columns; scaffold opponent (--opponent mcts) is the harder
+  reference but ~50x slower (both sides search) — small game counts only.
+- Box scripts: /root/box_ctl.sh (stop/patch/resume for campaign3-era paths
+  — update paths before reuse), /root/launch5.sh pattern for launches.
+  RESUME REQUIRES --config AND --resume together (bare --resume runs zero
+  generations — see training-log postmortem).
+- Watcher hygiene: one watcher per campaign with a CAMPAIGN-SPECIFIC state
+  file (scratchpad/c5_last_eval etc.); stale watchers sharing state files
+  have caused missed/duplicated reports twice.
+- Playable seats: bot:nn (policy only), bot:nnmcts (full search;
+  NN_MCTS_SIMS env, default 400). Any checkpoint via DOMINION_NN_CHECKPOINT
+  or bot:nnmcts:<path>. Finished games persist to exports/<session>.json
+  in the SERVER'S working directory.
