@@ -26,6 +26,8 @@ class SelfPlayStats:
     # best-vs-best routed segments from genuine two-model league segments.
     routed_fast_path_batches: int = 0
     routed_split_batches: int = 0
+    scripted_games: int = 0
+    scripted_wins: int = 0
 
     @property
     def games_per_hour(self) -> float:
@@ -57,7 +59,26 @@ def _kingdom_mode(mode: str):
     raise ValueError(f"unknown kingdom mode: {mode}")
 
 
-def make_runner_config(config: SelfPlayConfig, seed: int):
+def _scripted_bot_kind(kind: str | None):
+    if kind is None:
+        return dz.SelfPlayScriptedBotKind.None_
+    normalized = kind.lower()
+    if normalized == "bigmoney":
+        return dz.SelfPlayScriptedBotKind.BigMoney
+    if normalized == "engine":
+        return dz.SelfPlayScriptedBotKind.Engine
+    if normalized == "random":
+        return dz.SelfPlayScriptedBotKind.Random
+    raise ValueError(f"unknown scripted opponent: {kind}")
+
+
+def make_runner_config(
+    config: SelfPlayConfig,
+    seed: int,
+    *,
+    scripted_kind: str | None = None,
+    scripted_nn_player: int = 0,
+):
     return dz.SelfPlayConfig(
         n_games=config.n_games,
         sims_per_move=config.sims_per_move,
@@ -71,6 +92,8 @@ def make_runner_config(config: SelfPlayConfig, seed: int):
         kingdom=config.fixed_kingdom,
         max_recorded_moves=config.max_recorded_moves,
         max_tree_nodes=config.max_tree_nodes,
+        scripted_bot=_scripted_bot_kind(scripted_kind),
+        scripted_nn_player=int(scripted_nn_player),
     )
 
 
@@ -224,6 +247,8 @@ def play_routed_games(
     device: torch.device,
     target_games: int,
     same_model_fast_path: bool | None = None,
+    scripted_kind: str | None = None,
+    scripted_nn_player: int = 0,
 ) -> tuple[SelfPlayStats, list[dict]]:
     """Generate an exact number of games while routing every leaf by seat."""
     if target_games < 0:
@@ -233,7 +258,14 @@ def play_routed_games(
         return stats, []
     runner_config = SelfPlayConfig(**config.__dict__)
     runner_config.n_games = max(1, min(int(config.n_games), int(target_games)))
-    runner = dz.SelfPlayRunner(make_runner_config(runner_config, seed))
+    runner = dz.SelfPlayRunner(
+        make_runner_config(
+            runner_config,
+            seed,
+            scripted_kind=scripted_kind,
+            scripted_nn_player=scripted_nn_player,
+        )
+    )
     for model in seat_models:
         model.eval()
     models_are_identical = seat_models[0] is seat_models[1]
@@ -274,6 +306,13 @@ def play_routed_games(
         remaining = target_games - len(records)
         records.extend(finished[:remaining])
     stats.games, stats.positions = _records_to_replay(records, _DiscardReplay())
+    if scripted_kind is not None:
+        stats.scripted_games = len(records)
+        for record in records:
+            winner = record.get("winner")
+            nn_player = record.get("scripted_nn_player")
+            if winner is not None and nn_player is not None and int(winner) == int(nn_player):
+                stats.scripted_wins += 1
     stats.wall_time = time.perf_counter() - start
     return stats, records
 
@@ -294,6 +333,8 @@ def run_routed_self_play_generation(
     device: torch.device,
     target_games: int,
     same_model_fast_path: bool | None = None,
+    scripted_kind: str | None = None,
+    scripted_nn_player: int = 0,
 ) -> SelfPlayStats:
     stats, records = play_routed_games(
         seat_models,
@@ -302,6 +343,8 @@ def run_routed_self_play_generation(
         device=device,
         target_games=target_games,
         same_model_fast_path=same_model_fast_path,
+        scripted_kind=scripted_kind,
+        scripted_nn_player=scripted_nn_player,
     )
     games, positions = _records_to_replay(records, replay)
     stats.games = games

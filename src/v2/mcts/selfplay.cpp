@@ -4,6 +4,7 @@
 #include "v2/core/game.h"
 #include "v2/core/score.h"
 #include "v2/core/turns.h"
+#include "v2/mcts/eval_runner.h"
 
 #include <algorithm>
 #include <cmath>
@@ -51,6 +52,24 @@ constexpr std::uint8_t IMPLEMENTED_KINGDOM_COUNT =
         return state.decision.player;
     }
     return current_player(state);
+}
+
+[[nodiscard]] bool scripted_mode(const SelfPlayConfig& config) noexcept {
+    return config.scripted_bot != SelfPlayScriptedBotKind::None;
+}
+
+[[nodiscard]] EvalScriptedBotKind eval_scripted_kind(SelfPlayScriptedBotKind kind) noexcept {
+    switch (kind) {
+    case SelfPlayScriptedBotKind::BigMoney:
+        return EvalScriptedBotKind::BigMoney;
+    case SelfPlayScriptedBotKind::Engine:
+        return EvalScriptedBotKind::Engine;
+    case SelfPlayScriptedBotKind::Random:
+        return EvalScriptedBotKind::Random;
+    case SelfPlayScriptedBotKind::None:
+        break;
+    }
+    return EvalScriptedBotKind::BigMoney;
 }
 
 [[nodiscard]] Setup default_fixed_setup() noexcept {
@@ -152,6 +171,7 @@ struct SelfPlayRunner::GameSlot {
     std::uint32_t sims_completed = 0;
     std::uint32_t pending = 0;
     std::uint16_t move_index = 0;
+    PlayerId nn_player = NONE;
     bool search_active = false;
 
     GameSlot() : mcts(MctsConfig{}) {}
@@ -180,6 +200,9 @@ SelfPlayRunner::SelfPlayRunner(const SelfPlayConfig& config)
     }
     if (config_.sims_per_move == 0U) {
         throw std::invalid_argument("SelfPlayConfig.sims_per_move must be positive");
+    }
+    if (scripted_mode(config_) && config_.scripted_nn_player >= 2U) {
+        throw std::invalid_argument("SelfPlayConfig.scripted_nn_player must be zero or one");
     }
     if (config_.fixed_setup.num_players == 0U) {
         config_.fixed_setup = default_fixed_setup();
@@ -222,6 +245,15 @@ std::uint32_t SelfPlayRunner::collect_leaves(std::uint32_t max_batch) noexcept {
             ++idle;
             continue;
         }
+        drive_scripted(game);
+        if (game.pending != 0U) {
+            ++idle;
+            continue;
+        }
+        if (scripted_mode(config_) && decision_player(game.state) != game.nn_player) {
+            ++idle;
+            continue;
+        }
         maybe_finish_move(game);
         if (game.pending != 0U) {
             ++idle;
@@ -241,6 +273,14 @@ std::uint32_t SelfPlayRunner::collect_leaves(std::uint32_t max_batch) noexcept {
         ++game.sims_started;
         if (!need_eval) {
             ++game.sims_completed;
+            maybe_finish_move(game);
+            idle = 0;
+            continue;
+        }
+        if (scripted_mode(config_) && leaf.player != game.nn_player) {
+            if (resolve_scripted_tree_leaf(game, leaf)) {
+                ++game.sims_completed;
+            }
             maybe_finish_move(game);
             idle = 0;
             continue;
@@ -339,6 +379,7 @@ void SelfPlayRunner::reset_game(std::uint32_t index) noexcept {
     game.sims_completed = 0;
     game.pending = 0;
     game.move_index = 0;
+    game.nn_player = scripted_mode(config_) ? config_.scripted_nn_player : NONE;
     game.search_active = false;
 }
 
@@ -354,6 +395,37 @@ void SelfPlayRunner::start_search(GameSlot& game) noexcept {
     game.sims_completed = 0;
     game.pending = 0;
     game.search_active = true;
+}
+
+void SelfPlayRunner::drive_scripted(GameSlot& game) noexcept {
+    if (!scripted_mode(config_)) {
+        return;
+    }
+    std::uint16_t guard = 0;
+    while (game.state.phase != static_cast<std::uint8_t>(Phase::Over)
+           && decision_player(game.state) != game.nn_player
+           && guard < 512U) {
+        ActionMask legal{};
+        const int legal_count = Game::legal_actions(game.state, legal);
+        if (legal_count <= 0) {
+            break;
+        }
+        Action action = eval_scripted_action(
+            game.state,
+            legal,
+            legal_count,
+            eval_scripted_kind(config_.scripted_bot),
+            game.rng);
+        if (!legal.test(action)) {
+            action = legal.nth_set(0U);
+        }
+        const bool done = Game::step(game.state, action);
+        ++guard;
+        if (done || game.state.phase == static_cast<std::uint8_t>(Phase::Over)) {
+            finish_game(game);
+            break;
+        }
+    }
 }
 
 bool SelfPlayRunner::game_has_pending(std::uint32_t index) const noexcept {
@@ -391,6 +463,9 @@ void SelfPlayRunner::record_decision(GameSlot& game, const float* policy) noexce
         return;
     }
     const PlayerId player = decision_player(game.state);
+    if (scripted_mode(config_) && player != game.nn_player) {
+        return;
+    }
     const std::size_t obs_offset = game.observations.size();
     game.observations.resize(obs_offset + OBS_SIZE);
     encode(game.state, player, game.observations.data() + obs_offset);
@@ -408,6 +483,7 @@ void SelfPlayRunner::finish_game(GameSlot& game) noexcept {
     SelfPlayRecord record{};
     record.observations = game.observations;
     record.policy_targets = game.policy_targets;
+    record.players = game.players;
     record.moves = static_cast<std::uint16_t>(game.players.size());
     record.values.resize(record.moves);
     for (std::uint16_t i = 0; i < record.moves; ++i) {
@@ -415,6 +491,7 @@ void SelfPlayRunner::finish_game(GameSlot& game) noexcept {
     }
     record.seed = game.seed;
     record.winner = winner_for(game.state);
+    record.scripted_nn_player = game.nn_player;
     record.kingdom_count = game.setup.kingdom_count;
     for (std::uint8_t i = 0; i < game.setup.kingdom_count; ++i) {
         record.kingdom[i] = game.setup.kingdom[i];
@@ -424,6 +501,23 @@ void SelfPlayRunner::finish_game(GameSlot& game) noexcept {
     ++completed_;
     ++game.generation;
     reset_game(static_cast<std::uint32_t>(&game - games_.get()));
+}
+
+bool SelfPlayRunner::resolve_scripted_tree_leaf(GameSlot& game, const MctsPendingLeaf& leaf) noexcept {
+    const GameState& leaf_state = game.mcts.state_for(leaf.state_index);
+    Action action = eval_scripted_action(
+        leaf_state,
+        leaf.legal,
+        leaf.legal_count,
+        eval_scripted_kind(config_.scripted_bot),
+        game.rng);
+    if (!leaf.legal.test(action)) {
+        action = leaf.legal_count > 0 ? leaf.legal.nth_set(0U) : A_PASS;
+    }
+    float priors[ACTION_SPACE_SIZE]{};
+    priors[action] = 1.0F;
+    game.mcts.provide_external_evaluation(leaf, 0.0F, priors);
+    return true;
 }
 
 Setup SelfPlayRunner::setup_for(std::uint32_t index, std::uint64_t generation) const noexcept {

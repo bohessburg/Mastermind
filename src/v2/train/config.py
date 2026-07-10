@@ -111,6 +111,9 @@ class TrainConfig:
     # before generation one. They remain standing league opponents alongside
     # archived accepted bests.
     league_seed_checkpoints: list[str] = field(default_factory=list)
+    # Fixed scripted opponents inject non-mirror game evidence into training.
+    # Fractions are per generation and may be used with or without gating.
+    scripted_opponents: dict[str, float] = field(default_factory=dict)
     # After this many consecutive rejected gated candidates, force-accept the
     # following candidate to refresh a stale self-play lineage. Zero disables
     # this pressure valve.

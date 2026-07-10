@@ -887,6 +887,7 @@ void selfplay_provide(
             static_cast<py::ssize_t>(ACTION_SPACE_SIZE),
         });
         py::array_t<float> values(static_cast<py::ssize_t>(record.moves));
+        py::array_t<std::uint8_t> players(static_cast<py::ssize_t>(record.moves));
         if (record.moves != 0U) {
             std::memcpy(
                 obs.mutable_data(),
@@ -900,6 +901,10 @@ void selfplay_provide(
                 values.mutable_data(),
                 record.values.data(),
                 static_cast<std::size_t>(record.moves) * sizeof(float));
+            std::memcpy(
+                players.mutable_data(),
+                record.players.data(),
+                static_cast<std::size_t>(record.moves) * sizeof(PlayerId));
         }
         py::list kingdom;
         for (std::uint8_t i = 0; i < record.kingdom_count; ++i) {
@@ -908,11 +913,15 @@ void selfplay_provide(
         dict["observations"] = obs;
         dict["policy_targets"] = policies;
         dict["values"] = values;
+        dict["players"] = players;
         dict["kingdom"] = kingdom;
         dict["seed"] = py::int_(record.seed);
         dict["winner"] = record.winner == NONE
             ? py::object(py::none())
             : py::object(py::int_(record.winner));
+        dict["scripted_nn_player"] = record.scripted_nn_player == NONE
+            ? py::object(py::none())
+            : py::object(py::int_(record.scripted_nn_player));
         out.append(dict);
     }
     return out;
@@ -1248,6 +1257,12 @@ PYBIND11_MODULE(dominion_v2_py, module) {
         .value("Fixed", SelfPlayKingdomMode::Fixed)
         .value("Random", SelfPlayKingdomMode::Random);
 
+    py::enum_<SelfPlayScriptedBotKind>(module, "SelfPlayScriptedBotKind")
+        .value("None_", SelfPlayScriptedBotKind::None)
+        .value("BigMoney", SelfPlayScriptedBotKind::BigMoney)
+        .value("Engine", SelfPlayScriptedBotKind::Engine)
+        .value("Random", SelfPlayScriptedBotKind::Random);
+
     py::class_<SelfPlayConfig>(module, "SelfPlayConfig")
         .def(py::init([](
             std::uint32_t n_games,
@@ -1261,7 +1276,9 @@ PYBIND11_MODULE(dominion_v2_py, module) {
             SelfPlayKingdomMode kingdom_mode,
             py::object kingdom,
             std::uint16_t max_recorded_moves,
-            std::uint32_t max_tree_nodes) {
+            std::uint32_t max_tree_nodes,
+            SelfPlayScriptedBotKind scripted_bot,
+            PlayerId scripted_nn_player) {
             SelfPlayConfig config{};
             config.n_games = n_games;
             config.sims_per_move = sims_per_move;
@@ -1274,6 +1291,8 @@ PYBIND11_MODULE(dominion_v2_py, module) {
             config.kingdom_mode = kingdom_mode;
             config.max_recorded_moves = max_recorded_moves;
             config.max_tree_nodes = max_tree_nodes;
+            config.scripted_bot = scripted_bot;
+            config.scripted_nn_player = scripted_nn_player;
             if (!kingdom.is_none()) {
                 PySetup setup(2, kingdom, false);
                 config.fixed_setup = setup.setup;
@@ -1291,7 +1310,9 @@ PYBIND11_MODULE(dominion_v2_py, module) {
             py::arg("kingdom_mode") = SelfPlayKingdomMode::Random,
             py::arg("kingdom") = py::none(),
             py::arg("max_recorded_moves") = 512,
-            py::arg("max_tree_nodes") = 4096)
+            py::arg("max_tree_nodes") = 4096,
+            py::arg("scripted_bot") = SelfPlayScriptedBotKind::None,
+            py::arg("scripted_nn_player") = 0U)
         .def_readwrite("n_games", &SelfPlayConfig::n_games)
         .def_readwrite("sims_per_move", &SelfPlayConfig::sims_per_move)
         .def_readwrite("c_puct", &SelfPlayConfig::c_puct)
@@ -1302,7 +1323,9 @@ PYBIND11_MODULE(dominion_v2_py, module) {
         .def_readwrite("seed", &SelfPlayConfig::seed)
         .def_readwrite("kingdom_mode", &SelfPlayConfig::kingdom_mode)
         .def_readwrite("max_recorded_moves", &SelfPlayConfig::max_recorded_moves)
-        .def_readwrite("max_tree_nodes", &SelfPlayConfig::max_tree_nodes);
+        .def_readwrite("max_tree_nodes", &SelfPlayConfig::max_tree_nodes)
+        .def_readwrite("scripted_bot", &SelfPlayConfig::scripted_bot)
+        .def_readwrite("scripted_nn_player", &SelfPlayConfig::scripted_nn_player);
 
     py::class_<SelfPlayRunner>(module, "SelfPlayRunner")
         .def(py::init<const SelfPlayConfig&>(), py::arg("config"))

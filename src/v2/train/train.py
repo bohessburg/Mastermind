@@ -34,7 +34,7 @@ if __package__ in (None, ""):
         league_checkpoint_paths,
         load_best_checkpoint,
         compact_selfplay_segments,
-        plan_selfplay_segments,
+        plan_training_selfplay_segments,
         run_gate_match,
         save_best_checkpoint,
         seed_league_checkpoints,
@@ -55,7 +55,7 @@ else:
         league_checkpoint_paths,
         load_best_checkpoint,
         compact_selfplay_segments,
-        plan_selfplay_segments,
+        plan_training_selfplay_segments,
         run_gate_match,
         save_best_checkpoint,
         seed_league_checkpoints,
@@ -286,6 +286,8 @@ def append_metrics(path: str | Path, row: dict[str, Any]) -> None:
         "gate_win_pct",
         "best_generation",
         "league_games",
+        "scripted_games",
+        "scripted_wins",
         "routed_fast_path_batches",
         "routed_split_batches",
     ]
@@ -306,6 +308,8 @@ def _add_stats(total: SelfPlayStats, update: SelfPlayStats) -> None:
     total.plumbing_time += update.plumbing_time
     total.routed_fast_path_batches += update.routed_fast_path_batches
     total.routed_split_batches += update.routed_split_batches
+    total.scripted_games += update.scripted_games
+    total.scripted_wins += update.scripted_wins
 
 
 def _run_segmented_single_pipeline(
@@ -328,6 +332,8 @@ def _run_segmented_single_pipeline(
             seed=base_seed ^ (task_index * 0x10001),
             device=device,
             target_games=segment.n_games,
+            scripted_kind=segment.scripted_kind,
+            scripted_nn_player=segment.nn_player,
         )
         _add_stats(total, stats)
     return total
@@ -361,6 +367,7 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
         config.league_fraction = requested.league_fraction
         config.league_pool_size = requested.league_pool_size
         config.league_seed_checkpoints = requested.league_seed_checkpoints
+        config.scripted_opponents = requested.scripted_opponents
         config.gate_warmup_generations = requested.gate_warmup_generations
         config.gate_force_accept_every = requested.gate_force_accept_every
         if config.device == "auto":
@@ -386,6 +393,8 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
     inference_server: InferenceServer | None = None
     pool: ParallelSelfPlayPool | None = None
     use_gating = gating_enabled(config)
+    if not isinstance(config.scripted_opponents, dict):
+        raise ValueError("scripted_opponents must be an object mapping kind to fraction")
     best_model: DominionNet | None = None
     best_generation: int | None = None
     best_path: Path | None = None
@@ -413,7 +422,9 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
             gen_start = time.perf_counter()
             lr = learning_rate_for_generation(config, generation)
             set_optimizer_lr(optimizer, lr)
-            if not use_gating:
+            planned_league_games = 0
+            use_segments = use_gating or bool(config.scripted_opponents)
+            if not use_segments:
                 # Keep the legacy default path and its seed derivation intact.
                 if pool is None:
                     gen_seed = config.seed + (generation * 0x9E37)
@@ -428,14 +439,14 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
                     sp_stats = parallel_result.stats
                     aggregate_games_per_hour = parallel_result.aggregate_games_per_hour
             else:
-                assert best_model is not None
-                assert best_generation is not None
-                assert best_path is not None
-                all_league_paths = league_checkpoint_paths(config)
-                sampled_segments = plan_selfplay_segments(
+                active_model = best_model if use_gating else model
+                assert active_model is not None
+                all_league_paths = league_checkpoint_paths(config) if use_gating else []
+                sampled_segments = plan_training_selfplay_segments(
                     config.selfplay.games_per_generation,
-                    config.league_fraction,
+                    config.league_fraction if use_gating else 0.0,
                     len(all_league_paths),
+                    config.scripted_opponents,
                     config.seed ^ (generation * 0xC0FFEE),
                 )
                 segments, history_indices = compact_selfplay_segments(sampled_segments)
@@ -444,7 +455,7 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
                 if planned_league_games and inference_server is not None:
                     raise ValueError("mini-league self-play requires worker_device='cpu' or 'cuda', not 'server'")
                 if pool is None:
-                    model_table = [best_model, *[load_best_checkpoint(config, device, path)[0] for path in league_paths]]
+                    model_table = [active_model, *[load_best_checkpoint(config, device, path)[0] for path in league_paths]]
                     sp_stats = _run_segmented_single_pipeline(
                         model_table,
                         segments,
@@ -456,15 +467,15 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
                     aggregate_games_per_hour = sp_stats.games_per_hour
                 else:
                     if inference_server is not None:
-                        inference_server.sync_weights(best_model, generation)
-                    payloads = [] if inference_server is not None else [serialize_cpu_state_dict(best_model)]
+                        inference_server.sync_weights(active_model, generation)
+                    payloads = [] if inference_server is not None else [serialize_cpu_state_dict(active_model)]
                     if inference_server is None:
                         payloads.extend(
                             serialize_cpu_state_dict(load_best_checkpoint(config, device, path)[0])
                             for path in league_paths
                         )
                     parallel_result = pool.generate(
-                        best_model,
+                        active_model,
                         replay,
                         generation,
                         segments=segments,
@@ -594,7 +605,9 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
                 "wall_time": time.perf_counter() - gen_start,
                 "checkpoint": str(path),
                 **gate_row,
-                "league_games": planned_league_games if use_gating else 0,
+                "league_games": planned_league_games,
+                "scripted_games": sp_stats.scripted_games,
+                "scripted_wins": sp_stats.scripted_wins,
                 "routed_fast_path_batches": sp_stats.routed_fast_path_batches,
                 "routed_split_batches": sp_stats.routed_split_batches,
             }

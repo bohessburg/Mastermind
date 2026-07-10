@@ -23,6 +23,7 @@ from .model import DominionNet
 
 BEST_FILENAME = "best.pt"
 LEAGUE_DIRNAME = "league"
+SCRIPTED_OPPONENT_KINDS = frozenset({"bigmoney", "engine", "random"})
 
 
 @dataclass(frozen=True)
@@ -50,15 +51,21 @@ class LeagueGame:
 
 @dataclass(frozen=True)
 class SelfPlaySegment:
-    """A contiguous pool work item referencing deduplicated model-table ids."""
+    """A contiguous pool work item for NN or scripted-opponent self-play."""
 
     n_games: int
     seat0_model_id: int
     seat1_model_id: int
+    scripted_kind: str | None = None
+    nn_player: int = 0
 
     @property
     def is_league(self) -> bool:
-        return self.seat0_model_id != self.seat1_model_id
+        return not self.is_scripted and self.seat0_model_id != self.seat1_model_id
+
+    @property
+    def is_scripted(self) -> bool:
+        return self.scripted_kind is not None
 
 
 def gating_enabled(config: TrainConfig) -> bool:
@@ -300,6 +307,80 @@ def plan_selfplay_segments(
     ]
 
 
+def scripted_opponent_game_counts(total_games: int, opponents: dict[str, float]) -> dict[str, int]:
+    """Validate configured scripted fractions and turn them into exact counts."""
+    if total_games < 0:
+        raise ValueError("total_games cannot be negative")
+    if not isinstance(opponents, dict):
+        raise ValueError("scripted_opponents must be an object mapping kind to fraction")
+    total_fraction = 0.0
+    counts: dict[str, int] = {}
+    for raw_kind, raw_fraction in sorted(opponents.items(), key=lambda item: str(item[0])):
+        if not isinstance(raw_kind, str) or raw_kind not in SCRIPTED_OPPONENT_KINDS:
+            allowed = ", ".join(sorted(SCRIPTED_OPPONENT_KINDS))
+            raise ValueError(f"unknown scripted opponent {raw_kind!r}; expected one of {allowed}")
+        if not isinstance(raw_fraction, (int, float)):
+            raise ValueError(f"scripted opponent fraction for {raw_kind} must be numeric")
+        fraction = float(raw_fraction)
+        if not 0.0 <= fraction <= 1.0:
+            raise ValueError(f"scripted opponent fraction for {raw_kind} must be between zero and one")
+        total_fraction += fraction
+        count = min(total_games, int(round(total_games * fraction)))
+        if count > 0:
+            counts[raw_kind] = count
+    if total_fraction > 1.0 + 1.0e-9:
+        raise ValueError("scripted opponent fractions must sum to at most one")
+    if sum(counts.values()) > total_games:
+        raise ValueError("scripted opponent game counts exceed one generation")
+    return counts
+
+
+def plan_training_selfplay_segments(
+    total_games: int,
+    league_fraction: float,
+    league_pool_size: int,
+    scripted_opponents: dict[str, float],
+    seed: int,
+) -> list[SelfPlaySegment]:
+    """Compose normal, league, and seat-swapped scripted data segments.
+
+    Each configured fraction is measured against the full generation. Scripted
+    games are split between NN player zero and one, while historical-league
+    games retain their existing current-best-at-player-zero behavior.
+    """
+    scripted_counts = scripted_opponent_game_counts(total_games, scripted_opponents)
+    if not scripted_counts:
+        # Preserve the existing non-scripted planner byte-for-byte, including
+        # its seed behavior and segment ordering.
+        return plan_selfplay_segments(total_games, league_fraction, league_pool_size, seed)
+
+    if not 0.0 <= float(league_fraction) <= 1.0:
+        raise ValueError("league_fraction must be between zero and one")
+    league_games = (
+        min(total_games, int(round(total_games * float(league_fraction))))
+        if league_pool_size > 0 and league_fraction > 0.0
+        else 0
+    )
+    scripted_games = sum(scripted_counts.values())
+    if league_games + scripted_games > total_games:
+        raise ValueError("league_fraction plus scripted_opponents exceeds one generation")
+
+    segments: list[SelfPlaySegment] = []
+    normal_games = total_games - league_games - scripted_games
+    if normal_games > 0:
+        segments.append(SelfPlaySegment(normal_games, 0, 0))
+    if league_games > 0:
+        segments.extend(plan_selfplay_segments(league_games, 1.0, league_pool_size, seed))
+    for kind, count in scripted_counts.items():
+        first_player_games = (count + 1) // 2
+        second_player_games = count - first_player_games
+        if first_player_games > 0:
+            segments.append(SelfPlaySegment(first_player_games, 0, 0, scripted_kind=kind, nn_player=0))
+        if second_player_games > 0:
+            segments.append(SelfPlaySegment(second_player_games, 0, 0, scripted_kind=kind, nn_player=1))
+    return segments
+
+
 def compact_selfplay_segments(
     segments: list[SelfPlaySegment],
 ) -> tuple[list[SelfPlaySegment], list[int]]:
@@ -327,6 +408,8 @@ def compact_selfplay_segments(
                 n_games=segment.n_games,
                 seat0_model_id=remap[segment.seat0_model_id],
                 seat1_model_id=remap[segment.seat1_model_id],
+                scripted_kind=segment.scripted_kind,
+                nn_player=segment.nn_player,
             )
             for segment in segments
         ],

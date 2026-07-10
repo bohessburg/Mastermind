@@ -15,6 +15,16 @@ enum class SelfPlayKingdomMode : std::uint8_t {
     Random,
 };
 
+// Training-only opponent mode. The policy implementation is shared with
+// EvalRunner so scripted data and eval use identical BigMoney/Engine/Random
+// behavior. None preserves the existing NN-vs-NN self-play path exactly.
+enum class SelfPlayScriptedBotKind : std::uint8_t {
+    None,
+    BigMoney,
+    Engine,
+    Random,
+};
+
 struct SelfPlayConfig {
     std::uint32_t n_games = 64;
     std::uint32_t sims_per_move = 64;
@@ -28,12 +38,15 @@ struct SelfPlayConfig {
     Setup fixed_setup{};
     std::uint16_t max_recorded_moves = 512;
     std::uint32_t max_tree_nodes = 4096;
+    SelfPlayScriptedBotKind scripted_bot = SelfPlayScriptedBotKind::None;
+    PlayerId scripted_nn_player = 0U;
 };
 
 struct SelfPlayRecord {
     std::vector<float> observations;
     std::vector<float> policy_targets;
     std::vector<float> values;
+    std::vector<PlayerId> players;
     DefId kingdom[MAX_KINGDOM_DEFS]{};
     std::uint8_t kingdom_count = 0;
     std::uint64_t seed = 0;
@@ -41,6 +54,10 @@ struct SelfPlayRecord {
     // Read-only outcome metadata for Python-side head-to-head evaluation.
     // It is not consumed by self-play search or replay generation.
     PlayerId winner = NONE;
+    // None for NN-vs-NN games. Scripted-game records contain only decisions
+    // from this NN player, which lets Python derive cheap per-generation
+    // head-to-head outcomes without inspecting private engine state.
+    PlayerId scripted_nn_player = NONE;
 };
 
 class SelfPlayRunner {
@@ -65,6 +82,7 @@ private:
 
     void reset_game(std::uint32_t index) noexcept;
     void start_search(GameSlot& game) noexcept;
+    void drive_scripted(GameSlot& game) noexcept;
     [[nodiscard]] bool game_has_pending(std::uint32_t index) const noexcept;
     void maybe_finish_move(GameSlot& game) noexcept;
     void record_decision(GameSlot& game, const float* policy) noexcept;
@@ -78,6 +96,7 @@ private:
         bool add_root_noise,
         float* out,
         Xoshiro256pp& rng) noexcept;
+    [[nodiscard]] bool resolve_scripted_tree_leaf(GameSlot& game, const MctsPendingLeaf& leaf) noexcept;
 
     SelfPlayConfig config_{};
     MctsConfig mcts_config_{};

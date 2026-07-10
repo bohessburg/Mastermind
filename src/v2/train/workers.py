@@ -83,7 +83,13 @@ def split_segments_by_quotas(
             source = segments[segment_index]
             take = min(needed, remaining)
             worker_segments.append(
-                SelfPlaySegment(take, source.seat0_model_id, source.seat1_model_id)
+                SelfPlaySegment(
+                    take,
+                    source.seat0_model_id,
+                    source.seat1_model_id,
+                    scripted_kind=source.scripted_kind,
+                    nn_player=source.nn_player,
+                )
             )
             needed -= take
             remaining -= take
@@ -333,6 +339,21 @@ def _generate_games(
     return stats, deferred
 
 
+def _record_scripted_outcomes(
+    stats: SelfPlayStats,
+    records: list[dict[str, Any]],
+    scripted_kind: str | None,
+) -> None:
+    if scripted_kind is None:
+        return
+    stats.scripted_games += len(records)
+    for record in records:
+        winner = record.get("winner")
+        nn_player = record.get("scripted_nn_player")
+        if winner is not None and nn_player is not None and int(winner) == int(nn_player):
+            stats.scripted_wins += 1
+
+
 def _generate_games_exact(
     runner: Any,
     evaluate: Callable[[np.ndarray, np.ndarray], tuple[np.ndarray, np.ndarray]],
@@ -341,6 +362,7 @@ def _generate_games_exact(
     result_queue: Any,
     worker_index: int,
     generation: int,
+    scripted_kind: str | None = None,
 ) -> SelfPlayStats:
     """Use the persistent runner but never carry records across a segment."""
     stats = SelfPlayStats()
@@ -365,6 +387,7 @@ def _generate_games_exact(
         if not finished:
             continue
         records = finished[: target_games - sent]
+        _record_scripted_outcomes(stats, records, scripted_kind)
         packed = _pack_records(records)
         games, positions = int(packed[0].shape[0]), int(packed[0].sum())
         if games:
@@ -388,13 +411,22 @@ def _generate_routed_games(
     seat_model_ids: tuple[int, int] | None = None,
     route_audit: dict[tuple[int, int], int] | None = None,
     same_model_fast_path: bool | None = None,
+    scripted_kind: str | None = None,
+    scripted_nn_player: int = 0,
 ) -> SelfPlayStats:
     """Generate a task with fixed models for player zero and player one."""
     if target_games <= 0:
         return SelfPlayStats()
     task_config = copy.deepcopy(selfplay_config)
     task_config.n_games = max(1, min(int(task_config.n_games), int(target_games)))
-    runner = dz.SelfPlayRunner(make_runner_config(task_config, seed))
+    runner = dz.SelfPlayRunner(
+        make_runner_config(
+            task_config,
+            seed,
+            scripted_kind=scripted_kind,
+            scripted_nn_player=scripted_nn_player,
+        )
+    )
     for model in seat_models:
         model.eval()
     same_model = (
@@ -441,6 +473,7 @@ def _generate_routed_games(
         if not finished:
             continue
         records = finished[: target_games - sent]
+        _record_scripted_outcomes(stats, records, scripted_kind)
         packed = _pack_records(records)
         games, positions = int(packed[0].shape[0]), int(packed[0].sum())
         if games:
@@ -462,6 +495,8 @@ def _accumulate_stats(total: SelfPlayStats, update: SelfPlayStats) -> None:
     total.plumbing_time += update.plumbing_time
     total.routed_fast_path_batches += update.routed_fast_path_batches
     total.routed_split_batches += update.routed_split_batches
+    total.scripted_games += update.scripted_games
+    total.scripted_wins += update.scripted_wins
 
 
 def _worker_main(
@@ -529,14 +564,27 @@ def _worker_main(
                     if model is None or device is None:
                         if (segment.seat0_model_id, segment.seat1_model_id) != (0, 0):
                             raise RuntimeError("mini-league self-play requires worker_device='cpu' or 'cuda'")
+                        task_runner = runner
+                        if segment.is_scripted:
+                            task_config = copy.deepcopy(worker_selfplay)
+                            task_config.n_games = max(1, min(int(task_config.n_games), int(segment.n_games)))
+                            task_runner = dz.SelfPlayRunner(
+                                make_runner_config(
+                                    task_config,
+                                    worker_seed ^ (int(generation) * 0x9E37) ^ (task_index * 0x10001),
+                                    scripted_kind=segment.scripted_kind,
+                                    scripted_nn_player=segment.nn_player,
+                                )
+                            )
                         task_stats = _generate_games_exact(
-                            runner,
+                            task_runner,
                             evaluate,
                             collect_max_batch,
                             segment.n_games,
                             result_queue,
                             worker_index,
                             int(generation),
+                            segment.scripted_kind,
                         )
                     else:
                         if not (
@@ -561,6 +609,8 @@ def _worker_main(
                             (segment.seat0_model_id, segment.seat1_model_id),
                             route_audit,
                             segment.seat0_model_id == segment.seat1_model_id,
+                            segment.scripted_kind,
+                            segment.nn_player,
                         )
                         if segment.is_league:
                             league_games += task_stats.games
@@ -594,6 +644,8 @@ def _worker_main(
                         stats.plumbing_time,
                         stats.routed_fast_path_batches,
                         stats.routed_split_batches,
+                        stats.scripted_games,
+                        stats.scripted_wins,
                         league_games,
                         route_audit,
                     ),
@@ -713,6 +765,8 @@ class ParallelSelfPlayPool:
                 plumbing,
                 worker_fast_path_batches,
                 worker_split_batches,
+                worker_scripted_games,
+                worker_scripted_wins,
                 worker_league_games,
                 worker_route_audit,
             ) = payload
@@ -731,6 +785,8 @@ class ParallelSelfPlayPool:
             stats.plumbing_time += plumbing
             stats.routed_fast_path_batches += worker_fast_path_batches
             stats.routed_split_batches += worker_split_batches
+            stats.scripted_games += worker_scripted_games
+            stats.scripted_wins += worker_scripted_wins
             league_games += worker_league_games
             for key, count in worker_route_audit.items():
                 normalized = (int(key[0]), int(key[1]))
@@ -746,6 +802,12 @@ class ParallelSelfPlayPool:
                 raise RuntimeError(
                     f"parallel league self-play collected {league_games} league games, "
                     f"expected {expected_league_games}"
+                )
+            expected_scripted_games = sum(segment.n_games for segment in segments if segment.is_scripted)
+            if stats.scripted_games != expected_scripted_games:
+                raise RuntimeError(
+                    f"parallel scripted self-play collected {stats.scripted_games} scripted games, "
+                    f"expected {expected_scripted_games}"
                 )
         if self.inference_server is not None:
             self.inference_server.ensure_alive()
