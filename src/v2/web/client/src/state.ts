@@ -17,6 +17,9 @@ export interface ClientState {
   log: string[];
   gameover?: GameOverMessage;
   error?: string;
+  undoPendingSeat?: number;
+  undoOfferSeat?: number;
+  undoNotice?: string;
   connected: boolean;
 }
 
@@ -39,6 +42,37 @@ export function reduceServerMessage(state: ClientState, message: ServerMessage):
       return { ...state, gameover: message, error: undefined };
     case 'error':
       return { ...state, error: message.message };
+    case 'undo_pending':
+      return {
+        ...state,
+        undoPendingSeat: message.seat,
+        undoOfferSeat: undefined,
+        undoNotice: undefined,
+      };
+    case 'undo_offer':
+      return {
+        ...state,
+        undoPendingSeat: undefined,
+        undoOfferSeat: message.seat,
+        undoNotice: undefined,
+      };
+    case 'undo_result': {
+      let undoNotice: string | undefined;
+      if (!message.accepted) {
+        switch (message.reason) {
+          case 'denied':
+            undoNotice = 'Opponent declined the undo request.';
+            break;
+          case 'game_advanced':
+            undoNotice = 'Undo request expired because the game advanced.';
+            break;
+          case 'disconnect':
+            undoNotice = 'Undo request was cancelled because a player disconnected.';
+            break;
+        }
+      }
+      return { ...state, undoPendingSeat: undefined, undoOfferSeat: undefined, undoNotice };
+    }
     default:
       return state;
   }

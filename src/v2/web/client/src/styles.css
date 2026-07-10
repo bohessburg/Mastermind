@@ -138,6 +138,7 @@ code {
 
 .app-header,
 .error-banner,
+.undo-banner,
 .app-shell > .def-count {
   flex: none;
 }
@@ -201,6 +202,27 @@ code {
   background: #4c1f25;
   border: 1px solid #8f3f47;
   padding: 8px 12px;
+}
+
+.undo-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px solid var(--act);
+  background: var(--panel-raised);
+  color: var(--muted);
+  padding: 8px 12px;
+}
+
+.undo-banner-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.undo-accept {
+  border-color: var(--act);
+  color: var(--act);
 }
 
 .game-layout {

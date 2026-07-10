@@ -135,13 +135,33 @@ export interface ErrorMessage {
   message: string;
 }
 
+export interface UndoPendingMessage {
+  type: 'undo_pending';
+  seat: number;
+}
+
+export interface UndoOfferMessage {
+  type: 'undo_offer';
+  seat: number;
+}
+
+export interface UndoResultMessage {
+  type: 'undo_result';
+  seat: number;
+  accepted: boolean;
+  reason?: 'denied' | 'game_advanced' | 'disconnect';
+}
+
 export type ServerMessage =
   | TableMessage
   | StateMessage
   | DecisionMessage
   | LogMessage
   | GameOverMessage
-  | ErrorMessage;
+  | ErrorMessage
+  | UndoPendingMessage
+  | UndoOfferMessage
+  | UndoResultMessage;
 
 export interface ActMessage {
   type: 'act';
@@ -152,7 +172,12 @@ export interface UndoRequestMessage {
   type: 'undo_request';
 }
 
-export type ClientMessage = ActMessage | UndoRequestMessage;
+export interface UndoResponseMessage {
+  type: 'undo_response';
+  accept: boolean;
+}
+
+export type ClientMessage = ActMessage | UndoRequestMessage | UndoResponseMessage;
 
 export interface CreateSessionRequest {
   seats: SeatKind[];

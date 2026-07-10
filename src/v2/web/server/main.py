@@ -63,6 +63,13 @@ class _NNCheckpointError(Exception):
     """A safe, user-facing failure while preparing an NN bot."""
 
 
+@dataclass(frozen=True)
+class PendingUndo:
+    requester: int
+    prefix: int
+    action_log_length: int
+
+
 @dataclass
 class Session:
     session_id: str
@@ -74,6 +81,8 @@ class Session:
     action_log: list[int] = field(default_factory=list)
     action_log_line_counts: list[int] = field(default_factory=list)
     human_decision_prefixes: list[int] = field(default_factory=list)
+    human_decision_seats: list[int] = field(default_factory=list)
+    pending_undo: PendingUndo | None = None
     log_lines: list[str] = field(default_factory=list)
     sentry_log_states: dict[int, SentryLogState] = field(default_factory=dict)
     bandit_log_state: BanditLogState = field(default_factory=BanditLogState)
@@ -193,6 +202,10 @@ def _is_human_vs_bot(session: Session) -> bool:
     humans = sum(1 for seat in session.seats if seat.kind == "human")
     bots = sum(1 for seat in session.seats if _is_bot_kind(seat.kind))
     return len(session.seats) == 2 and humans == 1 and bots == 1
+
+
+def _is_human_vs_human(session: Session) -> bool:
+    return len(session.seats) == 2 and all(seat.kind == "human" for seat in session.seats)
 
 
 def _hand_entries(hand: dict[int, int]) -> list[dict[str, int]]:
@@ -602,6 +615,40 @@ def _replay_game(session: Session, actions: list[int]) -> Any:
     return game
 
 
+def _record_human_decision(session: Session, seat: int) -> None:
+    session.human_decision_prefixes.append(len(session.action_log))
+    session.human_decision_seats.append(seat)
+
+
+def _discard_human_decision(session: Session, prefix: int) -> None:
+    if session.human_decision_prefixes and session.human_decision_prefixes[-1] == prefix:
+        session.human_decision_prefixes.pop()
+        if session.human_decision_seats:
+            session.human_decision_seats.pop()
+
+
+def _rewind_to_prefix(session: Session, prefix: int) -> None:
+    log_prefix = sum(session.action_log_line_counts[:prefix])
+    previous_prefixes = session.human_decision_prefixes
+    retained_indexes = [index for index, previous in enumerate(previous_prefixes) if previous < prefix]
+    action_log = session.action_log[:prefix]
+    game = _replay_game(session, action_log)
+
+    session.action_log = action_log
+    session.action_log_line_counts = session.action_log_line_counts[:prefix]
+    session.human_decision_prefixes = [previous_prefixes[index] for index in retained_indexes]
+    if len(session.human_decision_seats) < len(previous_prefixes):
+        # Sessions created before seat provenance was added still support the
+        # original human-vs-bot undo path.
+        session.human_decision_seats = session.human_decision_seats[: len(session.human_decision_prefixes)]
+    else:
+        session.human_decision_seats = [session.human_decision_seats[index] for index in retained_indexes]
+    session.game = game
+    session.log_lines = session.log_lines[:log_prefix]
+    session.sentry_log_states.clear()
+    session.bandit_log_state.hits_by_attacker.clear()
+
+
 def _undo_previous_human_decision(session: Session, seat: int) -> str:
     if not _is_human_vs_bot(session):
         raise ValueError("undo is only available in human-vs-bot sessions")
@@ -610,17 +657,7 @@ def _undo_previous_human_decision(session: Session, seat: int) -> str:
     if not session.human_decision_prefixes:
         raise ValueError("nothing to undo")
 
-    prefix = session.human_decision_prefixes.pop()
-    log_prefix = sum(session.action_log_line_counts[:prefix])
-    session.action_log = session.action_log[:prefix]
-    session.action_log_line_counts = session.action_log_line_counts[:prefix]
-    session.human_decision_prefixes = [
-        previous for previous in session.human_decision_prefixes if previous < prefix
-    ]
-    session.game = _replay_game(session, session.action_log)
-    session.log_lines = session.log_lines[:log_prefix]
-    session.sentry_log_states.clear()
-    session.bandit_log_state.hits_by_attacker.clear()
+    _rewind_to_prefix(session, session.human_decision_prefixes[-1])
     line = "Undo: rewound to previous human decision"
     session.log_lines.append(line)
     return line
@@ -630,6 +667,8 @@ async def _broadcast(
     session: Session,
     lines: list[str],
     private_lines_by_seat: dict[int, list[str]] | None = None,
+    *,
+    include_table: bool = False,
 ) -> None:
     stale: list[str] = []
     for token, websocket in list(session.connections.items()):
@@ -638,12 +677,44 @@ async def _broadcast(
             stale.append(token)
             continue
         try:
+            if include_table:
+                await websocket.send_json(_table_message(session))
             for message in _post_step_messages(session, seat, lines, private_lines_by_seat):
                 await websocket.send_json(message)
         except RuntimeError:
             stale.append(token)
     for token in stale:
         session.connections.pop(token, None)
+
+
+async def _send_to_seat(session: Session, seat: int, message: dict[str, Any]) -> bool:
+    if seat < 0 or seat >= len(session.seats):
+        return False
+    token = session.seats[seat].token
+    websocket = session.connections.get(token)
+    if websocket is None:
+        return False
+    try:
+        await websocket.send_json(message)
+    except (RuntimeError, WebSocketDisconnect):
+        if session.connections.get(token) is websocket:
+            session.connections.pop(token, None)
+        return False
+    return True
+
+
+async def _send_undo_result(
+    session: Session,
+    pending: PendingUndo,
+    accepted: bool,
+    reason: str | None = None,
+    recipients: tuple[int, ...] | None = None,
+) -> None:
+    message: dict[str, Any] = {"type": "undo_result", "seat": pending.requester, "accepted": accepted}
+    if reason is not None:
+        message["reason"] = reason
+    for recipient in recipients if recipients is not None else tuple(range(len(session.seats))):
+        await _send_to_seat(session, recipient, message)
 
 
 @app.post("/api/session")
@@ -734,12 +805,83 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, seat_token: 
             payload = await websocket.receive_json()
             if payload.get("type") == "undo_request":
                 async with session.lock:
-                    try:
-                        line = _undo_previous_human_decision(session, seat)
-                    except ValueError as error:
-                        await websocket.send_json({"type": "error", "message": str(error)})
+                    if seat < 0 or session.seats[seat].kind != "human":
+                        await websocket.send_json({"type": "error", "message": "only a human seat can undo"})
                         continue
-                    await _broadcast(session, [line])
+                    if _is_human_vs_bot(session):
+                        try:
+                            line = _undo_previous_human_decision(session, seat)
+                        except ValueError as error:
+                            await websocket.send_json({"type": "error", "message": str(error)})
+                            continue
+                        await _broadcast(session, [line])
+                        continue
+                    if not _is_human_vs_human(session):
+                        await websocket.send_json(
+                            {"type": "error", "message": "undo is only available in two-human sessions"}
+                        )
+                        continue
+                    if session.pending_undo is not None:
+                        await websocket.send_json({"type": "error", "message": "an undo request is already pending"})
+                        continue
+                    if (
+                        not session.human_decision_prefixes
+                        or not session.human_decision_seats
+                        or session.human_decision_seats[-1] != seat
+                    ):
+                        await websocket.send_json({"type": "error", "message": "nothing to undo"})
+                        continue
+
+                    opponent = 1 - seat
+                    if session.seats[opponent].token not in session.connections:
+                        await websocket.send_json({"type": "error", "message": "opponent is not connected"})
+                        continue
+                    pending = PendingUndo(
+                        requester=seat,
+                        prefix=session.human_decision_prefixes[-1],
+                        action_log_length=len(session.action_log),
+                    )
+                    session.pending_undo = pending
+                    if not await _send_to_seat(session, seat, {"type": "undo_pending", "seat": seat}):
+                        session.pending_undo = None
+                        continue
+                    if not await _send_to_seat(session, opponent, {"type": "undo_offer", "seat": seat}):
+                        session.pending_undo = None
+                        await _send_undo_result(session, pending, False, "disconnect", recipients=(seat,))
+                continue
+
+            if payload.get("type") == "undo_response":
+                async with session.lock:
+                    pending = session.pending_undo
+                    accept = payload.get("accept")
+                    if pending is None:
+                        await websocket.send_json({"type": "error", "message": "no undo request is pending"})
+                        continue
+                    if seat == pending.requester or session.seats[seat].kind != "human":
+                        await websocket.send_json({"type": "error", "message": "only the opponent can respond"})
+                        continue
+                    if not isinstance(accept, bool):
+                        await websocket.send_json({"type": "error", "message": "undo response must include a boolean accept"})
+                        continue
+                    if len(session.action_log) != pending.action_log_length:
+                        session.pending_undo = None
+                        await _send_undo_result(session, pending, False, "game_advanced")
+                        continue
+
+                    session.pending_undo = None
+                    if not accept:
+                        await _send_undo_result(session, pending, False, "denied")
+                        continue
+                    try:
+                        _rewind_to_prefix(session, pending.prefix)
+                    except ValueError as error:
+                        await _send_undo_result(session, pending, False)
+                        await _send_to_seat(session, pending.requester, {"type": "error", "message": str(error)})
+                        continue
+                    line = f"P{pending.requester + 1} undoes their last decision"
+                    session.log_lines.append(line)
+                    await _send_undo_result(session, pending, True)
+                    await _broadcast(session, [line], include_table=True)
                 continue
 
             if payload.get("type") != "act":
@@ -748,22 +890,30 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, seat_token: 
 
             action = int(payload.get("action", -1))
             async with session.lock:
+                action_prefix = len(session.action_log)
                 try:
                     if session.seats[seat].kind == "human":
-                        session.human_decision_prefixes.append(len(session.action_log))
+                        _record_human_decision(session, seat)
                     lines, private_lines = _apply_validated_action(session, seat, action)
                 except ValueError as error:
-                    if session.human_decision_prefixes and session.human_decision_prefixes[-1] == len(session.action_log):
-                        session.human_decision_prefixes.pop()
+                    _discard_human_decision(session, action_prefix)
                     await websocket.send_json({"type": "error", "message": str(error)})
                     continue
 
+                pending = session.pending_undo
+                if pending is not None:
+                    session.pending_undo = None
+                    await _send_undo_result(session, pending, False, "game_advanced")
                 await _broadcast(session, lines, private_lines)
                 await _run_bots(session)
     except WebSocketDisconnect:
         async with session.lock:
             if session.connections.get(seat_token) is websocket:
                 session.connections.pop(seat_token, None)
+                pending = session.pending_undo
+                if pending is not None:
+                    session.pending_undo = None
+                    await _send_undo_result(session, pending, False, "disconnect", recipients=(1 - seat,))
 
 
 CLIENT_DIST = Path(__file__).resolve().parents[1] / "client" / "dist"

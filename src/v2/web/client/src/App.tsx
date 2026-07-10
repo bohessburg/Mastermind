@@ -867,6 +867,10 @@ export function App() {
     setAutoPlayingTreasures(false);
   }
 
+  function respondToUndo(accept: boolean) {
+    socketRef.current?.send({ type: 'undo_response', accept });
+  }
+
   const playActionsByDef = useMemo(() => {
     const decision = clientState.decision;
     if (decision?.kind !== 'PhaseAction' && decision?.kind !== 'PhaseBuy') {
@@ -913,6 +917,7 @@ export function App() {
       : status === 'closed'
         ? { label: 'Disconnected', className: 'disconnected' }
         : { label: 'Connecting', className: 'connecting' };
+  const undoIsPending = clientState.undoPendingSeat !== undefined || clientState.undoOfferSeat !== undefined;
 
   return (
     <main className="app-shell">
@@ -925,11 +930,26 @@ export function App() {
           </span>
         </div>
         <div className="header-actions">
-          <button type="button" onClick={undo}>Undo</button>
+          <button type="button" onClick={undo} disabled={undoIsPending}>Undo</button>
           <button type="button" onClick={() => setCredentials(undefined)}>Leave</button>
         </div>
       </header>
       {clientState.error && <div className="error-banner">{clientState.error}</div>}
+      {(clientState.undoPendingSeat !== undefined || clientState.undoOfferSeat !== undefined || clientState.undoNotice) && (
+        <div className="undo-banner" aria-live="polite">
+          {clientState.undoPendingSeat !== undefined && <span>Undo requested — waiting for opponent</span>}
+          {clientState.undoOfferSeat !== undefined && (
+            <>
+              <span>P{clientState.undoOfferSeat + 1} requested an undo</span>
+              <div className="undo-banner-actions">
+                <button type="button" className="undo-accept" onClick={() => respondToUndo(true)}>Accept</button>
+                <button type="button" onClick={() => respondToUndo(false)}>Deny</button>
+              </div>
+            </>
+          )}
+          {clientState.undoNotice && <span>{clientState.undoNotice}</span>}
+        </div>
+      )}
       <div className="game-layout">
         <div className="main-table">
           {view && (

@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import type { CardDef, DecisionMessage, LogMessage, StateMessage, TableMessage } from '../protocol';
+import type {
+  CardDef,
+  DecisionMessage,
+  LogMessage,
+  StateMessage,
+  TableMessage,
+  UndoOfferMessage,
+  UndoPendingMessage,
+  UndoResultMessage,
+} from '../protocol';
 import {
   canSendDone,
   findNextBasicTreasurePlay,
@@ -58,6 +67,44 @@ describe('client state reducer', () => {
     const second: LogMessage = { type: 'log', lines: ['P1 buys Silver'] };
     const state = reduceServerMessage(reduceServerMessage(initialClientState, first), second);
     expect(state.log).toEqual(['P1 plays Copper', 'P1 buys Silver']);
+  });
+
+  it('tracks undo pending and offers, then clears them when resolved', () => {
+    const pending: UndoPendingMessage = { type: 'undo_pending', seat: 0 };
+    const offer: UndoOfferMessage = { type: 'undo_offer', seat: 1 };
+    const accepted: UndoResultMessage = { type: 'undo_result', seat: 1, accepted: true };
+
+    const waiting = reduceServerMessage({ ...initialClientState, undoNotice: 'stale' }, pending);
+    expect(waiting.undoPendingSeat).toBe(0);
+    expect(waiting.undoOfferSeat).toBeUndefined();
+    expect(waiting.undoNotice).toBeUndefined();
+
+    const offered = reduceServerMessage(waiting, offer);
+    expect(offered.undoPendingSeat).toBeUndefined();
+    expect(offered.undoOfferSeat).toBe(1);
+
+    const resolved = reduceServerMessage(offered, accepted);
+    expect(resolved.undoPendingSeat).toBeUndefined();
+    expect(resolved.undoOfferSeat).toBeUndefined();
+    expect(resolved.undoNotice).toBeUndefined();
+  });
+
+  it('derives undo notices from each result reason', () => {
+    const cases: Array<[UndoResultMessage['reason'], string]> = [
+      ['denied', 'Opponent declined the undo request.'],
+      ['game_advanced', 'Undo request expired because the game advanced.'],
+      ['disconnect', 'Undo request was cancelled because a player disconnected.'],
+    ];
+
+    for (const [reason, notice] of cases) {
+      const state = reduceServerMessage(
+        { ...initialClientState, undoPendingSeat: 0, undoOfferSeat: 1 },
+        { type: 'undo_result', seat: 0, accepted: false, reason },
+      );
+      expect(state.undoPendingSeat).toBeUndefined();
+      expect(state.undoOfferSeat).toBeUndefined();
+      expect(state.undoNotice).toBe(notice);
+    }
   });
 
   it('recognizes pass or done options for multi-select flow', () => {

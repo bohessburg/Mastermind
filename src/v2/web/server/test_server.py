@@ -98,9 +98,17 @@ def read_until_decision_or_gameover(websocket) -> list[dict]:
 
 
 def read_broadcast(ws0, ws1) -> tuple[list[dict], list[dict]]:
+    return read_pair_messages(ws0, ws1, 3)
+
+
+def read_messages(websocket, count: int) -> list[dict]:
+    return [websocket.receive_json() for _ in range(count)]
+
+
+def read_pair_messages(ws0, ws1, count: int) -> tuple[list[dict], list[dict]]:
     with ThreadPoolExecutor(max_workers=2) as executor:
-        future0 = executor.submit(read_update, ws0)
-        future1 = executor.submit(read_update, ws1)
+        future0 = executor.submit(read_messages, ws0, count)
+        future1 = executor.submit(read_messages, ws1, count)
         return future0.result(timeout=5), future1.result(timeout=5)
 
 
@@ -1071,6 +1079,148 @@ def test_undo_rewinds_to_previous_human_decision() -> None:
     replay = dz.new_game(session.setup, session.seed)
     assert session.action_log == []
     assert session.game.state_hash() == replay.state_hash()
+
+
+def create_two_human_undo_session(client: TestClient, seed: int) -> tuple[dict, Session]:
+    sessions.clear()
+    response = client.post(
+        "/api/session",
+        json={"seats": ["human", "human"], "kingdom": KINGDOM, "seed": seed},
+    )
+    assert response.status_code == 200
+    created = response.json()
+    return created, sessions[created["session_id"]]
+
+
+def play_opening_human_decision(ws0, ws1) -> tuple[list[dict], tuple[list[dict], list[dict]]]:
+    initial0 = read_initial(ws0)
+    initial1 = read_initial(ws1)
+    seat, opening = active_decision({0: by_type(initial0, "decision"), 1: by_type(initial1, "decision")})
+    assert seat == 0
+    ws0.send_json({"type": "act", "action": choose_big_money_action(opening)})
+    return initial0, read_broadcast(ws0, ws1)
+
+
+def test_two_human_undo_accept_rewinds_and_full_refreshes() -> None:
+    client = TestClient(app)
+    created, session = create_two_human_undo_session(client, 0x5110)
+    tokens = created["seat_tokens"]
+    initial_hash = session.game.state_hash()
+
+    with client.websocket_connect(f"/ws/{created['session_id']}/{tokens[0]}") as ws0:
+        with client.websocket_connect(f"/ws/{created['session_id']}/{tokens[1]}") as ws1:
+            initial0, _ = play_opening_human_decision(ws0, ws1)
+            assert session.human_decision_seats == [0]
+
+            ws0.send_json({"type": "undo_request"})
+            assert ws0.receive_json() == {"type": "undo_pending", "seat": 0}
+            assert ws1.receive_json() == {"type": "undo_offer", "seat": 0}
+
+            ws1.send_json({"type": "undo_response", "accept": True})
+            refreshed0, refreshed1 = read_pair_messages(ws0, ws1, 5)
+
+            for messages in (refreshed0, refreshed1):
+                assert messages[0] == {"type": "undo_result", "seat": 0, "accepted": True}
+                assert messages[1]["type"] == "table"
+                assert by_type(messages, "log")["lines"] == ["P1 undoes their last decision"]
+            assert by_type(refreshed0, "state")["view"] == by_type(initial0, "state")["view"]
+            assert session.action_log == []
+            assert session.human_decision_prefixes == []
+            assert session.human_decision_seats == []
+            assert session.game.state_hash() == initial_hash
+
+
+def test_two_human_undo_deny_preserves_game_and_notifies_both() -> None:
+    client = TestClient(app)
+    created, session = create_two_human_undo_session(client, 0x5111)
+    tokens = created["seat_tokens"]
+
+    with client.websocket_connect(f"/ws/{created['session_id']}/{tokens[0]}") as ws0:
+        with client.websocket_connect(f"/ws/{created['session_id']}/{tokens[1]}") as ws1:
+            _, _ = play_opening_human_decision(ws0, ws1)
+            before_actions = list(session.action_log)
+            before_hash = session.game.state_hash()
+
+            ws0.send_json({"type": "undo_request"})
+            _ = ws0.receive_json()
+            _ = ws1.receive_json()
+            ws1.send_json({"type": "undo_response", "accept": False})
+            denied0, denied1 = read_pair_messages(ws0, ws1, 1)
+
+            expected = {"type": "undo_result", "seat": 0, "accepted": False, "reason": "denied"}
+            assert denied0 == [expected]
+            assert denied1 == [expected]
+            assert session.pending_undo is None
+            assert session.action_log == before_actions
+            assert session.game.state_hash() == before_hash
+
+
+def test_two_human_undo_is_invalidated_when_the_game_advances() -> None:
+    client = TestClient(app)
+    created, session = create_two_human_undo_session(client, 0x5112)
+    tokens = created["seat_tokens"]
+
+    with client.websocket_connect(f"/ws/{created['session_id']}/{tokens[0]}") as ws0:
+        with client.websocket_connect(f"/ws/{created['session_id']}/{tokens[1]}") as ws1:
+            _, (after0, _) = play_opening_human_decision(ws0, ws1)
+            ws0.send_json({"type": "undo_request"})
+            _ = ws0.receive_json()
+            _ = ws1.receive_json()
+
+            ws0.send_json({"type": "act", "action": choose_big_money_action(by_type(after0, "decision"))})
+            advanced0, advanced1 = read_pair_messages(ws0, ws1, 4)
+
+            expected = {"type": "undo_result", "seat": 0, "accepted": False, "reason": "game_advanced"}
+            assert advanced0[0] == expected
+            assert advanced1[0] == expected
+            assert by_type(advanced0[1:], "log")["lines"]
+            assert by_type(advanced1[1:], "state")
+            assert session.pending_undo is None
+
+
+def test_two_human_undo_allows_only_one_pending_request() -> None:
+    client = TestClient(app)
+    created, session = create_two_human_undo_session(client, 0x5113)
+    tokens = created["seat_tokens"]
+
+    with client.websocket_connect(f"/ws/{created['session_id']}/{tokens[0]}") as ws0:
+        with client.websocket_connect(f"/ws/{created['session_id']}/{tokens[1]}") as ws1:
+            _, _ = play_opening_human_decision(ws0, ws1)
+            ws0.send_json({"type": "undo_request"})
+            _ = ws0.receive_json()
+            _ = ws1.receive_json()
+
+            ws0.send_json({"type": "undo_request"})
+            error = ws0.receive_json()
+            assert error["type"] == "error"
+            assert "pending" in error["message"]
+            assert session.pending_undo is not None
+
+
+def test_two_human_undo_rejects_when_opponent_made_the_last_decision() -> None:
+    client = TestClient(app)
+    created, session = create_two_human_undo_session(client, 0x5114)
+    tokens = created["seat_tokens"]
+
+    with client.websocket_connect(f"/ws/{created['session_id']}/{tokens[0]}") as ws0:
+        with client.websocket_connect(f"/ws/{created['session_id']}/{tokens[1]}") as ws1:
+            _, updates = play_opening_human_decision(ws0, ws1)
+            for _ in range(100):
+                decisions = {0: by_type(updates[0], "decision"), 1: by_type(updates[1], "decision")}
+                seat, decision_value = active_decision(decisions)
+                websocket = ws0 if seat == 0 else ws1
+                websocket.send_json({"type": "act", "action": choose_big_money_action(decision_value)})
+                updates = read_broadcast(ws0, ws1)
+                if seat == 1:
+                    break
+            else:
+                raise AssertionError("P2 never made a decision")
+
+            assert session.human_decision_seats[-1] == 1
+            ws0.send_json({"type": "undo_request"})
+            error = ws0.receive_json()
+            assert error == {"type": "error", "message": "nothing to undo"}
+            assert session.pending_undo is None
 
 
 def test_export_endpoint_replays_deterministically() -> None:
