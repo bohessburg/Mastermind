@@ -96,3 +96,29 @@ Decision rules agreed with Jack:
 - Engine is trusted ground truth (fuzz+goldens); training-layer bugs so far:
   cold-start gate deadlock (fixed: warmup), gated path bypassing worker pool
   (fixed), pkill self-match (procedural), ssh-hang-after-nohup (cosmetic).
+
+## NN playtesting (added late 2026-07-09)
+
+- Web server has a `bot:nn` seat (dropdown: "Human vs neural net"); loads
+  checkpoints via DOMINION_NN_CHECKPOINT (default campaign1 gen_0025.pt) or
+  `bot:nn:<path>`. Policy-head argmax, no search. Finished games auto-persist
+  to `exports/<session_id>.json` (survives restarts; sessions themselves are
+  in-memory only).
+- Gen-25 policy characterization (offline probes + Jack's 2 games, one
+  exported: exports dir + scratchpad nn_game2.json, seed 68969696969):
+  * 3-4 coins → Silver at 78-90% (its one deep conviction).
+  * **5 coins → Duchy ~80% ALWAYS** — turn 3 or turn 30, board-blind.
+    Not reactive, not a clock: a constant learned from money-slog self-play.
+  * ≤2-coin decisions are UNLEARNED (near-uniform: Pass≈Copper≈Moat≈Curse
+    ~17-24%) → argmax noise buys: Coppers at 0 coins, Estates, late
+    Workshops/Cellars at 15-21% confidence.
+  * Value head is directionally well calibrated (tracked a lost game to
+    -1.00 from turn 35) — policy learned unevenly, value learned well;
+    explains why gen-25+MCTS hit 30.3% while raw policy lost 54-7 to Jack.
+- Probe scripts pattern: encode obs via game.encode(player), masked softmax
+  over policy logits, report top-k at chosen decision points (see scratchpad
+  claudes_gambit.py / probe snippets in session history; worth promoting to
+  a real tool if used again).
+- Comparison idea for campaign 2 checkpoints: replay Jack's exported games,
+  asking each checkpoint "what would you buy here" — qualitative diff
+  between training runs.
