@@ -17,14 +17,17 @@ from .train import build_objects, run_training
 from .workers import ParallelSelfPlayPool
 
 
-def _finish_one_scripted_game(nn_player: int) -> tuple[dict, set[int]]:
+def _finish_one_scripted_game(
+    nn_player: int,
+    scripted_bot: dz.SelfPlayScriptedBotKind = dz.SelfPlayScriptedBotKind.BigMoney,
+) -> tuple[dict, set[int]]:
     config = dz.SelfPlayConfig(
         n_games=1,
         sims_per_move=2,
         max_batch=4,
         seed=0x5C71,
         kingdom_mode=dz.SelfPlayKingdomMode.Fixed,
-        scripted_bot=dz.SelfPlayScriptedBotKind.BigMoney,
+        scripted_bot=scripted_bot,
         scripted_nn_player=nn_player,
     )
     runner = dz.SelfPlayRunner(config)
@@ -45,16 +48,29 @@ def _finish_one_scripted_game(nn_player: int) -> tuple[dict, set[int]]:
     raise AssertionError("scripted self-play game did not finish")
 
 
-def test_scripted_runner_filters_to_nn_records_and_uses_nn_outcome_perspective() -> None:
-    record, emitted_leaf_players = _finish_one_scripted_game(nn_player=1)
+@pytest.mark.parametrize(
+    ("scripted_bot", "nn_player"),
+    [
+        (dz.SelfPlayScriptedBotKind.BigMoney, 1),
+        (dz.SelfPlayScriptedBotKind.Engine, 0),
+    ],
+)
+def test_scripted_runner_filters_to_nn_records_and_uses_nn_outcome_perspective(
+    scripted_bot: dz.SelfPlayScriptedBotKind,
+    nn_player: int,
+) -> None:
+    record, emitted_leaf_players = _finish_one_scripted_game(
+        nn_player=nn_player,
+        scripted_bot=scripted_bot,
+    )
 
-    assert emitted_leaf_players == {1}
-    assert record["scripted_nn_player"] == 1
+    assert emitted_leaf_players == {nn_player}
+    assert record["scripted_nn_player"] == nn_player
     assert record["players"].dtype == np.uint8
-    assert set(record["players"].tolist()) == {1}
+    assert set(record["players"].tolist()) == {nn_player}
     assert record["observations"].shape[0] == record["policy_targets"].shape[0] == record["values"].shape[0]
     winner = record["winner"]
-    expected_value = 0.0 if winner is None else (1.0 if int(winner) == 1 else -1.0)
+    expected_value = 0.0 if winner is None else (1.0 if int(winner) == nn_player else -1.0)
     np.testing.assert_array_equal(
         record["values"],
         np.full(record["values"].shape, expected_value, dtype=np.float32),
@@ -215,3 +231,21 @@ def test_campaign6_config_loads_with_scripted_bigmoney_schedule() -> None:
     assert config.checkpoint_dir == "/workspace/checkpoints/campaign6"
     assert config.scripted_opponents == {}
     assert config.scripted_opponent_schedule == {"bigmoney": [[10, 0.0], [11, 0.05], [25, 0.20]]}
+
+
+def test_campaign9_config_loads_with_two_opponent_curriculum() -> None:
+    config = load_config(Path(__file__).resolve().parents[3] / "configs" / "run_c9.json")
+
+    assert config.seed == 20260717
+    assert config.checkpoint_dir == "/workspace/checkpoints/campaign9"
+    assert config.selfplay.auto_play_treasures is True
+    assert config.selfplay.prune_treasure_plays is True
+    assert config.scripted_opponent_schedule == {
+        "bigmoney": [[5, 0.0], [6, 0.01], [25, 0.20]],
+        "engine": [[10, 0.0], [11, 0.01], [30, 0.20]],
+    }
+    assert effective_scripted_fractions(
+        config.scripted_opponent_schedule,
+        config.scripted_opponents,
+        12,
+    ) == pytest.approx({"bigmoney": 0.07, "engine": 0.02})
