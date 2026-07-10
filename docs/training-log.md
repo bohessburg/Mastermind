@@ -133,3 +133,16 @@ Three-campaign synthesis:
   (for discussion, NOT auto-run): more sims for data gen (256-400),
   bigger/wider net, eval-selected best (gate vs ENGINEBOT instead of
   self-relative), value target = score differential not just win/loss.
+
+Pile-out forensics (2026-07-10, eval-ladder v2): 100 games, c1 gen-25 + 400
+sims vs EngineBot, random kingdoms: 24W/72L/4T (25%, consistent with 30.3%
++-noise). Game endings: **66% three-pile, 34% Province, 0 truncated.**
+EngineBot never races piles, so pile endings are overwhelmingly NN-steered.
+Jack's hypothesis confirmed: the trained system's EngineBot wins ride
+substantially on the 3-pile ending EngineBot cannot see (no pile awareness
+in its buy chart). Implications: (1) single-opponent eval numbers overstate
+general strength; MCTS-scaffold opponent added to ladder for a harder
+reference; (2) pile-out was learned honestly from self-play (games between
+money-heavy nets end by piles) — it is a real strategy, just a local
+optimum; (3) win-conditioned ending split would sharpen this further
+(current columns count all games).
