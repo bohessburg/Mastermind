@@ -1,0 +1,51 @@
+{
+  "_comment": "Next-campaign gated run: candidate checkpoints train continuously, while best.pt gates self-play and a small archived-best league supplies opponent diversity. Parallel collection is seed-pinned per worker but record insertion order remains asynchronous.",
+  "seed": 20260711,
+  "generations": 200,
+  "device": "auto",
+  "parallel_workers": 8,
+  "worker_device": "cuda",
+  "checkpoint_dir": "checkpoints/gated",
+  "metrics_csv": "checkpoints/gated/metrics.csv",
+  "gate_games": 60,
+  "gate_sims": 64,
+  "gate_threshold": 0.55,
+  "league_fraction": 0.2,
+  "league_pool_size": 8,
+  "model": {
+    "hidden_sizes": [1024, 1024, 512]
+  },
+  "selfplay": {
+    "n_games": 128,
+    "sims_per_move": 128,
+    "games_per_generation": 1024,
+    "max_batch": 4096,
+    "c_puct": 1.25,
+    "dirichlet_alpha": 0.3,
+    "dirichlet_frac": 0.25,
+    "temp_moves": 12,
+    "kingdom_mode": "random",
+    "max_recorded_moves": 512,
+    "max_tree_nodes": 4096
+  },
+  "optim": {
+    "lr": 0.0002,
+    "lr_schedule": "cosine",
+    "min_lr": 0.00005,
+    "weight_decay": 0.0001,
+    "batch_size": 2048,
+    "train_steps_per_generation": 750
+  },
+  "replay": {
+    "capacity": 2000000
+  },
+  "eval": {
+    "eval_every_n_generations": 5,
+    "eval_games": 200,
+    "eval_sims": 400,
+    "eval_opponent": "engine",
+    "eval_kingdoms": "random",
+    "eval_n_games": 128,
+    "eval_max_batch": 4096
+  }
+}

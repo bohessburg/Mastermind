@@ -134,6 +134,41 @@ export function findNextBasicTreasurePlay(
   return best;
 }
 
+const BASIC_SUPPLY_ORDER = ['Copper', 'Silver', 'Gold', 'Estate', 'Duchy', 'Province', 'Curse'];
+
+/** Returns a display order without changing the server's pile array. */
+export function orderSupplyPiles(
+  piles: CountedCard[],
+  defsById: ReadonlyMap<number, Pick<CardDef, 'name' | 'cost'>>,
+): CountedCard[] {
+  const basicOrder = new Map(BASIC_SUPPLY_ORDER.map((name, index) => [name, index]));
+
+  return [...piles].sort((left, right) => {
+    const leftDef = defsById.get(left.def);
+    const rightDef = defsById.get(right.def);
+    const leftBasicOrder = basicOrder.get(leftDef?.name ?? '');
+    const rightBasicOrder = basicOrder.get(rightDef?.name ?? '');
+
+    if (leftBasicOrder !== undefined || rightBasicOrder !== undefined) {
+      if (leftBasicOrder === undefined) {
+        return 1;
+      }
+      if (rightBasicOrder === undefined) {
+        return -1;
+      }
+      return leftBasicOrder - rightBasicOrder;
+    }
+
+    const costDifference = (leftDef?.cost.coins ?? Infinity) - (rightDef?.cost.coins ?? Infinity);
+    if (costDifference !== 0) {
+      return costDifference;
+    }
+
+    const nameDifference = (leftDef?.name ?? `Card ${left.def}`).localeCompare(rightDef?.name ?? `Card ${right.def}`);
+    return nameDifference !== 0 ? nameDifference : left.def - right.def;
+  });
+}
+
 export function formatTrashEntries(
   trash: CountedCard[],
   nameForDef: (def: number) => string | undefined,

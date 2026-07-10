@@ -31,7 +31,7 @@ from .inference_server import (
     serialize_cpu_state_dict,
 )
 from .model import DominionNet
-from .selfplay import SelfPlayStats, make_runner_config
+from .selfplay import SelfPlayStats, make_runner_config, route_leaf_evaluations
 
 
 PackedGameRecords = tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]
@@ -297,6 +297,68 @@ def _generate_games(
     return stats, deferred
 
 
+def _generate_routed_games(
+    seat_models: tuple[torch.nn.Module, torch.nn.Module],
+    selfplay_config: Any,
+    seed: int,
+    device: torch.device,
+    target_games: int,
+    result_queue: Any,
+    worker_index: int,
+    generation: int,
+) -> SelfPlayStats:
+    """Generate a task with fixed models for player zero and player one."""
+    if target_games <= 0:
+        return SelfPlayStats()
+    task_config = copy.deepcopy(selfplay_config)
+    task_config.n_games = max(1, min(int(task_config.n_games), int(target_games)))
+    runner = dz.SelfPlayRunner(make_runner_config(task_config, seed))
+    for model in seat_models:
+        model.eval()
+    stats = SelfPlayStats()
+    sent = 0
+    start = time.perf_counter()
+    while sent < target_games:
+        plumbing_start = time.perf_counter()
+        obs, masks = runner.collect_leaves(task_config.max_batch)
+        players = runner.leaf_players()
+        stats.plumbing_time += time.perf_counter() - plumbing_start
+        batch = int(obs.shape[0])
+        if batch == 0:
+            continue
+        inference_start = time.perf_counter()
+        logits_np, values_np = route_leaf_evaluations(seat_models, obs, masks, players, device)
+        stats.inference_time += time.perf_counter() - inference_start
+        plumbing_start = time.perf_counter()
+        runner.provide_evaluations(values_np, logits_np)
+        finished = runner.finished_games()
+        stats.plumbing_time += time.perf_counter() - plumbing_start
+        stats.leaves += batch
+        stats.nn_evals += batch
+        if not finished:
+            continue
+        records = finished[: target_games - sent]
+        packed = _pack_records(records)
+        games, positions = int(packed[0].shape[0]), int(packed[0].sum())
+        if games:
+            result_queue.put(("records", worker_index, generation, packed))
+            sent += games
+            stats.games += games
+            stats.positions += positions
+    stats.wall_time = time.perf_counter() - start
+    return stats
+
+
+def _accumulate_stats(total: SelfPlayStats, update: SelfPlayStats) -> None:
+    total.games += update.games
+    total.positions += update.positions
+    total.leaves += update.leaves
+    total.nn_evals += update.nn_evals
+    total.wall_time += update.wall_time
+    total.inference_time += update.inference_time
+    total.plumbing_time += update.plumbing_time
+
+
 def _worker_main(
     config: TrainConfig,
     worker_index: int,
@@ -340,20 +402,59 @@ def _worker_main(
             command = command_queue.get()
             if command[0] == "stop":
                 return
-            _, generation, target_games, state_payload = command
+            _, generation, target_games, state_payload, assignments, league_state_payloads = command
             if model is not None:
                 model.load_state_dict(deserialize_cpu_state_dict(state_payload))
                 model.eval()
-            stats, deferred = _generate_games(
-                runner,
-                evaluate,
-                collect_max_batch,
-                int(target_games),
-                deferred,
-                result_queue,
-                worker_index,
-                int(generation),
-            )
+            if assignments:
+                if model is None or device is None:
+                    raise RuntimeError("mini-league self-play requires worker_device='cpu' or 'cuda'")
+                league_models: list[DominionNet] = []
+                for payload in league_state_payloads:
+                    opponent = DominionNet(dz.OBS_SIZE, dz.ACTION_SPACE_SIZE, config.model.hidden_sizes).to(device)
+                    opponent.load_state_dict(deserialize_cpu_state_dict(payload))
+                    opponent.eval()
+                    league_models.append(opponent)
+
+                # A separate fixed-seat runner per task makes each sampled
+                # game unambiguous without changing SelfPlayRunner's core
+                # game progression.  Task seeds are deterministic.
+                tasks: dict[tuple[int | None, int], int] = {}
+                for assignment in assignments:
+                    key = (None, 0) if assignment is None else (int(assignment[0]), int(assignment[1]))
+                    tasks[key] = tasks.get(key, 0) + 1
+                stats = SelfPlayStats()
+                for task_index, ((opponent_index, best_player), count) in enumerate(tasks.items()):
+                    if opponent_index is None:
+                        seat_models = (model, model)
+                    else:
+                        if not 0 <= opponent_index < len(league_models):
+                            raise RuntimeError("mini-league assignment references an unknown opponent")
+                        opponent = league_models[opponent_index]
+                        seat_models = (model, opponent) if best_player == 0 else (opponent, model)
+                    task_stats = _generate_routed_games(
+                        seat_models,
+                        worker_selfplay,
+                        worker_seed ^ (int(generation) * 0x9E37) ^ (task_index * 0x10001),
+                        device,
+                        count,
+                        result_queue,
+                        worker_index,
+                        int(generation),
+                    )
+                    _accumulate_stats(stats, task_stats)
+                deferred = []
+            else:
+                stats, deferred = _generate_games(
+                    runner,
+                    evaluate,
+                    collect_max_batch,
+                    int(target_games),
+                    deferred,
+                    result_queue,
+                    worker_index,
+                    int(generation),
+                )
             result_queue.put(
                 (
                     "done",
@@ -410,14 +511,26 @@ class ParallelSelfPlayPool:
         model: torch.nn.Module,
         replay: Any,
         generation: int,
+        league_assignments: list[tuple[int, int] | None] | None = None,
+        league_state_payloads: list[bytes] | None = None,
     ) -> ParallelSelfPlayResult:
         if self.inference_server is not None:
             self.inference_server.ensure_alive()
             state_payload = None
         else:
             state_payload = serialize_cpu_state_dict(model)
+        if league_assignments is not None and len(league_assignments) != self.config.selfplay.games_per_generation:
+            raise ValueError("mini-league assignments must cover exactly one generation")
+        if league_assignments and self.inference_server is not None:
+            raise ValueError("mini-league self-play is unavailable with worker_device='server'")
+        league_state_payloads = league_state_payloads or []
+        offset = 0
         for command_queue, quota in zip(self.command_queues, self.quotas):
-            command_queue.put(("generate", generation, quota, state_payload))
+            assignments = None if league_assignments is None else league_assignments[offset : offset + quota]
+            offset += quota
+            command_queue.put(
+                ("generate", generation, quota, state_payload, assignments, league_state_payloads)
+            )
 
         stats = SelfPlayStats()
         received_by_worker = [0 for _ in self.quotas]

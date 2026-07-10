@@ -1,4 +1,6 @@
-import { FormEvent, KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { FormEvent, KeyboardEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import type { ReactNode, RefObject } from 'react';
+import { createPortal } from 'react-dom';
 import { GameSocket } from './connection';
 import { cardDef, defTable, defsById, kingdomPreset } from './defs';
 import type {
@@ -18,6 +20,7 @@ import {
   indexDecisionOptionsByDef,
   indexSelectOptionsByDef,
   initialClientState,
+  orderSupplyPiles,
   reduceServerMessage,
 } from './state';
 
@@ -48,6 +51,78 @@ function CostBadge({ cost }: { cost: { coins: number; potion: number; debt: numb
   );
 }
 
+const POPOVER_GAP = 6;
+
+interface PopoverPosition {
+  left: number;
+  top: number;
+}
+
+function CardPopover({
+  open,
+  targetRef,
+  children,
+}: {
+  open: boolean;
+  targetRef: RefObject<HTMLElement | null>;
+  children: ReactNode;
+}) {
+  const popoverRef = useRef<HTMLDivElement | null>(null);
+  const [position, setPosition] = useState<PopoverPosition | undefined>();
+
+  const updatePosition = useCallback(() => {
+    const target = targetRef.current;
+    const popover = popoverRef.current;
+    if (!target || !popover) {
+      return;
+    }
+
+    const tileRect = target.getBoundingClientRect();
+    const popoverRect = popover.getBoundingClientRect();
+    const left = Math.max(0, Math.min(tileRect.left, window.innerWidth - popoverRect.width));
+    const top =
+      tileRect.bottom + POPOVER_GAP + popoverRect.height <= window.innerHeight
+        ? tileRect.bottom + POPOVER_GAP
+        : Math.max(0, tileRect.top - POPOVER_GAP - popoverRect.height);
+    setPosition({ left, top });
+  }, [targetRef]);
+
+  useLayoutEffect(() => {
+    if (!open) {
+      setPosition(undefined);
+      return undefined;
+    }
+
+    updatePosition();
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+    return () => {
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+    };
+  }, [open, updatePosition]);
+
+  if (!open) {
+    return null;
+  }
+
+  return createPortal(
+    <div
+      className="card-popover"
+      ref={popoverRef}
+      role="tooltip"
+      style={
+        position
+          ? { left: position.left, top: position.top }
+          : { left: 0, top: 0, visibility: 'hidden' }
+      }
+    >
+      {children}
+    </div>,
+    document.body,
+  );
+}
+
 function CardTile({
   def,
   count,
@@ -64,6 +139,8 @@ function CardTile({
   onActivate?: () => void;
 }) {
   const card = cardDef(def);
+  const tileRef = useRef<HTMLDivElement | null>(null);
+  const [popoverOpen, setPopoverOpen] = useState(false);
   if (!card) {
     return <div className={`card-tile unknown ${compact ? 'compact' : ''}`}>Empty</div>;
   }
@@ -79,27 +156,34 @@ function CardTile({
   }
 
   return (
-    <div
-      className={`card-tile ${typeClass(card.types)} ${compact ? 'compact' : ''} ${empty ? 'empty' : ''} ${clickable ? 'clickable' : ''}`}
-      tabIndex={0}
-      role={clickable ? 'button' : undefined}
-      aria-label={clickable ? `Act with ${card.name}` : undefined}
-      onClick={clickable ? onActivate : undefined}
-      onKeyDown={onKeyDown}
-    >
-      <div className="card-title-row">
-        <strong>{card.name}</strong>
-        {!compact && <CostBadge cost={card.cost} />}
+    <>
+      <div
+        className={`card-tile ${typeClass(card.types)} ${compact ? 'compact' : ''} ${empty ? 'empty' : ''} ${clickable ? 'clickable' : ''}`}
+        ref={tileRef}
+        tabIndex={0}
+        role={clickable ? 'button' : undefined}
+        aria-label={clickable ? `Act with ${card.name}` : undefined}
+        onClick={clickable ? onActivate : undefined}
+        onKeyDown={onKeyDown}
+        onMouseEnter={() => setPopoverOpen(true)}
+        onMouseLeave={() => setPopoverOpen(false)}
+        onFocus={() => setPopoverOpen(true)}
+        onBlur={() => setPopoverOpen(false)}
+      >
+        <div className="card-title-row">
+          {!compact && <CostBadge cost={card.cost} />}
+          <strong>{card.name}</strong>
+        </div>
+        {!compact && <div className="card-types">{card.types.join(' - ')}</div>}
+        {count !== undefined && <div className="card-count">×{count}</div>}
       </div>
-      {!compact && <div className="card-types">{card.types.join(' - ')}</div>}
-      {count !== undefined && <div className="card-count">x{count}</div>}
-      <div className="card-popover" role="tooltip">
+      <CardPopover open={popoverOpen} targetRef={tileRef}>
         <div className="popover-title">{card.name}</div>
         <CostBadge cost={card.cost} />
         <div className="popover-types">{card.types.join(' - ') || 'Card'}</div>
         <p>{card.text}</p>
-      </div>
-    </div>
+      </CardPopover>
+    </>
   );
 }
 
@@ -117,12 +201,18 @@ function ResourceBar({ resources }: { resources: ResourceView }) {
 
   return (
     <div className="resource-bar">
-      <span>Actions {resources.actions}</span>
-      <span>Buys {resources.buys}</span>
-      <span>Coins {resources.coins}</span>
+      <span>
+        Actions <b className="resource-value">{resources.actions}</b>
+      </span>
+      <span>
+        Buys <b className="resource-value">{resources.buys}</b>
+      </span>
+      <span>
+        Coins <b className="resource-value resource-coins">{resources.coins}</b>
+      </span>
       {extras.map(([label, value]) => (
         <span key={label}>
-          {label} {value}
+          {label} <b className="resource-value">{value}</b>
         </span>
       ))}
     </div>
@@ -195,22 +285,34 @@ function TrashTile({ trash, trashTop }: { trash: CountedCard[]; trashTop: number
   const total = trash.reduce((sum, card) => sum + card.count, 0);
   const entries = formatTrashEntries(trash, (def) => cardDef(def)?.name);
   const tileClass = topCard ? typeClass(topCard.types) : 'unknown';
+  const tileRef = useRef<HTMLDivElement | null>(null);
+  const [popoverOpen, setPopoverOpen] = useState(false);
 
   return (
-    <div className={`card-tile compact trash-tile ${tileClass}`} tabIndex={0}>
-      <div className="card-title-row">
-        <strong>{topCard ? topCard.name : 'Empty'}</strong>
+    <>
+      <div
+        className={`card-tile compact trash-tile ${tileClass}`}
+        ref={tileRef}
+        tabIndex={0}
+        onMouseEnter={() => setPopoverOpen(true)}
+        onMouseLeave={() => setPopoverOpen(false)}
+        onFocus={() => setPopoverOpen(true)}
+        onBlur={() => setPopoverOpen(false)}
+      >
+        <div className="card-title-row">
+          <strong>{topCard ? topCard.name : 'Empty'}</strong>
+        </div>
+        {total > 0 && <div className="card-count">×{total}</div>}
       </div>
-      {total > 0 && <div className="card-count">x{total}</div>}
-      <div className="card-popover" role="tooltip">
+      <CardPopover open={popoverOpen} targetRef={tileRef}>
         <div className="popover-title">Trash</div>
         <div className="trash-popover-list">
           {entries.map((entry) => (
             <span key={entry}>{entry}</span>
           ))}
         </div>
-      </div>
-    </div>
+      </CardPopover>
+    </>
   );
 }
 
@@ -219,12 +321,16 @@ function TrashAndResources({
   trashTop,
   resources,
   turn,
+  decision,
 }: {
   trash: CountedCard[];
   trashTop: number | null;
   resources: ResourceView;
   turn: number;
+  decision?: DecisionMessage;
 }) {
+  const turnLabel = decision ? `Turn ${turn} — P${decision.seat + 1}'s turn` : `Turn ${turn}`;
+
   return (
     <section className="table-middle">
       <div className="trash-panel">
@@ -232,7 +338,7 @@ function TrashAndResources({
         <TrashTile trash={trash} trashTop={trashTop} />
       </div>
       <div className="turn-panel">
-        <span>Turn {turn}</span>
+        <span className="turn-label">{turnLabel}</span>
         <ResourceBar resources={resources} />
       </div>
     </section>
@@ -328,7 +434,7 @@ function PlayerArea({
 }) {
   return (
     <section className="player-area">
-      <div className="zone-block">
+      <div className="zone-block in-play-block">
         <div className="zone-title">In Play</div>
         <DefRow defs={inPlay} />
       </div>
@@ -385,9 +491,9 @@ function DecisionPanel({
 }) {
   if (!decision) {
     return (
-      <section className="decision-panel">
+      <section className="decision-panel waiting">
         <h2>Decision</h2>
-        <p className="muted">Waiting for state.</p>
+        <p className="muted">Connecting…</p>
       </section>
     );
   }
@@ -395,17 +501,31 @@ function DecisionPanel({
   const active = decision.options.length > 0;
   const tileOptions = decision.options.filter((option) => option.def !== undefined);
   const controlOptions = decision.options.filter((option) => option.def === undefined);
+  const pickGuidance = (() => {
+    if (decision.max <= 1) {
+      return undefined;
+    }
+    if (decision.min === decision.max) {
+      return `Pick exactly ${decision.max}`;
+    }
+    if (decision.min === 0) {
+      return `Pick up to ${decision.max}`;
+    }
+    return `Pick ${decision.min}–${decision.max}`;
+  })();
+
   return (
-    <section className="decision-panel">
+    <section className={`decision-panel ${active ? 'active' : 'waiting'}`}>
       <h2>Decision</h2>
-      <div className="decision-meta">
-        <span>P{decision.seat + 1}</span>
-        <span>{decision.kind}</span>
-        <span>
-          {decision.min}-{decision.max}
-        </span>
+      {!active && (
+        <div className="decision-meta">
+          <span>P{decision.seat + 1}</span>
+        </div>
+      )}
+      <div className="decision-prompt-row">
+        <p className="decision-prompt">{active ? decision.prompt : 'Waiting for opponent…'}</p>
+        {active && pickGuidance && <span className="selection-guidance">{pickGuidance}</span>}
       </div>
-      <p className="decision-prompt">{active ? decision.prompt : 'Waiting for opponent...'}</p>
       {picked.length > 0 && (
         <div className="picked-list">
           <span>Picked</span>
@@ -449,7 +569,7 @@ function DecisionPanel({
             {option.label}
           </button>
         ))}
-        {!active && <button disabled>Waiting for opponent...</button>}
+        {!active && <button disabled>Waiting for opponent…</button>}
       </div>
     </section>
   );
@@ -468,9 +588,21 @@ function LogRail({ lines }: { lines: string[] }) {
     <section className="log-rail">
       <h2>Log</h2>
       <div className="log-lines" ref={linesRef}>
-        {lines.map((line, index) => (
-          <div key={`${line}-${index}`}>{line}</div>
-        ))}
+        {lines.map((line, index) => {
+          const seatMatch = /^(P\d+)(\b.*)$/.exec(line);
+          return (
+            <div key={`${line}-${index}`}>
+              {seatMatch ? (
+                <>
+                  <span className="log-seat">{seatMatch[1]}</span>
+                  {seatMatch[2]}
+                </>
+              ) : (
+                line
+              )}
+            </div>
+          );
+        })}
       </div>
     </section>
   );
@@ -695,12 +827,22 @@ export function App() {
   }
 
   const view = clientState.state?.view;
+  const connectionStatus =
+    status === 'open'
+      ? { label: 'Connected', className: 'connected' }
+      : status === 'closed'
+        ? { label: 'Disconnected', className: 'disconnected' }
+        : { label: 'Connecting', className: 'connecting' };
+
   return (
     <main className="app-shell">
       <header className="app-header">
         <div>
           <h1>DominionZero v2</h1>
-          <span>{status}</span>
+          <span className={`connection-status ${connectionStatus.className}`}>
+            <i aria-hidden="true" />
+            {connectionStatus.label}
+          </span>
         </div>
         <div className="header-actions">
           <button type="button" onClick={undo}>Undo</button>
@@ -710,7 +852,13 @@ export function App() {
       {clientState.error && <div className="error-banner">{clientState.error}</div>}
       <div className="game-layout">
         <div className="main-table">
-          {view && <SupplyGrid piles={view.piles} actionsByDef={supplyActionsByDef} onAction={act} />}
+          {view && (
+            <SupplyGrid
+              piles={orderSupplyPiles(view.piles, defsById)}
+              actionsByDef={supplyActionsByDef}
+              onAction={act}
+            />
+          )}
           {view && <OpponentStrip opponents={view.opponents} />}
           {view && (
             <TrashAndResources
@@ -718,6 +866,7 @@ export function App() {
               trashTop={view.trashTop}
               resources={view.resources}
               turn={view.turn}
+              decision={clientState.decision}
             />
           )}
           {view && (

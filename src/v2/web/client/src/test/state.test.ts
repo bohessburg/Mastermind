@@ -7,6 +7,7 @@ import {
   indexDecisionOptionsByDef,
   indexSelectOptionsByDef,
   initialClientState,
+  orderSupplyPiles,
   reduceServerMessage,
 } from '../state';
 
@@ -198,5 +199,51 @@ describe('client state reducer', () => {
       (def) => names.get(def),
     )).toEqual(['Copper x3', 'Silver x1']);
     expect(formatTrashEntries([], (def) => names.get(def))).toEqual(['Trash is empty']);
+  });
+
+  it('orders basic supply piles canonically before kingdom piles by cost and name', () => {
+    const defs = new Map<number, Pick<CardDef, 'name' | 'cost'>>([
+      [0, { name: 'Copper', cost: { coins: 0, potion: 0, debt: 0 } }],
+      [1, { name: 'Silver', cost: { coins: 3, potion: 0, debt: 0 } }],
+      [2, { name: 'Gold', cost: { coins: 6, potion: 0, debt: 0 } }],
+      [3, { name: 'Estate', cost: { coins: 2, potion: 0, debt: 0 } }],
+      [4, { name: 'Duchy', cost: { coins: 5, potion: 0, debt: 0 } }],
+      [5, { name: 'Province', cost: { coins: 8, potion: 0, debt: 0 } }],
+      [6, { name: 'Curse', cost: { coins: 0, potion: 0, debt: 0 } }],
+      [10, { name: 'Smithy', cost: { coins: 4, potion: 0, debt: 0 } }],
+      [11, { name: 'Village', cost: { coins: 3, potion: 0, debt: 0 } }],
+      [12, { name: 'Market', cost: { coins: 5, potion: 0, debt: 0 } }],
+      [13, { name: 'Festival', cost: { coins: 5, potion: 0, debt: 0 } }],
+    ]);
+    const piles = [
+      { def: 10, count: 10 },
+      { def: 4, count: 8 },
+      { def: 13, count: 10 },
+      { def: 0, count: 46 },
+      { def: 5, count: 8 },
+      { def: 11, count: 10 },
+      { def: 2, count: 30 },
+      { def: 6, count: 10 },
+      { def: 1, count: 40 },
+      { def: 3, count: 8 },
+      { def: 12, count: 10 },
+    ];
+
+    expect(orderSupplyPiles(piles, defs).map((pile) => pile.def)).toEqual([0, 1, 2, 3, 4, 5, 6, 11, 10, 13, 12]);
+    expect(piles.map((pile) => pile.def)).toEqual([10, 4, 13, 0, 5, 11, 2, 6, 1, 3, 12]);
+  });
+
+  it('skips absent basic piles when ordering the supply', () => {
+    const defs = new Map<number, Pick<CardDef, 'name' | 'cost'>>([
+      [1, { name: 'Silver', cost: { coins: 3, potion: 0, debt: 0 } }],
+      [10, { name: 'Moat', cost: { coins: 2, potion: 0, debt: 0 } }],
+      [11, { name: 'Cellar', cost: { coins: 2, potion: 0, debt: 0 } }],
+    ]);
+
+    expect(orderSupplyPiles([
+      { def: 10, count: 10 },
+      { def: 1, count: 40 },
+      { def: 11, count: 10 },
+    ], defs).map((pile) => pile.def)).toEqual([1, 11, 10]);
   });
 });

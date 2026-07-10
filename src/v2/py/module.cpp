@@ -541,6 +541,18 @@ private:
     return py::make_tuple(obs, masks);
 }
 
+[[nodiscard]] py::array_t<std::uint8_t> selfplay_leaf_players(const SelfPlayRunner& runner) {
+    const auto count = runner.leaf_count();
+    py::array_t<std::uint8_t> players(static_cast<py::ssize_t>(count));
+    if (count != 0U) {
+        std::memcpy(
+            players.mutable_data(),
+            runner.leaf_players(),
+            static_cast<std::size_t>(count) * sizeof(PlayerId));
+    }
+    return players;
+}
+
 void selfplay_provide(
     SelfPlayRunner& runner,
     py::array_t<float, py::array::c_style | py::array::forcecast> values,
@@ -598,6 +610,9 @@ void selfplay_provide(
         dict["values"] = values;
         dict["kingdom"] = kingdom;
         dict["seed"] = py::int_(record.seed);
+        dict["winner"] = record.winner == NONE
+            ? py::object(py::none())
+            : py::object(py::int_(record.winner));
         out.append(dict);
     }
     return out;
@@ -967,6 +982,7 @@ PYBIND11_MODULE(dominion_v2_py, module) {
     py::class_<SelfPlayRunner>(module, "SelfPlayRunner")
         .def(py::init<const SelfPlayConfig&>(), py::arg("config"))
         .def("collect_leaves", &selfplay_collect, py::arg("max_batch") = 0U)
+        .def("leaf_players", &selfplay_leaf_players)
         .def("provide_evaluations", &selfplay_provide, py::arg("values"), py::arg("policies"))
         .def("finished_games", &selfplay_finished)
         .def("games_completed", &SelfPlayRunner::games_completed)

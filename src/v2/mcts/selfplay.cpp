@@ -170,6 +170,7 @@ SelfPlayRunner::SelfPlayRunner(const SelfPlayConfig& config)
       pending_(new PendingLeaf[std::max(1U, config.max_batch)]),
       leaf_obs_(new float[static_cast<std::size_t>(std::max(1U, config.max_batch)) * OBS_SIZE]),
       leaf_masks_(new bool[static_cast<std::size_t>(std::max(1U, config.max_batch)) * ACTION_SPACE_SIZE]),
+      leaf_players_(new PlayerId[std::max(1U, config.max_batch)]),
       normalized_policy_(new float[static_cast<std::size_t>(std::max(1U, config.max_batch)) * ACTION_SPACE_SIZE]) {
     if (config_.n_games == 0U) {
         throw std::invalid_argument("SelfPlayConfig.n_games must be positive");
@@ -249,6 +250,7 @@ std::uint32_t SelfPlayRunner::collect_leaves(std::uint32_t max_batch) noexcept {
         pending.leaf = leaf;
         pending.game = index;
         pending.root = leaf.node == 0U;
+        leaf_players_[pending_count_] = leaf.player;
         encode(game.mcts.state_for(leaf.state_index), leaf.player, leaf_obs_.get() + (pending_count_ * OBS_SIZE));
         bool* mask = leaf_masks_.get() + (pending_count_ * ACTION_SPACE_SIZE);
         for (Action action = 0; action < ACTION_SPACE_SIZE; ++action) {
@@ -291,6 +293,10 @@ const float* SelfPlayRunner::leaf_observations() const noexcept {
 
 const bool* SelfPlayRunner::leaf_legal_masks() const noexcept {
     return leaf_masks_.get();
+}
+
+const PlayerId* SelfPlayRunner::leaf_players() const noexcept {
+    return leaf_players_.get();
 }
 
 std::uint32_t SelfPlayRunner::leaf_count() const noexcept {
@@ -408,6 +414,7 @@ void SelfPlayRunner::finish_game(GameSlot& game) noexcept {
         record.values[i] = terminal_value_for(game.state, game.players[i]);
     }
     record.seed = game.seed;
+    record.winner = winner_for(game.state);
     record.kingdom_count = game.setup.kingdom_count;
     for (std::uint8_t i = 0; i < game.setup.kingdom_count; ++i) {
         record.kingdom[i] = game.setup.kingdom[i];

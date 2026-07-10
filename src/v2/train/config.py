@@ -90,6 +90,15 @@ class TrainConfig:
     server_shm_slots: int = 2
     # queue blocks on the shared request-header queue; spin polls SHM counters.
     server_poll: str = "queue"
+    # Set gate_games to a positive value to enable AlphaGo-style candidate
+    # gating. Zero keeps the exact legacy single-network training behavior.
+    gate_games: int = 0
+    gate_sims: int = 64
+    gate_threshold: float = 0.55
+    # Historical-opponent games are only sampled when gating is enabled and
+    # accepted best checkpoints exist in checkpoint_dir/league/.
+    league_fraction: float = 0.0
+    league_pool_size: int = 8
     checkpoint_dir: str = "checkpoints"
     metrics_csv: str = "checkpoints/metrics.csv"
     model: ModelConfig = field(default_factory=ModelConfig)

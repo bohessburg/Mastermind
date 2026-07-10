@@ -38,6 +38,9 @@ struct SelfPlayRecord {
     std::uint8_t kingdom_count = 0;
     std::uint64_t seed = 0;
     std::uint16_t moves = 0;
+    // Read-only outcome metadata for Python-side head-to-head evaluation.
+    // It is not consumed by self-play search or replay generation.
+    PlayerId winner = NONE;
 };
 
 class SelfPlayRunner {
@@ -49,6 +52,7 @@ public:
     void provide_evaluations(const float* values, const float* policies, std::uint32_t count) noexcept;
     [[nodiscard]] const float* leaf_observations() const noexcept;
     [[nodiscard]] const bool* leaf_legal_masks() const noexcept;
+    [[nodiscard]] const PlayerId* leaf_players() const noexcept;
     [[nodiscard]] std::uint32_t leaf_count() const noexcept;
     [[nodiscard]] std::uint64_t games_completed() const noexcept;
     [[nodiscard]] float total_virtual_loss() const noexcept;
@@ -81,6 +85,7 @@ private:
     std::unique_ptr<PendingLeaf[]> pending_;
     std::unique_ptr<float[]> leaf_obs_;
     std::unique_ptr<bool[]> leaf_masks_;
+    std::unique_ptr<PlayerId[]> leaf_players_;
     std::unique_ptr<float[]> normalized_policy_;
     std::vector<SelfPlayRecord> finished_;
     std::uint32_t pending_count_ = 0;

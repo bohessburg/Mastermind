@@ -25,17 +25,39 @@ except ModuleNotFoundError as exc:  # pragma: no cover - gives a clearer CLI err
 if __package__ in (None, ""):
     sys.path.append(str(Path(__file__).resolve().parents[3]))
     from src.v2.train.config import TrainConfig, add_config_args, load_config, save_config
-    from src.v2.train.inference_server import InferenceServer
+    from src.v2.train.gating import (
+        archive_previous_best,
+        gate_result,
+        gating_enabled,
+        initialize_best_checkpoint,
+        league_checkpoint_paths,
+        load_best_checkpoint,
+        run_gate_match,
+        save_best_checkpoint,
+        sample_league_games,
+    )
+    from src.v2.train.inference_server import InferenceServer, serialize_cpu_state_dict
     from src.v2.train.model import DominionNet, count_parameters, masked_policy_loss
     from src.v2.train.replay import ReplayBuffer, load_replay_state, save_replay_state
-    from src.v2.train.selfplay import SelfPlayStats, run_self_play_generation
+    from src.v2.train.selfplay import SelfPlayStats, run_routed_self_play_generation, run_self_play_generation
     from src.v2.train.workers import ParallelSelfPlayPool
 else:
     from .config import TrainConfig, add_config_args, load_config, save_config
-    from .inference_server import InferenceServer
+    from .gating import (
+        archive_previous_best,
+        gate_result,
+        gating_enabled,
+        initialize_best_checkpoint,
+        league_checkpoint_paths,
+        load_best_checkpoint,
+        run_gate_match,
+        save_best_checkpoint,
+        sample_league_games,
+    )
+    from .inference_server import InferenceServer, serialize_cpu_state_dict
     from .model import DominionNet, count_parameters, masked_policy_loss
     from .replay import ReplayBuffer, load_replay_state, save_replay_state
-    from .selfplay import SelfPlayStats, run_self_play_generation
+    from .selfplay import SelfPlayStats, run_routed_self_play_generation, run_self_play_generation
     from .workers import ParallelSelfPlayPool
 
 
@@ -111,9 +133,10 @@ def checkpoint_payload(
     generation: int,
     model: torch.nn.Module,
     optimizer: torch.optim.Optimizer,
+    best_generation: int | None = None,
 ) -> dict[str, Any]:
     """Return the small, inference-usable generation checkpoint payload."""
-    return {
+    payload = {
         "generation": generation,
         "config": config.to_dict(),
         "model": model.state_dict(),
@@ -124,6 +147,9 @@ def checkpoint_payload(
         "numpy_rng_state": np.random.get_state(),
         "python_rng_state": random.getstate(),
     }
+    if best_generation is not None:
+        payload["best_generation"] = int(best_generation)
+    return payload
 
 
 def save_checkpoint(
@@ -132,11 +158,12 @@ def save_checkpoint(
     model: torch.nn.Module,
     optimizer: torch.optim.Optimizer,
     replay: ReplayBuffer,
+    best_generation: int | None = None,
 ) -> Path:
     out_dir = Path(config.checkpoint_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / f"gen_{generation:04d}.pt"
-    torch.save(checkpoint_payload(config, generation, model, optimizer), path)
+    torch.save(checkpoint_payload(config, generation, model, optimizer, best_generation), path)
     # Keep exactly one crash-safe replay snapshot rather than embedding it in
     # every generation checkpoint.
     save_replay_state(replay, out_dir / "replay_state.npz")
@@ -246,12 +273,63 @@ def append_metrics(path: str | Path, row: dict[str, Any]) -> None:
         "eval_truncated",
         "eval_win_pct_excl_ties",
         "eval_games_per_hour",
+        "gate_result",
+        "gate_win_pct",
+        "best_generation",
     ]
     with out.open("a", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
         if not exists:
             writer.writeheader()
         writer.writerow({key: row.get(key, "") for key in fieldnames})
+
+
+def _add_stats(total: SelfPlayStats, update: SelfPlayStats) -> None:
+    total.games += update.games
+    total.positions += update.positions
+    total.leaves += update.leaves
+    total.nn_evals += update.nn_evals
+    total.wall_time += update.wall_time
+    total.inference_time += update.inference_time
+    total.plumbing_time += update.plumbing_time
+
+
+def _league_tasks(assignments: list[tuple[int, int] | None]) -> dict[tuple[int | None, int], int]:
+    tasks: dict[tuple[int | None, int], int] = {}
+    for assignment in assignments:
+        key = (None, 0) if assignment is None else (int(assignment[0]), int(assignment[1]))
+        tasks[key] = tasks.get(key, 0) + 1
+    return tasks
+
+
+def _run_league_single_pipeline(
+    best_model: torch.nn.Module,
+    opponent_models: list[torch.nn.Module],
+    assignments: list[tuple[int, int] | None],
+    replay: ReplayBuffer,
+    config: TrainConfig,
+    generation: int,
+    device: torch.device,
+) -> SelfPlayStats:
+    """Exact per-game league plan for the non-worker training path."""
+    total = SelfPlayStats()
+    base_seed = int(config.seed) + (int(generation) * 0x9E37)
+    for task_index, ((opponent_index, best_player), count) in enumerate(_league_tasks(assignments).items()):
+        if opponent_index is None:
+            seat_models = (best_model, best_model)
+        else:
+            opponent = opponent_models[opponent_index]
+            seat_models = (best_model, opponent) if best_player == 0 else (opponent, best_model)
+        stats = run_routed_self_play_generation(
+            seat_models,
+            replay,
+            config.selfplay,
+            seed=base_seed ^ (task_index * 0x10001),
+            device=device,
+            target_games=count,
+        )
+        _add_stats(total, stats)
+    return total
 
 
 def run_training(config: TrainConfig, resume: str | None = None, profile: bool = False) -> dict[str, Any]:
@@ -275,6 +353,11 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
         config.server_transport = requested.server_transport
         config.server_shm_slots = requested.server_shm_slots
         config.server_poll = requested.server_poll
+        config.gate_games = requested.gate_games
+        config.gate_sims = requested.gate_sims
+        config.gate_threshold = requested.gate_threshold
+        config.league_fraction = requested.league_fraction
+        config.league_pool_size = requested.league_pool_size
         if config.device == "auto":
             config.device = device.type
     else:
@@ -297,6 +380,22 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
 
     inference_server: InferenceServer | None = None
     pool: ParallelSelfPlayPool | None = None
+    use_gating = gating_enabled(config)
+    best_model: DominionNet | None = None
+    best_generation: int | None = None
+    best_path: Path | None = None
+    if use_gating:
+        # A fresh run seeds best from the initial candidate. On resume, best.pt
+        # is authoritative because rejected generation checkpoints are still
+        # candidate checkpoints and must not silently become self-play policy.
+        resume_best = Path(resume).parent / "best.pt" if resume is not None else None
+        best_model, best_generation, best_path = initialize_best_checkpoint(
+            config,
+            model,
+            device,
+            source_path=resume_best,
+            start_generation=start_generation,
+        )
     try:
         if config.parallel_workers > 1 and config.worker_device.lower() == "server":
             inference_server = InferenceServer(config, config.parallel_workers)
@@ -306,19 +405,66 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
             gen_start = time.perf_counter()
             lr = learning_rate_for_generation(config, generation)
             set_optimizer_lr(optimizer, lr)
-            if pool is None:
+            if not use_gating:
                 # Keep the legacy default path and its seed derivation intact.
-                gen_seed = config.seed + (generation * 0x9E37)
-                sp_stats = run_self_play_generation(model, replay, config.selfplay, gen_seed, device)
-                aggregate_games_per_hour = sp_stats.games_per_hour
+                if pool is None:
+                    gen_seed = config.seed + (generation * 0x9E37)
+                    sp_stats = run_self_play_generation(model, replay, config.selfplay, gen_seed, device)
+                    aggregate_games_per_hour = sp_stats.games_per_hour
+                else:
+                    if inference_server is not None:
+                        # The acknowledgement is a generation barrier: workers do
+                        # not submit work until the server owns this complete state.
+                        inference_server.sync_weights(model, generation)
+                    parallel_result = pool.generate(model, replay, generation)
+                    sp_stats = parallel_result.stats
+                    aggregate_games_per_hour = parallel_result.aggregate_games_per_hour
             else:
-                if inference_server is not None:
-                    # The acknowledgement is a generation barrier: workers do
-                    # not submit work until the server owns this complete state.
-                    inference_server.sync_weights(model, generation)
-                parallel_result = pool.generate(model, replay, generation)
-                sp_stats = parallel_result.stats
-                aggregate_games_per_hour = parallel_result.aggregate_games_per_hour
+                assert best_model is not None
+                assert best_generation is not None
+                assert best_path is not None
+                league_paths = league_checkpoint_paths(config)
+                sampled = sample_league_games(
+                    config.selfplay.games_per_generation,
+                    config.league_fraction,
+                    len(league_paths),
+                    config.seed ^ (generation * 0xC0FFEE),
+                )
+                assignments = [
+                    None if game is None else (game.opponent_index, game.best_player)
+                    for game in sampled
+                ]
+                has_league = any(assignment is not None for assignment in assignments)
+                if has_league and inference_server is not None:
+                    raise ValueError("mini-league self-play requires worker_device='cpu' or 'cuda', not 'server'")
+                if pool is None:
+                    opponent_models = [load_best_checkpoint(config, device, path)[0] for path in league_paths]
+                    sp_stats = _run_league_single_pipeline(
+                        best_model,
+                        opponent_models,
+                        assignments,
+                        replay,
+                        config,
+                        generation,
+                        device,
+                    )
+                    aggregate_games_per_hour = sp_stats.games_per_hour
+                else:
+                    if inference_server is not None:
+                        inference_server.sync_weights(best_model, generation)
+                    payloads = [
+                        serialize_cpu_state_dict(load_best_checkpoint(config, device, path)[0])
+                        for path in league_paths
+                    ]
+                    parallel_result = pool.generate(
+                        best_model,
+                        replay,
+                        generation,
+                        league_assignments=assignments if has_league else None,
+                        league_state_payloads=payloads,
+                    )
+                    sp_stats = parallel_result.stats
+                    aggregate_games_per_hour = parallel_result.aggregate_games_per_hour
             server_metrics = (
                 inference_server.collect_metrics(generation)
                 if inference_server is not None
@@ -340,7 +486,33 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
                         accum[key] += step_losses[key]
                 losses = {key: value / steps for key, value in accum.items()}
 
-            path = save_checkpoint(config, generation, model, optimizer, replay)
+            gate_row: dict[str, Any] = {}
+            if use_gating:
+                assert best_model is not None
+                assert best_generation is not None
+                assert best_path is not None
+                gate_stats = run_gate_match(model, best_model, config, generation, device)
+                result = gate_result(gate_stats, config.gate_threshold)
+                if result == "accepted":
+                    archive_previous_best(config, best_path, best_generation)
+                    best_model.load_state_dict(model.state_dict())
+                    best_model.eval()
+                    best_generation = generation
+                    save_best_checkpoint(config, best_generation, best_model, best_path)
+                gate_row = {
+                    "gate_result": result,
+                    "gate_win_pct": gate_stats.win_pct,
+                    "best_generation": best_generation,
+                }
+
+            path = save_checkpoint(
+                config,
+                generation,
+                model,
+                optimizer,
+                replay,
+                best_generation=best_generation if use_gating else None,
+            )
             eval_row: dict[str, Any] = {}
             should_eval = (
                 not profile
@@ -395,6 +567,7 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
                 **server_metrics,
                 "wall_time": time.perf_counter() - gen_start,
                 "checkpoint": str(path),
+                **gate_row,
             }
             row.update(eval_row)
             append_metrics(config.metrics_csv, row)
