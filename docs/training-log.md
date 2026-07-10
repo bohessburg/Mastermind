@@ -100,3 +100,13 @@ the single overnight adjustment: gate_threshold 0.53→0.55 patched into the
 gen-35 checkpoint payload (resume reads config from checkpoint) and resumed.
 Also: /root/box_ctl.sh on the box now handles stop/patch/resume without the
 pkill-self-match footgun.
+
+Resume stall + fix (2026-07-10 ~3am): resuming with --resume alone silently
+runs ZERO generations — train.py overrides config.generations (and
+parallel_workers etc.) from the REQUESTED config, which is the dataclass
+default (10) when --config is omitted; 10 - 35 done = 0 iterations, clean
+exit 0, orphan wrapper in do_wait. Fix: always resume with BOTH
+--config <campaign>.json --resume <ckpt> (box_resume.sh). gate_threshold is
+NOT in the requested-override list so checkpoint patches to it survive
+resume. Follow-up for the backlog: make bare --resume either inherit the
+checkpoint's generations or fail loudly.
