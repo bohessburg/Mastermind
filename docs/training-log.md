@@ -171,6 +171,14 @@ evaluator rewards, so the pile/money bubble lives in the VALUE FUNCTION,
 not the policy or the lineage. This is the root-cause finding of the whole
 campaign series.
 
+Second human confirmation (2026-07-10, exports/C8L3ogdtDnlhHqdN.json,
+replay-verified by state hash): lazy human money+Chapel vs c4 gen-15 full
+power, 48-29 human, ended on Provinces T37. Bot bought all 8 Duchies
+(T5-T25), zero Gold/Province in 37 turns, Estates at the end. Its ceiling
+(~29 pts) is structurally ~20 short of an uncontested Province line (48);
+it only wins if piles end the game first — true in duchy-mirror self-play,
+false vs any Province buyer. The exploit in one game.
+
 Campaign 5 (launched 2026-07-10, running): c4 recipe + scripted_opponents
 {"bigmoney": 0.20} — 20% of each generation's games vs scripted BigMoney,
 records from the NN seat only, seat-swapped. Purpose: put Province-regime
