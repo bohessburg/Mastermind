@@ -1,0 +1,98 @@
+# Session Handoff — Training Program State
+
+Snapshot: 2026-07-09 late evening. Read with `docs/training-log.md` (experiment
+history), `IMPLEMENTATION_PLAN.md` (Phase T), `docs/web-ui-handoff.md` (web UI
+is a separate session's domain — do not touch src/v2/web from here).
+
+## What is running RIGHT NOW
+
+**Campaign 2** (gated training) on a rented vast.ai RTX 5090 box:
+- SSH: `ssh -p 28890 root@69.176.92.135` (key already in ~/.ssh; account key
+  registered on vast). Box costs $0.34/hr. 24-vCPU cgroup quota, 32GB disk.
+- Repo at `~/dominion` on the box; venv python `/venv/main/bin/python`;
+  bindings prebuilt at `~/dominion/build`.
+- Run: `campaign2.json` (on box; local copy in scratchpad — regenerate from
+  `src/v2/train/configs/run_gated.json` + campaign overrides if lost).
+  100 gens × 1024 games, 128 sims, 8 CUDA workers, replay 2M, cosine LR,
+  gate_warmup_generations=8, gate 60 games @64 sims threshold 0.55,
+  league_fraction 0.2, eval 200 games vs EngineBot @400 sims every 5 gens.
+- Monitor: `~/dominion/checkpoints/campaign2/metrics.csv` (label-parse it;
+  columns include gate_result / gate_win_pct / best_generation / league_games).
+  Liveness: `pgrep -f "python -m src.v2.train"` (expect ≥1; note pgrep matches
+  its own ssh cmdline — pipe through `grep -v pgrep` or count >0 conservatively).
+- Watcher pattern (local): background while-loop ssh-polling metrics for new
+  eval rows or gate acceptances every 5-10 min; exits on new row → report to
+  user → re-arm with a state file holding last reported generation.
+  REPORTS MUST BE THE FINAL MESSAGE OF A TURN (mid-turn text may not render).
+- Stop the run: `pkill -f "venv/main/bin/python"` — NEVER pkill a pattern
+  that appears in your own ssh command line (self-kill; learned the hard way).
+- Launch pattern that works: `setsid nohup env OMP_NUM_THREADS=1
+  PYTHONPATH=build /venv/main/bin/python -m src.v2.train.train --config X.json
+  > log 2>&1 < /dev/null &` — the ssh session may hang after; that's cosmetic,
+  verify via a second ssh (pgrep + nvidia-smi + console.log banner).
+
+## Campaign 2 status at snapshot (gen 14)
+
+Warmup gens 1-8 accepted unconditionally; gen 9-10 candidates gate-rejected
+at 0.00; gen 12 accepted at 1.00 (best lineage 8→12). Gate scores are
+near-binary (temp-0 determinism artifact between similar nets) — functional
+but coarse. Eval 0/200 at gens 5/10 (matches campaign 1 pacing). League
+plays ~205 games/gen. Throughput ~11-13K games/hr (gating costs ~2x vs
+ungated 23K due to per-seat split — fix in flight, see Pending).
+
+Decision rules agreed with Jack:
+- Campaign 1 (ungated) peaked 30.3% at gen 25 then cycled down to ~17%.
+  Campaign 2 exists to test whether gating holds the curve monotonic.
+- Compare campaign 2's evals against campaign 1's at same generation
+  (c1: 0/0/0/5.5%/15%/30.3% at gens 1-25). If c2 tracks or beats c1 through
+  gen 25-35 WITHOUT the slide, gating works.
+- Report eval results to Jack every 5 generations (he wants them promptly
+  and IN CHAT, no push notifications).
+
+## Pending / in flight
+
+1. **Same-model gate fast path** (throughput fix, targets campaign 3): Codex
+   task task-mreb8avi-4pcwdi has been running 1h44m — LIKELY STUCK; cancel
+   via the codex-companion runtime and re-delegate (spec: when both seats
+   share a model, evaluate leaves as one batch; bit-equality equivalence
+   test mandatory; metrics fast_path_fraction). Check `git status` for
+   partial writes first (it applied changes to src/v2/train/ mid-run —
+   review or revert before re-delegating).
+2. **Campaign 3 recipe** (agreed with Jack, not yet implemented): fast path
+   + sampled-temperature gate matches (fix the 0-or-1 gate score artifact)
+   + seed campaign-1 gen-25 checkpoint into the league pool as a standing
+   external opponent (anti-cycling diversity without warm-start attribution
+   mess). Possibly warm-start once optimizing for strength over science.
+3. **Chunk W2 remainder**: infra tooling exists (scripts/infra/remote_run.py,
+   Dockerfile.train) but the live provision→teardown E2E was never run
+   (user manages the box manually; VAST_API_KEY never provided). Docker
+   image never built (needs docker daemon). Optional completion.
+4. **On-box bench of optimized inference server** (--bench-server, spin vs
+   queue) — waiting for a campaign gap; targets bigger nets later.
+
+## Key assets
+
+- Campaign 1 artifacts: `checkpoints/remote/campaign1/` LOCAL (54 files,
+  1.8GB); gen_0025.pt = 30.3% vs EngineBot checkpoint (verified loadable).
+- Bot baselines (10K games, random kingdoms): Engine 74% vs BigMoney;
+  scaffold-MCTS (EngineLike rollouts K=2) 65.8% vs Engine. Parity gate for
+  Phase T = ≥50% vs EngineBot excl ties, ≥200 games, random kingdoms.
+- Eval CLI: `python -m src.v2.train.evaluate --checkpoint X --opponent
+  engine --games 200 --sims 400 [--ladder]` (PYTHONPATH=build).
+- Codex delegation: gpt-5.6-terra @ xhigh (config in ~/.codex/config.toml,
+  backup .bak has 5.5); shared session resumes with --resume-last; the
+  rescue subagent only FORWARDS — orchestrator polls via
+  `node ~/.claude/plugins/cache/openai-codex/codex/1.0.6/scripts/codex-companion.mjs status|result <task-id>`.
+
+## Workflow reminders (from CLAUDE.md + learned this session)
+
+- Delegate non-trivial implementation to Codex; review the ACTUAL diff;
+  Codex sandbox has no network/GPU/docker/POSIX-shm — orchestrator runs
+  those verifications.
+- Commit style: <5 words, no body. Push after each reviewed chunk.
+- Docs discipline: plan deviations → IMPLEMENTATION_PLAN.md notes;
+  experiments → docs/training-log.md (append); benchmarks → docs/benchmarks.md.
+- 2-player focus; 2nd-edition-removed cards out of scope.
+- Engine is trusted ground truth (fuzz+goldens); training-layer bugs so far:
+  cold-start gate deadlock (fixed: warmup), gated path bypassing worker pool
+  (fixed), pkill self-match (procedural), ssh-hang-after-nohup (cosmetic).
