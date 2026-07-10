@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import random
 import secrets
 from dataclasses import dataclass, field
@@ -40,12 +41,25 @@ DEFAULT_KINGDOM = [
     "Market",
     "Remodel",
 ]
+DEFAULT_NN_CHECKPOINT = Path("checkpoints/remote/campaign1/gen_0025.pt")
 
 
 @dataclass
 class Seat:
     kind: str
     token: str
+
+
+@dataclass
+class _NNPolicy:
+    """A CPU-only policy model and its lazily imported torch module."""
+
+    model: Any
+    torch: Any
+
+
+class _NNCheckpointError(Exception):
+    """A safe, user-facing failure while preparing an NN bot."""
 
 
 @dataclass
@@ -64,6 +78,7 @@ class Session:
     bandit_log_state: BanditLogState = field(default_factory=BanditLogState)
     connections: dict[str, WebSocket] = field(default_factory=dict)
     bot_rngs: list[random.Random] = field(default_factory=list)
+    nn_policies: dict[int, _NNPolicy] = field(default_factory=dict)
     thinking_delay_ms: int = 60
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
@@ -102,12 +117,65 @@ def _is_bot_kind(kind: str) -> bool:
     return kind == "bot" or kind.startswith("bot:")
 
 
+def _is_nn_kind(kind: str) -> bool:
+    return kind == "bot:nn" or kind.startswith("bot:nn:")
+
+
+def _is_valid_seat_kind(kind: object) -> bool:
+    return isinstance(kind, str) and (kind in SEAT_KINDS or _is_nn_kind(kind))
+
+
 def _bot_policy(kind: str) -> str:
     if kind == "bot":
         return "bigmoney"
     if kind.startswith("bot:"):
         return kind.split(":", 1)[1]
     return ""
+
+
+def _nn_checkpoint_path(kind: str) -> Path:
+    if kind.startswith("bot:nn:"):
+        configured = kind.removeprefix("bot:nn:")
+    else:
+        configured = ""
+    return Path(configured or os.environ.get("DOMINION_NN_CHECKPOINT", DEFAULT_NN_CHECKPOINT))
+
+
+def _load_nn_policy(checkpoint_path: Path) -> _NNPolicy:
+    """Load one local training checkpoint only when an NN seat is requested."""
+    if not checkpoint_path.is_file():
+        raise _NNCheckpointError("neural-network checkpoint is unavailable")
+
+    try:
+        import torch
+        from src.v2.train.model import DominionNet
+    except ImportError as error:
+        raise _NNCheckpointError("neural-network bot requires PyTorch") from error
+
+    try:
+        try:
+            checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+        except TypeError:  # pragma: no cover - older supported Torch versions
+            checkpoint = torch.load(checkpoint_path, map_location="cpu")
+        hidden_sizes = checkpoint["config"]["model"]["hidden_sizes"]
+        if not isinstance(hidden_sizes, (list, tuple)):
+            raise TypeError("hidden_sizes must be a list or tuple")
+        model = DominionNet(int(dz.OBS_SIZE), int(dz.ACTION_SPACE_SIZE), hidden_sizes)
+        model.load_state_dict(checkpoint["model"])
+        model.to("cpu")
+        model.eval()
+    except Exception as error:
+        raise _NNCheckpointError("neural-network checkpoint could not be loaded") from error
+
+    return _NNPolicy(model=model, torch=torch)
+
+
+def _load_nn_policies(seat_kinds: list[str]) -> dict[int, _NNPolicy]:
+    return {
+        index: _load_nn_policy(_nn_checkpoint_path(kind))
+        for index, kind in enumerate(seat_kinds)
+        if _is_nn_kind(kind)
+    }
 
 
 def _is_human_vs_bot(session: Session) -> bool:
@@ -362,12 +430,25 @@ def _choose_bigmoney_action(game: Any, legal: list[int]) -> int:
     return _first_legal(legal)
 
 
+def _choose_nn_action(session: Session, seat: int) -> int:
+    policy = session.nn_policies[seat]
+    torch = policy.torch
+    observation = torch.as_tensor(session.game.encode(seat), dtype=torch.float32, device="cpu").unsqueeze(0)
+    legal_mask = torch.as_tensor(session.game.legal_mask(), dtype=torch.bool, device="cpu").unsqueeze(0)
+    masked_logits, _ = policy.model.evaluate(observation, legal_mask)
+    return int(torch.argmax(masked_logits, dim=-1).item())
+
+
 def _choose_bot_action(session: Session, seat: int) -> int:
     legal = _legal_actions(session.game)
     if not legal:
         return int(dz.A_PASS)
 
-    policy = _bot_policy(session.seats[seat].kind)
+    kind = session.seats[seat].kind
+    if _is_nn_kind(kind):
+        return _choose_nn_action(session, seat)
+
+    policy = _bot_policy(kind)
     if policy == "random":
         rng = session.bot_rngs[seat]
         return int(legal[rng.randrange(len(legal))])
@@ -489,8 +570,16 @@ async def create_session(payload: dict[str, Any]) -> dict[str, Any]:
     if len(seat_kinds) < 2 or len(seat_kinds) > dz.MAX_PLAYERS:
         raise HTTPException(status_code=400, detail="seats must have 2 to MAX_PLAYERS entries")
     for kind in seat_kinds:
-        if kind not in SEAT_KINDS:
-            raise HTTPException(status_code=400, detail="seat kind must be human, bot, bot:bigmoney, or bot:random")
+        if not _is_valid_seat_kind(kind):
+            raise HTTPException(
+                status_code=400,
+                detail="seat kind must be human, bot, bot:bigmoney, bot:random, bot:nn, or bot:nn:<path>",
+            )
+
+    try:
+        nn_policies = _load_nn_policies(seat_kinds)
+    except _NNCheckpointError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from None
 
     seed = int(payload.get("seed", secrets.randbits(63)))
     thinking_delay_ms = int(payload.get("thinking_delay_ms", payload.get("thinkingDelayMs", 60)))
@@ -511,6 +600,7 @@ async def create_session(payload: dict[str, Any]) -> dict[str, Any]:
             random.Random(seed ^ 0xB07 ^ ((index + 1) * 0x9E3779B97F4A7C15))
             for index in range(len(seats))
         ],
+        nn_policies=nn_policies,
         thinking_delay_ms=thinking_delay_ms,
     )
     sessions[session_id] = session

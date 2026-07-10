@@ -7,6 +7,7 @@ from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 import numpy as np
+import pytest
 
 import dominion_v2_py as dz
 
@@ -47,6 +48,26 @@ KINGDOM = [
     "Remodel",
 ]
 FIXTURE_THRONE_BANDIT = Path(__file__).with_name("fixtures_throne_bandit_replay.json")
+
+
+@pytest.fixture
+def tiny_nn_checkpoint(tmp_path: Path) -> Path:
+    """A checkpoint with the same model/config keys as training output."""
+    import torch
+
+    from src.v2.train.model import DominionNet
+
+    torch.manual_seed(0x5105)
+    model = DominionNet(dz.OBS_SIZE, dz.ACTION_SPACE_SIZE, hidden_sizes=[32])
+    checkpoint = tmp_path / "tiny-random-policy.pt"
+    torch.save(
+        {
+            "config": {"model": {"hidden_sizes": [32]}},
+            "model": model.state_dict(),
+        },
+        checkpoint,
+    )
+    return checkpoint
 
 
 def by_type(messages: list[dict], message_type: str) -> dict:
@@ -889,6 +910,81 @@ def test_human_vs_bigmoney_bot_completes_over_websocket() -> None:
     assert session.game.truncated() is False
     assert any(line.startswith("P2 ") for line in session.log_lines)
     assert len(session.action_log) > 0
+
+
+def test_human_vs_nn_bot_completes_with_legal_nn_actions(tiny_nn_checkpoint: Path) -> None:
+    sessions.clear()
+    client = TestClient(app)
+    response = client.post(
+        "/api/session",
+        json={
+            "seats": ["human", f"bot:nn:{tiny_nn_checkpoint}"],
+            "kingdom": KINGDOM,
+            "seed": 0x5105,
+            "thinking_delay_ms": 0,
+        },
+    )
+    assert response.status_code == 200
+    created = response.json()
+    session = sessions[created["session_id"]]
+    assert 1 in session.nn_policies
+
+    with client.websocket_connect(f"/ws/{created['session_id']}/{created['seat_tokens'][0]}") as websocket:
+        messages = read_initial(websocket)
+        for _ in range(4000):
+            if any(message["type"] == "gameover" for message in messages):
+                break
+            decision = by_type(messages, "decision")
+            if not decision["options"]:
+                messages = read_until_decision_or_gameover(websocket)
+                continue
+            websocket.send_json({"type": "act", "action": choose_big_money_action(decision)})
+            messages = read_until_decision_or_gameover(websocket)
+        else:
+            raise AssertionError("web game against NN bot did not complete")
+
+    replay = dz.new_game(session.setup, session.seed)
+    nn_actions: list[int] = []
+    for action in session.action_log:
+        player = int(replay.current_decision()["player"])
+        assert bool(replay.legal_mask()[action])
+        if player == 1:
+            nn_actions.append(action)
+        replay.step(action)
+
+    assert session.game.game_over()
+    assert replay.game_over()
+    assert nn_actions
+
+
+def test_nn_bot_uses_configured_default_checkpoint(
+    monkeypatch: pytest.MonkeyPatch,
+    tiny_nn_checkpoint: Path,
+) -> None:
+    sessions.clear()
+    monkeypatch.setenv("DOMINION_NN_CHECKPOINT", str(tiny_nn_checkpoint))
+
+    response = TestClient(app).post(
+        "/api/session",
+        json={"seats": ["human", "bot:nn"], "kingdom": KINGDOM, "seed": 0x5106},
+    )
+
+    assert response.status_code == 200
+    assert 1 in sessions[response.json()["session_id"]].nn_policies
+
+
+def test_nn_bot_missing_checkpoint_returns_clean_400(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    sessions.clear()
+    monkeypatch.setenv("DOMINION_NN_CHECKPOINT", str(tmp_path / "missing-policy.pt"))
+
+    response = TestClient(app).post(
+        "/api/session",
+        json={"seats": ["human", "bot:nn"], "kingdom": KINGDOM, "seed": 0x5107},
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "neural-network checkpoint is unavailable"}
+    assert "traceback" not in response.text.lower()
 
 
 def test_undo_rewinds_to_previous_human_decision() -> None:

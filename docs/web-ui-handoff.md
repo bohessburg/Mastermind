@@ -32,9 +32,32 @@ PYTHONPATH=build ./.venv/bin/python -m uvicorn src.v2.web.server.main:app --port
 # client dev (proxies /api,/ws to :8000)
 cd src/v2/web/client && npm run dev
 # suites (ALL must stay green before commit)
-PYTHONPATH=build ./.venv/bin/python -m pytest src/v2/web/server -q   # 17
+PYTHONPATH=build ./.venv/bin/python -m pytest src/v2/web/server -q   # 20
 cd src/v2/web/client && npm test && npm run build                    # 8 + build
 ```
+
+### Neural-network bot seat
+
+Run a local training checkpoint on CPU with `bot:nn`.  The default checkpoint
+path is `checkpoints/remote/campaign1/gen_0025.pt`; set
+`DOMINION_NN_CHECKPOINT` to select a different default:
+
+```sh
+DOMINION_NN_CHECKPOINT=checkpoints/remote/campaign1/gen_0025.pt \
+  PYTHONPATH=build ./.venv/bin/python -m uvicorn src.v2.web.server.main:app --port 8000
+
+curl -sS -X POST http://127.0.0.1:8000/api/session \
+  -H 'content-type: application/json' \
+  -d '{"seats":["human","bot:nn"]}'
+```
+
+Open `http://127.0.0.1:8000` and use the returned human seat token in **Join
+existing game**.  `bot:nn:/path/to/checkpoint.pt` overrides the environment
+variable for that seat.  The current create-game form only offers its built-in
+bot choice, so custom NN seats are created through this API request.
+
+**Caveat:** `bot:nn` is the raw policy network only. It does not use MCTS or
+any other search at play time.
 
 Production mode: `npm run build`, FastAPI serves `dist/` at `/`.
 Server restart required after Python changes; hard-refresh after client
