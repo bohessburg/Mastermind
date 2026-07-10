@@ -90,3 +90,13 @@ as a standing external anchor (league/seed_0.pt confirmed loaded), plus the
 same-model inference fast path. Config: configs/run_gated_v3.json →
 campaign3.json on-box, seed 20260711. Success bar: track c1's curve through
 gen 25 (5.5%@15/15%@20/30.3%@25) then HOLD past 25-40 where c1 collapsed.
+
+Campaign 3 mid-course adjustment (gen 35, 2026-07-10 ~2am): evals 6%(10) →
+9%(15) → 23%(20) → 26.3%(25) → 19.9%(30) → 20.0%(35). Beat c1's curve to
+gen 25, dipped, then STABILIZED where c1 free-fell (c1: 16.6% and falling at
+35). Diagnosis: 0.53@150 gate admitted noise promotions during the 25-30
+window (lineage advanced every gen); the ratchet re-engaged by 33. Applied
+the single overnight adjustment: gate_threshold 0.53→0.55 patched into the
+gen-35 checkpoint payload (resume reads config from checkpoint) and resumed.
+Also: /root/box_ctl.sh on the box now handles stop/patch/resume without the
+pkill-self-match footgun.
