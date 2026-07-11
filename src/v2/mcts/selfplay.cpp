@@ -566,9 +566,16 @@ void SelfPlayRunner::finish_game(GameSlot& game) noexcept {
 bool SelfPlayRunner::resolve_scripted_tree_leaf(GameSlot& game, const MctsPendingLeaf& leaf) noexcept {
     const GameState& leaf_state = game.mcts.state_for(leaf.state_index);
     Action action = A_PASS;
-    if (config_.scripted_bot == SelfPlayScriptedBotKind::Scaffold && scaffold_mcts_.has_value()) {
-        scaffold_mcts_->set_rollout_seed(scaffold_rollout_seed(game.seed));
-        action = eval_scaffold_mcts_action(*scaffold_mcts_, leaf_state, leaf.legal, leaf.legal_count);
+    if (config_.scripted_bot == SelfPlayScriptedBotKind::Scaffold) {
+        // Actual moves keep full Scaffold fidelity in drive_scripted; charting
+        // its tree leaves as Engine avoids batch stalls (2026-07-11: 36+ min
+        // for ~10 Scaffold games in 1,024, versus a ~5 min baseline).
+        action = eval_scripted_action(
+            leaf_state,
+            leaf.legal,
+            leaf.legal_count,
+            EvalScriptedBotKind::Engine,
+            game.rng);
     } else {
         action = eval_scripted_action(
             leaf_state,

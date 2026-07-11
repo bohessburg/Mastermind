@@ -148,7 +148,7 @@ TEST_CASE("v2 selfplay is deterministic with a fixed mock evaluator", "[v2][self
     }
 }
 
-TEST_CASE("v2 selfplay Scaffold records only the NN seat", "[v2][selfplay][scripted]") {
+TEST_CASE("v2 selfplay Scaffold records only the NN seat deterministically", "[v2][selfplay][scripted]") {
     SelfPlayConfig config = fixed_config(1U, 4U, 8U, 0x5E1F'0006ULL);
     config.max_tree_nodes = 512U;
     config.scripted_bot = SelfPlayScriptedBotKind::Scaffold;
@@ -175,9 +175,13 @@ TEST_CASE("v2 selfplay Scaffold records only the NN seat", "[v2][selfplay][scrip
     }
 
     REQUIRE_FALSE(records.empty());
+    REQUIRE(runner.games_completed() == 1U);
+    REQUIRE(records.size() == 1U);
     const SelfPlayRecord& record = records.front();
     REQUIRE(record.scripted_nn_player == config.scripted_nn_player);
     REQUIRE_FALSE(record.players.empty());
+    REQUIRE(record.observations.size() == static_cast<std::size_t>(record.moves) * OBS_SIZE);
+    REQUIRE(record.policy_targets.size() == static_cast<std::size_t>(record.moves) * ACTION_SPACE_SIZE);
     for (const PlayerId player : record.players) {
         REQUIRE(player == config.scripted_nn_player);
     }
@@ -187,6 +191,21 @@ TEST_CASE("v2 selfplay Scaffold records only the NN seat", "[v2][selfplay][scrip
     for (const float value : record.values) {
         REQUIRE(value == expected);
     }
+
+    // The charted in-tree opponent must leave the seeded Scaffold trajectory
+    // reproducible while drive_scripted still supplies its actual moves.
+    const std::vector<SelfPlayRecord> repeat = run_until_finished(config, 1U);
+    REQUIRE(repeat.size() == 1U);
+    const SelfPlayRecord& repeated = repeat.front();
+    REQUIRE(repeated.seed == record.seed);
+    REQUIRE(repeated.winner == record.winner);
+    REQUIRE(repeated.scripted_nn_player == record.scripted_nn_player);
+    REQUIRE(repeated.kingdom_count == record.kingdom_count);
+    REQUIRE(repeated.moves == record.moves);
+    REQUIRE(repeated.observations == record.observations);
+    REQUIRE(repeated.policy_targets == record.policy_targets);
+    REQUIRE(repeated.players == record.players);
+    REQUIRE(repeated.values == record.values);
 }
 
 TEST_CASE("v2 selfplay mock evaluator throughput smoke", "[v2][selfplay][throughput]") {
