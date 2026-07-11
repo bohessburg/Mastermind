@@ -138,7 +138,13 @@ Decision rules agreed with Jack:
   engine [[10,0],[11,.01],[35,.25]]. Seed 20260718. Per-kind counters
   live (scripted_wins_bigmoney/engine columns; watcher prints both).
   Thesis: protect gen-30-style action exploration from money reconquest
-  (see c9 closeout in training-log).
+  (see c9 closeout in training-log). RESUMED from gen 23 with the eval
+  fix (131aca1) — all in-run evals before that are ~50x understated.
+- **PARITY GATE CROSSED** (2026-07-11): eval had dropped the treasure-
+  collapse flags since c7 — every eval ran checkpoints in the wrong
+  decision space. Corrected: c8g35 80%, c9g30 56%, c9g60 87.7%, c10g20
+  81% vs EngineBot. Provisional pending corrected scaffold + human
+  playtest. Full story in training-log.
 - PREVIOUS: **Campaign 9** (cut gen 89) —
   checkpoints/campaign9/, config campaign9.json, /root/launch9.sh. Dual
   ladder: treasure-collapse flags + BigMoney from gen 6 and ENGINE from
