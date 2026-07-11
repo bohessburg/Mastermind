@@ -326,3 +326,21 @@ raised to 25% (full at gen 35). Seed 20260718, checkpoints/campaign10,
 config run_c10.json. First campaign with per-kind scripted counters
 (scripted_wins_bigmoney / scripted_wins_engine columns). Expected
 throughput ~half of c9 (512 sims): ~25-30K games/hr.
+
+EVAL BUG DISCOVERY + PARITY GATE CROSSED (2026-07-11 early morning):
+per-kind counters exposed impossible engine-seat training wins (43% at
+c10 gen 20 vs 1.5% eval). Codex root-caused it: evaluate_checkpoint (and
+the in-training eval + CLI) DROPPED the treasure-collapse flags — every
+eval since c7 ran collapse-trained checkpoints in the wrong decision
+space (net forced to search treasure plays it never trains on). Training
+counters were honest all along; evals were crippled. Fix: eval inherits
+collapse flags from the checkpoint (commit 131aca1; regression test).
+CORRECTED EVALS (200 games, 400 sims): c8 gen35 = 80.0% vs EngineBot
+(not 1.5%); c9 gen30 = 55.9%; c9 gen60 = 87.7%; c10 gen20 = 81.0%.
+Narrative corrections: c8's "money ceiling," c9's "decline," and c10's
+"slow eval" were all measurement artifacts. THE >=50% PARITY GATE WAS
+FIRST CROSSED BY CAMPAIGN 8 and is now exceeded by ~38 points. Gate
+crossing remains provisional pending corrected scaffold matchup (old
+scaffold results incl. c9g30 0/20 used the broken path too — rerun in
+flight) and human playtest. c10 resumed from gen 23 with fixed eval code;
+its in-run eval numbers are now trustworthy.
