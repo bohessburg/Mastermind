@@ -344,3 +344,10 @@ crossing remains provisional pending corrected scaffold matchup (old
 scaffold results incl. c9g30 0/20 used the broken path too — rerun in
 flight) and human playtest. c10 resumed from gen 23 with fixed eval code;
 its in-run eval numbers are now trustworthy.
+
+Scaffold confirmation (2026-07-11, corrected flags): c9 gen-60 vs
+scaffold-MCTS (EngineLike K=2, 400 sims both sides) = 8W-11L-1T (42.1%),
+all 20 games Province-ended. First checkpoint ever to take games off the
+scaffold (every prior attempt: 0 wins). Combined with 87.7% vs EngineBot:
+PARITY GATE CONFIRMED CROSSED — pending only human playtest. Next
+frontier: beat the scaffold outright, then superhuman play.
