@@ -132,11 +132,16 @@ Decision rules agreed with Jack:
 
 ## State update (2026-07-10 midday)
 
-- RUNNING: **Campaign 6** on the box (launched 2026-07-10 ~12:20) —
-  checkpoints/campaign6/, config campaign6.json, /root/launch6.sh. c5
-  recipe + BigMoney curriculum via new scripted_opponent_schedule (commit
-  1c6db6e): pure self-play gens 1-10, 5% at gen 11 → linear to 20% by 25.
-  Seed 20260714.
+- RUNNING: **Campaign 9** on the box (launched 2026-07-10 night) —
+  checkpoints/campaign9/, config campaign9.json, /root/launch9.sh. Dual
+  ladder: treasure-collapse flags + BigMoney from gen 6 and ENGINE from
+  gen 11, 1%/gen each to 20% caps. Seed 20260717. Campaigns 6 (curriculum
+  collapse-adjacent stall), 7 (treasure collapse validated, 5% dose too
+  early), 8 (stage-1 money play converged; ceiling mapped; gen-35 peak =
+  stage-1 baseline, synced locally) all closed — see training-log for
+  arcs. Probe playbook: argmax buy-preference probe at $5-$8 (fast,
+  local), full-game buy log via DecisionSearcher, both in session history
+  and cheap; run at every 5-gen eval past ~15.
 - CLOSED: Campaign 5 cut at gen ~21 — pessimism collapse (value head
   pinned -0.9..-1.0, policy degenerated to Copper-only buys; 20% BM from
   cold start fed pure -1 into the value head). Full diagnosis in
