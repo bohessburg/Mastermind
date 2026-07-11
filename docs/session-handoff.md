@@ -132,7 +132,14 @@ Decision rules agreed with Jack:
 
 ## State update (2026-07-10 midday)
 
-- RUNNING: **Campaign 9** on the box (launched 2026-07-10 night) —
+- RUNNING: **Campaign 10** on the box (launched 2026-07-11 ~06:00) —
+  checkpoints/campaign10/, campaign10.json, /root/launch10.sh. 512 sims,
+  temp 20, BM anneal-down [[5,0],[6,.01],[25,.2],[40,.2],[60,.05]],
+  engine [[10,0],[11,.01],[35,.25]]. Seed 20260718. Per-kind counters
+  live (scripted_wins_bigmoney/engine columns; watcher prints both).
+  Thesis: protect gen-30-style action exploration from money reconquest
+  (see c9 closeout in training-log).
+- PREVIOUS: **Campaign 9** (cut gen 89) —
   checkpoints/campaign9/, config campaign9.json, /root/launch9.sh. Dual
   ladder: treasure-collapse flags + BigMoney from gen 6 and ENGINE from
   gen 11, 1%/gen each to 20% caps. Seed 20260717. Campaigns 6 (curriculum
