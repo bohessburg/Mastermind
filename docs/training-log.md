@@ -370,3 +370,16 @@ scripted_wins_scaffold is a direct read against the 26.7% baseline.
 FULL-FIDELITY option chosen: opponent leaves inside the NN's search tree
 also resolve via scaffold search — gens will slow to ~45-60 min at full
 dose (campaign ~24-30 hrs). Seed 20260719, checkpoints/campaign11.
+
+c11 mid-course fix (2026-07-11 afternoon): full-fidelity in-tree scaffold
+resolution stalled worker batches — gen 11 at the 1% dose ran 36+ min
+(GPU 16%) vs ~5 min baseline; the synchronous in-tree scaffold searches
+block each worker's whole 128-game batch, so cost scales with BATCH
+CONTACT, not dose. Flipped to the chart-model option (commit pending in
+log; selfplay resolve_scripted_tree_leaf uses Engine chart for Scaffold
+lookahead; drive_scripted keeps full 400-sim scaffold for actual moves;
+EvalRunner untouched). Resumed from gen_0010 with same config/seed.
+Retro-eval context: honest c9-gen20 = 39.4% vs engine, so c11's 38.2% at
+gen 10 is recipe-consistent (512 sims halves the generations), not seed
+magic; pile-heavy flavor (71.5%) still pending the scaffold column's
+verdict.
