@@ -148,6 +148,47 @@ TEST_CASE("v2 selfplay is deterministic with a fixed mock evaluator", "[v2][self
     }
 }
 
+TEST_CASE("v2 selfplay Scaffold records only the NN seat", "[v2][selfplay][scripted]") {
+    SelfPlayConfig config = fixed_config(1U, 4U, 8U, 0x5E1F'0006ULL);
+    config.max_tree_nodes = 512U;
+    config.scripted_bot = SelfPlayScriptedBotKind::Scaffold;
+    config.scripted_nn_player = 1U;
+    config.scaffold_sims = 8U;
+    config.auto_play_treasures = true;
+    config.prune_treasure_plays = true;
+    SelfPlayRunner runner(config);
+
+    std::vector<SelfPlayRecord> records;
+    for (std::uint32_t guard = 0; guard < 30'000U; ++guard) {
+        const std::uint32_t count = runner.collect_leaves(config.max_batch);
+        if (count > 0U) {
+            const PlayerId* players = runner.leaf_players();
+            for (std::uint32_t i = 0; i < count; ++i) {
+                REQUIRE(players[i] == config.scripted_nn_player);
+            }
+            provide_zero_eval(runner, count);
+        }
+        if (!runner.finished_games().empty()) {
+            records = runner.take_finished_games();
+            break;
+        }
+    }
+
+    REQUIRE_FALSE(records.empty());
+    const SelfPlayRecord& record = records.front();
+    REQUIRE(record.scripted_nn_player == config.scripted_nn_player);
+    REQUIRE_FALSE(record.players.empty());
+    for (const PlayerId player : record.players) {
+        REQUIRE(player == config.scripted_nn_player);
+    }
+    const float expected = record.winner == NONE
+        ? 0.0F
+        : (record.winner == config.scripted_nn_player ? 1.0F : -1.0F);
+    for (const float value : record.values) {
+        REQUIRE(value == expected);
+    }
+}
+
 TEST_CASE("v2 selfplay mock evaluator throughput smoke", "[v2][selfplay][throughput]") {
     constexpr std::uint32_t N = 64U;
     constexpr std::uint32_t SIMS = 64U;

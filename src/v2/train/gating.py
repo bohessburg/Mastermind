@@ -23,7 +23,7 @@ from .model import DominionNet
 
 BEST_FILENAME = "best.pt"
 LEAGUE_DIRNAME = "league"
-SCRIPTED_OPPONENT_KINDS = frozenset({"bigmoney", "engine", "random"})
+SCRIPTED_OPPONENT_KINDS = frozenset({"bigmoney", "engine", "random", "scaffold"})
 
 
 @dataclass(frozen=True)

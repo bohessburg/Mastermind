@@ -68,6 +68,9 @@ public:
     explicit Mcts(const MctsConfig& config);
 
     [[nodiscard]] Action choose(const GameState& root, PlayerId perspective) noexcept;
+    // Allows serialized callers to reuse one scratch tree across independently
+    // seeded games without reallocating its node/state buffers.
+    void set_rollout_seed(std::uint64_t rollout_seed) noexcept { config_.rollout_seed = rollout_seed; }
     void reset(const GameState& root, PlayerId perspective) noexcept;
     void run_simulations(std::uint32_t simulations, Xoshiro256pp& rng) noexcept;
 

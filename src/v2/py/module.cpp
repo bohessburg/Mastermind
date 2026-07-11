@@ -1291,7 +1291,8 @@ PYBIND11_MODULE(dominion_v2_py, module) {
         .value("None_", SelfPlayScriptedBotKind::None)
         .value("BigMoney", SelfPlayScriptedBotKind::BigMoney)
         .value("Engine", SelfPlayScriptedBotKind::Engine)
-        .value("Random", SelfPlayScriptedBotKind::Random);
+        .value("Random", SelfPlayScriptedBotKind::Random)
+        .value("Scaffold", SelfPlayScriptedBotKind::Scaffold);
 
     py::class_<SelfPlayConfig>(module, "SelfPlayConfig")
         .def(py::init([](
@@ -1310,7 +1311,8 @@ PYBIND11_MODULE(dominion_v2_py, module) {
             SelfPlayScriptedBotKind scripted_bot,
             PlayerId scripted_nn_player,
             bool auto_play_treasures,
-            bool prune_treasure_plays) {
+            bool prune_treasure_plays,
+            std::uint32_t scaffold_sims) {
             SelfPlayConfig config{};
             config.n_games = n_games;
             config.sims_per_move = sims_per_move;
@@ -1327,6 +1329,7 @@ PYBIND11_MODULE(dominion_v2_py, module) {
             config.scripted_nn_player = scripted_nn_player;
             config.auto_play_treasures = auto_play_treasures;
             config.prune_treasure_plays = prune_treasure_plays;
+            config.scaffold_sims = scaffold_sims;
             if (!kingdom.is_none()) {
                 PySetup setup(2, kingdom, false);
                 config.fixed_setup = setup.setup;
@@ -1348,7 +1351,8 @@ PYBIND11_MODULE(dominion_v2_py, module) {
             py::arg("scripted_bot") = SelfPlayScriptedBotKind::None,
             py::arg("scripted_nn_player") = 0U,
             py::arg("auto_play_treasures") = false,
-            py::arg("prune_treasure_plays") = false)
+            py::arg("prune_treasure_plays") = false,
+            py::arg("scaffold_sims") = 400)
         .def_readwrite("n_games", &SelfPlayConfig::n_games)
         .def_readwrite("sims_per_move", &SelfPlayConfig::sims_per_move)
         .def_readwrite("c_puct", &SelfPlayConfig::c_puct)
@@ -1360,6 +1364,7 @@ PYBIND11_MODULE(dominion_v2_py, module) {
         .def_readwrite("kingdom_mode", &SelfPlayConfig::kingdom_mode)
         .def_readwrite("max_recorded_moves", &SelfPlayConfig::max_recorded_moves)
         .def_readwrite("max_tree_nodes", &SelfPlayConfig::max_tree_nodes)
+        .def_readwrite("scaffold_sims", &SelfPlayConfig::scaffold_sims)
         .def_readwrite("scripted_bot", &SelfPlayConfig::scripted_bot)
         .def_readwrite("scripted_nn_player", &SelfPlayConfig::scripted_nn_player)
         .def_readwrite("auto_play_treasures", &SelfPlayConfig::auto_play_treasures)

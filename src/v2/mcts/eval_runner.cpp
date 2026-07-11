@@ -99,6 +99,14 @@ struct DeckProfile {
     return NONE;
 }
 
+[[nodiscard]] float uniform_scaffold_prior(
+    const GameState&,
+    PlayerId,
+    Action,
+    void*) noexcept {
+    return 1.0F;
+}
+
 [[nodiscard]] std::uint64_t game_seed(const EvalRunnerConfig& config, std::uint64_t sequence) noexcept {
     return config.seed + (sequence * 0x9E37'79B9'7F4A'7C15ULL);
 }
@@ -732,6 +740,29 @@ Action eval_scripted_action(
     return first_legal(legal);
 }
 
+MctsConfig make_scaffold_mcts_config(
+    std::uint32_t sims_per_move,
+    float c_puct,
+    std::uint32_t max_tree_nodes,
+    bool prune_treasure_plays) noexcept {
+    MctsConfig config{};
+    config.sims_per_move = sims_per_move;
+    config.c_puct = c_puct;
+    config.determinizations = 2U;
+    config.max_tree_nodes = max_tree_nodes;
+    config.rollout_policy = MctsRolloutPolicy::EngineLike;
+    // EngineLike rollouts normally install a heuristic expansion prior when
+    // prior_fn is null. Supply this explicit unit callback for uniform priors.
+    config.prior_fn = uniform_scaffold_prior;
+    config.prior_user = nullptr;
+    config.prune_treasure_plays = prune_treasure_plays;
+    return config;
+}
+
+std::uint64_t scaffold_rollout_seed(std::uint64_t game_seed) noexcept {
+    return game_seed ^ 0x5CAFF01D'0000'0001ULL;
+}
+
 [[nodiscard]] Action eval_scaffold_mcts_action(
     Mcts& search,
     const GameState& state,
@@ -783,11 +814,11 @@ EvalRunner::EvalRunner(const EvalRunnerConfig& config)
     mcts_config_.rollout_policy = MctsRolloutPolicy::External;
     mcts_config_.prune_treasure_plays = config_.prune_treasure_plays;
 
-    scaffold_mcts_config_.sims_per_move = config_.sims_per_move;
-    scaffold_mcts_config_.c_puct = config_.c_puct;
-    scaffold_mcts_config_.determinizations = 2U;
-    scaffold_mcts_config_.max_tree_nodes = mcts_config_.max_tree_nodes;
-    scaffold_mcts_config_.rollout_policy = MctsRolloutPolicy::EngineLike;
+    scaffold_mcts_config_ = make_scaffold_mcts_config(
+        config_.sims_per_move,
+        config_.c_puct,
+        mcts_config_.max_tree_nodes,
+        config_.prune_treasure_plays);
 
     for (std::uint32_t i = 0; i < config_.n_games; ++i) {
         games_[i].mcts = Mcts(mcts_config_);
@@ -970,7 +1001,7 @@ void EvalRunner::reset_game(std::uint32_t index) noexcept {
     game.rng = Xoshiro256pp::seeded(game.seed ^ 0xE0A1'600D'0000'0001ULL);
     if (config_.opponent == EvalScriptedBotKind::Mcts) {
         MctsConfig scaffold_config = scaffold_mcts_config_;
-        scaffold_config.rollout_seed = game.seed ^ 0x5CAFF01D'0000'0001ULL;
+        scaffold_config.rollout_seed = scaffold_rollout_seed(game.seed);
         game.scripted_mcts.emplace(scaffold_config);
     } else {
         game.scripted_mcts.reset();

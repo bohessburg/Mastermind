@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <vector>
 
 enum class SelfPlayKingdomMode : std::uint8_t {
@@ -23,6 +24,7 @@ enum class SelfPlayScriptedBotKind : std::uint8_t {
     BigMoney,
     Engine,
     Random,
+    Scaffold,
 };
 
 struct SelfPlayConfig {
@@ -38,6 +40,7 @@ struct SelfPlayConfig {
     Setup fixed_setup{};
     std::uint16_t max_recorded_moves = 512;
     std::uint32_t max_tree_nodes = 4096;
+    std::uint32_t scaffold_sims = 400;
     SelfPlayScriptedBotKind scripted_bot = SelfPlayScriptedBotKind::None;
     PlayerId scripted_nn_player = 0U;
     bool auto_play_treasures = false;
@@ -103,6 +106,10 @@ private:
 
     SelfPlayConfig config_{};
     MctsConfig mcts_config_{};
+    MctsConfig scaffold_mcts_config_{};
+    // Scripted decisions are serialized by collect_leaves within one runner,
+    // so one scratch tree can serve every game slot without synchronization.
+    std::optional<Mcts> scaffold_mcts_{};
     std::unique_ptr<GameSlot[]> games_;
     std::unique_ptr<PendingLeaf[]> pending_;
     std::unique_ptr<float[]> leaf_obs_;

@@ -77,6 +77,50 @@ def test_scripted_runner_filters_to_nn_records_and_uses_nn_outcome_perspective(
     )
 
 
+def test_scaffold_scripted_runner_smoke_records_only_nn_seat() -> None:
+    nn_player = 1
+    config = dz.SelfPlayConfig(
+        n_games=1,
+        sims_per_move=4,
+        scaffold_sims=32,
+        max_batch=8,
+        seed=0x5CAFF01D,
+        kingdom_mode=dz.SelfPlayKingdomMode.Fixed,
+        max_tree_nodes=512,
+        scripted_bot=dz.SelfPlayScriptedBotKind.Scaffold,
+        scripted_nn_player=nn_player,
+        auto_play_treasures=True,
+        prune_treasure_plays=True,
+    )
+    runner = dz.SelfPlayRunner(config)
+
+    for _ in range(30_000):
+        observations, _masks = runner.collect_leaves(config.max_batch)
+        if observations.shape[0] > 0:
+            players = runner.leaf_players()
+            assert np.all(players == nn_player)
+            runner.provide_evaluations(
+                np.zeros((observations.shape[0],), dtype=np.float32),
+                np.zeros((observations.shape[0], dz.ACTION_SPACE_SIZE), dtype=np.float32),
+            )
+        finished = runner.finished_games()
+        if finished:
+            record = finished[0]
+            break
+    else:
+        raise AssertionError("Scaffold scripted self-play smoke did not finish a game")
+
+    assert record["scripted_nn_player"] == nn_player
+    assert record["players"].shape[0] > 0
+    assert np.all(record["players"] == nn_player)
+    winner = record["winner"]
+    expected_value = 0.0 if winner is None else (1.0 if int(winner) == nn_player else -1.0)
+    np.testing.assert_array_equal(
+        record["values"],
+        np.full(record["values"].shape, expected_value, dtype=np.float32),
+    )
+
+
 def _scripted_uniform_outcomes(
     scripted_bot: dz.SelfPlayScriptedBotKind,
     nn_player: int,
@@ -312,3 +356,21 @@ def test_campaign9_config_loads_with_two_opponent_curriculum() -> None:
         config.scripted_opponents,
         12,
     ) == pytest.approx({"bigmoney": 0.07, "engine": 0.02})
+
+
+def test_campaign11_config_loads_with_scaffold_curriculum() -> None:
+    config = load_config(Path(__file__).resolve().parents[3] / "configs" / "run_c11.json")
+
+    assert config.seed == 20260719
+    assert config.checkpoint_dir == "checkpoints/campaign11"
+    assert config.metrics_csv == "checkpoints/campaign11/metrics.csv"
+    assert config.selfplay.scaffold_sims == 400
+    assert config.scripted_opponent_schedule == {
+        "bigmoney": [[5, 0.0], [6, 0.01], [25, 0.20], [40, 0.20], [60, 0.05]],
+        "scaffold": [[10, 0.0], [11, 0.01], [35, 0.25]],
+    }
+    assert effective_scripted_fractions(
+        config.scripted_opponent_schedule,
+        config.scripted_opponents,
+        12,
+    ) == pytest.approx({"bigmoney": 0.07, "scaffold": 0.02})

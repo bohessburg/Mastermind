@@ -97,3 +97,17 @@ private:
     int legal_count,
     EvalScriptedBotKind kind,
     Xoshiro256pp& rng) noexcept;
+
+// Shared by the eval yardstick and training-time Scaffold opponent so their
+// rollout settings and forced-treasure fast path stay identical.
+[[nodiscard]] MctsConfig make_scaffold_mcts_config(
+    std::uint32_t sims_per_move,
+    float c_puct,
+    std::uint32_t max_tree_nodes,
+    bool prune_treasure_plays) noexcept;
+[[nodiscard]] std::uint64_t scaffold_rollout_seed(std::uint64_t game_seed) noexcept;
+[[nodiscard]] Action eval_scaffold_mcts_action(
+    Mcts& search,
+    const GameState& state,
+    const ActionMask& legal,
+    int legal_count) noexcept;

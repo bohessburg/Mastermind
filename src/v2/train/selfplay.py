@@ -71,6 +71,8 @@ def _scripted_bot_kind(kind: str | None):
         return dz.SelfPlayScriptedBotKind.Engine
     if normalized == "random":
         return dz.SelfPlayScriptedBotKind.Random
+    if normalized == "scaffold":
+        return dz.SelfPlayScriptedBotKind.Scaffold
     raise ValueError(f"unknown scripted opponent: {kind}")
 
 
@@ -94,6 +96,7 @@ def make_runner_config(
         kingdom=config.fixed_kingdom,
         max_recorded_moves=config.max_recorded_moves,
         max_tree_nodes=config.max_tree_nodes,
+        scaffold_sims=config.scaffold_sims,
         scripted_bot=_scripted_bot_kind(scripted_kind),
         scripted_nn_player=int(scripted_nn_player),
         auto_play_treasures=config.auto_play_treasures,

@@ -81,6 +81,20 @@ TEST_CASE("v2 eval scripted BigMoney policy follows known phase choices", "[v2][
     REQUIRE(eval_scripted_action(state, legal, legal_count, EvalScriptedBotKind::BigMoney, rng) == buy_action(DEF_GOLD));
 }
 
+TEST_CASE("v2 Scaffold MCTS config matches the rollout yardstick", "[v2][eval_runner][mcts]") {
+    const MctsConfig config = make_scaffold_mcts_config(400U, 1.25F, 4096U, true);
+
+    REQUIRE(config.sims_per_move == 400U);
+    REQUIRE(config.c_puct == 1.25F);
+    REQUIRE(config.determinizations == 2U);
+    REQUIRE(config.max_tree_nodes == 4096U);
+    REQUIRE(config.rollout_policy == MctsRolloutPolicy::EngineLike);
+    REQUIRE(config.prune_treasure_plays);
+    REQUIRE(config.prior_fn != nullptr);
+    const GameState state = Game::new_game(Setup{}, 0x5CAFF01DULL);
+    REQUIRE(config.prior_fn(state, 0U, A_PASS, config.prior_user) == 1.0F);
+}
+
 TEST_CASE("v2 eval runner mock evaluator completes games", "[v2][eval_runner]") {
     EvalRunner runner(fixed_eval_config(2U, 8U, 8U, 0xE0A1'0003ULL));
     drive_until_games(runner, 8U, 2U);

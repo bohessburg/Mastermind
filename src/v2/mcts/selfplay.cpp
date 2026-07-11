@@ -66,6 +66,7 @@ constexpr std::uint8_t IMPLEMENTED_KINGDOM_COUNT =
         return EvalScriptedBotKind::Engine;
     case SelfPlayScriptedBotKind::Random:
         return EvalScriptedBotKind::Random;
+    case SelfPlayScriptedBotKind::Scaffold:
     case SelfPlayScriptedBotKind::None:
         break;
     }
@@ -201,6 +202,9 @@ SelfPlayRunner::SelfPlayRunner(const SelfPlayConfig& config)
     if (config_.sims_per_move == 0U) {
         throw std::invalid_argument("SelfPlayConfig.sims_per_move must be positive");
     }
+    if (config_.scripted_bot == SelfPlayScriptedBotKind::Scaffold && config_.scaffold_sims == 0U) {
+        throw std::invalid_argument("SelfPlayConfig.scaffold_sims must be positive for Scaffold");
+    }
     if (scripted_mode(config_) && config_.scripted_nn_player >= 2U) {
         throw std::invalid_argument("SelfPlayConfig.scripted_nn_player must be zero or one");
     }
@@ -214,6 +218,15 @@ SelfPlayRunner::SelfPlayRunner(const SelfPlayConfig& config)
     mcts_config_.max_tree_nodes = config_.max_tree_nodes == 0U ? 4096U : config_.max_tree_nodes;
     mcts_config_.rollout_policy = MctsRolloutPolicy::External;
     mcts_config_.prune_treasure_plays = config_.prune_treasure_plays;
+
+    if (config_.scripted_bot == SelfPlayScriptedBotKind::Scaffold) {
+        scaffold_mcts_config_ = make_scaffold_mcts_config(
+            config_.scaffold_sims,
+            config_.c_puct,
+            mcts_config_.max_tree_nodes,
+            config_.prune_treasure_plays);
+        scaffold_mcts_.emplace(scaffold_mcts_config_);
+    }
 
     finished_.reserve(config_.n_games);
     for (std::uint32_t i = 0; i < config_.n_games; ++i) {
@@ -449,12 +462,20 @@ void SelfPlayRunner::drive_scripted(GameSlot& game) noexcept {
         if (legal_count <= 0) {
             break;
         }
-        Action action = eval_scripted_action(
-            game.state,
-            legal,
-            legal_count,
-            eval_scripted_kind(config_.scripted_bot),
-            game.rng);
+        Action action = A_PASS;
+        if (config_.scripted_bot == SelfPlayScriptedBotKind::Scaffold && scaffold_mcts_.has_value()) {
+            // Scaffold decisions cost ~10-50ms CPU each; callers control the
+            // dose through the scripted-opponent schedule.
+            scaffold_mcts_->set_rollout_seed(scaffold_rollout_seed(game.seed));
+            action = eval_scaffold_mcts_action(*scaffold_mcts_, game.state, legal, legal_count);
+        } else {
+            action = eval_scripted_action(
+                game.state,
+                legal,
+                legal_count,
+                eval_scripted_kind(config_.scripted_bot),
+                game.rng);
+        }
         if (!legal.test(action)) {
             action = legal.nth_set(0U);
         }
@@ -544,12 +565,18 @@ void SelfPlayRunner::finish_game(GameSlot& game) noexcept {
 
 bool SelfPlayRunner::resolve_scripted_tree_leaf(GameSlot& game, const MctsPendingLeaf& leaf) noexcept {
     const GameState& leaf_state = game.mcts.state_for(leaf.state_index);
-    Action action = eval_scripted_action(
-        leaf_state,
-        leaf.legal,
-        leaf.legal_count,
-        eval_scripted_kind(config_.scripted_bot),
-        game.rng);
+    Action action = A_PASS;
+    if (config_.scripted_bot == SelfPlayScriptedBotKind::Scaffold && scaffold_mcts_.has_value()) {
+        scaffold_mcts_->set_rollout_seed(scaffold_rollout_seed(game.seed));
+        action = eval_scaffold_mcts_action(*scaffold_mcts_, leaf_state, leaf.legal, leaf.legal_count);
+    } else {
+        action = eval_scripted_action(
+            leaf_state,
+            leaf.legal,
+            leaf.legal_count,
+            eval_scripted_kind(config_.scripted_bot),
+            game.rng);
+    }
     if (!leaf.legal.test(action)) {
         action = leaf.legal_count > 0 ? leaf.legal.nth_set(0U) : A_PASS;
     }

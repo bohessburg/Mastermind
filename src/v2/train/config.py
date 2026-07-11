@@ -39,6 +39,7 @@ class SelfPlayConfig:
     )
     max_recorded_moves: int = 512
     max_tree_nodes: int = 4096
+    scaffold_sims: int = 400
     auto_play_treasures: bool = False
     prune_treasure_plays: bool = False
 
