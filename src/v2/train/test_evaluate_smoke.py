@@ -3,12 +3,14 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+import torch
 
 import dominion_v2_py as dz
 
+from . import evaluate
 from .evaluate import classify_game_end, evaluate_checkpoint
 from .test_train_smoke import read_metrics, tiny_config
-from .train import run_training
+from .train import build_objects, run_training, save_checkpoint
 
 
 def test_checkpoint_eval_vs_random_smoke_and_determinism(tmp_path: Path) -> None:
@@ -107,6 +109,29 @@ def test_checkpoint_eval_vs_phase6_mcts_smoke(tmp_path: Path) -> None:
     assert stats.games == 2
     assert stats.games == stats.wins + stats.losses + stats.ties
     assert stats.end_province + stats.end_piles + stats.end_trunc == stats.games
+
+
+def test_checkpoint_eval_inherits_treasure_collapse_options(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cfg = tiny_config(tmp_path, generations=1)
+    cfg.selfplay.auto_play_treasures = True
+    cfg.selfplay.prune_treasure_plays = True
+    model, optimizer, replay = build_objects(cfg, torch.device("cpu"))
+    checkpoint = save_checkpoint(cfg, 1, model, optimizer, replay)
+    captured: dict[str, object] = {}
+    sentinel = object()
+
+    def capture_eval(_model: object, **kwargs: object) -> object:
+        captured.update(kwargs)
+        return sentinel
+
+    monkeypatch.setattr(evaluate, "evaluate_model", capture_eval)
+
+    assert evaluate.evaluate_checkpoint(checkpoint, device_name="cpu") is sentinel
+    assert captured["auto_play_treasures"] is True
+    assert captured["prune_treasure_plays"] is True
 
 
 def test_training_metrics_include_periodic_eval(tmp_path: Path) -> None:

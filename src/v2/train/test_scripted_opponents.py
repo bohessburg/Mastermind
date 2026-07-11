@@ -77,6 +77,57 @@ def test_scripted_runner_filters_to_nn_records_and_uses_nn_outcome_perspective(
     )
 
 
+def _scripted_uniform_outcomes(
+    scripted_bot: dz.SelfPlayScriptedBotKind,
+    nn_player: int,
+    games: int = 8,
+) -> list[dict]:
+    config = dz.SelfPlayConfig(
+        n_games=1,
+        sims_per_move=16,
+        max_batch=64,
+        seed=0x51A7 + nn_player + (100 if scripted_bot == dz.SelfPlayScriptedBotKind.BigMoney else 0),
+        kingdom_mode=dz.SelfPlayKingdomMode.Fixed,
+        dirichlet_alpha=0.3,
+        dirichlet_frac=0.25,
+        temp_moves=20,
+        max_tree_nodes=512,
+        scripted_bot=scripted_bot,
+        scripted_nn_player=nn_player,
+        auto_play_treasures=True,
+        prune_treasure_plays=True,
+    )
+    runner = dz.SelfPlayRunner(config)
+    records: list[dict] = []
+    for _ in range(100_000):
+        observations, _masks = runner.collect_leaves(config.max_batch)
+        if observations.shape[0] > 0:
+            runner.provide_evaluations(
+                np.zeros((observations.shape[0],), dtype=np.float32),
+                np.zeros((observations.shape[0], dz.ACTION_SPACE_SIZE), dtype=np.float32),
+            )
+        records.extend(runner.finished_games())
+        if len(records) >= games:
+            return records[:games]
+    raise AssertionError("uniform scripted self-play did not finish enough games")
+
+
+@pytest.mark.parametrize(
+    "scripted_bot",
+    [dz.SelfPlayScriptedBotKind.Engine, dz.SelfPlayScriptedBotKind.BigMoney],
+)
+def test_uniform_nn_does_not_receive_spurious_scripted_wins(
+    scripted_bot: dz.SelfPlayScriptedBotKind,
+) -> None:
+    records = [
+        *_scripted_uniform_outcomes(scripted_bot, nn_player=0),
+        *_scripted_uniform_outcomes(scripted_bot, nn_player=1),
+    ]
+
+    assert all(record["winner"] is not None for record in records)
+    assert all(record["winner"] != record["scripted_nn_player"] for record in records)
+
+
 def test_scripted_segment_fractions_account_exactly_and_seat_swap() -> None:
     segments = plan_training_selfplay_segments(
         total_games=40,

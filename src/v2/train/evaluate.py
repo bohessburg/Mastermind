@@ -259,12 +259,16 @@ def evaluate_checkpoint(
     device_name: str = "auto",
     n_games: int = 64,
     max_batch: int = 512,
-    auto_play_treasures: bool = False,
-    prune_treasure_plays: bool = False,
+    auto_play_treasures: bool | None = None,
+    prune_treasure_plays: bool | None = None,
 ) -> EvalStats:
     device = select_device(device_name)
     seed_everything(seed, deterministic=device.type == "cpu")
     model, cfg = load_model(checkpoint, device)
+    if auto_play_treasures is None:
+        auto_play_treasures = cfg.selfplay.auto_play_treasures
+    if prune_treasure_plays is None:
+        prune_treasure_plays = cfg.selfplay.prune_treasure_plays
     return evaluate_model(
         model,
         opponent=opponent,
@@ -319,8 +323,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--device", default="auto")
     parser.add_argument("--n-games", type=int, default=64)
     parser.add_argument("--max-batch", type=int, default=512)
-    parser.add_argument("--auto-play-treasures", action="store_true")
-    parser.add_argument("--prune-treasure-plays", action="store_true")
+    parser.add_argument("--auto-play-treasures", action=argparse.BooleanOptionalAction, default=None)
+    parser.add_argument("--prune-treasure-plays", action=argparse.BooleanOptionalAction, default=None)
     parser.add_argument("--ladder", action="store_true")
     parser.add_argument("--ladder-random-games", type=int, default=40)
     parser.add_argument("--ladder-bigmoney-games", type=int, default=100)
@@ -332,6 +336,16 @@ def main(argv: list[str] | None = None) -> int:
     device = select_device(args.device)
     seed_everything(args.seed, deterministic=device.type == "cpu")
     model, cfg = load_model(args.checkpoint, device)
+    auto_play_treasures = (
+        cfg.selfplay.auto_play_treasures
+        if args.auto_play_treasures is None
+        else args.auto_play_treasures
+    )
+    prune_treasure_plays = (
+        cfg.selfplay.prune_treasure_plays
+        if args.prune_treasure_plays is None
+        else args.prune_treasure_plays
+    )
     print(
         json.dumps(
             {
@@ -362,8 +376,8 @@ def main(argv: list[str] | None = None) -> int:
                     c_puct=cfg.selfplay.c_puct,
                     fixed_kingdom=cfg.selfplay.fixed_kingdom,
                     max_tree_nodes=cfg.selfplay.max_tree_nodes,
-                    auto_play_treasures=args.auto_play_treasures,
-                    prune_treasure_plays=args.prune_treasure_plays,
+                    auto_play_treasures=auto_play_treasures,
+                    prune_treasure_plays=prune_treasure_plays,
                 )
             )
     else:
@@ -381,8 +395,8 @@ def main(argv: list[str] | None = None) -> int:
                 c_puct=cfg.selfplay.c_puct,
                 fixed_kingdom=cfg.selfplay.fixed_kingdom,
                 max_tree_nodes=cfg.selfplay.max_tree_nodes,
-                auto_play_treasures=args.auto_play_treasures,
-                prune_treasure_plays=args.prune_treasure_plays,
+                auto_play_treasures=auto_play_treasures,
+                prune_treasure_plays=prune_treasure_plays,
             )
         )
     print_table(rows)
