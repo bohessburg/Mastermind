@@ -507,6 +507,11 @@ def _choose_nnmcts_action(session: Session, seat: int) -> int:
             "sims": _nn_mcts_sims(),
             "c_puct": 1.25,
             "determinizations": 2,
+            # Collapse-trained checkpoints (c7+) never search treasure plays;
+            # searching them here puts the net off-distribution (see the
+            # 2026-07-11 eval-flag bug in docs/training-log.md).
+            "auto_play_treasures": True,
+            "prune_treasure_plays": True,
             # State-derived seeding also makes replay/undo decisions stable.
             "seed": (
                 int(session.game.state_hash()) ^ ((seat + 1) * 0x9E3779B97F4A7C15)
