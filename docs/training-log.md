@@ -383,3 +383,21 @@ Retro-eval context: honest c9-gen20 = 39.4% vs engine, so c11's 38.2% at
 gen 10 is recipe-consistent (512 sims halves the generations), not seed
 magic; pile-heavy flavor (71.5%) still pending the scaffold column's
 verdict.
+
+Campaign 11 closeout + Campaign 12 launch (2026-07-11 night): c11 cut at
+gen ~13 after its gen-10 pile-rusher beat the OLD scaffold 8/10 via the
+eval runner (9/10 pile endings) — the scaffold's EngineLike rollouts
+ignored the pile clock; the whole scripted ladder shared the blind spot.
+c12 ships four fixes (commits 8d98fba..7b0c77d): (1) pile-aware rollouts
+(race when ahead / deny when behind — pile-outs stay a legitimate,
+now-contested strategy); (2) rollout step cap 4096->1024 with margin-sign
+cutoff scoring (pile-aware rollouts run long; cost bound restored); (3)
+MARGIN VALUE TARGETS, sign-preserving hybrid v=sign*(0.5+0.5*|m|/20) —
+wins never train below +0.5, crushes teach more than squeakers; (4)
+nested Throne Room rules fix (TR->TR->X played the child 4x and reused
+the target; interp.cpp multiplicative-fold bug found by Jack in live
+play, survived 10M-step fuzzing). Certification matchup vs the c11-gen10
+rusher never completed — games appear to stall to truncation with a
+defender that denies the third pile, itself weak evidence the exploit is
+contained; launched on Jack's call without it. Seed 20260720,
+checkpoints/campaign12, config run_c12.json.
