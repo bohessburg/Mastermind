@@ -351,3 +351,12 @@ all 20 games Province-ended. First checkpoint ever to take games off the
 scaffold (every prior attempt: 0 wins). Combined with 87.7% vs EngineBot:
 PARITY GATE CONFIRMED CROSSED — pending only human playtest. Next
 frontier: beat the scaffold outright, then superhuman play.
+
+c10 gen-90 vs scaffold, PROPER SAMPLE (2026-07-11, 200 games via 10
+parallel box workers, corrected flags): 50W-137L-13T = 26.7% excl ties.
+All parts Province-dominated endings. The scaffold still outranks our
+best net head-to-head despite gen-90's 93% vs EngineBot — the searcher
+adapts in-game; the chart bot doesn't. (c9g60's earlier 42% was a 19-game
+small sample; treat 26.7%@200 as the real baseline.) Scaffold = the next
+ladder rung; candidate c11 ideas: scaffold seats as a third scripted
+opponent tier, league play, more sims, larger net.
