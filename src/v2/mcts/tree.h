@@ -125,8 +125,8 @@ private:
     const GameState& state,
     const ActionMask& legal) noexcept;
 [[nodiscard]] Action mcts_canonical_treasure_play(const ActionMask& legal) noexcept;
-// The EngineLike buying branch used by MCTS rollouts. It includes the
-// pile-clock guard but deliberately does not affect the separate Engine bot.
+// The EngineLike buying branch used by MCTS rollouts. Its pile-clock guard is
+// shared with the separate Engine chart.
 [[nodiscard]] Action mcts_engine_like_rollout_buy(
     const GameState& state,
     const ActionMask& legal) noexcept;

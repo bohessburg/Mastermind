@@ -42,6 +42,7 @@ configure_v2_target(dominion_v2)
 
 add_library(dominion_v2_mcts STATIC
     src/v2/mcts/eval_runner.cpp
+    src/v2/mcts/pile_clock.cpp
     src/v2/mcts/selfplay.cpp
     src/v2/mcts/tree.cpp
 )

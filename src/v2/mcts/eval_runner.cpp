@@ -1,5 +1,7 @@
 #include "v2/mcts/eval_runner.h"
 
+#include "v2/mcts/pile_clock.h"
+
 #include "v2/core/game.h"
 #include "v2/core/score.h"
 #include "v2/core/turns.h"
@@ -598,6 +600,10 @@ void count_ordered_zone(const GameState& state, const OrderedZone& zone, DeckPro
     return big_money_buy(state, legal);
 }
 
+[[nodiscard]] Action engine_chart_buy(const GameState& state, const ActionMask& legal) noexcept {
+    return heuristic_buy(state, legal, true);
+}
+
 [[nodiscard]] DefId current_sentry_def(const GameState& state) noexcept {
     if (state.effect_depth > 0U) {
         const EffectFrame& frame = state.effect_stack[state.effect_depth - 1U];
@@ -672,7 +678,11 @@ Action eval_scripted_action(
             return treasure;
         }
         if (kind == EvalScriptedBotKind::Engine) {
-            return heuristic_buy(state, legal, true);
+            return pile_clock_guarded_buy(
+                state,
+                legal,
+                analyze_pile_clock(state, legal),
+                engine_chart_buy);
         }
         return big_money_buy(state, legal);
     }

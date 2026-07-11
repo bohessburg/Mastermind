@@ -1,6 +1,9 @@
 #include "v2/mcts/eval_runner.h"
 
 #include "v2/core/game.h"
+#include "v2/core/score.h"
+#include "v2/core/setup.h"
+#include "v2/core/turns.h"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -8,6 +11,68 @@
 #include <vector>
 
 namespace {
+
+[[nodiscard]] Pile* find_pile(GameState& state, DefId def) {
+    for (std::uint8_t i = 0; i < state.num_piles; ++i) {
+        Pile& pile = state.piles[i];
+        if (pile.mixed_len == 0U && state.slot_to_def[pile.base] == def) {
+            return &pile;
+        }
+    }
+    return nullptr;
+}
+
+void clear_player_cards(GameState& state, PlayerId player_id) {
+    PlayerState& player = state.players[player_id];
+    for (Slot slot = 0; slot < MAX_SLOTS; ++slot) {
+        player.hand[slot] = 0U;
+        player.exile[slot] = 0U;
+        player.tavern[slot] = 0U;
+        player.island_mat[slot] = 0U;
+    }
+    player.deck.size = 0U;
+    player.discard.size = 0U;
+    player.set_aside.size = 0U;
+    player.in_play_size = 0U;
+    player.pending_size = 0U;
+}
+
+void add_to_discard(GameState& state, PlayerId player_id, DefId def, std::uint8_t count) {
+    const Slot slot = slot_of(state, def);
+    PlayerState& player = state.players[player_id];
+    for (std::uint8_t i = 0; i < count; ++i) {
+        player.discard.cards[player.discard.size] = slot;
+        ++player.discard.size;
+    }
+}
+
+[[nodiscard]] GameState pile_clock_engine_chart_position(bool player_ahead) {
+    Setup setup{};
+    setup.kingdom_count = 1U;
+    setup.kingdom[0] = DEF_VILLAGE;
+    GameState state = Game::new_game(setup, 0xC10C'0002ULL);
+    clear_player_cards(state, 0U);
+    clear_player_cards(state, 1U);
+    add_to_discard(state, player_ahead ? 0U : 1U, DEF_PROVINCE, 1U);
+    add_to_discard(state, player_ahead ? 1U : 0U, DEF_ESTATE, 1U);
+
+    Pile* copper = find_pile(state, DEF_COPPER);
+    Pile* gold = find_pile(state, DEF_GOLD);
+    Pile* village = find_pile(state, DEF_VILLAGE);
+    REQUIRE(copper != nullptr);
+    REQUIRE(gold != nullptr);
+    REQUIRE(village != nullptr);
+    copper->count = 0U;
+    gold->count = 0U;
+    village->count = 1U;
+
+    state.phase = static_cast<std::uint8_t>(Phase::Buy);
+    state.actions = 0U;
+    state.buys = 1U;
+    state.coins = 3;
+    refresh_current_decision(state);
+    return state;
+}
 
 [[nodiscard]] EvalRunnerConfig fixed_eval_config(
     std::uint32_t n_games,
@@ -79,6 +144,33 @@ TEST_CASE("v2 eval scripted BigMoney policy follows known phase choices", "[v2][
     legal_count = Game::legal_actions(state, legal);
     REQUIRE(legal_count > 0);
     REQUIRE(eval_scripted_action(state, legal, legal_count, EvalScriptedBotKind::BigMoney, rng) == buy_action(DEF_GOLD));
+}
+
+TEST_CASE("v2 Engine chart avoids a third pile while behind", "[v2][eval_runner]") {
+    GameState state = pile_clock_engine_chart_position(false);
+    ActionMask legal{};
+    const int legal_count = Game::legal_actions(state, legal);
+    Xoshiro256pp rng = Xoshiro256pp::seeded(0xC10C'0002ULL);
+
+    REQUIRE(legal_count > 0);
+    REQUIRE(legal.test(buy_action(DEF_VILLAGE)));
+    REQUIRE(legal.test(buy_action(DEF_ESTATE)));
+    REQUIRE(score(state, 0U) < score(state, 1U));
+    REQUIRE(eval_scripted_action(state, legal, legal_count, EvalScriptedBotKind::Engine, rng)
+        == buy_action(DEF_ESTATE));
+}
+
+TEST_CASE("v2 Engine chart ends on a third pile while ahead", "[v2][eval_runner]") {
+    GameState state = pile_clock_engine_chart_position(true);
+    ActionMask legal{};
+    const int legal_count = Game::legal_actions(state, legal);
+    Xoshiro256pp rng = Xoshiro256pp::seeded(0xC10C'0003ULL);
+
+    REQUIRE(legal_count > 0);
+    REQUIRE(legal.test(buy_action(DEF_VILLAGE)));
+    REQUIRE(score(state, 0U) > score(state, 1U));
+    REQUIRE(eval_scripted_action(state, legal, legal_count, EvalScriptedBotKind::Engine, rng)
+        == buy_action(DEF_VILLAGE));
 }
 
 TEST_CASE("v2 Scaffold MCTS config matches the rollout yardstick", "[v2][eval_runner][mcts]") {
