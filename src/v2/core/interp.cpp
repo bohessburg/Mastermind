@@ -760,8 +760,11 @@ void play_chosen_repeated(GameState& state, EffectFrame& frame, const Instr& ins
     }
 
     const DefId def = static_cast<DefId>(frame.data[DATA_LAST_DEF]);
-    const std::uint8_t repeats = static_cast<std::uint8_t>(
-        static_cast<std::uint8_t>(instr.arg) * (frame.repeats_left == 0U ? 1U : frame.repeats_left));
+    // A repeated parent frame represents separate resolutions of that card.
+    // Each resolution chooses independently, then plays its chosen card the
+    // number of times specified by this instruction. Do not fold the parent
+    // frame's remaining resolutions into this child play.
+    const std::uint8_t repeats = static_cast<std::uint8_t>(instr.arg);
     const std::uint8_t old_depth = state.effect_depth;
     const bool pushed = push_effect(state, def, frame.player);
     (void)pushed;
@@ -769,7 +772,6 @@ void play_chosen_repeated(GameState& state, EffectFrame& frame, const Instr& ins
     if (pushed && state.effect_depth > old_depth) {
         state.effect_stack[state.effect_depth - 1U].repeats_left = repeats;
     }
-    frame.repeats_left = 1U;
     ++frame.pc;
 }
 

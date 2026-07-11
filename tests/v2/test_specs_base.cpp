@@ -482,18 +482,66 @@ CARD_SPEC("v2 Throne Room plays Remodel twice") {
     expect_conservation();
 }
 
-CARD_SPEC("v2 Throne Room chained through Throne Room quadruple plays an Action") {
-    given().hand("Throne Room", "Throne Room", "Village").deck("Copper", "Copper", "Copper", "Copper");
+CARD_SPEC("v2 nested Throne Room plays one Sentry exactly twice") {
+    given()
+        .hand("Throne Room", "Throne Room", "Sentry")
+        .deck(
+            "Copper", "Copper", "Copper", "Copper", "Copper", "Copper",
+            "Copper", "Copper", "Copper", "Copper", "Copper", "Copper");
 
     play("Throne Room");
     choose("Throne Room");
     REQUIRE(state().decision.kind == static_cast<std::uint8_t>(DecisionKind::Choose));
     REQUIRE(state().decision.source == DEF_THRONE_ROOM);
 
-    choose("Village");
+    choose("Sentry");
+    REQUIRE(state().decision.kind == static_cast<std::uint8_t>(DecisionKind::ChooseOption));
+    REQUIRE(state().decision.source == DEF_SENTRY);
+
+    option(0);
+    REQUIRE(state().decision.kind == static_cast<std::uint8_t>(DecisionKind::ChooseOption));
+    option(0);
+    REQUIRE(state().decision.kind == static_cast<std::uint8_t>(DecisionKind::ChooseOption));
+    option(0);
+    REQUIRE(state().decision.kind == static_cast<std::uint8_t>(DecisionKind::ChooseOption));
+    option(0);
+
+    // The second inner-Throne resolution has no Action left to choose, so it
+    // completes instead of reusing the Sentry that is already in play.
+    REQUIRE(state().phase == static_cast<std::uint8_t>(Phase::Buy));
+    REQUIRE(state().decision.kind == static_cast<std::uint8_t>(DecisionKind::PhaseBuy));
+    REQUIRE(hand_total(state()) == 2U);
+    expect().trash_count("Copper", 4).actions(2).coins(0);
+    expect_conservation();
+}
+
+CARD_SPEC("v2 nested Throne Room chooses a fresh target for each inner resolution") {
+    given()
+        .hand("Throne Room", "Throne Room", "Smithy", "Moat")
+        .deck(
+            "Copper", "Copper", "Copper", "Copper", "Copper",
+            "Copper", "Copper", "Copper", "Copper", "Copper");
+
+    play("Throne Room");
+    choose("Throne Room");
+    REQUIRE(state().decision.kind == static_cast<std::uint8_t>(DecisionKind::Choose));
+    REQUIRE(state().decision.source == DEF_THRONE_ROOM);
+
+    choose("Smithy");
+
+    // Smithy has left the hand, so the second inner-Throne resolution must
+    // ask again and leave Moat as its only legal target.
+    REQUIRE(state().decision.kind == static_cast<std::uint8_t>(DecisionKind::Choose));
+    REQUIRE(state().decision.source == DEF_THRONE_ROOM);
+    REQUIRE(state().decision.min_left == 0U);
+    REQUIRE(state().decision.max_left == 1U);
+
+    choose("Moat");
 
     REQUIRE(state().phase == static_cast<std::uint8_t>(Phase::Buy));
-    expect().hand_has("Copper").actions(8).coins(0);
+    REQUIRE(state().decision.kind == static_cast<std::uint8_t>(DecisionKind::PhaseBuy));
+    REQUIRE(hand_total(state()) == 10U);
+    expect().hand_has("Copper").actions(0).coins(0);
     expect_conservation();
 }
 
