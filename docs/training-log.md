@@ -360,3 +360,13 @@ adapts in-game; the chart bot doesn't. (c9g60's earlier 42% was a 19-game
 small sample; treat 26.7%@200 as the real baseline.) Scaffold = the next
 ladder rung; candidate c11 ideas: scaffold seats as a third scripted
 opponent tier, league play, more sims, larger net.
+
+Campaign 11 (launched 2026-07-11 midday, running): c10 recipe with
+SCAFFOLD seats replacing engine seats (commit 8d98fba) — the adaptive
+rollout-MCTS that beats our best net 73/27 becomes the teacher. Schedule:
+BM unchanged (1% @6 -> 20% @25 -> anneal to 5% by 60); scaffold 1% @11 ->
+25% cap @35. scaffold_sims 400 = identical to the yardstick, so
+scripted_wins_scaffold is a direct read against the 26.7% baseline.
+FULL-FIDELITY option chosen: opponent leaves inside the NN's search tree
+also resolve via scaffold search — gens will slow to ~45-60 min at full
+dose (campaign ~24-30 hrs). Seed 20260719, checkpoints/campaign11.
