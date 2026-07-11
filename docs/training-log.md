@@ -270,3 +270,16 @@ curriculum — schedule [[14,0.0],[15,0.01],[34,0.20]]: 1% at gen 15,
 vs_bm alive at the ~10% dose; gens 35-45 graveyard hold test at full 20%;
 gen 55 parity-trajectory check (>=35-40%). Kill-switch unchanged:
 value-head pinning on the behavioral probe.
+
+Campaign 8 mid-run (gen 35, 2026-07-10 late): STAGE-1 CONVERGENCE. First
+engine wins (3/197) and vs_bm 35/205 = 17.1% at the full 20% dose (7/113
+at 25, 12/164 at 30). Probe trajectory of the money curve, gen 15->35:
+Gold at $6-7 went 2% -> 6% -> 11-25% -> 32-57% (now top pick); Province
+at $8 19% -> 88->74-81% (locked); Duchy at $6-7 65% -> 5-18%; early $5
+Duchy 58% -> 45% (last holdout). The duchy attractor dissolved in
+dose-response fashion with no value-head damage (vloss ~0.59 throughout).
+Slow-ramp curriculum (1%/gen from gen 15) validated against c7's failed
+5%-at-gen-11 jump. Expected ceiling unchanged: this arc converges to
+~BigMoney-class play (~21% vs engine); c9 dual ladder (BM gen 6 + engine
+gen 11, 1%/gen each, cap 20%; configs/run_c9.json, commit 3112d16) is the
+stage-2 vehicle.
