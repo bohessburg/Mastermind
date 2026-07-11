@@ -283,3 +283,23 @@ Slow-ramp curriculum (1%/gen from gen 15) validated against c7's failed
 ~BigMoney-class play (~21% vs engine); c9 dual ladder (BM gen 6 + engine
 gen 11, 1%/gen each, cap 20%; configs/run_c9.json, commit 3112d16) is the
 stage-2 vehicle.
+
+Campaign 8 closeout (2026-07-10 night): cut at gen ~47. Full arc delivered
+stage 1 and mapped its ceiling: vs_bm 0 -> 6.2%(25) -> 7.3%(30) ->
+17.1%(35, peak) -> 14.6%(40) -> 10.2%(45); engine wins flickered (3/197 at
+35) but never held. Money curve fully assembled by gen 35 (Gold top pick
+at $6-7, Province locked at $8, duchy attractor dissolved); past-peak
+erosion after 40 was gentle, no value damage. Conclusion: money-class play
+is a ~15-17% vs_bm / ~1.5% engine ceiling — the gate needs engines.
+Artifacts: checkpoints/campaign8 on box; gens 5/15/20/25/35 + metrics
+synced locally (gen 35 = stage-1 baseline checkpoint).
+
+Campaign 9 (launched 2026-07-10 night, running): dual-opponent ladder —
+c8 recipe (collapse flags, 1%/gen ramps) with BigMoney entering gen 6 and
+ENGINE entering gen 11, each to a 20% cap (BM full at 25, engine at 30);
+60% self-play steady state. Seed 20260717, checkpoints/campaign9, config
+run_c9.json (commit 3112d16). Purpose: stage 2 — engine-class opposition
+injects "engines beat money" evidence self-play and BM cannot provide.
+Key metrics: per-gen scripted engine wins (direct gate progress read),
+vs_bm (should recap c8's curve faster), eval vs EngineBot, and probes for
+action-card buy weights (Village/Smithy/Witch etc.) — the stage-2 tell.
