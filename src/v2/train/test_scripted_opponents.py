@@ -9,9 +9,10 @@ import torch
 
 import dominion_v2_py as dz
 
-from .config import load_config
+from .config import SelfPlayConfig, load_config
 from .gating import SelfPlaySegment, effective_scripted_fractions, plan_training_selfplay_segments
 from .inference_server import serialize_cpu_state_dict
+from .selfplay import make_runner_config
 from .test_train_smoke import read_metrics, tiny_config
 from .train import build_objects, run_training
 from .workers import ParallelSelfPlayPool
@@ -374,3 +375,30 @@ def test_campaign11_config_loads_with_scaffold_curriculum() -> None:
         config.scripted_opponents,
         12,
     ) == pytest.approx({"bigmoney": 0.07, "scaffold": 0.02})
+
+
+def test_campaign12_config_uses_margin_targets_with_the_scaffold_curriculum() -> None:
+    config = load_config(Path(__file__).resolve().parents[3] / "configs" / "run_c12.json")
+
+    assert config.seed == 20260720
+    assert config.checkpoint_dir == "checkpoints/campaign12"
+    assert config.metrics_csv == "checkpoints/campaign12/metrics.csv"
+    assert config.selfplay.value_target == "margin"
+    assert config.selfplay.margin_scale == 20.0
+    assert config.scripted_opponent_schedule == {
+        "bigmoney": [[5, 0.0], [6, 0.01], [25, 0.20], [40, 0.20], [60, 0.05]],
+        "scaffold": [[10, 0.0], [11, 0.01], [35, 0.25]],
+    }
+
+
+def test_make_runner_config_maps_and_validates_value_targets() -> None:
+    config = SelfPlayConfig(value_target="margin", margin_scale=17.5)
+    runner_config = make_runner_config(config, 12345)
+
+    assert runner_config.value_target == dz.SelfPlayValueTarget.Margin
+    assert runner_config.margin_scale == pytest.approx(17.5)
+
+    with pytest.raises(ValueError, match="unknown value target"):
+        make_runner_config(SelfPlayConfig(value_target="rank"), 12345)
+    with pytest.raises(ValueError, match="margin_scale"):
+        make_runner_config(SelfPlayConfig(margin_scale=0.0), 12345)

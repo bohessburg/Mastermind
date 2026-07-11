@@ -202,6 +202,9 @@ SelfPlayRunner::SelfPlayRunner(const SelfPlayConfig& config)
     if (config_.sims_per_move == 0U) {
         throw std::invalid_argument("SelfPlayConfig.sims_per_move must be positive");
     }
+    if (!(config_.margin_scale > 0.0F) || !std::isfinite(config_.margin_scale)) {
+        throw std::invalid_argument("SelfPlayConfig.margin_scale must be finite and positive");
+    }
     if (config_.scripted_bot == SelfPlayScriptedBotKind::Scaffold && config_.scaffold_sims == 0U) {
         throw std::invalid_argument("SelfPlayConfig.scaffold_sims must be positive for Scaffold");
     }
@@ -551,6 +554,9 @@ void SelfPlayRunner::finish_game(GameSlot& game) noexcept {
     }
     record.seed = game.seed;
     record.winner = winner_for(game.state);
+    for (PlayerId player = 0U; player < game.state.num_players; ++player) {
+        record.scores[player] = score(game.state, player);
+    }
     record.scripted_nn_player = game.nn_player;
     record.kingdom_count = game.setup.kingdom_count;
     for (std::uint8_t i = 0; i < game.setup.kingdom_count; ++i) {
@@ -624,6 +630,28 @@ Setup SelfPlayRunner::setup_for(std::uint32_t index, std::uint64_t generation) c
 
 float SelfPlayRunner::terminal_value_for(const GameState& state, PlayerId player) const noexcept {
     const PlayerId winner = winner_for(state);
+    if (config_.value_target == SelfPlayValueTarget::Margin) {
+        // Truncated games have no training outcome. Keep record.winner based
+        // on the final board for counters and gates, but do not turn that
+        // partial score into a value target.
+        if (state.truncated != 0U || winner == NONE) {
+            return 0.0F;
+        }
+        const PlayerId opponent = static_cast<PlayerId>(player == 0U ? 1U : 0U);
+        const float margin = static_cast<float>(
+            static_cast<int>(score(state, player)) - static_cast<int>(score(state, opponent)));
+        if (margin == 0.0F) {
+            return 0.0F;
+        }
+        // Sign-preserving hybrid: every win is worth at least +0.5 so narrow
+        // wins (a legal, often correct outcome — e.g. a well-executed pile
+        // race) never train as near-ties; margin adds gradient WITHIN the
+        // win/loss categories so crushes teach more than squeakers.
+        const float scale = config_.margin_scale;
+        const float sign = margin > 0.0F ? 1.0F : -1.0F;
+        const float graded = std::clamp(std::abs(margin), 0.0F, scale) / scale;
+        return sign * (0.5F + 0.5F * graded);
+    }
     if (winner == NONE) {
         return 0.0F;
     }

@@ -746,6 +746,138 @@ void count_ordered_zone(const GameState& state, const OrderedZone& zone, Rollout
     return legal.test(A_PASS) ? A_PASS : first_legal(legal);
 }
 
+struct PileClock {
+    int empty_piles = 0;
+    Action ending_buy = A_PASS;
+    Action victory_buy = A_PASS;
+    Action non_ending_victory_buy = A_PASS;
+    DefId victory_def = NONE;
+    DefId non_ending_victory_def = NONE;
+    ActionMask ending_buys{};
+};
+
+[[nodiscard]] bool better_victory_buy(DefId candidate, DefId current) noexcept {
+    if (current == NONE) {
+        return true;
+    }
+    const CardDef& candidate_card = card_def(candidate);
+    const CardDef& current_card = card_def(current);
+    if (candidate_card.vp != current_card.vp) {
+        return candidate_card.vp > current_card.vp;
+    }
+    return candidate_card.cost.coins > current_card.cost.coins;
+}
+
+void consider_victory_buy(
+    DefId def,
+    Action action,
+    Action& best_action,
+    DefId& best_def) noexcept {
+    if (better_victory_buy(def, best_def)) {
+        best_action = action;
+        best_def = def;
+    }
+}
+
+[[nodiscard]] PileClock analyze_pile_clock(
+    const GameState& state,
+    const ActionMask& legal) noexcept {
+    PileClock clock{};
+    for (std::uint8_t i = 0; i < state.num_piles; ++i) {
+        const Pile& pile = state.piles[i];
+        const int count = pile_count(pile);
+        if (count == 0) {
+            ++clock.empty_piles;
+            continue;
+        }
+
+        const DefId def = pile_top_def(state, pile);
+        const Action action = buy_action(def);
+        if (!legal.test(action)) {
+            continue;
+        }
+
+        const bool ends_game = count == 1;
+        if (ends_game) {
+            clock.ending_buys.set(action);
+            if (clock.ending_buy == A_PASS) {
+                clock.ending_buy = action;
+            }
+        }
+        if (!is_victory_def(def)) {
+            continue;
+        }
+        consider_victory_buy(def, action, clock.victory_buy, clock.victory_def);
+        if (!ends_game) {
+            consider_victory_buy(
+                def,
+                action,
+                clock.non_ending_victory_buy,
+                clock.non_ending_victory_def);
+        }
+    }
+    return clock;
+}
+
+[[nodiscard]] bool action_mask_any(const ActionMask& legal) noexcept {
+    for (std::uint16_t i = 0; i < ACTION_MASK_WORDS; ++i) {
+        if (legal.words[i] != 0U) {
+            return true;
+        }
+    }
+    return false;
+}
+
+[[nodiscard]] ActionMask without_ending_buys(
+    const ActionMask& legal,
+    const ActionMask& ending_buys) noexcept {
+    ActionMask safe = legal;
+    for (std::uint16_t i = 0; i < ACTION_MASK_WORDS; ++i) {
+        safe.words[i] &= ~ending_buys.words[i];
+    }
+    return safe;
+}
+
+[[nodiscard]] Action pile_aware_engine_like_buy(
+    const GameState& state,
+    const ActionMask& legal,
+    const PileClock& clock) noexcept {
+    if (clock.empty_piles < 2 || state.num_players != 2U) {
+        return engine_like_buy(state, legal);
+    }
+
+    const PlayerId player = player_to_move(state);
+    if (player >= state.num_players) {
+        return engine_like_buy(state, legal);
+    }
+    const std::int16_t my_score = score(state, player);
+    const std::int16_t opponent_score = score(state, other_player(player));
+    if (my_score > opponent_score) {
+        // With two piles empty, a one-card pile ends the game immediately.
+        // If that is unavailable, bank the best legal VP card instead.
+        if (clock.ending_buy != A_PASS) {
+            return clock.ending_buy;
+        }
+        if (clock.victory_buy != A_PASS) {
+            return clock.victory_buy;
+        }
+        return engine_like_buy(state, legal);
+    }
+    if (my_score < opponent_score) {
+        // Do not hand a lead to the opponent by closing a third pile. Prefer
+        // VP that keeps the game live, then run the normal chart with ending
+        // buys removed.
+        if (clock.non_ending_victory_buy != A_PASS) {
+            return clock.non_ending_victory_buy;
+        }
+        const ActionMask safe_legal = without_ending_buys(legal, clock.ending_buys);
+        if (action_mask_any(safe_legal)) {
+            return engine_like_buy(state, safe_legal);
+        }
+    }
+    return engine_like_buy(state, legal);
+}
+
 [[nodiscard]] Action sentry_option(const GameState& state, const ActionMask& legal) noexcept {
     DefId def = DEF_COPPER;
     if (state.effect_depth > 0U) {
@@ -797,23 +929,43 @@ void count_ordered_zone(const GameState& state, const OrderedZone& zone, Rollout
     if (legal_count <= 0) {
         return A_PASS;
     }
-    if (legal_count == 1 || epsilon_explore(epsilon, rng)) {
-        return legal_count == 1 ? legal.nth_set(0U) : rollout_random_action(legal, legal_count, rng);
+    if (legal_count == 1) {
+        return legal.nth_set(0U);
     }
 
-    /*
-     * Local scripted rollout policy. This intentionally duplicates only compact
-     * driver bot choices so MCTS keeps no dependency on drivers.
-     */
+    // Local scripted rollout policy. This intentionally duplicates only
+    // compact driver bot choices so MCTS keeps no dependency on drivers.
     const DecisionKind decision = static_cast<DecisionKind>(state.decision.kind);
+    PileClock pile_clock{};
+    bool has_pile_clock = false;
+    if (decision == DecisionKind::PhaseBuy && policy == MctsRolloutPolicy::EngineLike) {
+        pile_clock = analyze_pile_clock(state, legal);
+        has_pile_clock = true;
+        if (pile_clock.empty_piles >= 2) {
+            // Keep playing forced treasure value, but never let epsilon turn a
+            // live third-pile threat into an arbitrary random purchase.
+            const Action treasure = first_legal_play_treasure(legal);
+            if (treasure != A_PASS) {
+                return treasure;
+            }
+            return pile_aware_engine_like_buy(state, legal, pile_clock);
+        }
+    }
+    if (epsilon_explore(epsilon, rng)) {
+        return rollout_random_action(legal, legal_count, rng);
+    }
+
     if (decision == DecisionKind::PhaseBuy) {
         const Action treasure = first_legal_play_treasure(legal);
         if (treasure != A_PASS) {
             return treasure;
         }
-        return policy == MctsRolloutPolicy::EngineLike
-            ? engine_like_buy(state, legal)
-            : big_money_buy(state, legal);
+        if (policy == MctsRolloutPolicy::EngineLike) {
+            return has_pile_clock
+                ? pile_aware_engine_like_buy(state, legal, pile_clock)
+                : mcts_engine_like_rollout_buy(state, legal);
+        }
+        return big_money_buy(state, legal);
     }
     if (decision == DecisionKind::PhaseAction) {
         const Action action = best_legal_play_action(legal);
@@ -883,6 +1035,12 @@ void count_ordered_zone(const GameState& state, const OrderedZone& zone, Rollout
 }
 
 } // namespace
+
+Action mcts_engine_like_rollout_buy(
+    const GameState& state,
+    const ActionMask& legal) noexcept {
+    return pile_aware_engine_like_buy(state, legal, analyze_pile_clock(state, legal));
+}
 
 ActionMask mcts_filter_treasure_plays(
     const GameState& state,

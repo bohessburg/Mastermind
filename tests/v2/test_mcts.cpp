@@ -59,6 +59,34 @@ void add_to_discard(GameState& state, PlayerId player_id, DefId def, std::uint8_
     return state;
 }
 
+[[nodiscard]] GameState pile_clock_buy_position(bool player_ahead) {
+    Setup setup{};
+    setup.kingdom_count = 1U;
+    setup.kingdom[0] = DEF_VILLAGE;
+    GameState state = Game::new_game(setup, 0xC10C'0001ULL);
+    clear_player_cards(state, 0U);
+    clear_player_cards(state, 1U);
+    add_to_discard(state, player_ahead ? 0U : 1U, DEF_PROVINCE, 1U);
+    add_to_discard(state, player_ahead ? 1U : 0U, DEF_ESTATE, 1U);
+
+    Pile* copper = find_pile(state, DEF_COPPER);
+    Pile* gold = find_pile(state, DEF_GOLD);
+    Pile* village = find_pile(state, DEF_VILLAGE);
+    REQUIRE(copper != nullptr);
+    REQUIRE(gold != nullptr);
+    REQUIRE(village != nullptr);
+    copper->count = 0U;
+    gold->count = 0U;
+    village->count = 1U;
+
+    state.phase = static_cast<std::uint8_t>(Phase::Buy);
+    state.actions = 0U;
+    state.buys = 1U;
+    state.coins = 3;
+    refresh_current_decision(state);
+    return state;
+}
+
 [[nodiscard]] bool legal_in_state(const GameState& state, Action action) {
     ActionMask legal{};
     (void)Game::legal_actions(state, legal);
@@ -230,6 +258,24 @@ TEST_CASE("v2 MCTS terminal values are perspective correct", "[v2][mcts]") {
 
     REQUIRE(mcts_terminal_value(state, 0U) == -1.0F);
     REQUIRE(mcts_terminal_value(state, 1U) == 1.0F);
+}
+
+TEST_CASE("v2 EngineLike rollout respects the third-pile clock", "[v2][mcts][rollout]") {
+    GameState behind = pile_clock_buy_position(false);
+    ActionMask legal{};
+    REQUIRE(Game::legal_actions(behind, legal) > 0);
+    REQUIRE(legal.test(buy_action(DEF_VILLAGE)));
+    REQUIRE(score(behind, 0U) < score(behind, 1U));
+
+    const Action behind_action = mcts_engine_like_rollout_buy(behind, legal);
+    REQUIRE(behind_action != buy_action(DEF_VILLAGE));
+    REQUIRE(legal.test(behind_action));
+
+    GameState ahead = pile_clock_buy_position(true);
+    REQUIRE(Game::legal_actions(ahead, legal) > 0);
+    REQUIRE(legal.test(buy_action(DEF_VILLAGE)));
+    REQUIRE(score(ahead, 0U) > score(ahead, 1U));
+    REQUIRE(mcts_engine_like_rollout_buy(ahead, legal) == buy_action(DEF_VILLAGE));
 }
 
 TEST_CASE("v2 MCTS beats RandomBot in base games", "[v2][mcts][integration]") {

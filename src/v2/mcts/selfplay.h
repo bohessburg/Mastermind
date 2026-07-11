@@ -16,6 +16,11 @@ enum class SelfPlayKingdomMode : std::uint8_t {
     Random,
 };
 
+enum class SelfPlayValueTarget : std::uint8_t {
+    Outcome,
+    Margin,
+};
+
 // Training-only opponent mode. The policy implementation is shared with
 // EvalRunner so scripted data and eval use identical BigMoney/Engine/Random
 // behavior. None preserves the existing NN-vs-NN self-play path exactly.
@@ -41,6 +46,8 @@ struct SelfPlayConfig {
     std::uint16_t max_recorded_moves = 512;
     std::uint32_t max_tree_nodes = 4096;
     std::uint32_t scaffold_sims = 400;
+    SelfPlayValueTarget value_target = SelfPlayValueTarget::Outcome;
+    float margin_scale = 20.0F;
     SelfPlayScriptedBotKind scripted_bot = SelfPlayScriptedBotKind::None;
     PlayerId scripted_nn_player = 0U;
     bool auto_play_treasures = false;
@@ -59,6 +66,9 @@ struct SelfPlayRecord {
     // Read-only outcome metadata for Python-side head-to-head evaluation.
     // It is not consumed by self-play search or replay generation.
     PlayerId winner = NONE;
+    // Final scores are read-only metadata for diagnostics and Python-side
+    // value-target validation; self-play search never consumes them.
+    std::int16_t scores[MAX_PLAYERS]{};
     // None for NN-vs-NN games. Scripted-game records contain only decisions
     // from this NN player, which lets Python derive cheap per-generation
     // head-to-head outcomes without inspecting private engine state.

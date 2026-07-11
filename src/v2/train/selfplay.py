@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import time
 from dataclasses import dataclass, field
 from typing import Sequence
@@ -76,6 +77,15 @@ def _scripted_bot_kind(kind: str | None):
     raise ValueError(f"unknown scripted opponent: {kind}")
 
 
+def _value_target(value_target: str):
+    normalized = value_target.lower()
+    if normalized == "outcome":
+        return dz.SelfPlayValueTarget.Outcome
+    if normalized == "margin":
+        return dz.SelfPlayValueTarget.Margin
+    raise ValueError(f"unknown value target: {value_target}")
+
+
 def make_runner_config(
     config: SelfPlayConfig,
     seed: int,
@@ -83,6 +93,8 @@ def make_runner_config(
     scripted_kind: str | None = None,
     scripted_nn_player: int = 0,
 ):
+    if not math.isfinite(config.margin_scale) or config.margin_scale <= 0.0:
+        raise ValueError("margin_scale must be finite and positive")
     return dz.SelfPlayConfig(
         n_games=config.n_games,
         sims_per_move=config.sims_per_move,
@@ -101,6 +113,8 @@ def make_runner_config(
         scripted_nn_player=int(scripted_nn_player),
         auto_play_treasures=config.auto_play_treasures,
         prune_treasure_plays=config.prune_treasure_plays,
+        value_target=_value_target(config.value_target),
+        margin_scale=config.margin_scale,
     )
 
 

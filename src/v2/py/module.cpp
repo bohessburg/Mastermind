@@ -944,6 +944,12 @@ void selfplay_provide(
         dict["policy_targets"] = policies;
         dict["values"] = values;
         dict["players"] = players;
+        py::array_t<std::int16_t> scores(MAX_PLAYERS);
+        std::memcpy(
+            scores.mutable_data(),
+            record.scores,
+            static_cast<std::size_t>(MAX_PLAYERS) * sizeof(std::int16_t));
+        dict["scores"] = scores;
         dict["kingdom"] = kingdom;
         dict["seed"] = py::int_(record.seed);
         dict["winner"] = record.winner == NONE
@@ -1287,6 +1293,10 @@ PYBIND11_MODULE(dominion_v2_py, module) {
         .value("Fixed", SelfPlayKingdomMode::Fixed)
         .value("Random", SelfPlayKingdomMode::Random);
 
+    py::enum_<SelfPlayValueTarget>(module, "SelfPlayValueTarget")
+        .value("Outcome", SelfPlayValueTarget::Outcome)
+        .value("Margin", SelfPlayValueTarget::Margin);
+
     py::enum_<SelfPlayScriptedBotKind>(module, "SelfPlayScriptedBotKind")
         .value("None_", SelfPlayScriptedBotKind::None)
         .value("BigMoney", SelfPlayScriptedBotKind::BigMoney)
@@ -1312,7 +1322,9 @@ PYBIND11_MODULE(dominion_v2_py, module) {
             PlayerId scripted_nn_player,
             bool auto_play_treasures,
             bool prune_treasure_plays,
-            std::uint32_t scaffold_sims) {
+            std::uint32_t scaffold_sims,
+            SelfPlayValueTarget value_target,
+            float margin_scale) {
             SelfPlayConfig config{};
             config.n_games = n_games;
             config.sims_per_move = sims_per_move;
@@ -1330,6 +1342,8 @@ PYBIND11_MODULE(dominion_v2_py, module) {
             config.auto_play_treasures = auto_play_treasures;
             config.prune_treasure_plays = prune_treasure_plays;
             config.scaffold_sims = scaffold_sims;
+            config.value_target = value_target;
+            config.margin_scale = margin_scale;
             if (!kingdom.is_none()) {
                 PySetup setup(2, kingdom, false);
                 config.fixed_setup = setup.setup;
@@ -1352,7 +1366,9 @@ PYBIND11_MODULE(dominion_v2_py, module) {
             py::arg("scripted_nn_player") = 0U,
             py::arg("auto_play_treasures") = false,
             py::arg("prune_treasure_plays") = false,
-            py::arg("scaffold_sims") = 400)
+            py::arg("scaffold_sims") = 400,
+            py::arg("value_target") = SelfPlayValueTarget::Outcome,
+            py::arg("margin_scale") = 20.0F)
         .def_readwrite("n_games", &SelfPlayConfig::n_games)
         .def_readwrite("sims_per_move", &SelfPlayConfig::sims_per_move)
         .def_readwrite("c_puct", &SelfPlayConfig::c_puct)
@@ -1365,6 +1381,8 @@ PYBIND11_MODULE(dominion_v2_py, module) {
         .def_readwrite("max_recorded_moves", &SelfPlayConfig::max_recorded_moves)
         .def_readwrite("max_tree_nodes", &SelfPlayConfig::max_tree_nodes)
         .def_readwrite("scaffold_sims", &SelfPlayConfig::scaffold_sims)
+        .def_readwrite("value_target", &SelfPlayConfig::value_target)
+        .def_readwrite("margin_scale", &SelfPlayConfig::margin_scale)
         .def_readwrite("scripted_bot", &SelfPlayConfig::scripted_bot)
         .def_readwrite("scripted_nn_player", &SelfPlayConfig::scripted_nn_player)
         .def_readwrite("auto_play_treasures", &SelfPlayConfig::auto_play_treasures)
