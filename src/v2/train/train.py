@@ -6,6 +6,7 @@ import json
 import os
 import random
 import sys
+import tempfile
 import time
 import warnings
 from dataclasses import asdict
@@ -249,11 +250,7 @@ def set_optimizer_lr(optimizer: torch.optim.Optimizer, lr: float) -> None:
         group["lr"] = lr
 
 
-def append_metrics(path: str | Path, row: dict[str, Any]) -> None:
-    out = Path(path)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    exists = out.exists()
-    fieldnames = [
+METRICS_FIELDNAMES = [
         "generation",
         "games",
         "positions",
@@ -292,11 +289,52 @@ def append_metrics(path: str | Path, row: dict[str, Any]) -> None:
         "scripted_wins",
         "routed_fast_path_batches",
         "routed_split_batches",
-    ]
-    with out.open("a", newline="") as handle:
+]
+
+
+def _scripted_metric_fieldnames(row: dict[str, Any]) -> list[str]:
+    return sorted(
+        key
+        for key in row
+        if key.startswith("scripted_games_") or key.startswith("scripted_wins_")
+    )
+
+
+def append_metrics(path: str | Path, row: dict[str, Any]) -> None:
+    out = Path(path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    scripted_fieldnames = _scripted_metric_fieldnames(row)
+    if out.exists():
+        with out.open(newline="") as handle:
+            reader = csv.DictReader(handle)
+            existing_fieldnames = reader.fieldnames or []
+            existing_rows = list(reader)
+        if existing_fieldnames:
+            fieldnames = list(existing_fieldnames)
+            missing_fieldnames = [
+                fieldname for fieldname in scripted_fieldnames if fieldname not in fieldnames
+            ]
+            if missing_fieldnames:
+                fieldnames.extend(missing_fieldnames)
+                with tempfile.NamedTemporaryFile(
+                    "w", newline="", dir=out.parent, delete=False
+                ) as handle:
+                    writer = csv.DictWriter(handle, fieldnames=fieldnames)
+                    writer.writeheader()
+                    writer.writerows(existing_rows)
+                    writer.writerow({key: row.get(key, "") for key in fieldnames})
+                    temporary_path = Path(handle.name)
+                temporary_path.replace(out)
+                return
+            with out.open("a", newline="") as handle:
+                writer = csv.DictWriter(handle, fieldnames=fieldnames)
+                writer.writerow({key: row.get(key, "") for key in fieldnames})
+            return
+
+    fieldnames = [*METRICS_FIELDNAMES, *scripted_fieldnames]
+    with out.open("w", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
-        if not exists:
-            writer.writeheader()
+        writer.writeheader()
         writer.writerow({key: row.get(key, "") for key in fieldnames})
 
 
@@ -312,6 +350,9 @@ def _add_stats(total: SelfPlayStats, update: SelfPlayStats) -> None:
     total.routed_split_batches += update.routed_split_batches
     total.scripted_games += update.scripted_games
     total.scripted_wins += update.scripted_wins
+    for kind, (games, wins) in update.scripted_by_kind.items():
+        previous_games, previous_wins = total.scripted_by_kind.get(kind, (0, 0))
+        total.scripted_by_kind[kind] = (previous_games + games, previous_wins + wins)
 
 
 def _run_segmented_single_pipeline(
@@ -399,6 +440,9 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
     if not isinstance(config.scripted_opponents, dict):
         raise ValueError("scripted_opponents must be an object mapping kind to fraction")
     effective_scripted_fractions(config.scripted_opponent_schedule, config.scripted_opponents, start_generation)
+    configured_scripted_kinds = sorted(
+        set(config.scripted_opponents) | set(config.scripted_opponent_schedule)
+    )
     best_model: DominionNet | None = None
     best_generation: int | None = None
     best_path: Path | None = None
@@ -620,6 +664,10 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
                 "routed_fast_path_batches": sp_stats.routed_fast_path_batches,
                 "routed_split_batches": sp_stats.routed_split_batches,
             }
+            for kind in configured_scripted_kinds:
+                games, wins = sp_stats.scripted_by_kind.get(kind, (0, 0))
+                row[f"scripted_games_{kind}"] = games
+                row[f"scripted_wins_{kind}"] = wins
             if effective_scripted:
                 row["scripted_opponent_fractions"] = effective_scripted
             row.update(eval_row)

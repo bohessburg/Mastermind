@@ -346,12 +346,17 @@ def _record_scripted_outcomes(
 ) -> None:
     if scripted_kind is None:
         return
-    stats.scripted_games += len(records)
+    games = len(records)
+    wins = 0
     for record in records:
         winner = record.get("winner")
         nn_player = record.get("scripted_nn_player")
         if winner is not None and nn_player is not None and int(winner) == int(nn_player):
-            stats.scripted_wins += 1
+            wins += 1
+    stats.scripted_games += games
+    stats.scripted_wins += wins
+    previous_games, previous_wins = stats.scripted_by_kind.get(scripted_kind, (0, 0))
+    stats.scripted_by_kind[scripted_kind] = (previous_games + games, previous_wins + wins)
 
 
 def _generate_games_exact(
@@ -497,6 +502,9 @@ def _accumulate_stats(total: SelfPlayStats, update: SelfPlayStats) -> None:
     total.routed_split_batches += update.routed_split_batches
     total.scripted_games += update.scripted_games
     total.scripted_wins += update.scripted_wins
+    for kind, (games, wins) in update.scripted_by_kind.items():
+        previous_games, previous_wins = total.scripted_by_kind.get(kind, (0, 0))
+        total.scripted_by_kind[kind] = (previous_games + games, previous_wins + wins)
 
 
 def _worker_main(
@@ -646,6 +654,7 @@ def _worker_main(
                         stats.routed_split_batches,
                         stats.scripted_games,
                         stats.scripted_wins,
+                        stats.scripted_by_kind,
                         league_games,
                         route_audit,
                     ),
@@ -767,6 +776,7 @@ class ParallelSelfPlayPool:
                 worker_split_batches,
                 worker_scripted_games,
                 worker_scripted_wins,
+                worker_scripted_by_kind,
                 worker_league_games,
                 worker_route_audit,
             ) = payload
@@ -787,6 +797,9 @@ class ParallelSelfPlayPool:
             stats.routed_split_batches += worker_split_batches
             stats.scripted_games += worker_scripted_games
             stats.scripted_wins += worker_scripted_wins
+            for kind, (games, wins) in worker_scripted_by_kind.items():
+                previous_games, previous_wins = stats.scripted_by_kind.get(kind, (0, 0))
+                stats.scripted_by_kind[kind] = (previous_games + games, previous_wins + wins)
             league_games += worker_league_games
             for key, count in worker_route_audit.items():
                 normalized = (int(key[0]), int(key[1]))

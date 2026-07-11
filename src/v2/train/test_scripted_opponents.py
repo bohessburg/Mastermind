@@ -149,8 +149,8 @@ def test_parallel_workers_collect_scripted_segments(tmp_path: Path) -> None:
     cfg.replay.capacity = 512
     model, _, replay = build_objects(cfg, torch.device("cpu"))
     segments = [
-        SelfPlaySegment(1, 0, 0, scripted_kind="random", nn_player=0),
-        SelfPlaySegment(1, 0, 0, scripted_kind="random", nn_player=1),
+        SelfPlaySegment(1, 0, 0, scripted_kind="bigmoney", nn_player=0),
+        SelfPlaySegment(1, 0, 0, scripted_kind="engine", nn_player=1),
     ]
 
     pool = ParallelSelfPlayPool(cfg)
@@ -168,6 +168,9 @@ def test_parallel_workers_collect_scripted_segments(tmp_path: Path) -> None:
     assert result.stats.games == 2
     assert result.stats.scripted_games == 2
     assert 0 <= result.stats.scripted_wins <= 2
+    assert result.stats.scripted_by_kind["bigmoney"][0] == 1
+    assert result.stats.scripted_by_kind["engine"][0] == 1
+    assert sum(wins for _games, wins in result.stats.scripted_by_kind.values()) == result.stats.scripted_wins
     assert len(replay) > 0
 
 
@@ -175,7 +178,7 @@ def test_ungated_training_accepts_scripted_opponents_and_reports_metrics(tmp_pat
     cfg = tiny_config(tmp_path, seed=6161, generations=1)
     cfg.model.hidden_sizes = [16]
     cfg.selfplay.n_games = 2
-    cfg.selfplay.games_per_generation = 4
+    cfg.selfplay.games_per_generation = 8
     cfg.selfplay.sims_per_move = 2
     cfg.selfplay.max_batch = 8
     cfg.selfplay.max_recorded_moves = 64
@@ -183,16 +186,22 @@ def test_ungated_training_accepts_scripted_opponents_and_reports_metrics(tmp_pat
     cfg.optim.batch_size = 8
     cfg.optim.train_steps_per_generation = 1
     cfg.replay.capacity = 512
-    cfg.scripted_opponents = {"bigmoney": 0.5}
+    cfg.scripted_opponents = {"bigmoney": 0.25, "engine": 0.25}
     assert cfg.gate_games == 0
 
     result = run_training(cfg)
     row = result["metrics"][0]
     csv_row = read_metrics(Path(cfg.metrics_csv))[0]
-    assert row["scripted_games"] == 2
+    assert row["scripted_games"] == 4
     assert 0 <= row["scripted_wins"] <= row["scripted_games"]
-    assert int(csv_row["scripted_games"]) == 2
-    assert 0 <= int(csv_row["scripted_wins"]) <= 2
+    assert row["scripted_games_bigmoney"] == row["scripted_games_engine"] == 2
+    assert row["scripted_wins"] == row["scripted_wins_bigmoney"] + row["scripted_wins_engine"]
+    assert int(csv_row["scripted_games"]) == 4
+    assert 0 <= int(csv_row["scripted_wins"]) <= 4
+    assert int(csv_row["scripted_games_bigmoney"]) == int(csv_row["scripted_games_engine"]) == 2
+    assert int(csv_row["scripted_wins"]) == (
+        int(csv_row["scripted_wins_bigmoney"]) + int(csv_row["scripted_wins_engine"])
+    )
 
 
 def test_ungated_training_uses_scripted_opponent_schedule_each_generation(tmp_path: Path) -> None:
@@ -212,6 +221,9 @@ def test_ungated_training_uses_scripted_opponent_schedule_each_generation(tmp_pa
     result = run_training(cfg)
 
     assert [row["scripted_games"] for row in result["metrics"]] == [0, 2]
+    assert [row["scripted_games_bigmoney"] for row in result["metrics"]] == [0, 2]
+    csv_rows = read_metrics(Path(cfg.metrics_csv))
+    assert [int(row["scripted_games_bigmoney"]) for row in csv_rows] == [0, 2]
     assert "scripted_opponent_fractions" not in result["metrics"][0]
     assert result["metrics"][1]["scripted_opponent_fractions"] == {"bigmoney": 0.5}
 

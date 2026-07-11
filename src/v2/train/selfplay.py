@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Sequence
 
 import numpy as np
@@ -28,6 +28,8 @@ class SelfPlayStats:
     routed_split_batches: int = 0
     scripted_games: int = 0
     scripted_wins: int = 0
+    # Maps scripted opponent kind to (games, neural-network wins).
+    scripted_by_kind: dict[str, tuple[int, int]] = field(default_factory=dict)
 
     @property
     def games_per_hour(self) -> float:
@@ -113,6 +115,27 @@ def _records_to_replay(records: list[dict], replay: ReplayBuffer) -> tuple[int, 
         games += 1
         positions += obs.shape[0]
     return games, positions
+
+
+def _record_scripted_outcomes(
+    stats: SelfPlayStats,
+    records: list[dict],
+    scripted_kind: str | None,
+) -> None:
+    if scripted_kind is None:
+        return
+    games = len(records)
+    wins = sum(
+        1
+        for record in records
+        if record.get("winner") is not None
+        and record.get("scripted_nn_player") is not None
+        and int(record["winner"]) == int(record["scripted_nn_player"])
+    )
+    stats.scripted_games += games
+    stats.scripted_wins += wins
+    previous_games, previous_wins = stats.scripted_by_kind.get(scripted_kind, (0, 0))
+    stats.scripted_by_kind[scripted_kind] = (previous_games + games, previous_wins + wins)
 
 
 def run_self_play_generation(
@@ -308,13 +331,7 @@ def play_routed_games(
         remaining = target_games - len(records)
         records.extend(finished[:remaining])
     stats.games, stats.positions = _records_to_replay(records, _DiscardReplay())
-    if scripted_kind is not None:
-        stats.scripted_games = len(records)
-        for record in records:
-            winner = record.get("winner")
-            nn_player = record.get("scripted_nn_player")
-            if winner is not None and nn_player is not None and int(winner) == int(nn_player):
-                stats.scripted_wins += 1
+    _record_scripted_outcomes(stats, records, scripted_kind)
     stats.wall_time = time.perf_counter() - start
     return stats, records
 
