@@ -303,3 +303,26 @@ injects "engines beat money" evidence self-play and BM cannot provide.
 Key metrics: per-gen scripted engine wins (direct gate progress read),
 vs_bm (should recap c8's curve faster), eval vs EngineBot, and probes for
 action-card buy weights (Village/Smithy/Witch etc.) — the stage-2 tell.
+
+Campaign 9 closeout (2026-07-11 early): cut at gen 89. Eval peak 9.1% vs
+engine at gen 30 — which coincided EXACTLY with peak action-card mass in
+the policy (20-40% of buy distribution: Moat/Throne/Library/Village).
+Money reinforcement then reconquered: by gen 60 the money spine was the
+best of any run (Gold 50% at $6, Province 83% at $8) but action mass
+halved and eval slid to 1.5-5%; gens 60-89 froze. Lesson: engine
+opposition PULLS actions into the policy, but self-play + beaten-BM data
+push them back out — exploration needs protecting, not just seeding.
+Instrumentation gap found: aggregate scripted counter can't split BM vs
+engine wins (pool ~50% while eval vs BM was 0/200 — resolved for the
+future by per-kind counters, commit f4436fa; discriminator test abandoned
+as moot). Artifacts: checkpoints/campaign9 on box; gens 20/30/60/67/85
+synced locally.
+
+Campaign 10 (launched 2026-07-11 ~06:00, running): protect the action
+window. c9 base + sims 256->512 (deeper search to validate action lines),
+temp_moves 12->20 (longer exploration), BigMoney anneals DOWN 20%->5%
+over gens 40-60 (beaten BM is pure money-reinforcement), engine cap
+raised to 25% (full at gen 35). Seed 20260718, checkpoints/campaign10,
+config run_c10.json. First campaign with per-kind scripted counters
+(scripted_wins_bigmoney / scripted_wins_engine columns). Expected
+throughput ~half of c9 (512 sims): ~25-30K games/hr.
