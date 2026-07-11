@@ -27,6 +27,7 @@ struct MctsConfig {
     float c_puct = 1.25F;
     std::uint8_t determinizations = 2;
     std::uint64_t rollout_seed = 0x4D435453ULL;
+    std::uint16_t rollout_step_cap = 1024U;
     std::uint32_t max_tree_nodes = 4096;
     MctsRolloutPolicy rollout_policy = MctsRolloutPolicy::EngineLike;
     float rollout_epsilon = 0.10F;

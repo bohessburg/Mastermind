@@ -750,6 +750,7 @@ MctsConfig make_scaffold_mcts_config(
     config.c_puct = c_puct;
     config.determinizations = 2U;
     config.max_tree_nodes = max_tree_nodes;
+    config.rollout_step_cap = 1024U;
     config.rollout_policy = MctsRolloutPolicy::EngineLike;
     // EngineLike rollouts normally install a heuristic expansion prior when
     // prior_fn is null. Supply this explicit unit callback for uniform priors.

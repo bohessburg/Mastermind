@@ -88,6 +88,7 @@ TEST_CASE("v2 Scaffold MCTS config matches the rollout yardstick", "[v2][eval_ru
     REQUIRE(config.c_puct == 1.25F);
     REQUIRE(config.determinizations == 2U);
     REQUIRE(config.max_tree_nodes == 4096U);
+    REQUIRE(config.rollout_step_cap == 1024U);
     REQUIRE(config.rollout_policy == MctsRolloutPolicy::EngineLike);
     REQUIRE(config.prune_treasure_plays);
     REQUIRE(config.prior_fn != nullptr);

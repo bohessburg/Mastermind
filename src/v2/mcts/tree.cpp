@@ -1673,7 +1673,7 @@ std::uint32_t Mcts::select_child(std::uint32_t node_index) const noexcept {
 
 void Mcts::rollout(GameState& state, Xoshiro256pp& rng) const noexcept {
     std::uint16_t guard = 0;
-    while (!terminal_state(state) && guard < 4096U) {
+    while (!terminal_state(state) && guard < config_.rollout_step_cap) {
         ActionMask legal{};
         int legal_count = Game::legal_actions(state, legal);
         if (config_.prune_treasure_plays) {
@@ -1699,6 +1699,9 @@ void Mcts::rollout(GameState& state, Xoshiro256pp& rng) const noexcept {
 }
 
 void Mcts::backpropagate(const std::uint32_t* path, std::uint8_t depth, const GameState& terminal) noexcept {
+    // A rollout may stop at its step cap with a non-terminal state.  In that
+    // case mcts_terminal_value intentionally evaluates the current point
+    // margin from each node's perspective, just as it does at game end.
     for (std::uint8_t i = 0; i < depth; ++i) {
         MctsNode& path_node = nodes_[path[i]];
         ++path_node.visits;

@@ -260,6 +260,53 @@ TEST_CASE("v2 MCTS terminal values are perspective correct", "[v2][mcts]") {
     REQUIRE(mcts_terminal_value(state, 1U) == 1.0F);
 }
 
+TEST_CASE("v2 MCTS rollout cutoff uses the current point margin for each perspective", "[v2][mcts][rollout]") {
+    GameState state = Game::new_game(Setup{}, 304U);
+    clear_player_cards(state, 0U);
+    add_to_discard(state, 0U, DEF_PROVINCE, 1U);
+    state.phase = static_cast<std::uint8_t>(Phase::Buy);
+    state.actions = 0U;
+    state.buys = 0U;
+    state.coins = 0;
+    refresh_current_decision(state);
+
+    ActionMask legal{};
+    REQUIRE(Game::legal_actions(state, legal) == 1);
+    REQUIRE(legal.test(A_PASS));
+    REQUIRE(score(state, 0U) > score(state, 1U));
+
+    MctsConfig config{};
+    config.determinizations = 1U;
+    config.max_tree_nodes = 8U;
+    config.rollout_step_cap = 0U;
+
+    Mcts search(config);
+    search.reset(state, 0U);
+    Xoshiro256pp rng = Xoshiro256pp::seeded(config.rollout_seed);
+    search.run_simulations(1U, rng);
+
+    REQUIRE(search.node_count() == 2U);
+    REQUIRE_FALSE(search.node(1U).terminal);
+    REQUIRE(search.node(0U).player == 0U);
+    REQUIRE(search.node(1U).player == 1U);
+    REQUIRE(search.node(0U).value_sum == 1.0F);
+    REQUIRE(search.node(1U).value_sum == -1.0F);
+
+    GameState tied = state;
+    clear_player_cards(tied, 0U);
+    add_to_discard(tied, 0U, DEF_ESTATE, 3U);
+    REQUIRE(score(tied, 0U) == score(tied, 1U));
+
+    Mcts tied_search(config);
+    tied_search.reset(tied, 0U);
+    tied_search.run_simulations(1U, rng);
+
+    REQUIRE(tied_search.node_count() == 2U);
+    REQUIRE_FALSE(tied_search.node(1U).terminal);
+    REQUIRE(tied_search.node(0U).value_sum == 0.0F);
+    REQUIRE(tied_search.node(1U).value_sum == 0.0F);
+}
+
 TEST_CASE("v2 EngineLike rollout respects the third-pile clock", "[v2][mcts][rollout]") {
     GameState behind = pile_clock_buy_position(false);
     ActionMask legal{};
