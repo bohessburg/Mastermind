@@ -7,7 +7,7 @@ is a separate session's domain — do not touch src/v2/web from here).
 ## What is running RIGHT NOW
 
 **Campaign 2** (gated training) on a rented vast.ai RTX 5090 box:
-- SSH: `ssh -p 28890 root@69.176.92.135` (key already in ~/.ssh; account key
+- SSH: `ssh -p 10229 root@198.2.214.6 (BOX 2 as of 2026-07-12; old box 28890/69.176.92.135 torn down)` (key already in ~/.ssh; account key
   registered on vast). Box costs $0.34/hr. 24-vCPU cgroup quota, 32GB disk.
 - Repo at `~/dominion` on the box; venv python `/venv/main/bin/python`;
   bindings prebuilt at `~/dominion/build`.
