@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import math
 import time
+from collections import Counter
 from pathlib import Path
 
 import numpy as np
@@ -13,6 +15,7 @@ import dominion_v2_py as dz
 
 from .config import TrainConfig, load_config
 from .observation import obs_version_for_checkpoint
+from .selfplay import play_routed_games
 from .train import (
     build_objects,
     load_checkpoint,
@@ -21,7 +24,8 @@ from .train import (
     run_training,
     save_checkpoint,
 )
-from .workers import game_quotas
+from .gating import SelfPlaySegment
+from .workers import ParallelSelfPlayPool, _pack_records, game_quotas
 
 
 def tiny_config(tmp_path: Path, seed: int = 20260709, generations: int = 2) -> TrainConfig:
@@ -100,6 +104,91 @@ def test_tiny_training_v2_observation_smoke_records_v2_width(tmp_path: Path) -> 
     with np.load(Path(cfg.checkpoint_dir) / "replay_state.npz", allow_pickle=False) as archive:
         assert archive["obs"].shape[0] > 0
         assert archive["obs"].shape[1] == dz.OBS_SIZE_V2
+
+
+def test_parallel_v2_records_preserve_observation_rows_in_parent_replay(tmp_path: Path) -> None:
+    """A spawned worker must not reinterpret v2 records with the v1 stride."""
+    cfg = tiny_config(tmp_path, seed=20260721, generations=1)
+    cfg.parallel_workers = 2
+    cfg.worker_device = "cpu"
+    cfg.model.hidden_sizes = [8]
+    cfg.selfplay.obs_version = 2
+    cfg.selfplay.n_games = 2
+    cfg.selfplay.games_per_generation = 4
+    cfg.selfplay.sims_per_move = 2
+    cfg.selfplay.max_batch = 4
+    cfg.selfplay.max_recorded_moves = 64
+    cfg.selfplay.max_tree_nodes = 256
+    cfg.replay.capacity = 512
+    model, _, replay = build_objects(cfg, torch.device("cpu"))
+    with torch.no_grad():
+        for parameter in model.parameters():
+            parameter.zero_()
+
+    expected_rows: Counter[bytes] = Counter()
+    for worker_index in range(cfg.parallel_workers):
+        _, records = play_routed_games(
+            (model, model),
+            cfg.selfplay,
+            seed=(cfg.seed + worker_index) ^ (1 * 0x9E37),
+            device=torch.device("cpu"),
+            target_games=2,
+            same_model_fast_path=True,
+        )
+        for record in records:
+            for obs, policy, value in zip(
+                record["observations"],
+                record["policy_targets"],
+                record["values"],
+                strict=True,
+            ):
+                expected_rows[hashlib.sha256(obs.tobytes() + policy.tobytes() + value.tobytes()).digest()] += 1
+
+    pool = ParallelSelfPlayPool(cfg)
+    try:
+        result = pool.generate(
+            model,
+            replay,
+            generation=1,
+            # Exercise the segmented path used by the campaign's configured
+            # scripted-opponent schedule even while its effective fraction is
+            # still zero.
+            segments=[SelfPlaySegment(4, 0, 0)],
+        )
+    finally:
+        pool.close()
+
+    assert result.stats.games == 4
+    assert len(replay) > 0
+    stored = replay.obs[: len(replay)]
+    assert stored.shape[1] == dz.obs_size_for(2)
+    np.testing.assert_array_equal(stored[:, 0], np.full(len(stored), 2.0, dtype=np.float32))
+    np.testing.assert_array_equal(
+        stored[:, 1],
+        np.full(len(stored), float(dz.obs_size_for(2)), dtype=np.float32),
+    )
+    actual_rows = Counter(
+        hashlib.sha256(obs.tobytes() + policy.tobytes() + value.tobytes()).digest()
+        for obs, policy, value in zip(
+            stored,
+            replay.policy[: len(replay)],
+            replay.value[: len(replay)],
+            strict=True,
+        )
+    )
+    assert actual_rows == expected_rows
+
+
+def test_parallel_record_packing_rejects_a_v1_row_for_a_v2_generation() -> None:
+    """The parent transport must not silently accept a legacy observation stride."""
+    record = {
+        "observations": np.zeros((1, dz.OBS_SIZE_V1), dtype=np.float32),
+        "policy_targets": np.zeros((1, dz.ACTION_SPACE_SIZE), dtype=np.float32),
+        "values": np.zeros((1,), dtype=np.float32),
+    }
+
+    with pytest.raises(ValueError, match="observation width"):
+        _pack_records([record], dz.obs_size_for(2))
 
 
 def test_split_checkpoint_roundtrip(tmp_path: Path) -> None:

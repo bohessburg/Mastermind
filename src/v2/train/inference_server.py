@@ -157,7 +157,7 @@ class SharedMemoryTransport:
         worker_count: int,
         slots: int,
         max_request: int,
-        obs_size: int = dz.OBS_SIZE,
+        obs_size: int,
     ) -> SharedMemoryTransport:
         if shared_memory is None:
             raise RuntimeError("multiprocessing.shared_memory is unavailable")

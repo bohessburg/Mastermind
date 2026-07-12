@@ -61,6 +61,7 @@ def test_inference_server_routes_fixed_weight_requests_under_concurrent_load(
     cfg.server_max_batch = 32
     cfg.server_max_wait_ms = 10.0
     cfg.server_poll = poll
+    cfg.selfplay.obs_version = 2
     torch.manual_seed(333)
     model, _, _ = build_objects(cfg, torch.device("cpu"))
     model.eval()
@@ -147,6 +148,7 @@ def test_inference_server_routes_fixed_weight_requests_under_concurrent_load(
 def test_queue_transport_fallback_smoke(tmp_path: Path) -> None:
     cfg = server_config(tmp_path, generations=1)
     cfg.server_transport = "queue"
+    cfg.selfplay.obs_version = 2
     result = run_training(cfg)
     assert result["metrics"][0]["games"] == 2
     rows = read_metrics(Path(cfg.metrics_csv))

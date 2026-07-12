@@ -104,7 +104,7 @@ def split_segments_by_quotas(
     return per_worker
 
 
-def _empty_packed_records(obs_size: int = dz.OBS_SIZE) -> PackedGameRecords:
+def _empty_packed_records(obs_size: int) -> PackedGameRecords:
     return (
         np.empty((0,), dtype=np.int32),
         np.empty((0, int(obs_size)), dtype=np.float32),
@@ -113,22 +113,35 @@ def _empty_packed_records(obs_size: int = dz.OBS_SIZE) -> PackedGameRecords:
     )
 
 
-def _pack_records(records: list[dict[str, Any]], obs_size: int | None = None) -> PackedGameRecords:
+def _pack_records(records: list[dict[str, Any]], obs_size: int) -> PackedGameRecords:
     """Flatten finished-game dictionaries into four raw NumPy buffers.
 
     Queue messages carry only these contiguous arrays and a tiny tuple header,
     never the binding's large list-of-dicts game-record representation.
     """
+    expected_obs_size = int(obs_size)
+    if expected_obs_size <= 0:
+        raise ValueError("packed self-play observation width must be positive")
     if not records:
-        return _empty_packed_records(dz.OBS_SIZE if obs_size is None else obs_size)
+        return _empty_packed_records(expected_obs_size)
     observations = [np.asarray(record["observations"], dtype=np.float32) for record in records]
     policies = [np.asarray(record["policy_targets"], dtype=np.float32) for record in records]
     values = [np.asarray(record["values"], dtype=np.float32) for record in records]
+    for record_index, (obs, policy, value) in enumerate(zip(observations, policies, values, strict=True)):
+        if obs.ndim != 2 or obs.shape[1] != expected_obs_size:
+            actual_width = obs.shape[1] if obs.ndim == 2 else None
+            raise ValueError(
+                f"packed self-play record {record_index} observation width {actual_width} "
+                f"does not match configured width {expected_obs_size}"
+            )
+        if policy.shape != (obs.shape[0], dz.ACTION_SPACE_SIZE):
+            raise ValueError(f"packed self-play record {record_index} policy shape mismatch")
+        if value.shape != (obs.shape[0],):
+            raise ValueError(f"packed self-play record {record_index} value shape mismatch")
     lengths = np.asarray([obs.shape[0] for obs in observations], dtype=np.int32)
     nonempty = lengths > 0
     if not np.any(nonempty):
-        width = int(observations[0].shape[1]) if obs_size is None else int(obs_size)
-        empty = _empty_packed_records(width)
+        empty = _empty_packed_records(expected_obs_size)
         return lengths, empty[1], empty[2], empty[3]
     return (
         lengths,
@@ -142,6 +155,16 @@ def add_packed_records(replay: Any, packed: PackedGameRecords) -> tuple[int, int
     """Insert a worker message into the parent replay buffer."""
     lengths, obs, policy, value = packed
     lengths = np.asarray(lengths, dtype=np.int32)
+    obs = np.asarray(obs, dtype=np.float32)
+    policy = np.asarray(policy, dtype=np.float32)
+    value = np.asarray(value, dtype=np.float32)
+    if lengths.ndim != 1 or obs.ndim != 2 or policy.ndim != 2 or value.ndim != 1:
+        raise ValueError("packed self-play record buffers have invalid dimensions")
+    replay_obs_size = getattr(replay, "obs_size", None)
+    if replay_obs_size is not None and obs.shape[1] != int(replay_obs_size):
+        raise ValueError(
+            f"packed self-play observation width {obs.shape[1]} does not match replay width {int(replay_obs_size)}"
+        )
     positions = int(lengths.sum())
     if positions != int(obs.shape[0]) or positions != int(policy.shape[0]) or positions != int(value.shape[0]):
         raise ValueError("packed self-play record lengths do not match their buffers")
@@ -371,7 +394,8 @@ def _generate_games_exact(
     worker_index: int,
     generation: int,
     scripted_kind: str | None = None,
-    obs_size: int = dz.OBS_SIZE,
+    *,
+    obs_size: int,
 ) -> SelfPlayStats:
     """Use the persistent runner but never carry records across a segment."""
     stats = SelfPlayStats()

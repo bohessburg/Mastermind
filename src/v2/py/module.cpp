@@ -444,15 +444,23 @@ struct PyBatchRunner {
     }
 
     [[nodiscard]] py::array_t<float> observations() const {
+        // BatchRunner predates versioned observations and intentionally
+        // remains a legacy-v1 convenience API. Keep its stride explicit so
+        // it cannot accidentally follow the ambient OBS_SIZE alias.
+        const std::size_t obs_size = obs_size_for(ObsVersion::V1);
         py::array_t<float> array({
             static_cast<py::ssize_t>(states.size()),
-            static_cast<py::ssize_t>(OBS_SIZE),
+            static_cast<py::ssize_t>(obs_size),
         });
         float* data = array.mutable_data();
         {
             py::gil_scoped_release release;
             for (std::size_t i = 0; i < states.size(); ++i) {
-                encode(states[i], decision_player_id(states[i]), data + (i * OBS_SIZE));
+                encode(
+                    states[i],
+                    decision_player_id(states[i]),
+                    data + (i * obs_size),
+                    ObsVersion::V1);
             }
         }
         return array;
