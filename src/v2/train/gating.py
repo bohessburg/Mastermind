@@ -424,12 +424,25 @@ def sample_league_games(
     pool_size: int,
     seed: int,
     opponent_weights: list[float] | None = None,
+    league_opponents_per_gen: int = 0,
 ) -> list[LeagueGame | None]:
-    """Return an exact-fraction per-game plan with optional weighted opponents."""
+    """Return an exact-fraction per-game plan with optional weighted opponents.
+
+    A positive ``league_opponents_per_gen`` first chooses that many distinct
+    historical opponents, weighted without replacement, then apportions all
+    league games between only those opponents. Zero deliberately preserves the
+    original independent per-game opponent draw.
+    """
     if total_games < 0:
         raise ValueError("total_games cannot be negative")
     if not 0.0 <= float(fraction) <= 1.0:
         raise ValueError("league_fraction must be between zero and one")
+    if (
+        not isinstance(league_opponents_per_gen, int)
+        or isinstance(league_opponents_per_gen, bool)
+        or league_opponents_per_gen < 0
+    ):
+        raise ValueError("league_opponents_per_gen must be a non-negative integer")
     plan: list[LeagueGame | None] = [None] * total_games
     if total_games == 0 or pool_size <= 0 or fraction <= 0.0:
         return plan
@@ -441,13 +454,63 @@ def sample_league_games(
     league_games = min(total_games, int(round(total_games * float(fraction))))
     rng = random.Random(int(seed))
     indices = sorted(rng.sample(range(total_games), league_games))
+    if league_opponents_per_gen == 0:
+        # Keep the legacy per-game selection and RNG-consumption order exactly
+        # intact for uncapped configurations and historical tests/checkpoints.
+        for index in indices:
+            plan[index] = LeagueGame(
+                opponent_index=(
+                    rng.randrange(pool_size)
+                    if opponent_weights is None
+                    else rng.choices(range(pool_size), weights=opponent_weights, k=1)[0]
+                ),
+                # Self-play always places current best at seat zero and the
+                # sampled archived best at seat one. Gate matches separately
+                # seat-swap candidate and best for unbiased promotion decisions.
+                best_player=0,
+            )
+        return plan
+
+    weights = [1.0] * pool_size if opponent_weights is None else list(opponent_weights)
+    selected_count = min(league_opponents_per_gen, pool_size, league_games)
+    remaining_opponents = list(range(pool_size))
+    selected: list[int] = []
+    while len(selected) < selected_count:
+        selected_position = rng.choices(
+            range(len(remaining_opponents)),
+            weights=[weights[index] for index in remaining_opponents],
+            k=1,
+        )[0]
+        selected.append(remaining_opponents.pop(selected_position))
+
+    # Allocate exact integer counts proportionally while reserving one game
+    # for every selected opponent. The reservation keeps the selected set and
+    # planned set identical even for very small league slices.
+    counts = [1] * selected_count
+    remaining_games = league_games - selected_count
+    if remaining_games:
+        selected_weights = [weights[index] for index in selected]
+        weight_total = sum(selected_weights)
+        fractional_counts = [remaining_games * weight / weight_total for weight in selected_weights]
+        extra_counts = [int(count) for count in fractional_counts]
+        for position, count in enumerate(extra_counts):
+            counts[position] += count
+        leftover = remaining_games - sum(extra_counts)
+        for position in sorted(
+            range(selected_count),
+            key=lambda index: (-(fractional_counts[index] - extra_counts[index]), index),
+        )[:leftover]:
+            counts[position] += 1
+
+    opponent_draws = [
+        opponent_index
+        for opponent_index, count in zip(selected, counts, strict=True)
+        for _ in range(count)
+    ]
+    rng.shuffle(opponent_draws)
     for index in indices:
         plan[index] = LeagueGame(
-            opponent_index=(
-                rng.randrange(pool_size)
-                if opponent_weights is None
-                else rng.choices(range(pool_size), weights=opponent_weights, k=1)[0]
-            ),
+            opponent_index=opponent_draws.pop(),
             # Self-play always places current best at seat zero and the
             # sampled archived best at seat one. Gate matches separately
             # seat-swap candidate and best for unbiased promotion decisions.
@@ -464,6 +527,7 @@ def plan_selfplay_segments(
     opponent_weights: list[float] | None = None,
     opponent_names: list[str] | None = None,
     parallel_workers: int = 1,
+    league_opponents_per_gen: int = 0,
 ) -> list[SelfPlaySegment]:
     """Collapse a deterministic league draw into deduplicated model segments.
 
@@ -476,7 +540,14 @@ def plan_selfplay_segments(
     if opponent_names is not None and len(opponent_names) != pool_size:
         raise ValueError("league opponent names must match league pool size")
     counts: dict[tuple[int, int], int] = {}
-    for game in sample_league_games(total_games, fraction, pool_size, seed, opponent_weights):
+    for game in sample_league_games(
+        total_games,
+        fraction,
+        pool_size,
+        seed,
+        opponent_weights,
+        league_opponents_per_gen,
+    ):
         pair = (0, 0) if game is None else (0, int(game.opponent_index) + 1)
         counts[pair] = counts.get(pair, 0) + 1
     segments = [
@@ -493,21 +564,6 @@ def plan_selfplay_segments(
         for pair, count in sorted(counts.items())
         if count > 0
     ]
-    # League play normally has a segment per historical opponent.  A one-item
-    # pool (or a draw that selected only one opponent) instead leaves one
-    # large historical-model segment, with the same serial-worker problem as
-    # a deep slice.  Split only that case: multi-opponent plans are already
-    # naturally segmented by their model pair.
-    league_indices = [index for index, segment in enumerate(segments) if segment.is_league]
-    if len(league_indices) == 1:
-        league_index = league_indices[0]
-        segment = segments[league_index]
-        segment_count = min(segment.n_games, parallel_workers)
-        base, remainder = divmod(segment.n_games, segment_count)
-        segments[league_index : league_index + 1] = [
-            replace(segment, n_games=base + (1 if index < remainder else 0))
-            for index in range(segment_count)
-        ]
     return segments
 
 
@@ -918,6 +974,7 @@ def plan_training_selfplay_segments(
     league_opponent_weights: list[float] | None = None,
     league_opponent_names: list[str] | None = None,
     parallel_workers: int = 1,
+    league_opponents_per_gen: int = 0,
 ) -> list[SelfPlaySegment]:
     """Compose normal, league, and seat-swapped scripted data segments.
 
@@ -945,6 +1002,7 @@ def plan_training_selfplay_segments(
                 league_opponent_weights,
                 league_opponent_names,
                 parallel_workers,
+                league_opponents_per_gen,
             ),
             deep_slice_fraction,
             deep_slice_sims,
@@ -977,6 +1035,7 @@ def plan_training_selfplay_segments(
                 league_opponent_weights,
                 league_opponent_names,
                 parallel_workers,
+                league_opponents_per_gen,
             )
         )
     for kind, count in scripted_counts.items():

@@ -100,9 +100,9 @@ def split_segments_by_quotas(
     remaining_quotas = list(quotas)
     assigned_indices: set[int] = set()
 
-    def reserve_on_distinct_workers(indices: list[int]) -> bool:
-        """Reserve whole segments on separate workers, largest first."""
-        if len(indices) > len(quotas) - len(assigned_indices):
+    def reserve_on_distinct_workers(groups: list[list[int]]) -> bool:
+        """Reserve contiguous segment groups on separate workers, largest first."""
+        if len(groups) > sum(not worker_reserved for worker_reserved in reserved):
             return False
         tentative_remaining = list(remaining_quotas)
         unassigned_workers = {
@@ -110,24 +110,31 @@ def split_segments_by_quotas(
             for worker_index in range(len(quotas))
             if not reserved[worker_index]
         }
-        assignments: list[tuple[int, int]] = []
-        for segment_index in sorted(indices, key=lambda index: (-segments[index].n_games, index)):
+        assignments: list[tuple[int, list[int]]] = []
+        for group in sorted(
+            groups,
+            key=lambda indices: (-sum(segments[index].n_games for index in indices), min(indices)),
+        ):
+            group_games = sum(segments[index].n_games for index in group)
             eligible = [
                 worker_index
                 for worker_index in unassigned_workers
-                if tentative_remaining[worker_index] >= segments[segment_index].n_games
+                if tentative_remaining[worker_index] >= group_games
             ]
             if not eligible:
                 return False
             worker_index = max(eligible, key=lambda index: (tentative_remaining[index], -index))
-            assignments.append((worker_index, segment_index))
+            assignments.append((worker_index, group))
             unassigned_workers.remove(worker_index)
             # Keep tentative capacity local until all priority segments fit.
-            tentative_remaining[worker_index] -= segments[segment_index].n_games
+            tentative_remaining[worker_index] -= group_games
         remaining_quotas[:] = tentative_remaining
-        for worker_index, segment_index in assignments:
-            reserved[worker_index].append(copy_with_games(segments[segment_index], segments[segment_index].n_games))
-            assigned_indices.add(segment_index)
+        for worker_index, group in assignments:
+            for segment_index in group:
+                reserved[worker_index].append(
+                    copy_with_games(segments[segment_index], segments[segment_index].n_games)
+                )
+                assigned_indices.add(segment_index)
         return True
 
     # The planner emits no more than one deep piece per worker.  Give those
@@ -135,18 +142,18 @@ def split_segments_by_quotas(
     # than the normal-mirror work that fills the rest of each quota.
     deep_indices = [index for index, segment in enumerate(segments) if segment.sims_override > 0]
     if len(quotas) > 1 and deep_indices:
-        reserve_on_distinct_workers(deep_indices)
+        reserve_on_distinct_workers([[index] for index in deep_indices])
 
-    # League planning normally groups by opponent.  When that produces a
-    # manageable number of pieces, retain the same useful spreading property
-    # without disturbing a deep reservation made above.
-    league_indices = [
-        index
-        for index, segment in enumerate(segments)
-        if index not in assigned_indices and segment.is_league
-    ]
-    if len(quotas) > 1 and league_indices:
-        reserve_on_distinct_workers(league_indices)
+    # Kingdom curriculum can split one opponent's work into multiple adjacent
+    # segments. Reserve those same-model pieces as one block so the worker
+    # retains fat per-model inference batches; if a block cannot fit, the
+    # contiguous fill below splits it across only the required workers.
+    league_groups: dict[tuple[int, int], list[int]] = {}
+    for index, segment in enumerate(segments):
+        if index not in assigned_indices and segment.is_league:
+            league_groups.setdefault((segment.seat0_model_id, segment.seat1_model_id), []).append(index)
+    if len(quotas) > 1 and league_groups:
+        reserve_on_distinct_workers(list(league_groups.values()))
 
     remaining_segments = [
         segment for index, segment in enumerate(segments) if index not in assigned_indices

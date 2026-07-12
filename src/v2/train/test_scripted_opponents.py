@@ -533,6 +533,7 @@ def test_campaign14_config_loads_warm_start_league_and_curriculum() -> None:
     assert config.scripted_opponent_schedule == {}
     assert config.eval.eval_sentinels == [{"opponent": "bigmoney", "games": 100}]
     assert config.league_pool_size == 16
+    assert config.league_opponents_per_gen == 3
     assert config.league_self_every == 10
     assert config.league_schedule == [[1, 0.10], [10, 0.25], [30, 0.30]]
     assert config.league_seed_checkpoints == [

@@ -70,6 +70,93 @@ def test_strength_matched_league_sampling_favors_lower_win_rate_seededly() -> No
     assert counts[1] > 0
 
 
+def test_league_opponents_per_gen_caps_distinct_opponents_and_exact_counts() -> None:
+    names = [f"opponent_{index}.pt" for index in range(8)]
+    weights = league_opponent_weights(names, {})
+    segments = plan_selfplay_segments(
+        100,
+        0.4,
+        len(names),
+        seed=0xBADC0DE,
+        opponent_weights=weights,
+        opponent_names=names,
+        league_opponents_per_gen=3,
+    )
+
+    league_segments = [segment for segment in segments if segment.is_league]
+    assert len(league_segments) == 3
+    assert len({segment.league_opponent for segment in league_segments}) == 3
+    assert all(isinstance(segment.n_games, int) and segment.n_games > 0 for segment in league_segments)
+    assert sum(segment.n_games for segment in league_segments) == 40
+
+
+def test_capped_league_sampling_is_weighted_without_replacement_and_seeded() -> None:
+    names = ["hard.pt", "medium.pt", "easy.pt", "retired.pt"]
+    weights = league_opponent_weights(
+        names,
+        {"hard.pt": (100, 10), "medium.pt": (100, 50), "easy.pt": (100, 100)},
+    )
+    first = sample_league_games(
+        80,
+        0.5,
+        len(names),
+        seed=0xC0FFEE,
+        opponent_weights=weights,
+        league_opponents_per_gen=3,
+    )
+    second = sample_league_games(
+        80,
+        0.5,
+        len(names),
+        seed=0xC0FFEE,
+        opponent_weights=weights,
+        league_opponents_per_gen=3,
+    )
+    assert first == second
+    counts = Counter(game.opponent_index for game in first if game is not None)
+    assert len(counts) == 3
+    assert sum(counts.values()) == 40
+
+
+def test_capped_league_sampling_rotates_uniform_pool_coverage_across_generations() -> None:
+    pool_size = 8
+    seen: set[int] = set()
+    for generation in range(1, 9):
+        games = sample_league_games(
+            100,
+            0.3,
+            pool_size,
+            seed=20260722 ^ (generation * 0xC0FFEE),
+            opponent_weights=[1.1] * pool_size,
+            league_opponents_per_gen=3,
+        )
+        seen.update(game.opponent_index for game in games if game is not None)
+    assert seen == set(range(pool_size))
+
+
+def test_uncapped_league_sampling_preserves_legacy_per_game_draw() -> None:
+    games = sample_league_games(
+        20,
+        0.5,
+        4,
+        seed=9876,
+        opponent_weights=[1.1, 0.8, 0.5, 0.2],
+        league_opponents_per_gen=0,
+    )
+    assert [(index, game.opponent_index) for index, game in enumerate(games) if game is not None] == [
+        (0, 0),
+        (2, 0),
+        (3, 0),
+        (8, 3),
+        (9, 2),
+        (10, 0),
+        (11, 0),
+        (13, 0),
+        (14, 1),
+        (16, 2),
+    ]
+
+
 def test_league_schedule_interpolates_and_rejects_invalid_breakpoints() -> None:
     schedule = [[1, 0.0], [3, 0.5], [5, 1.0]]
     assert effective_league_fraction(schedule, 0.2, 0) == 0.0
@@ -92,33 +179,62 @@ def test_league_mix_segments_honor_fraction_and_compact_model_table() -> None:
     assert {segment.seat1_model_id for segment in segments if segment.is_league} == {1, 2, 3, 4}
 
 
-def test_single_opponent_league_is_evenly_split_and_assigned_across_workers() -> None:
-    total_games = 51
-    parallel_workers = 8
+def test_single_opponent_league_stays_contiguous_until_worker_assignment() -> None:
+    total_games = 80
+    parallel_workers = 4
     raw_segments = plan_selfplay_segments(
         total_games,
-        1.0,
+        0.4,
         1,
         seed=9876,
         opponent_names=["best_0001.pt"],
         parallel_workers=parallel_workers,
     )
 
-    assert len(raw_segments) == parallel_workers
-    assert all(segment.is_league for segment in raw_segments)
+    assert [segment.n_games for segment in raw_segments] == [48, 32]
+    assert raw_segments[1].is_league
     assert sum(segment.n_games for segment in raw_segments) == total_games
-    assert max(segment.n_games for segment in raw_segments) - min(segment.n_games for segment in raw_segments) <= 1
-    assert {segment.league_opponent for segment in raw_segments} == {"best_0001.pt"}
+    assert {segment.league_opponent for segment in raw_segments if segment.is_league} == {"best_0001.pt"}
 
     compacted, history_indices = compact_selfplay_segments(raw_segments)
     assert history_indices == [0]
-    assert {segment.seat1_model_id for segment in compacted} == {1}
+    assert {segment.seat1_model_id for segment in compacted if segment.is_league} == {1}
     assigned = split_segments_by_quotas(raw_segments, game_quotas(total_games, parallel_workers))
     assert [sum(segment.n_games for segment in worker_segments) for worker_segments in assigned] == game_quotas(
         total_games,
         parallel_workers,
     )
-    assert all(len(worker_segments) == 1 for worker_segments in assigned)
+    league_games_by_worker = [
+        sum(segment.n_games for segment in worker_segments if segment.is_league)
+        for worker_segments in assigned
+    ]
+    assert league_games_by_worker == [0, 0, 12, 20]
+    assert sum(games > 0 for games in league_games_by_worker) == 2
+
+
+def test_worker_keeps_kingdom_split_league_model_blocks_together() -> None:
+    segments = [
+        SelfPlaySegment(40, 0, 0),
+        SelfPlaySegment(10, 0, 1, kingdom_pool=[1], kingdom_mode="random", league_opponent="one.pt"),
+        SelfPlaySegment(10, 0, 1, kingdom_mode="random", league_opponent="one.pt"),
+        SelfPlaySegment(10, 0, 2, kingdom_pool=[1], kingdom_mode="random", league_opponent="two.pt"),
+        SelfPlaySegment(10, 0, 2, kingdom_mode="random", league_opponent="two.pt"),
+    ]
+
+    assigned = split_segments_by_quotas(segments, game_quotas(80, 4))
+    workers_by_model = {
+        model_id: {
+            worker_index
+            for worker_index, worker_segments in enumerate(assigned)
+            if any(segment.seat1_model_id == model_id for segment in worker_segments)
+        }
+        for model_id in (1, 2)
+    }
+    assert workers_by_model == {1: {0}, 2: {1}}
+    assert [
+        [segment.n_games for segment in worker_segments if segment.is_league]
+        for worker_segments in assigned
+    ] == [[10, 10], [10, 10], [], []]
 
 
 def test_parallel_pool_routes_each_seat_to_its_model_table_entry(tmp_path: Path) -> None:

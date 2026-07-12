@@ -139,6 +139,9 @@ class TrainConfig:
     # gating. ``league_schedule`` overrides this fixed fraction per generation.
     league_fraction: float = 0.0
     league_pool_size: int = 8
+    # Positive values cap a generation's historical opponents to this many
+    # weighted, distinct checkpoints. Zero retains the uncapped legacy draw.
+    league_opponents_per_gen: int = 3
     # External standard-format checkpoints copied into checkpoint_dir/league/
     # before generation one. They remain standing league opponents alongside
     # archived accepted bests.

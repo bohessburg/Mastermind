@@ -570,6 +570,7 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
         config.gate_temp_moves = requested.gate_temp_moves
         config.league_fraction = requested.league_fraction
         config.league_pool_size = requested.league_pool_size
+        config.league_opponents_per_gen = requested.league_opponents_per_gen
         config.league_seed_checkpoints = requested.league_seed_checkpoints
         config.league_self_every = requested.league_self_every
         config.league_schedule = requested.league_schedule
@@ -609,6 +610,12 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
         raise ValueError("scripted_opponents must be an object mapping kind to fraction")
     effective_scripted_fractions(config.scripted_opponent_schedule, config.scripted_opponents, start_generation)
     effective_league_fraction(config.league_schedule, config.league_fraction, start_generation)
+    if (
+        not isinstance(config.league_opponents_per_gen, int)
+        or isinstance(config.league_opponents_per_gen, bool)
+        or config.league_opponents_per_gen < 0
+    ):
+        raise ValueError("league_opponents_per_gen must be a non-negative integer")
     if (
         not isinstance(config.league_self_every, int)
         or isinstance(config.league_self_every, bool)
@@ -715,6 +722,7 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
                     league_opponent_weights=league_opponent_weights(league_names, league_performance),
                     league_opponent_names=league_names,
                     parallel_workers=config.parallel_workers,
+                    league_opponents_per_gen=config.league_opponents_per_gen,
                 )
                 sampled_segments = assign_kingdom_phase_to_segments(
                     sampled_segments,
