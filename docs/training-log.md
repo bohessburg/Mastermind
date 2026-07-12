@@ -438,3 +438,18 @@ should unlock matchup recognition and convert the tie/narrow-loss mass),
 vs EngineBot v2 (c12 baseline 81.3%), and behavioral probes for
 ADAPTATION: does its buy line change when the opponent's collection says
 race vs engine? That question has never been askable before.
+
+c13 false start x2 + ROOT CAUSE (2026-07-12 early): obs-v2 launches had
+value_loss pinned at ~1.26 (no learning). NOT corruption — data verified
+clean, contradiction-free, width-validated (hardening commit b2a4db6).
+Actual cause: INPUT CONDITIONING. The encoder emits raw counts/ids (up to
+OBS_SIZE itself as a literal feature); v1's distribution sat just inside
+the stable region for lr 2e-4 — every prior campaign trained at the edge
+of this cliff — and v2's ~600 extra count features tipped gradient norms
+over it (offline: v2 pairs diverge at ANY lr raw, fit to MSE 0.11 with
+inputs/10 — BETTER than v1's 0.14; the sighted data is more learnable
+once digestible). Fix: DominionNet input_scale divisor (default 1.0 =
+legacy-identical; checkpoint-persisted; commit pending in log), 16.0 in
+run_c13.json. Backlog: principled encoder pass (log1p counts, embed id
+fields, drop the size-constant feature). c13 relaunched fresh (third
+launch) with obs v2 + input_scale 16.
