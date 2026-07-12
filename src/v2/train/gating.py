@@ -14,7 +14,7 @@ import random
 import re
 import shutil
 import warnings
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import torch
@@ -463,6 +463,7 @@ def plan_selfplay_segments(
     seed: int,
     opponent_weights: list[float] | None = None,
     opponent_names: list[str] | None = None,
+    parallel_workers: int = 1,
 ) -> list[SelfPlaySegment]:
     """Collapse a deterministic league draw into deduplicated model segments.
 
@@ -470,13 +471,15 @@ def plan_selfplay_segments(
     plus their sampled-pool index. Grouping equal pairs means workers receive
     each model state once per generation instead of one payload per game.
     """
+    if not isinstance(parallel_workers, int) or isinstance(parallel_workers, bool) or parallel_workers <= 0:
+        raise ValueError("parallel_workers must be positive")
     if opponent_names is not None and len(opponent_names) != pool_size:
         raise ValueError("league opponent names must match league pool size")
     counts: dict[tuple[int, int], int] = {}
     for game in sample_league_games(total_games, fraction, pool_size, seed, opponent_weights):
         pair = (0, 0) if game is None else (0, int(game.opponent_index) + 1)
         counts[pair] = counts.get(pair, 0) + 1
-    return [
+    segments = [
         SelfPlaySegment(
             n_games=count,
             seat0_model_id=pair[0],
@@ -490,6 +493,22 @@ def plan_selfplay_segments(
         for pair, count in sorted(counts.items())
         if count > 0
     ]
+    # League play normally has a segment per historical opponent.  A one-item
+    # pool (or a draw that selected only one opponent) instead leaves one
+    # large historical-model segment, with the same serial-worker problem as
+    # a deep slice.  Split only that case: multi-opponent plans are already
+    # naturally segmented by their model pair.
+    league_indices = [index for index, segment in enumerate(segments) if segment.is_league]
+    if len(league_indices) == 1:
+        league_index = league_indices[0]
+        segment = segments[league_index]
+        segment_count = min(segment.n_games, parallel_workers)
+        base, remainder = divmod(segment.n_games, segment_count)
+        segments[league_index : league_index + 1] = [
+            replace(segment, n_games=base + (1 if index < remainder else 0))
+            for index in range(segment_count)
+        ]
+    return segments
 
 
 def carve_deep_slice_segments(
@@ -497,6 +516,7 @@ def carve_deep_slice_segments(
     fraction: float,
     sims: int,
     base_sims: int,
+    parallel_workers: int = 1,
 ) -> list[SelfPlaySegment]:
     """Replace an exact fraction of normal mirror games with deep-search work.
 
@@ -513,10 +533,20 @@ def carve_deep_slice_segments(
     )
     if float(fraction) == 0.0:
         return segments
+    if not isinstance(parallel_workers, int) or isinstance(parallel_workers, bool) or parallel_workers <= 0:
+        raise ValueError("parallel_workers must be positive")
 
     normal_games = sum(segment.n_games for segment in segments if segment.is_normal_mirror)
     deep_games = min(normal_games, int(round(normal_games * float(fraction))))
+    deep_segment_count = min(deep_games, parallel_workers)
+    deep_base, deep_remainder = divmod(deep_games, deep_segment_count) if deep_segment_count else (0, 0)
+    deep_piece_sizes = [
+        deep_base + (1 if index < deep_remainder else 0)
+        for index in range(deep_segment_count)
+    ]
     remaining_deep_games = deep_games
+    deep_piece_index = 0
+    deep_piece_remaining = deep_piece_sizes[0] if deep_piece_sizes else 0
     carved: list[SelfPlaySegment] = []
     for segment in segments:
         if not segment.is_normal_mirror or remaining_deep_games == 0:
@@ -538,21 +568,17 @@ def carve_deep_slice_segments(
                     league_opponent=segment.league_opponent,
                 )
             )
-        carved.append(
-            SelfPlaySegment(
-                n_games=segment_deep_games,
-                seat0_model_id=segment.seat0_model_id,
-                seat1_model_id=segment.seat1_model_id,
-                scripted_kind=segment.scripted_kind,
-                nn_player=segment.nn_player,
-                kingdom_pool=segment.kingdom_pool,
-                kingdom_mode=segment.kingdom_mode,
-                sims_override=int(sims),
-                league_opponent=segment.league_opponent,
-            )
-        )
         remaining_deep_games -= segment_deep_games
-    if remaining_deep_games != 0:
+        while segment_deep_games:
+            piece_games = min(segment_deep_games, deep_piece_remaining)
+            carved.append(replace(segment, n_games=piece_games, sims_override=int(sims)))
+            segment_deep_games -= piece_games
+            deep_piece_remaining -= piece_games
+            if deep_piece_remaining == 0:
+                deep_piece_index += 1
+                if deep_piece_index < len(deep_piece_sizes):
+                    deep_piece_remaining = deep_piece_sizes[deep_piece_index]
+    if remaining_deep_games != 0 or deep_piece_index != len(deep_piece_sizes):
         raise RuntimeError("deep self-play segments do not cover the requested game count")
     return carved
 
@@ -891,6 +917,7 @@ def plan_training_selfplay_segments(
     sims_per_move: int = 64,
     league_opponent_weights: list[float] | None = None,
     league_opponent_names: list[str] | None = None,
+    parallel_workers: int = 1,
 ) -> list[SelfPlaySegment]:
     """Compose normal, league, and seat-swapped scripted data segments.
 
@@ -917,10 +944,12 @@ def plan_training_selfplay_segments(
                 seed,
                 league_opponent_weights,
                 league_opponent_names,
+                parallel_workers,
             ),
             deep_slice_fraction,
             deep_slice_sims,
             sims_per_move,
+            parallel_workers,
         )
 
     if not 0.0 <= float(league_fraction) <= 1.0:
@@ -947,6 +976,7 @@ def plan_training_selfplay_segments(
                 seed,
                 league_opponent_weights,
                 league_opponent_names,
+                parallel_workers,
             )
         )
     for kind, count in scripted_counts.items():
@@ -956,7 +986,13 @@ def plan_training_selfplay_segments(
             segments.append(SelfPlaySegment(first_player_games, 0, 0, scripted_kind=kind, nn_player=0))
         if second_player_games > 0:
             segments.append(SelfPlaySegment(second_player_games, 0, 0, scripted_kind=kind, nn_player=1))
-    return carve_deep_slice_segments(segments, deep_slice_fraction, deep_slice_sims, sims_per_move)
+    return carve_deep_slice_segments(
+        segments,
+        deep_slice_fraction,
+        deep_slice_sims,
+        sims_per_move,
+        parallel_workers,
+    )
 
 
 def compact_selfplay_segments(

@@ -714,6 +714,7 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
                     sims_per_move=config.selfplay.sims_per_move,
                     league_opponent_weights=league_opponent_weights(league_names, league_performance),
                     league_opponent_names=league_names,
+                    parallel_workers=config.parallel_workers,
                 )
                 sampled_segments = assign_kingdom_phase_to_segments(
                     sampled_segments,

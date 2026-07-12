@@ -69,42 +69,107 @@ def split_segments_by_quotas(
     segments: list[SelfPlaySegment],
     quotas: list[int],
 ) -> list[list[SelfPlaySegment]]:
-    """Split exact game segments across workers without duplicating a model id."""
+    """Split exact game segments across workers while honoring exact quotas.
+
+    Deep-search pieces and a small number of league-model pieces are each
+    independently runnable.  Reserve those pieces on distinct workers before
+    filling quota slack with the remaining contiguous segments.  This avoids
+    concentrating a high-cost deep slice on the last worker merely because it
+    follows the normal segment in planner order.
+    """
     if sum(segment.n_games for segment in segments) != sum(quotas):
         raise ValueError("self-play segments must cover exactly one generation")
-    per_worker: list[list[SelfPlaySegment]] = []
+    if not segments:
+        return [[] for _ in quotas]
+
+    def copy_with_games(source: SelfPlaySegment, n_games: int) -> SelfPlaySegment:
+        return SelfPlaySegment(
+            n_games,
+            source.seat0_model_id,
+            source.seat1_model_id,
+            scripted_kind=source.scripted_kind,
+            nn_player=source.nn_player,
+            kingdom_pool=source.kingdom_pool,
+            kingdom_mode=source.kingdom_mode,
+            sims_override=source.sims_override,
+            league_opponent=source.league_opponent,
+        )
+
+    per_worker: list[list[SelfPlaySegment]] = [[] for _ in quotas]
+    reserved: list[list[SelfPlaySegment]] = [[] for _ in quotas]
+    remaining_quotas = list(quotas)
+    assigned_indices: set[int] = set()
+
+    def reserve_on_distinct_workers(indices: list[int]) -> bool:
+        """Reserve whole segments on separate workers, largest first."""
+        if len(indices) > len(quotas) - len(assigned_indices):
+            return False
+        tentative_remaining = list(remaining_quotas)
+        unassigned_workers = {
+            worker_index
+            for worker_index in range(len(quotas))
+            if not reserved[worker_index]
+        }
+        assignments: list[tuple[int, int]] = []
+        for segment_index in sorted(indices, key=lambda index: (-segments[index].n_games, index)):
+            eligible = [
+                worker_index
+                for worker_index in unassigned_workers
+                if tentative_remaining[worker_index] >= segments[segment_index].n_games
+            ]
+            if not eligible:
+                return False
+            worker_index = max(eligible, key=lambda index: (tentative_remaining[index], -index))
+            assignments.append((worker_index, segment_index))
+            unassigned_workers.remove(worker_index)
+            # Keep tentative capacity local until all priority segments fit.
+            tentative_remaining[worker_index] -= segments[segment_index].n_games
+        remaining_quotas[:] = tentative_remaining
+        for worker_index, segment_index in assignments:
+            reserved[worker_index].append(copy_with_games(segments[segment_index], segments[segment_index].n_games))
+            assigned_indices.add(segment_index)
+        return True
+
+    # The planner emits no more than one deep piece per worker.  Give those
+    # pieces first claim on workers; they are substantially more expensive
+    # than the normal-mirror work that fills the rest of each quota.
+    deep_indices = [index for index, segment in enumerate(segments) if segment.sims_override > 0]
+    if len(quotas) > 1 and deep_indices:
+        reserve_on_distinct_workers(deep_indices)
+
+    # League planning normally groups by opponent.  When that produces a
+    # manageable number of pieces, retain the same useful spreading property
+    # without disturbing a deep reservation made above.
+    league_indices = [
+        index
+        for index, segment in enumerate(segments)
+        if index not in assigned_indices and segment.is_league
+    ]
+    if len(quotas) > 1 and league_indices:
+        reserve_on_distinct_workers(league_indices)
+
+    remaining_segments = [
+        segment for index, segment in enumerate(segments) if index not in assigned_indices
+    ]
     segment_index = 0
-    remaining = segments[0].n_games if segments else 0
-    for quota in quotas:
-        worker_segments: list[SelfPlaySegment] = []
-        needed = quota
+    remaining = remaining_segments[0].n_games if remaining_segments else 0
+    for worker_index, needed in enumerate(remaining_quotas):
         while needed > 0:
-            if segment_index >= len(segments):
+            if segment_index >= len(remaining_segments):
                 raise ValueError("self-play segment allocation ended early")
-            source = segments[segment_index]
+            source = remaining_segments[segment_index]
             take = min(needed, remaining)
-            worker_segments.append(
-                SelfPlaySegment(
-                    take,
-                    source.seat0_model_id,
-                    source.seat1_model_id,
-                    scripted_kind=source.scripted_kind,
-                    nn_player=source.nn_player,
-                    kingdom_pool=source.kingdom_pool,
-                    kingdom_mode=source.kingdom_mode,
-                    sims_override=source.sims_override,
-                    league_opponent=source.league_opponent,
-                )
-            )
+            per_worker[worker_index].append(copy_with_games(source, take))
             needed -= take
             remaining -= take
             if remaining == 0:
                 segment_index += 1
-                if segment_index < len(segments):
-                    remaining = segments[segment_index].n_games
-        per_worker.append(worker_segments)
-    if segment_index != len(segments):
+                if segment_index < len(remaining_segments):
+                    remaining = remaining_segments[segment_index].n_games
+    if segment_index != len(remaining_segments):
         raise ValueError("self-play segment allocation left unassigned games")
+    for worker_segments, worker_reserved in zip(per_worker, reserved, strict=True):
+        worker_segments.extend(worker_reserved)
     return per_worker
 
 

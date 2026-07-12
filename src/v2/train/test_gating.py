@@ -33,7 +33,7 @@ from .inference_server import serialize_cpu_state_dict
 from .selfplay import make_runner_config, play_routed_games, route_leaf_evaluations
 from .test_train_smoke import read_metrics, state_tensors, tiny_config
 from .train import build_objects, load_checkpoint, run_training, save_checkpoint
-from .workers import ParallelSelfPlayPool
+from .workers import ParallelSelfPlayPool, game_quotas, split_segments_by_quotas
 
 
 def test_gate_accept_reject_uses_decisive_win_rate() -> None:
@@ -90,6 +90,35 @@ def test_league_mix_segments_honor_fraction_and_compact_model_table() -> None:
     assert sum(segment.n_games for segment in segments if segment.is_league) == 200
     assert history_indices == [0, 1, 2, 3]
     assert {segment.seat1_model_id for segment in segments if segment.is_league} == {1, 2, 3, 4}
+
+
+def test_single_opponent_league_is_evenly_split_and_assigned_across_workers() -> None:
+    total_games = 51
+    parallel_workers = 8
+    raw_segments = plan_selfplay_segments(
+        total_games,
+        1.0,
+        1,
+        seed=9876,
+        opponent_names=["best_0001.pt"],
+        parallel_workers=parallel_workers,
+    )
+
+    assert len(raw_segments) == parallel_workers
+    assert all(segment.is_league for segment in raw_segments)
+    assert sum(segment.n_games for segment in raw_segments) == total_games
+    assert max(segment.n_games for segment in raw_segments) - min(segment.n_games for segment in raw_segments) <= 1
+    assert {segment.league_opponent for segment in raw_segments} == {"best_0001.pt"}
+
+    compacted, history_indices = compact_selfplay_segments(raw_segments)
+    assert history_indices == [0]
+    assert {segment.seat1_model_id for segment in compacted} == {1}
+    assigned = split_segments_by_quotas(raw_segments, game_quotas(total_games, parallel_workers))
+    assert [sum(segment.n_games for segment in worker_segments) for worker_segments in assigned] == game_quotas(
+        total_games,
+        parallel_workers,
+    )
+    assert all(len(worker_segments) == 1 for worker_segments in assigned)
 
 
 def test_parallel_pool_routes_each_seat_to_its_model_table_entry(tmp_path: Path) -> None:

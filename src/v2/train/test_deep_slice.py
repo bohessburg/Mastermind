@@ -6,10 +6,11 @@ from pathlib import Path
 import pytest
 
 from .config import SelfPlayConfig, validate_deep_slice_config
-from .gating import plan_training_selfplay_segments
+from .gating import compact_selfplay_segments, plan_training_selfplay_segments
 from .selfplay import make_runner_config
 from .test_train_smoke import read_metrics, tiny_config
 from .train import append_metrics, run_training
+from .workers import game_quotas, split_segments_by_quotas
 
 
 @pytest.mark.parametrize(
@@ -67,6 +68,44 @@ def test_deep_slice_only_carves_normal_mirror_games() -> None:
         for segment in segments
         if segment.is_league or segment.is_scripted
     )
+
+
+def test_parallel_deep_slice_is_evenly_split_and_assigned_across_workers() -> None:
+    total_games = 1024
+    parallel_workers = 8
+    segments = plan_training_selfplay_segments(
+        total_games=total_games,
+        league_fraction=0.0,
+        league_pool_size=0,
+        scripted_opponents={},
+        seed=991,
+        deep_slice_fraction=0.05,
+        deep_slice_sims=4096,
+        sims_per_move=64,
+        parallel_workers=parallel_workers,
+    )
+
+    deep = [segment for segment in segments if segment.sims_override]
+    assert len(deep) == parallel_workers
+    assert sum(segment.n_games for segment in segments) == total_games
+    assert sum(segment.n_games for segment in deep) == 51
+    assert max(segment.n_games for segment in deep) - min(segment.n_games for segment in deep) <= 1
+    assert {segment.sims_override for segment in deep} == {4096}
+
+    # Repeated deep normal-mirror segments leave the model table unchanged.
+    compacted, history_indices = compact_selfplay_segments(segments)
+    assert history_indices == []
+    assert sum(segment.n_games for segment in compacted if segment.sims_override) == 51
+
+    assigned = split_segments_by_quotas(segments, game_quotas(total_games, parallel_workers))
+    deep_by_worker = [
+        [segment for segment in worker_segments if segment.sims_override]
+        for worker_segments in assigned
+    ]
+    assert all(len(worker_segments) == 1 for worker_segments in deep_by_worker)
+    assert [segment.n_games for worker_segments in deep_by_worker for segment in worker_segments] == [
+        segment.n_games for segment in deep
+    ]
 
 
 @pytest.mark.parametrize(
@@ -134,7 +173,7 @@ def test_parallel_deep_slice_generation_reports_metrics(tmp_path: Path) -> None:
     cfg.selfplay.n_games = 1
     cfg.selfplay.games_per_generation = 4
     cfg.selfplay.sims_per_move = 2
-    cfg.selfplay.deep_slice_fraction = 0.25
+    cfg.selfplay.deep_slice_fraction = 0.50
     cfg.selfplay.deep_slice_sims = 4
     cfg.selfplay.max_batch = 4
     cfg.selfplay.max_recorded_moves = 64
@@ -148,7 +187,7 @@ def test_parallel_deep_slice_generation_reports_metrics(tmp_path: Path) -> None:
     row = result["metrics"][0]
     csv_row = read_metrics(Path(cfg.metrics_csv))[0]
     assert row["games"] == 4
-    assert row["deep_games"] == 1
+    assert row["deep_games"] == 2
     assert row["deep_positions"] > 0
-    assert int(csv_row["deep_games"]) == 1
+    assert int(csv_row["deep_games"]) == 2
     assert int(csv_row["deep_positions"]) > 0
