@@ -25,7 +25,7 @@ except ModuleNotFoundError as exc:  # pragma: no cover - gives a clearer CLI err
 
 if __package__ in (None, ""):
     sys.path.append(str(Path(__file__).resolve().parents[3]))
-    from src.v2.train.config import TrainConfig, add_config_args, load_config, save_config
+    from src.v2.train.config import TrainConfig, add_config_args, load_config, save_config, validate_deep_slice_config
     from src.v2.train.gating import (
         GateStats,
         archive_previous_best,
@@ -50,7 +50,7 @@ if __package__ in (None, ""):
     from src.v2.train.selfplay import SelfPlayStats, run_routed_self_play_generation, run_self_play_generation
     from src.v2.train.workers import ParallelSelfPlayPool
 else:
-    from .config import TrainConfig, add_config_args, load_config, save_config
+    from .config import TrainConfig, add_config_args, load_config, save_config, validate_deep_slice_config
     from .gating import (
         GateStats,
         archive_previous_best,
@@ -297,6 +297,8 @@ METRICS_FIELDNAMES = [
         "gate_win_pct",
         "best_generation",
         "league_games",
+        "deep_games",
+        "deep_positions",
         "kingdom_phase",
         "scripted_games",
         "scripted_wins",
@@ -362,6 +364,8 @@ def _add_stats(total: SelfPlayStats, update: SelfPlayStats) -> None:
     total.routed_split_batches += update.routed_split_batches
     total.scripted_games += update.scripted_games
     total.scripted_wins += update.scripted_wins
+    total.deep_games += update.deep_games
+    total.deep_positions += update.deep_positions
     for kind, (games, wins) in update.scripted_by_kind.items():
         previous_games, previous_wins = total.scripted_by_kind.get(kind, (0, 0))
         total.scripted_by_kind[kind] = (previous_games + games, previous_wins + wins)
@@ -391,7 +395,11 @@ def _run_segmented_single_pipeline(
             scripted_nn_player=segment.nn_player,
             kingdom_pool=segment.kingdom_pool,
             kingdom_mode=segment.kingdom_mode,
+            sims_override=segment.sims_override,
         )
+        if segment.sims_override:
+            stats.deep_games += stats.games
+            stats.deep_positions += stats.positions
         _add_stats(total, stats)
     return total
 
@@ -434,6 +442,8 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
     else:
         model, optimizer, replay = build_objects(config, device)
         start_generation = 0
+
+    validate_deep_slice_config(config.selfplay)
 
     metrics: list[dict[str, Any]] = []
     generations = 1 if profile else max(0, config.generations - start_generation)
@@ -502,6 +512,7 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
                 or bool(config.scripted_opponents)
                 or bool(config.scripted_opponent_schedule)
                 or bool(config.kingdom_curriculum)
+                or float(config.selfplay.deep_slice_fraction) > 0.0
             )
             if not use_segments:
                 # Keep the legacy default path and its seed derivation intact.
@@ -527,6 +538,9 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
                     len(all_league_paths),
                     effective_scripted,
                     config.seed ^ (generation * 0xC0FFEE),
+                    deep_slice_fraction=config.selfplay.deep_slice_fraction,
+                    deep_slice_sims=config.selfplay.deep_slice_sims,
+                    sims_per_move=config.selfplay.sims_per_move,
                 )
                 sampled_segments = assign_kingdom_phase_to_segments(
                     sampled_segments,
@@ -690,6 +704,8 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
                 "checkpoint": str(path),
                 **gate_row,
                 "league_games": planned_league_games,
+                "deep_games": sp_stats.deep_games,
+                "deep_positions": sp_stats.deep_positions,
                 "kingdom_phase": effective_kingdom.label,
                 "scripted_games": sp_stats.scripted_games,
                 "scripted_wins": sp_stats.scripted_wins,

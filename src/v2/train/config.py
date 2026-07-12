@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
@@ -18,6 +19,10 @@ class SelfPlayConfig:
     n_games: int = 64
     sims_per_move: int = 64
     games_per_generation: int = 64
+    # A fraction of mirror self-play games may use the higher search budget.
+    # Zero preserves the historical all-normal generation behavior.
+    deep_slice_fraction: float = 0.0
+    deep_slice_sims: int = 0
     max_batch: int = 512
     c_puct: float = 1.25
     dirichlet_alpha: float = 0.30
@@ -163,6 +168,29 @@ def _merge_dataclass(instance: Any, data: dict[str, Any]) -> Any:
     return instance
 
 
+def validate_deep_slice_config(config: SelfPlayConfig) -> None:
+    """Validate the optional higher-budget self-play slice.
+
+    Deep search is intentionally configured alongside the ordinary self-play
+    search settings because it creates another runner of the same native type,
+    rather than a separate data source.
+    """
+    fraction = config.deep_slice_fraction
+    if isinstance(fraction, bool) or not isinstance(fraction, (int, float)):
+        raise ValueError("deep_slice_fraction must be numeric")
+    fraction = float(fraction)
+    if not math.isfinite(fraction) or not 0.0 <= fraction <= 1.0:
+        raise ValueError("deep_slice_fraction must be between zero and one")
+    if fraction == 0.0:
+        return
+
+    deep_sims = config.deep_slice_sims
+    if not isinstance(deep_sims, int) or isinstance(deep_sims, bool):
+        raise ValueError("deep_slice_sims must be an integer when deep_slice_fraction is positive")
+    if deep_sims <= int(config.sims_per_move):
+        raise ValueError("deep_slice_sims must exceed sims_per_move when deep_slice_fraction is positive")
+
+
 def load_config(path: str | Path | None) -> TrainConfig:
     cfg = TrainConfig()
     if path is None:
@@ -170,7 +198,9 @@ def load_config(path: str | Path | None) -> TrainConfig:
     data = json.loads(Path(path).read_text())
     if not isinstance(data, dict):
         raise ValueError("config root must be an object")
-    return _merge_dataclass(cfg, data)
+    _merge_dataclass(cfg, data)
+    validate_deep_slice_config(cfg.selfplay)
+    return cfg
 
 
 def save_config(config: TrainConfig, path: str | Path) -> None:

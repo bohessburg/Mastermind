@@ -92,6 +92,7 @@ def split_segments_by_quotas(
                     nn_player=source.nn_player,
                     kingdom_pool=source.kingdom_pool,
                     kingdom_mode=source.kingdom_mode,
+                    sims_override=source.sims_override,
                 )
             )
             needed -= take
@@ -450,6 +451,7 @@ def _generate_routed_games(
     scripted_nn_player: int = 0,
     kingdom_pool: list[int] | None = None,
     kingdom_mode: str | None = None,
+    sims_override: int = 0,
 ) -> SelfPlayStats:
     """Generate a task with fixed models for player zero and player one."""
     if target_games <= 0:
@@ -466,6 +468,7 @@ def _generate_routed_games(
             scripted_kind=scripted_kind,
             scripted_nn_player=scripted_nn_player,
             kingdom_pool=kingdom_pool,
+            sims_override=sims_override,
         )
     )
     for model in seat_models:
@@ -538,6 +541,8 @@ def _accumulate_stats(total: SelfPlayStats, update: SelfPlayStats) -> None:
     total.routed_split_batches += update.routed_split_batches
     total.scripted_games += update.scripted_games
     total.scripted_wins += update.scripted_wins
+    total.deep_games += update.deep_games
+    total.deep_positions += update.deep_positions
     for kind, (games, wins) in update.scripted_by_kind.items():
         previous_games, previous_wins = total.scripted_by_kind.get(kind, (0, 0))
         total.scripted_by_kind[kind] = (previous_games + games, previous_wins + wins)
@@ -620,7 +625,12 @@ def _worker_main(
                         if (segment.seat0_model_id, segment.seat1_model_id) != (0, 0):
                             raise RuntimeError("mini-league self-play requires worker_device='cpu' or 'cuda'")
                         task_runner = runner
-                        if segment.is_scripted or segment.kingdom_pool is not None or segment.kingdom_mode is not None:
+                        if (
+                            segment.is_scripted
+                            or segment.kingdom_pool is not None
+                            or segment.kingdom_mode is not None
+                            or segment.sims_override > 0
+                        ):
                             task_config = copy.deepcopy(worker_selfplay)
                             task_config.n_games = max(1, min(int(task_config.n_games), int(segment.n_games)))
                             if segment.kingdom_mode is not None:
@@ -632,6 +642,7 @@ def _worker_main(
                                     scripted_kind=segment.scripted_kind,
                                     scripted_nn_player=segment.nn_player,
                                     kingdom_pool=segment.kingdom_pool,
+                                    sims_override=segment.sims_override,
                                 )
                             )
                         task_stats = _generate_games_exact(
@@ -672,9 +683,13 @@ def _worker_main(
                             segment.nn_player,
                             segment.kingdom_pool,
                             segment.kingdom_mode,
+                            segment.sims_override,
                         )
                         if segment.is_league:
                             league_games += task_stats.games
+                    if segment.sims_override:
+                        task_stats.deep_games += task_stats.games
+                        task_stats.deep_positions += task_stats.positions
                     _accumulate_stats(stats, task_stats)
                 deferred = []
             else:
@@ -709,6 +724,8 @@ def _worker_main(
                         stats.scripted_games,
                         stats.scripted_wins,
                         stats.scripted_by_kind,
+                        stats.deep_games,
+                        stats.deep_positions,
                         league_games,
                         route_audit,
                     ),
@@ -831,6 +848,8 @@ class ParallelSelfPlayPool:
                 worker_scripted_games,
                 worker_scripted_wins,
                 worker_scripted_by_kind,
+                worker_deep_games,
+                worker_deep_positions,
                 worker_league_games,
                 worker_route_audit,
             ) = payload
@@ -851,6 +870,8 @@ class ParallelSelfPlayPool:
             stats.routed_split_batches += worker_split_batches
             stats.scripted_games += worker_scripted_games
             stats.scripted_wins += worker_scripted_wins
+            stats.deep_games += worker_deep_games
+            stats.deep_positions += worker_deep_positions
             for kind, (games, wins) in worker_scripted_by_kind.items():
                 previous_games, previous_wins = stats.scripted_by_kind.get(kind, (0, 0))
                 stats.scripted_by_kind[kind] = (previous_games + games, previous_wins + wins)
@@ -875,6 +896,12 @@ class ParallelSelfPlayPool:
                 raise RuntimeError(
                     f"parallel scripted self-play collected {stats.scripted_games} scripted games, "
                     f"expected {expected_scripted_games}"
+                )
+            expected_deep_games = sum(segment.n_games for segment in segments if segment.sims_override > 0)
+            if stats.deep_games != expected_deep_games:
+                raise RuntimeError(
+                    f"parallel deep self-play collected {stats.deep_games} deep games, "
+                    f"expected {expected_deep_games}"
                 )
         if self.inference_server is not None:
             self.inference_server.ensure_alive()

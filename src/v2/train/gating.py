@@ -18,7 +18,7 @@ from pathlib import Path
 
 import torch
 
-from .config import TrainConfig
+from .config import SelfPlayConfig, TrainConfig, validate_deep_slice_config
 from .model import DominionNet
 from .observation import obs_size_for_config
 
@@ -66,6 +66,9 @@ class SelfPlaySegment:
     # ``None`` preserves SelfPlayConfig.kingdom_mode. Curriculum segments set
     # this explicitly so a random phase can override a fixed base campaign.
     kingdom_mode: str | None = None
+    # Zero uses SelfPlayConfig.sims_per_move; a positive value creates a
+    # higher-budget runner for this segment only.
+    sims_override: int = 0
 
     @property
     def is_league(self) -> bool:
@@ -74,6 +77,11 @@ class SelfPlaySegment:
     @property
     def is_scripted(self) -> bool:
         return self.scripted_kind is not None
+
+    @property
+    def is_normal_mirror(self) -> bool:
+        """True only for ordinary current-best-versus-current-best games."""
+        return not self.is_scripted and self.seat0_model_id == self.seat1_model_id == 0
 
 
 @dataclass(frozen=True)
@@ -366,6 +374,69 @@ def plan_selfplay_segments(
     ]
 
 
+def carve_deep_slice_segments(
+    segments: list[SelfPlaySegment],
+    fraction: float,
+    sims: int,
+    base_sims: int,
+) -> list[SelfPlaySegment]:
+    """Replace an exact fraction of normal mirror games with deep-search work.
+
+    The fraction is measured against the normal mirror pool, so a generation
+    with scripted or league games keeps those data sources completely intact.
+    Rounding intentionally matches ``scripted_opponent_game_counts``.
+    """
+    validate_deep_slice_config(
+        SelfPlayConfig(
+            sims_per_move=base_sims,
+            deep_slice_fraction=fraction,
+            deep_slice_sims=sims,
+        )
+    )
+    if float(fraction) == 0.0:
+        return segments
+
+    normal_games = sum(segment.n_games for segment in segments if segment.is_normal_mirror)
+    deep_games = min(normal_games, int(round(normal_games * float(fraction))))
+    remaining_deep_games = deep_games
+    carved: list[SelfPlaySegment] = []
+    for segment in segments:
+        if not segment.is_normal_mirror or remaining_deep_games == 0:
+            carved.append(segment)
+            continue
+        segment_deep_games = min(segment.n_games, remaining_deep_games)
+        segment_normal_games = segment.n_games - segment_deep_games
+        if segment_normal_games:
+            carved.append(
+                SelfPlaySegment(
+                    n_games=segment_normal_games,
+                    seat0_model_id=segment.seat0_model_id,
+                    seat1_model_id=segment.seat1_model_id,
+                    scripted_kind=segment.scripted_kind,
+                    nn_player=segment.nn_player,
+                    kingdom_pool=segment.kingdom_pool,
+                    kingdom_mode=segment.kingdom_mode,
+                    sims_override=segment.sims_override,
+                )
+            )
+        carved.append(
+            SelfPlaySegment(
+                n_games=segment_deep_games,
+                seat0_model_id=segment.seat0_model_id,
+                seat1_model_id=segment.seat1_model_id,
+                scripted_kind=segment.scripted_kind,
+                nn_player=segment.nn_player,
+                kingdom_pool=segment.kingdom_pool,
+                kingdom_mode=segment.kingdom_mode,
+                sims_override=int(sims),
+            )
+        )
+        remaining_deep_games -= segment_deep_games
+    if remaining_deep_games != 0:
+        raise RuntimeError("deep self-play segments do not cover the requested game count")
+    return carved
+
+
 def scripted_opponent_game_counts(total_games: int, opponents: dict[str, float]) -> dict[str, int]:
     """Validate configured scripted fractions and turn them into exact counts."""
     if total_games < 0:
@@ -609,6 +680,7 @@ def assign_kingdom_phase_to_segments(
                     nn_player=segment.nn_player,
                     kingdom_pool=kingdom_pool,
                     kingdom_mode="random" if phase.mode == "pool" else phase.mode,
+                    sims_override=segment.sims_override,
                 )
             )
 
@@ -629,6 +701,9 @@ def plan_training_selfplay_segments(
     league_pool_size: int,
     scripted_opponents: dict[str, float],
     seed: int,
+    deep_slice_fraction: float = 0.0,
+    deep_slice_sims: int = 0,
+    sims_per_move: int = 64,
 ) -> list[SelfPlaySegment]:
     """Compose normal, league, and seat-swapped scripted data segments.
 
@@ -637,10 +712,22 @@ def plan_training_selfplay_segments(
     games retain their existing current-best-at-player-zero behavior.
     """
     scripted_counts = scripted_opponent_game_counts(total_games, scripted_opponents)
+    validate_deep_slice_config(
+        SelfPlayConfig(
+            sims_per_move=sims_per_move,
+            deep_slice_fraction=deep_slice_fraction,
+            deep_slice_sims=deep_slice_sims,
+        )
+    )
     if not scripted_counts:
         # Preserve the existing non-scripted planner byte-for-byte, including
         # its seed behavior and segment ordering.
-        return plan_selfplay_segments(total_games, league_fraction, league_pool_size, seed)
+        return carve_deep_slice_segments(
+            plan_selfplay_segments(total_games, league_fraction, league_pool_size, seed),
+            deep_slice_fraction,
+            deep_slice_sims,
+            sims_per_move,
+        )
 
     if not 0.0 <= float(league_fraction) <= 1.0:
         raise ValueError("league_fraction must be between zero and one")
@@ -666,7 +753,7 @@ def plan_training_selfplay_segments(
             segments.append(SelfPlaySegment(first_player_games, 0, 0, scripted_kind=kind, nn_player=0))
         if second_player_games > 0:
             segments.append(SelfPlaySegment(second_player_games, 0, 0, scripted_kind=kind, nn_player=1))
-    return segments
+    return carve_deep_slice_segments(segments, deep_slice_fraction, deep_slice_sims, sims_per_move)
 
 
 def compact_selfplay_segments(
@@ -700,6 +787,7 @@ def compact_selfplay_segments(
                 nn_player=segment.nn_player,
                 kingdom_pool=segment.kingdom_pool,
                 kingdom_mode=segment.kingdom_mode,
+                sims_override=segment.sims_override,
             )
             for segment in segments
         ],
@@ -729,6 +817,10 @@ def run_gate_match(
 
     gate_config = copy.deepcopy(config.selfplay)
     gate_config.sims_per_move = int(config.gate_sims)
+    # Gate matches remain a separate, uniform-budget evaluation; their copied
+    # self-play config must not inherit a data-generation-only deep slice.
+    gate_config.deep_slice_fraction = 0.0
+    gate_config.deep_slice_sims = 0
     gate_config.dirichlet_frac = 0.0
     gate_config.temp_moves = int(config.gate_temp_moves)
     gate_config.kingdom_mode = "random"

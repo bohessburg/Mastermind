@@ -10,7 +10,7 @@ import torch
 
 import dominion_v2_py as dz
 
-from .config import SelfPlayConfig
+from .config import SelfPlayConfig, validate_deep_slice_config
 from .replay import ReplayBuffer
 
 
@@ -29,6 +29,10 @@ class SelfPlayStats:
     routed_split_batches: int = 0
     scripted_games: int = 0
     scripted_wins: int = 0
+    # Deep-search games retain ordinary replay handling, but are surfaced in
+    # generation metrics so their data contribution can be monitored.
+    deep_games: int = 0
+    deep_positions: int = 0
     # Maps scripted opponent kind to (games, neural-network wins).
     scripted_by_kind: dict[str, tuple[int, int]] = field(default_factory=dict)
 
@@ -93,12 +97,24 @@ def make_runner_config(
     scripted_kind: str | None = None,
     scripted_nn_player: int = 0,
     kingdom_pool: Sequence[int] | None = None,
+    sims_override: int = 0,
 ):
+    validate_deep_slice_config(config)
     if not math.isfinite(config.margin_scale) or config.margin_scale <= 0.0:
         raise ValueError("margin_scale must be finite and positive")
+    if not isinstance(sims_override, int) or isinstance(sims_override, bool) or sims_override < 0:
+        raise ValueError("sims_override must be a non-negative integer")
+    runner_sims = int(sims_override) if sims_override else int(config.sims_per_move)
+    runner_max_tree_nodes = int(config.max_tree_nodes)
+    if sims_override:
+        # C13 used 4,096 nodes for 512 sims (an 8x margin), but multiplying
+        # that full margin for every rare 8-16x deep run is needlessly large.
+        # Two nodes per simulation safely grows capacity with the budget while
+        # retaining the configured cap whenever it is already larger.
+        runner_max_tree_nodes = max(runner_max_tree_nodes, runner_sims * 2)
     runner_config = dz.SelfPlayConfig(
         n_games=config.n_games,
-        sims_per_move=config.sims_per_move,
+        sims_per_move=runner_sims,
         c_puct=config.c_puct,
         dirichlet_alpha=config.dirichlet_alpha,
         dirichlet_frac=config.dirichlet_frac,
@@ -110,7 +126,7 @@ def make_runner_config(
         kingdom=config.fixed_kingdom,
         kingdom_pool=list(kingdom_pool) if kingdom_pool is not None else None,
         max_recorded_moves=config.max_recorded_moves,
-        max_tree_nodes=config.max_tree_nodes,
+        max_tree_nodes=runner_max_tree_nodes,
         scaffold_sims=config.scaffold_sims,
         scaffold_sims_opening=config.scaffold_sims_opening,
         scaffold_determinizations=config.scaffold_determinizations,
@@ -302,6 +318,7 @@ def play_routed_games(
     scripted_nn_player: int = 0,
     kingdom_pool: Sequence[int] | None = None,
     kingdom_mode: str | None = None,
+    sims_override: int = 0,
 ) -> tuple[SelfPlayStats, list[dict]]:
     """Generate an exact number of games while routing every leaf by seat."""
     if target_games < 0:
@@ -320,6 +337,7 @@ def play_routed_games(
             scripted_kind=scripted_kind,
             scripted_nn_player=scripted_nn_player,
             kingdom_pool=kingdom_pool,
+            sims_override=sims_override,
         )
     )
     for model in seat_models:
@@ -387,6 +405,7 @@ def run_routed_self_play_generation(
     scripted_nn_player: int = 0,
     kingdom_pool: Sequence[int] | None = None,
     kingdom_mode: str | None = None,
+    sims_override: int = 0,
 ) -> SelfPlayStats:
     stats, records = play_routed_games(
         seat_models,
@@ -399,6 +418,7 @@ def run_routed_self_play_generation(
         scripted_nn_player=scripted_nn_player,
         kingdom_pool=kingdom_pool,
         kingdom_mode=kingdom_mode,
+        sims_override=sims_override,
     )
     games, positions = _records_to_replay(records, replay)
     stats.games = games
