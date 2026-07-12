@@ -508,3 +508,49 @@ beaten; remaining yardstick is human play. Open instruments: v2-aware web
 loader (obs_version + input_scale — web session), paired-context
 adaptation probe (needs slot_to_def pybind helper), and the superhuman
 agenda (league self-play, card-structured architecture, expanded pool).
+
+Human playtests vs c13 gen-65 (2026-07-12 morning, Jack, full-power
+nnmcts @400 sims, v2-aware loader verified — session timing + default
+checkpoint resolution confirm gen-65 played; NOTE export "obs_version"
+field records the format constant, not the policy version — cosmetic fix
+pending):
+- Game 1 (no Moat in kingdom): Jack 42-28 via Witch/Sentry/Lab engine (8
+  Witch plays). Bot: disciplined money+VP, T11 first Province, zero
+  engine, drowned in Curses.
+- Game 2 (Moat AND Sentry available): Jack 39-32 via 6 Witches + 4
+  Militias from T2. Bot bought ONE Moat at T21 (17 turns late — reactive
+  margin-drift, not threat modeling) and never bought curse-trashing
+  Sentry.
+Diagnosis reaffirmed: the net plays refined money (beats BM 71% — no BM
+clone does that; its edge is margin discipline + pile-clock calculus) but
+has NO engine repertoire and NO attack response, because no training
+opponent ever demonstrated competent engines or attack campaigns —
+sight enables recognition, not repertoire; data poverty is the binding
+constraint. Jack remains champion.
+
+Search depth analysis (2026-07-12): web/eval 400 sims over K=2
+determinizations (2x200 trees), training 512; leaves = value head (no
+rollouts). Buy nodes carry 8-18 LEGAL children (treasure collapse removed
+treasure-play decisions, not buy width); prior concentration (perplexity
+~3) makes EFFECTIVE branching ~3-6; principal-variation depth ~6-15
+plies; with ~6 plies per game-turn (both players, action+buy+effect
+decisions) that is only ~2-4 TURNS of true lookahead. Engine payoffs sit
+25-50 plies out — categorically beyond any raw-sims budget; depth beyond
+the tree must be amortized into the value head (the AlphaZero lesson).
+Costs identified: root Dirichlet noise taxes ALL legal children (up to
+18) one ply deep; every decision builds its tree FROM SCRATCH; K=2 halves
+the budget.
+
+C14 SEARCH PACKAGE (approved: tree reuse + top-k expansion):
+1. TREE REUSE across decisions — carry the chosen child's subtree to the
+   next decision (2-3x effective sims free; interacts with
+   determinization resampling and the async scripted offload — the
+   delicate chunk).
+2. TOP-K EXPANSION — expand/noise only the top-k (~8) prior children per
+   node; hardens PUCT concentration, caps the root-noise tax, converts
+   width to depth.
+Also queued for c14 design: K=1 for data gen (knob exists), deep-slice
+data generation (small fraction of games at 8-16x sims to bootstrap the
+value head on long plans), engine-dominant curriculum kingdoms, Jack's
+exports as seed/league material, card-structured architecture (slot
+embeddings) for cross-kingdom synergy generalization.
