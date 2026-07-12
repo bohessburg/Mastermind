@@ -495,3 +495,16 @@ above the net is now: humans. c13 continues (gen ~62, no decay, vloss
 adaptation probe (needs slot_to_def pybind helper), human playtests with
 a v2-aware web loader (input_scale + obs_version plumbing — flagged for
 web session).
+
+Campaign 13 closeout (2026-07-12, cut at gen 96 on Jack's call — plateau
+confirmed, no decay ever): the sighted campaign ends as the strongest and
+healthiest run of the project. Final ladder: ~85-89% vs EngineBot v2
+(stable band from gen 15 to the end, vloss 0.34 -> 0.23), 71.0% vs
+BigMoney deterministic at gen 65 (blind ceiling was 47.7%; nine campaigns
+scored ZERO), 97.5% vs the pile-aware scaffold (117-3). Flagship
+checkpoint: gen_0065 (89.2% engine / 71.0% BM). Banked locally: gens
+25/40/65/96 + metrics. Program state: every scripted opponent decisively
+beaten; remaining yardstick is human play. Open instruments: v2-aware web
+loader (obs_version + input_scale — web session), paired-context
+adaptation probe (needs slot_to_def pybind helper), and the superhuman
+agenda (league self-play, card-structured architecture, expanded pool).
