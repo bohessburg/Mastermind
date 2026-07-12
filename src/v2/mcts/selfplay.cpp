@@ -51,6 +51,15 @@ constexpr DefId IMPLEMENTED_KINGDOMS[] = {
 constexpr std::uint8_t IMPLEMENTED_KINGDOM_COUNT =
     static_cast<std::uint8_t>(sizeof(IMPLEMENTED_KINGDOMS) / sizeof(IMPLEMENTED_KINGDOMS[0]));
 
+[[nodiscard]] bool implemented_kingdom(DefId def) noexcept {
+    for (const DefId implemented : IMPLEMENTED_KINGDOMS) {
+        if (implemented == def) {
+            return true;
+        }
+    }
+    return false;
+}
+
 enum class ScriptedSlotStatus : std::uint8_t {
     Idle,
     ScriptedPending,
@@ -279,6 +288,10 @@ private:
     bool stopping_ = false;
 };
 
+bool is_selfplay_implemented_kingdom(DefId def) noexcept {
+    return implemented_kingdom(def);
+}
+
 SelfPlayRunner::SelfPlayRunner(const SelfPlayConfig& config)
     : config_(config),
       obs_size_(checked_obs_size(config.obs_version)),
@@ -297,6 +310,23 @@ SelfPlayRunner::SelfPlayRunner(const SelfPlayConfig& config)
     }
     if (config_.sims_per_move == 0U) {
         throw std::invalid_argument("SelfPlayConfig.sims_per_move must be positive");
+    }
+    if (config_.kingdom_pool_count > MAX_SELFPLAY_KINGDOM_POOL) {
+        throw std::invalid_argument("SelfPlayConfig.kingdom_pool has too many cards");
+    }
+    if (config_.kingdom_pool_count > 0U && config_.kingdom_pool_count < 10U) {
+        throw std::invalid_argument("SelfPlayConfig.kingdom_pool must contain at least 10 cards");
+    }
+    for (std::uint8_t i = 0; i < config_.kingdom_pool_count; ++i) {
+        const DefId def = config_.kingdom_pool[i];
+        if (!implemented_kingdom(def)) {
+            throw std::invalid_argument("SelfPlayConfig.kingdom_pool contains an unimplemented kingdom card");
+        }
+        for (std::uint8_t previous = 0; previous < i; ++previous) {
+            if (config_.kingdom_pool[previous] == def) {
+                throw std::invalid_argument("SelfPlayConfig.kingdom_pool contains duplicate cards");
+            }
+        }
     }
     if (!(config_.margin_scale > 0.0F) || !std::isfinite(config_.margin_scale)) {
         throw std::invalid_argument("SelfPlayConfig.margin_scale must be finite and positive");
@@ -943,16 +973,22 @@ Setup SelfPlayRunner::setup_for(std::uint32_t index, std::uint64_t generation) c
     Setup setup{};
     setup.num_players = 2U;
     setup.kingdom_count = 10U;
-    DefId defs[IMPLEMENTED_KINGDOM_COUNT]{};
-    for (std::uint8_t i = 0; i < IMPLEMENTED_KINGDOM_COUNT; ++i) {
-        defs[i] = IMPLEMENTED_KINGDOMS[i];
+    const DefId* kingdom_pool = IMPLEMENTED_KINGDOMS;
+    std::uint8_t kingdom_pool_count = IMPLEMENTED_KINGDOM_COUNT;
+    if (config_.kingdom_pool_count > 0U) {
+        kingdom_pool = config_.kingdom_pool;
+        kingdom_pool_count = config_.kingdom_pool_count;
+    }
+    DefId defs[MAX_SELFPLAY_KINGDOM_POOL]{};
+    for (std::uint8_t i = 0; i < kingdom_pool_count; ++i) {
+        defs[i] = kingdom_pool[i];
     }
     Xoshiro256pp rng = Xoshiro256pp::seeded(
         config_.seed
         ^ (static_cast<std::uint64_t>(index + 1U) * 0xBADC'0FFE'1234'5678ULL)
         ^ (generation * 0x9E37'79B9'7F4A'7C15ULL));
     for (std::uint8_t i = 0; i < setup.kingdom_count; ++i) {
-        const std::uint32_t offset = rng.uniform(static_cast<std::uint32_t>(IMPLEMENTED_KINGDOM_COUNT - i));
+        const std::uint32_t offset = rng.uniform(static_cast<std::uint32_t>(kingdom_pool_count - i));
         const std::uint8_t swap_index = static_cast<std::uint8_t>(i + offset);
         const DefId selected = defs[swap_index];
         defs[swap_index] = defs[i];

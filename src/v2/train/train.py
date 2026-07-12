@@ -35,6 +35,8 @@ if __package__ in (None, ""):
         league_checkpoint_paths,
         load_best_checkpoint,
         compact_selfplay_segments,
+        assign_kingdom_phase_to_segments,
+        effective_kingdom_phase,
         effective_scripted_fractions,
         plan_training_selfplay_segments,
         run_gate_match,
@@ -58,6 +60,8 @@ else:
         league_checkpoint_paths,
         load_best_checkpoint,
         compact_selfplay_segments,
+        assign_kingdom_phase_to_segments,
+        effective_kingdom_phase,
         effective_scripted_fractions,
         plan_training_selfplay_segments,
         run_gate_match,
@@ -293,6 +297,7 @@ METRICS_FIELDNAMES = [
         "gate_win_pct",
         "best_generation",
         "league_games",
+        "kingdom_phase",
         "scripted_games",
         "scripted_wins",
         "routed_fast_path_batches",
@@ -312,6 +317,7 @@ def append_metrics(path: str | Path, row: dict[str, Any]) -> None:
     out = Path(path)
     out.parent.mkdir(parents=True, exist_ok=True)
     scripted_fieldnames = _scripted_metric_fieldnames(row)
+    required_fieldnames = [*METRICS_FIELDNAMES, *scripted_fieldnames]
     if out.exists():
         with out.open(newline="") as handle:
             reader = csv.DictReader(handle)
@@ -319,9 +325,7 @@ def append_metrics(path: str | Path, row: dict[str, Any]) -> None:
             existing_rows = list(reader)
         if existing_fieldnames:
             fieldnames = list(existing_fieldnames)
-            missing_fieldnames = [
-                fieldname for fieldname in scripted_fieldnames if fieldname not in fieldnames
-            ]
+            missing_fieldnames = [fieldname for fieldname in required_fieldnames if fieldname not in fieldnames]
             if missing_fieldnames:
                 fieldnames.extend(missing_fieldnames)
                 with tempfile.NamedTemporaryFile(
@@ -385,6 +389,8 @@ def _run_segmented_single_pipeline(
             target_games=segment.n_games,
             scripted_kind=segment.scripted_kind,
             scripted_nn_player=segment.nn_player,
+            kingdom_pool=segment.kingdom_pool,
+            kingdom_mode=segment.kingdom_mode,
         )
         _add_stats(total, stats)
     return total
@@ -420,6 +426,7 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
         config.league_seed_checkpoints = requested.league_seed_checkpoints
         config.scripted_opponents = requested.scripted_opponents
         config.scripted_opponent_schedule = requested.scripted_opponent_schedule
+        config.kingdom_curriculum = requested.kingdom_curriculum
         config.gate_warmup_generations = requested.gate_warmup_generations
         config.gate_force_accept_every = requested.gate_force_accept_every
         if config.device == "auto":
@@ -448,6 +455,7 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
     if not isinstance(config.scripted_opponents, dict):
         raise ValueError("scripted_opponents must be an object mapping kind to fraction")
     effective_scripted_fractions(config.scripted_opponent_schedule, config.scripted_opponents, start_generation)
+    effective_kingdom_phase(config.kingdom_curriculum, config.selfplay.kingdom_mode, start_generation)
     configured_scripted_kinds = sorted(
         set(config.scripted_opponents) | set(config.scripted_opponent_schedule)
     )
@@ -484,7 +492,17 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
                 config.scripted_opponents,
                 generation,
             )
-            use_segments = use_gating or bool(config.scripted_opponents) or bool(config.scripted_opponent_schedule)
+            effective_kingdom = effective_kingdom_phase(
+                config.kingdom_curriculum,
+                config.selfplay.kingdom_mode,
+                generation,
+            )
+            use_segments = (
+                use_gating
+                or bool(config.scripted_opponents)
+                or bool(config.scripted_opponent_schedule)
+                or bool(config.kingdom_curriculum)
+            )
             if not use_segments:
                 # Keep the legacy default path and its seed derivation intact.
                 if pool is None:
@@ -509,6 +527,11 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
                     len(all_league_paths),
                     effective_scripted,
                     config.seed ^ (generation * 0xC0FFEE),
+                )
+                sampled_segments = assign_kingdom_phase_to_segments(
+                    sampled_segments,
+                    effective_kingdom,
+                    config.seed ^ (generation * 0x4B1D0),
                 )
                 segments, history_indices = compact_selfplay_segments(sampled_segments)
                 league_paths = [all_league_paths[index] for index in history_indices]
@@ -667,6 +690,7 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
                 "checkpoint": str(path),
                 **gate_row,
                 "league_games": planned_league_games,
+                "kingdom_phase": effective_kingdom.label,
                 "scripted_games": sp_stats.scripted_games,
                 "scripted_wins": sp_stats.scripted_wins,
                 "routed_fast_path_batches": sp_stats.routed_fast_path_batches,

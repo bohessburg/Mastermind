@@ -9,6 +9,7 @@ order, but the games assigned to each opponent remain reproducible.
 from __future__ import annotations
 
 import copy
+import math
 import random
 import shutil
 import warnings
@@ -59,6 +60,12 @@ class SelfPlaySegment:
     seat1_model_id: int
     scripted_kind: str | None = None
     nn_player: int = 0
+    # ``None`` means full random kingdom pool (or the configured fixed
+    # kingdom); a non-empty list contains native DefIds for this segment.
+    kingdom_pool: list[int] | None = None
+    # ``None`` preserves SelfPlayConfig.kingdom_mode. Curriculum segments set
+    # this explicitly so a random phase can override a fixed base campaign.
+    kingdom_mode: str | None = None
 
     @property
     def is_league(self) -> bool:
@@ -67,6 +74,27 @@ class SelfPlaySegment:
     @property
     def is_scripted(self) -> bool:
         return self.scripted_kind is not None
+
+
+@dataclass(frozen=True)
+class KingdomCurriculumPhase:
+    """The validated kingdom distribution active for one generation."""
+
+    mode: str
+    pool: tuple[int, ...] = ()
+    pool_names: tuple[str, ...] = ()
+    pool_fraction: float = 1.0
+    start_generation: int | None = None
+    end_generation: int | None = None
+
+    @property
+    def label(self) -> str:
+        if self.start_generation is None:
+            return f"base:{self.mode}"
+        prefix = f"{self.start_generation}-{self.end_generation}:{self.mode}"
+        if self.mode == "pool":
+            return f"{prefix}:{self.pool_fraction:.6f}:{','.join(self.pool_names)}"
+        return prefix
 
 
 def gating_enabled(config: TrainConfig) -> bool:
@@ -439,6 +467,162 @@ def effective_scripted_fractions(
     return fractions
 
 
+def _resolve_kingdom_pool(raw_pool: object, phase_index: int) -> tuple[tuple[int, ...], tuple[str, ...]]:
+    """Resolve curriculum card names through the binding's canonical lookup."""
+    if not isinstance(raw_pool, list) or not raw_pool:
+        raise ValueError(f"kingdom curriculum phase {phase_index} pool must be a non-empty list of card names")
+    if len(raw_pool) < 10:
+        raise ValueError(f"kingdom curriculum phase {phase_index} pool must contain at least 10 cards")
+    if not all(isinstance(name, str) for name in raw_pool):
+        raise ValueError(f"kingdom curriculum phase {phase_index} pool card names must be strings")
+
+    # ``def_id`` is also what Setup/fixed_kingdom accepts, so curriculum
+    # names retain exactly the same spelling and lookup semantics. Assigning
+    # the resolved ids to the native config additionally verifies that every
+    # card is in SelfPlayRunner's implemented random-kingdom roster.
+    import dominion_v2_py as dz
+
+    names = tuple(raw_pool)
+    defs: list[int] = []
+    for name in names:
+        try:
+            defs.append(int(dz.def_id(name)))
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"kingdom curriculum phase {phase_index} pool contains an unknown card name: {name!r}"
+            ) from exc
+    try:
+        native_config = dz.SelfPlayConfig()
+        native_config.kingdom_pool = defs
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"kingdom curriculum phase {phase_index} pool is invalid: {exc}") from exc
+    return tuple(defs), names
+
+
+def effective_kingdom_phase(
+    kingdom_curriculum: list,
+    base_kingdom_mode: str,
+    generation: int,
+) -> KingdomCurriculumPhase:
+    """Resolve the final inclusive curriculum phase that contains generation.
+
+    Later phases intentionally override earlier overlapping ranges. This makes
+    a temporary schedule amendment append-only and mirrors the campaign's
+    existing per-generation scheduling convention.
+    """
+    if not isinstance(kingdom_curriculum, list):
+        raise ValueError("kingdom_curriculum must be a list of phases")
+    if not isinstance(base_kingdom_mode, str) or base_kingdom_mode.lower() not in {"random", "fixed"}:
+        raise ValueError("kingdom_mode must be 'random' or 'fixed'")
+    if not isinstance(generation, int) or isinstance(generation, bool):
+        raise ValueError("generation must be an integer")
+
+    active: KingdomCurriculumPhase | None = None
+    for phase_index, raw_phase in enumerate(kingdom_curriculum):
+        if not isinstance(raw_phase, dict):
+            raise ValueError(f"kingdom curriculum phase {phase_index} must be an object")
+        raw_generations = raw_phase.get("generations")
+        if not isinstance(raw_generations, list) or len(raw_generations) != 2:
+            raise ValueError(
+                f"kingdom curriculum phase {phase_index} generations must be a [start, end] pair"
+            )
+        start_generation, end_generation = raw_generations
+        if (
+            not isinstance(start_generation, int)
+            or isinstance(start_generation, bool)
+            or not isinstance(end_generation, int)
+            or isinstance(end_generation, bool)
+            or start_generation < 0
+            or end_generation < start_generation
+        ):
+            raise ValueError(
+                f"kingdom curriculum phase {phase_index} generations must be non-negative inclusive ranges"
+            )
+        raw_mode = raw_phase.get("mode")
+        if not isinstance(raw_mode, str) or raw_mode.lower() not in {"random", "pool"}:
+            raise ValueError(f"kingdom curriculum phase {phase_index} mode must be 'random' or 'pool'")
+        mode = raw_mode.lower()
+        raw_fraction = raw_phase.get("pool_fraction", 1.0)
+        if not isinstance(raw_fraction, (int, float)) or isinstance(raw_fraction, bool):
+            raise ValueError(f"kingdom curriculum phase {phase_index} pool_fraction must be numeric")
+        pool_fraction = float(raw_fraction)
+        if not math.isfinite(pool_fraction) or not 0.0 <= pool_fraction <= 1.0:
+            raise ValueError(f"kingdom curriculum phase {phase_index} pool_fraction must be between zero and one")
+
+        pool: tuple[int, ...] = ()
+        pool_names: tuple[str, ...] = ()
+        if mode == "pool":
+            pool, pool_names = _resolve_kingdom_pool(raw_phase.get("pool"), phase_index)
+        elif "pool" in raw_phase:
+            # A supplied random-phase pool has no effect, but validate it so a
+            # typo or unimplemented card cannot be silently ignored.
+            _resolve_kingdom_pool(raw_phase["pool"], phase_index)
+
+        if start_generation <= generation <= end_generation:
+            active = KingdomCurriculumPhase(
+                mode=mode,
+                pool=pool,
+                pool_names=pool_names,
+                pool_fraction=pool_fraction,
+                start_generation=start_generation,
+                end_generation=end_generation,
+            )
+
+    if active is not None:
+        return active
+    return KingdomCurriculumPhase(mode=base_kingdom_mode.lower())
+
+
+def assign_kingdom_phase_to_segments(
+    segments: list[SelfPlaySegment],
+    phase: KingdomCurriculumPhase,
+    seed: int,
+) -> list[SelfPlaySegment]:
+    """Split segments into exact full-pool and curriculum-pool game counts."""
+    total_games = sum(segment.n_games for segment in segments)
+    if total_games < 0 or any(segment.n_games <= 0 for segment in segments):
+        raise ValueError("self-play segments must have positive game counts")
+
+    pool_games = (
+        min(total_games, int(round(total_games * phase.pool_fraction)))
+        if phase.mode == "pool"
+        else 0
+    )
+    selected_pool_games = set(random.Random(int(seed)).sample(range(total_games), pool_games))
+    assigned: list[SelfPlaySegment] = []
+    game_offset = 0
+    for segment in segments:
+        selected = sum(
+            game_offset <= game_index < game_offset + segment.n_games
+            for game_index in selected_pool_games
+        )
+
+        def append_assignment(n_games: int, kingdom_pool: list[int] | None) -> None:
+            if n_games <= 0:
+                return
+            assigned.append(
+                SelfPlaySegment(
+                    n_games=n_games,
+                    seat0_model_id=segment.seat0_model_id,
+                    seat1_model_id=segment.seat1_model_id,
+                    scripted_kind=segment.scripted_kind,
+                    nn_player=segment.nn_player,
+                    kingdom_pool=kingdom_pool,
+                    kingdom_mode="random" if phase.mode == "pool" else phase.mode,
+                )
+            )
+
+        append_assignment(selected, list(phase.pool) if selected > 0 else None)
+        append_assignment(segment.n_games - selected, None)
+        game_offset += segment.n_games
+
+    if sum(segment.n_games for segment in assigned) != total_games:
+        raise RuntimeError("kingdom curriculum segments do not cover the generation")
+    if sum(segment.n_games for segment in assigned if segment.kingdom_pool is not None) != pool_games:
+        raise RuntimeError("kingdom curriculum pool game count mismatch")
+    return assigned
+
+
 def plan_training_selfplay_segments(
     total_games: int,
     league_fraction: float,
@@ -514,6 +698,8 @@ def compact_selfplay_segments(
                 seat1_model_id=remap[segment.seat1_model_id],
                 scripted_kind=segment.scripted_kind,
                 nn_player=segment.nn_player,
+                kingdom_pool=segment.kingdom_pool,
+                kingdom_mode=segment.kingdom_mode,
             )
             for segment in segments
         ],

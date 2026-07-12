@@ -172,6 +172,43 @@ TEST_CASE("v2 selfplay is deterministic with a fixed mock evaluator", "[v2][self
     }
 }
 
+TEST_CASE("v2 selfplay random kingdom pools stay restricted and validate", "[v2][selfplay]") {
+    SelfPlayConfig config = fixed_config(1U, 2U, 4U, 0x5E1F'0014ULL);
+    config.kingdom_mode = SelfPlayKingdomMode::Random;
+    constexpr DefId pool[] = {
+        DEF_VILLAGE,
+        DEF_SMITHY,
+        DEF_LABORATORY,
+        DEF_MARKET,
+        DEF_FESTIVAL,
+        DEF_CELLAR,
+        DEF_CHAPEL,
+        DEF_MOAT,
+        DEF_COUNCIL_ROOM,
+        DEF_THRONE_ROOM,
+        DEF_HARBINGER,
+        DEF_VASSAL,
+    };
+    config.kingdom_pool_count = static_cast<std::uint8_t>(sizeof(pool) / sizeof(pool[0]));
+    for (std::uint8_t i = 0; i < config.kingdom_pool_count; ++i) {
+        config.kingdom_pool[i] = pool[i];
+    }
+
+    const std::vector<SelfPlayRecord> records = run_until_finished(config, 1U);
+    REQUIRE(records.size() == 1U);
+    REQUIRE(records.front().kingdom_count == 10U);
+    for (std::uint8_t i = 0; i < records.front().kingdom_count; ++i) {
+        bool found = false;
+        for (const DefId candidate : pool) {
+            found = found || records.front().kingdom[i] == candidate;
+        }
+        REQUIRE(found);
+    }
+
+    config.kingdom_pool_count = 9U;
+    REQUIRE_THROWS_AS(SelfPlayRunner(config), std::invalid_argument);
+}
+
 TEST_CASE("v2 selfplay Scaffold records only the NN seat deterministically", "[v2][selfplay][scripted]") {
     SelfPlayConfig config = fixed_config(1U, 4U, 8U, 0x5E1F'0006ULL);
     config.max_tree_nodes = 512U;

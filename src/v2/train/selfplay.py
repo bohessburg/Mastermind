@@ -92,10 +92,11 @@ def make_runner_config(
     *,
     scripted_kind: str | None = None,
     scripted_nn_player: int = 0,
+    kingdom_pool: Sequence[int] | None = None,
 ):
     if not math.isfinite(config.margin_scale) or config.margin_scale <= 0.0:
         raise ValueError("margin_scale must be finite and positive")
-    return dz.SelfPlayConfig(
+    runner_config = dz.SelfPlayConfig(
         n_games=config.n_games,
         sims_per_move=config.sims_per_move,
         c_puct=config.c_puct,
@@ -107,6 +108,7 @@ def make_runner_config(
         obs_version=int(config.obs_version),
         kingdom_mode=_kingdom_mode(config.kingdom_mode),
         kingdom=config.fixed_kingdom,
+        kingdom_pool=list(kingdom_pool) if kingdom_pool is not None else None,
         max_recorded_moves=config.max_recorded_moves,
         max_tree_nodes=config.max_tree_nodes,
         scaffold_sims=config.scaffold_sims,
@@ -122,6 +124,7 @@ def make_runner_config(
         value_target=_value_target(config.value_target),
         margin_scale=config.margin_scale,
     )
+    return runner_config
 
 
 def _records_to_replay(records: list[dict], replay: ReplayBuffer) -> tuple[int, int]:
@@ -297,6 +300,8 @@ def play_routed_games(
     same_model_fast_path: bool | None = None,
     scripted_kind: str | None = None,
     scripted_nn_player: int = 0,
+    kingdom_pool: Sequence[int] | None = None,
+    kingdom_mode: str | None = None,
 ) -> tuple[SelfPlayStats, list[dict]]:
     """Generate an exact number of games while routing every leaf by seat."""
     if target_games < 0:
@@ -306,12 +311,15 @@ def play_routed_games(
         return stats, []
     runner_config = SelfPlayConfig(**config.__dict__)
     runner_config.n_games = max(1, min(int(config.n_games), int(target_games)))
+    if kingdom_mode is not None:
+        runner_config.kingdom_mode = kingdom_mode
     runner = dz.SelfPlayRunner(
         make_runner_config(
             runner_config,
             seed,
             scripted_kind=scripted_kind,
             scripted_nn_player=scripted_nn_player,
+            kingdom_pool=kingdom_pool,
         )
     )
     for model in seat_models:
@@ -377,6 +385,8 @@ def run_routed_self_play_generation(
     same_model_fast_path: bool | None = None,
     scripted_kind: str | None = None,
     scripted_nn_player: int = 0,
+    kingdom_pool: Sequence[int] | None = None,
+    kingdom_mode: str | None = None,
 ) -> SelfPlayStats:
     stats, records = play_routed_games(
         seat_models,
@@ -387,6 +397,8 @@ def run_routed_self_play_generation(
         same_model_fast_path=same_model_fast_path,
         scripted_kind=scripted_kind,
         scripted_nn_player=scripted_nn_player,
+        kingdom_pool=kingdom_pool,
+        kingdom_mode=kingdom_mode,
     )
     games, positions = _records_to_replay(records, replay)
     stats.games = games

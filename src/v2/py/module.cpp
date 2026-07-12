@@ -151,6 +151,53 @@ struct PyGame {
     return static_cast<DefId>(value);
 }
 
+void set_selfplay_kingdom_pool(SelfPlayConfig& config, const py::object& kingdom_pool) {
+    if (kingdom_pool.is_none()) {
+        config.kingdom_pool_count = 0U;
+        return;
+    }
+    if (py::isinstance<py::str>(kingdom_pool)) {
+        throw std::invalid_argument("kingdom_pool must be a sequence");
+    }
+
+    const py::sequence sequence = py::reinterpret_borrow<py::sequence>(kingdom_pool);
+    const std::size_t size = py::len(sequence);
+    if (size > MAX_SELFPLAY_KINGDOM_POOL) {
+        throw std::invalid_argument("kingdom_pool has too many cards");
+    }
+    if (size > 0U && size < 10U) {
+        throw std::invalid_argument("kingdom_pool must contain at least 10 cards");
+    }
+
+    DefId parsed[MAX_SELFPLAY_KINGDOM_POOL]{};
+    for (std::size_t i = 0; i < size; ++i) {
+        const DefId def = parse_def(sequence[i]);
+        if (!is_selfplay_implemented_kingdom(def)) {
+            throw std::invalid_argument(
+                "kingdom_pool contains an unimplemented kingdom card: " + std::string(card_def(def).name));
+        }
+        for (std::size_t previous = 0; previous < i; ++previous) {
+            if (parsed[previous] == def) {
+                throw std::invalid_argument("kingdom_pool contains duplicate cards");
+            }
+        }
+        parsed[i] = def;
+    }
+
+    for (std::size_t i = 0; i < size; ++i) {
+        config.kingdom_pool[i] = parsed[i];
+    }
+    config.kingdom_pool_count = static_cast<std::uint8_t>(size);
+}
+
+[[nodiscard]] py::list selfplay_kingdom_pool(const SelfPlayConfig& config) {
+    py::list result;
+    for (std::uint8_t i = 0; i < config.kingdom_pool_count; ++i) {
+        result.append(config.kingdom_pool[i]);
+    }
+    return result;
+}
+
 [[nodiscard]] py::dict decision_dict(const PendingDecision& decision) {
     py::dict dict;
     dict["player"] = decision.player;
@@ -1373,7 +1420,8 @@ PYBIND11_MODULE(dominion_v2_py, module) {
             std::uint32_t scaffold_sims_opening,
             int obs_version,
             bool tree_reuse,
-            std::uint8_t expand_top_k) {
+            std::uint8_t expand_top_k,
+            py::object kingdom_pool) {
             SelfPlayConfig config{};
             config.n_games = n_games;
             config.sims_per_move = sims_per_move;
@@ -1403,6 +1451,7 @@ PYBIND11_MODULE(dominion_v2_py, module) {
                 PySetup setup(2, kingdom, false);
                 config.fixed_setup = setup.setup;
             }
+            set_selfplay_kingdom_pool(config, kingdom_pool);
             return config;
         }),
             py::arg("n_games") = 64,
@@ -1429,7 +1478,8 @@ PYBIND11_MODULE(dominion_v2_py, module) {
             py::arg("scaffold_sims_opening") = 0U,
             py::arg("obs_version") = static_cast<int>(ObsVersion::V1),
             py::arg("tree_reuse") = false,
-            py::arg("expand_top_k") = 0U)
+            py::arg("expand_top_k") = 0U,
+            py::arg("kingdom_pool") = py::none())
         .def_readwrite("n_games", &SelfPlayConfig::n_games)
         .def_readwrite("sims_per_move", &SelfPlayConfig::sims_per_move)
         .def_readwrite("c_puct", &SelfPlayConfig::c_puct)
@@ -1443,6 +1493,7 @@ PYBIND11_MODULE(dominion_v2_py, module) {
             [](const SelfPlayConfig& config) { return obs_version_value(config.obs_version); },
             [](SelfPlayConfig& config, int version) { config.obs_version = parse_obs_version(version); })
         .def_readwrite("kingdom_mode", &SelfPlayConfig::kingdom_mode)
+        .def_property("kingdom_pool", &selfplay_kingdom_pool, &set_selfplay_kingdom_pool)
         .def_readwrite("max_recorded_moves", &SelfPlayConfig::max_recorded_moves)
         .def_readwrite("max_tree_nodes", &SelfPlayConfig::max_tree_nodes)
         .def_readwrite("scaffold_sims", &SelfPlayConfig::scaffold_sims)

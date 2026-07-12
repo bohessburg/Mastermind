@@ -9,7 +9,13 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <type_traits>
 #include <vector>
+
+// The training curriculum can restrict random kingdoms to a larger candidate
+// pool. Keep this fixed-size so SelfPlayConfig remains safe to copy across
+// the engine's POD-oriented boundaries.
+constexpr std::uint8_t MAX_SELFPLAY_KINGDOM_POOL = 32U;
 
 enum class SelfPlayKingdomMode : std::uint8_t {
     Fixed,
@@ -44,6 +50,11 @@ struct SelfPlayConfig {
     ObsVersion obs_version = ObsVersion::V1;
     SelfPlayKingdomMode kingdom_mode = SelfPlayKingdomMode::Random;
     Setup fixed_setup{};
+    // Empty means sample random kingdoms from every implemented card. A
+    // non-empty pool is used only by Random mode and must contain at least ten
+    // distinct implemented kingdom defs.
+    DefId kingdom_pool[MAX_SELFPLAY_KINGDOM_POOL]{};
+    std::uint8_t kingdom_pool_count = 0;
     std::uint16_t max_recorded_moves = 512;
     std::uint32_t max_tree_nodes = 4096;
     std::uint32_t scaffold_sims = 400;
@@ -65,6 +76,10 @@ struct SelfPlayConfig {
     bool tree_reuse = false;
     std::uint8_t expand_top_k = 0;
 };
+
+static_assert(std::is_trivially_copyable_v<SelfPlayConfig>);
+
+[[nodiscard]] bool is_selfplay_implemented_kingdom(DefId def) noexcept;
 
 struct SelfPlayRecord {
     std::vector<float> observations;

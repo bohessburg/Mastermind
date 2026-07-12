@@ -90,6 +90,8 @@ def split_segments_by_quotas(
                     source.seat1_model_id,
                     scripted_kind=source.scripted_kind,
                     nn_player=source.nn_player,
+                    kingdom_pool=source.kingdom_pool,
+                    kingdom_mode=source.kingdom_mode,
                 )
             )
             needed -= take
@@ -446,12 +448,16 @@ def _generate_routed_games(
     same_model_fast_path: bool | None = None,
     scripted_kind: str | None = None,
     scripted_nn_player: int = 0,
+    kingdom_pool: list[int] | None = None,
+    kingdom_mode: str | None = None,
 ) -> SelfPlayStats:
     """Generate a task with fixed models for player zero and player one."""
     if target_games <= 0:
         return SelfPlayStats()
     task_config = copy.deepcopy(selfplay_config)
     task_config.n_games = max(1, min(int(task_config.n_games), int(target_games)))
+    if kingdom_mode is not None:
+        task_config.kingdom_mode = kingdom_mode
     obs_size = obs_size_for_version(int(task_config.obs_version))
     runner = dz.SelfPlayRunner(
         make_runner_config(
@@ -459,6 +465,7 @@ def _generate_routed_games(
             seed,
             scripted_kind=scripted_kind,
             scripted_nn_player=scripted_nn_player,
+            kingdom_pool=kingdom_pool,
         )
     )
     for model in seat_models:
@@ -613,15 +620,18 @@ def _worker_main(
                         if (segment.seat0_model_id, segment.seat1_model_id) != (0, 0):
                             raise RuntimeError("mini-league self-play requires worker_device='cpu' or 'cuda'")
                         task_runner = runner
-                        if segment.is_scripted:
+                        if segment.is_scripted or segment.kingdom_pool is not None or segment.kingdom_mode is not None:
                             task_config = copy.deepcopy(worker_selfplay)
                             task_config.n_games = max(1, min(int(task_config.n_games), int(segment.n_games)))
+                            if segment.kingdom_mode is not None:
+                                task_config.kingdom_mode = segment.kingdom_mode
                             task_runner = dz.SelfPlayRunner(
                                 make_runner_config(
                                     task_config,
                                     worker_seed ^ (int(generation) * 0x9E37) ^ (task_index * 0x10001),
                                     scripted_kind=segment.scripted_kind,
                                     scripted_nn_player=segment.nn_player,
+                                    kingdom_pool=segment.kingdom_pool,
                                 )
                             )
                         task_stats = _generate_games_exact(
@@ -660,6 +670,8 @@ def _worker_main(
                             segment.seat0_model_id == segment.seat1_model_id,
                             segment.scripted_kind,
                             segment.nn_player,
+                            segment.kingdom_pool,
+                            segment.kingdom_mode,
                         )
                         if segment.is_league:
                             league_games += task_stats.games
