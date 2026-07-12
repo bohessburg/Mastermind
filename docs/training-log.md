@@ -401,3 +401,18 @@ rusher never completed — games appear to stall to truncation with a
 defender that denies the third pile, itself weak evidence the exploit is
 contained; launched on Jack's call without it. Seed 20260720,
 checkpoints/campaign12, config run_c12.json.
+
+C12 CUTOVER (2026-07-11 late night, resumed from gen 20): deployed in one
+restart — (1) ENGINEBOT V2 (pile-clock-aware chart, commit 766abaa):
+*** EVAL BASELINE BREAK: all "vs EngineBot" numbers from gen ~21 onward
+are against the pile-aware v2 bot and are NOT comparable to earlier rows
+(gen-20 was 80.9% vs v1). Expect a drop; that drop is honesty. *** (2)
+async scripted offload + per-thread scaffold scratches (bc1a43d);
+(3) scaffold cost knobs in campaign12.json: sims 400->192 (Phase-6
+flat-curve evidence), K 2->1, opening sims 128 until pile clock arms,
+2 scripted threads; (4) observation v2 committed (42bc3d3, 1717 floats,
+perfect-memory opponent view) but NOT active for c12 (its net has v1
+inputs; obs_version stays 1) — first v2-sighted net comes with c13.
+Gen-20 pre-cutover probe on record: point-greedy margin signature
+(Estate 47% at $2, Duchy 46% at $5), Province 83% at $8, action mass
+14-27% utility-flavored.
