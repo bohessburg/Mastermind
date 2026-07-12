@@ -616,3 +616,23 @@ cmake needs -DBUILD_TESTS=OFF (Catch2 GitHub fetch blocked) and the
 tarball must include tests/ (v2_fuzz sources) — handoff doc updated
 mentally, launch scripts on box (/root/launch14.sh, stop_train.sh with
 worker-tree kill). GPU 95%, single writer verified.
+
+C14 THROUGHPUT SAGA RESOLVED (2026-07-13 early): generations were running
+~2K games/hr (vs ~15K expected). Eliminated in order: deep slice (real
+cost, disabled — needs cross-game batched deep runner before returning),
+league model-splits (real, capped via league_opponents_per_gen=3),
+tree reuse (innocent as toggled, but fixed properly anyway with
+VISIT-TARGET semantics, 26fbb17: inherited root visits count toward
+sims_per_move, min_new_sims=64 noise floor), top-k (innocent), the box
+(PCIe x16, 31-core quota, 434K evals/s microbench — exonerated). ROOT
+CAUSE: segment-sequential runner phases collapsed GPU batch occupancy to
+~7-10 leaves/batch. FIX: SLOT-MANIFEST RUNNER (slot manifest runner
+commit): one runner per worker, ALL games concurrent, per-slot model
+pairing/kingdom pool/sims; leaves tagged by model id, python batches per
+model per pass; 3.49x measured batch fatness. RESULT: gen 8 on the full
+restored recipe (8 workers, reuse+top-k+league+curriculum) = 10,004
+games/hr (5x the low) AND the best eval of the campaign: 182W-15L-3T =
+92.4% vs EngineBot v2. Lesson for the log: on latency-bound GPUs,
+features that fragment batches (by phase, by model, by sims tier) cost
+10x more than their game counts suggest; slot-level heterogeneity is the
+architecture that makes feature mixing free.
