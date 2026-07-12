@@ -754,11 +754,12 @@ MctsConfig make_scaffold_mcts_config(
     std::uint32_t sims_per_move,
     float c_puct,
     std::uint32_t max_tree_nodes,
-    bool prune_treasure_plays) noexcept {
+    bool prune_treasure_plays,
+    std::uint8_t determinizations) noexcept {
     MctsConfig config{};
     config.sims_per_move = sims_per_move;
     config.c_puct = c_puct;
-    config.determinizations = 2U;
+    config.determinizations = determinizations;
     config.max_tree_nodes = max_tree_nodes;
     config.rollout_step_cap = 1024U;
     config.rollout_policy = MctsRolloutPolicy::EngineLike;

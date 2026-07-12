@@ -46,6 +46,13 @@ struct SelfPlayConfig {
     std::uint16_t max_recorded_moves = 512;
     std::uint32_t max_tree_nodes = 4096;
     std::uint32_t scaffold_sims = 400;
+    // Zero keeps the endgame budget for the whole game. A positive value is
+    // used before a supply pile empties or Provinces fall to four or fewer.
+    std::uint32_t scaffold_sims_opening = 0;
+    std::uint8_t scaffold_determinizations = 2;
+    // Zero keeps Scaffold synchronous, which is useful for deterministic
+    // reference runs. Positive values create that many Scaffold workers.
+    std::uint8_t scripted_threads = 2;
     SelfPlayValueTarget value_target = SelfPlayValueTarget::Outcome;
     float margin_scale = 20.0F;
     SelfPlayScriptedBotKind scripted_bot = SelfPlayScriptedBotKind::None;
@@ -88,17 +95,29 @@ public:
     [[nodiscard]] std::uint32_t leaf_count() const noexcept;
     [[nodiscard]] std::uint64_t games_completed() const noexcept;
     [[nodiscard]] float total_virtual_loss() const noexcept;
+    // Async Scaffold jobs preserve each seed's trajectory, but cross-slot
+    // completion timing can still change the arrival order of these records.
     [[nodiscard]] const std::vector<SelfPlayRecord>& finished_games() const noexcept;
     std::vector<SelfPlayRecord> take_finished_games();
 
 private:
     struct GameSlot;
     struct PendingLeaf;
+    struct ScriptedPool;
 
     void reset_game(std::uint32_t index) noexcept;
     void start_search(GameSlot& game) noexcept;
     void auto_play_treasures(GameSlot& game) noexcept;
     void drive_scripted(GameSlot& game) noexcept;
+    void drive_scaffold(GameSlot& game, Mcts& scratch) noexcept;
+    // Returns true while an offloaded Scaffold job owns this slot (including
+    // the pass on which the job is queued).
+    [[nodiscard]] bool offload_scripted_slot(std::uint32_t index) noexcept;
+    void drain_scripted_ready() noexcept;
+    void run_scripted_job(std::uint32_t index, Mcts& scratch) noexcept;
+    [[nodiscard]] std::uint32_t scaffold_sims_for(
+        const GameState& state,
+        const ActionMask& legal) const noexcept;
     [[nodiscard]] bool game_has_pending(std::uint32_t index) const noexcept;
     void maybe_finish_move(GameSlot& game) noexcept;
     void record_decision(GameSlot& game, const float* policy) noexcept;
@@ -117,8 +136,8 @@ private:
     SelfPlayConfig config_{};
     MctsConfig mcts_config_{};
     MctsConfig scaffold_mcts_config_{};
-    // Scripted decisions are serialized by collect_leaves within one runner,
-    // so one scratch tree can serve every game slot without synchronization.
+    // Used only for scripted_threads=0. Async Scaffold jobs use the
+    // per-worker scratch trees in scripted_pool_.
     std::optional<Mcts> scaffold_mcts_{};
     std::unique_ptr<GameSlot[]> games_;
     std::unique_ptr<PendingLeaf[]> pending_;
@@ -130,4 +149,5 @@ private:
     std::uint32_t pending_count_ = 0;
     std::uint32_t next_collect_game_ = 0;
     std::uint64_t completed_ = 0;
+    std::unique_ptr<ScriptedPool> scripted_pool_{};
 };

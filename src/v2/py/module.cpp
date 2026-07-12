@@ -1324,7 +1324,10 @@ PYBIND11_MODULE(dominion_v2_py, module) {
             bool prune_treasure_plays,
             std::uint32_t scaffold_sims,
             SelfPlayValueTarget value_target,
-            float margin_scale) {
+            float margin_scale,
+            std::uint8_t scripted_threads,
+            std::uint8_t scaffold_determinizations,
+            std::uint32_t scaffold_sims_opening) {
             SelfPlayConfig config{};
             config.n_games = n_games;
             config.sims_per_move = sims_per_move;
@@ -1344,6 +1347,9 @@ PYBIND11_MODULE(dominion_v2_py, module) {
             config.scaffold_sims = scaffold_sims;
             config.value_target = value_target;
             config.margin_scale = margin_scale;
+            config.scripted_threads = scripted_threads;
+            config.scaffold_determinizations = scaffold_determinizations;
+            config.scaffold_sims_opening = scaffold_sims_opening;
             if (!kingdom.is_none()) {
                 PySetup setup(2, kingdom, false);
                 config.fixed_setup = setup.setup;
@@ -1368,7 +1374,10 @@ PYBIND11_MODULE(dominion_v2_py, module) {
             py::arg("prune_treasure_plays") = false,
             py::arg("scaffold_sims") = 400,
             py::arg("value_target") = SelfPlayValueTarget::Outcome,
-            py::arg("margin_scale") = 20.0F)
+            py::arg("margin_scale") = 20.0F,
+            py::arg("scripted_threads") = 2U,
+            py::arg("scaffold_determinizations") = 2U,
+            py::arg("scaffold_sims_opening") = 0U)
         .def_readwrite("n_games", &SelfPlayConfig::n_games)
         .def_readwrite("sims_per_move", &SelfPlayConfig::sims_per_move)
         .def_readwrite("c_puct", &SelfPlayConfig::c_puct)
@@ -1381,6 +1390,9 @@ PYBIND11_MODULE(dominion_v2_py, module) {
         .def_readwrite("max_recorded_moves", &SelfPlayConfig::max_recorded_moves)
         .def_readwrite("max_tree_nodes", &SelfPlayConfig::max_tree_nodes)
         .def_readwrite("scaffold_sims", &SelfPlayConfig::scaffold_sims)
+        .def_readwrite("scaffold_sims_opening", &SelfPlayConfig::scaffold_sims_opening)
+        .def_readwrite("scaffold_determinizations", &SelfPlayConfig::scaffold_determinizations)
+        .def_readwrite("scripted_threads", &SelfPlayConfig::scripted_threads)
         .def_readwrite("value_target", &SelfPlayConfig::value_target)
         .def_readwrite("margin_scale", &SelfPlayConfig::margin_scale)
         .def_readwrite("scripted_bot", &SelfPlayConfig::scripted_bot)

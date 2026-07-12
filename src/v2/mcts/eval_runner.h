@@ -104,7 +104,8 @@ private:
     std::uint32_t sims_per_move,
     float c_puct,
     std::uint32_t max_tree_nodes,
-    bool prune_treasure_plays) noexcept;
+    bool prune_treasure_plays,
+    std::uint8_t determinizations = 2U) noexcept;
 [[nodiscard]] std::uint64_t scaffold_rollout_seed(std::uint64_t game_seed) noexcept;
 [[nodiscard]] Action eval_scaffold_mcts_action(
     Mcts& search,

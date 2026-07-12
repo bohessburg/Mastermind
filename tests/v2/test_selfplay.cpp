@@ -7,6 +7,7 @@
 #include <chrono>
 #include <cstdint>
 #include <iostream>
+#include <thread>
 #include <vector>
 
 namespace {
@@ -56,8 +57,14 @@ void provide_zero_eval(SelfPlayRunner& runner, std::uint32_t count) {
     std::uint32_t guard = 0;
     while (runner.games_completed() < wanted && guard < 20000U) {
         const std::uint32_t count = runner.collect_leaves(config.max_batch);
-        REQUIRE(count > 0U);
-        provide_zero_eval(runner, count);
+        if (count > 0U) {
+            provide_zero_eval(runner, count);
+        } else {
+            // Async Scaffold jobs can temporarily own every slot. A tiny
+            // wait keeps this generic helper valid for both sync and async
+            // runs without busy-spinning the test process.
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
         ++guard;
     }
     REQUIRE(runner.games_completed() >= wanted);
@@ -167,6 +174,8 @@ TEST_CASE("v2 selfplay Scaffold records only the NN seat deterministically", "[v
                 REQUIRE(players[i] == config.scripted_nn_player);
             }
             provide_zero_eval(runner, count);
+        } else {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
         if (!runner.finished_games().empty()) {
             records = runner.take_finished_games();

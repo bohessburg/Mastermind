@@ -175,6 +175,7 @@ TEST_CASE("v2 Engine chart ends on a third pile while ahead", "[v2][eval_runner]
 
 TEST_CASE("v2 Scaffold MCTS config matches the rollout yardstick", "[v2][eval_runner][mcts]") {
     const MctsConfig config = make_scaffold_mcts_config(400U, 1.25F, 4096U, true);
+    const MctsConfig custom_determinizations = make_scaffold_mcts_config(8U, 1.25F, 512U, false, 3U);
 
     REQUIRE(config.sims_per_move == 400U);
     REQUIRE(config.c_puct == 1.25F);
@@ -186,6 +187,7 @@ TEST_CASE("v2 Scaffold MCTS config matches the rollout yardstick", "[v2][eval_ru
     REQUIRE(config.prior_fn != nullptr);
     const GameState state = Game::new_game(Setup{}, 0x5CAFF01DULL);
     REQUIRE(config.prior_fn(state, 0U, A_PASS, config.prior_user) == 1.0F);
+    REQUIRE(custom_determinizations.determinizations == 3U);
 }
 
 TEST_CASE("v2 eval runner mock evaluator completes games", "[v2][eval_runner]") {

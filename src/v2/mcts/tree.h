@@ -72,6 +72,9 @@ public:
     // Allows serialized callers to reuse one scratch tree across independently
     // seeded games without reallocating its node/state buffers.
     void set_rollout_seed(std::uint64_t rollout_seed) noexcept { config_.rollout_seed = rollout_seed; }
+    // Lets a reusable scratch tree switch between opening and endgame budgets
+    // without reallocating its fixed node/state buffers.
+    void set_sims_per_move(std::uint32_t sims_per_move) noexcept { config_.sims_per_move = sims_per_move; }
     void reset(const GameState& root, PlayerId perspective) noexcept;
     void run_simulations(std::uint32_t simulations, Xoshiro256pp& rng) noexcept;
 

@@ -5,11 +5,16 @@
 #include "v2/core/score.h"
 #include "v2/core/turns.h"
 #include "v2/mcts/eval_runner.h"
+#include "v2/mcts/pile_clock.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
+#include <condition_variable>
 #include <cstring>
+#include <mutex>
 #include <stdexcept>
+#include <thread>
 
 namespace {
 
@@ -47,11 +52,45 @@ constexpr DefId IMPLEMENTED_KINGDOMS[] = {
 constexpr std::uint8_t IMPLEMENTED_KINGDOM_COUNT =
     static_cast<std::uint8_t>(sizeof(IMPLEMENTED_KINGDOMS) / sizeof(IMPLEMENTED_KINGDOMS[0]));
 
+enum class ScriptedSlotStatus : std::uint8_t {
+    Idle,
+    ScriptedPending,
+    ScriptedRunning,
+    ScriptedReady,
+};
+
 [[nodiscard]] PlayerId decision_player(const GameState& state) noexcept {
     if (state.decision.player < state.num_players) {
         return state.decision.player;
     }
     return current_player(state);
+}
+
+[[nodiscard]] int pile_count(const Pile& pile) noexcept {
+    return pile.mixed_len > 0U ? static_cast<int>(pile.mixed_len) : static_cast<int>(pile.count);
+}
+
+[[nodiscard]] DefId pile_top_def(const GameState& state, const Pile& pile) noexcept {
+    const Slot slot = pile.mixed_len > 0U ? pile.mixed[pile.mixed_len - 1U] : pile.base;
+    return slot < state.num_slots ? state.slot_to_def[slot] : DEF_COPPER;
+}
+
+[[nodiscard]] bool scaffold_endgame_armed(
+    const GameState& state,
+    const ActionMask& legal) noexcept {
+    // analyze_pile_clock is the shared, stack-only supply analysis used by
+    // the Engine rollout chart. Its empty-pile count is independent of which
+    // buys happen to be legal at this decision.
+    if (analyze_pile_clock(state, legal).empty_piles > 0) {
+        return true;
+    }
+    for (std::uint8_t i = 0; i < state.num_piles; ++i) {
+        const Pile& pile = state.piles[i];
+        if (pile_top_def(state, pile) == DEF_PROVINCE) {
+            return pile_count(pile) <= 4;
+        }
+    }
+    return false;
 }
 
 [[nodiscard]] bool scripted_mode(const SelfPlayConfig& config) noexcept {
@@ -174,6 +213,9 @@ struct SelfPlayRunner::GameSlot {
     std::uint16_t move_index = 0;
     PlayerId nn_player = NONE;
     bool search_active = false;
+    // GameSlot is runner bookkeeping (it already owns Mcts and vectors), so
+    // the atomic leaves the POD GameState/frame types untouched.
+    std::atomic<ScriptedSlotStatus> scripted_status{ScriptedSlotStatus::Idle};
 
     GameSlot() : mcts(MctsConfig{}) {}
 };
@@ -182,6 +224,93 @@ struct SelfPlayRunner::PendingLeaf {
     MctsPendingLeaf leaf{};
     std::uint32_t game = 0;
     bool root = false;
+};
+
+struct SelfPlayRunner::ScriptedPool {
+    ScriptedPool(
+        SelfPlayRunner& runner,
+        std::uint32_t slot_count,
+        std::uint8_t thread_count,
+        const MctsConfig& scratch_config)
+        : runner_(runner),
+          queue_(new std::uint32_t[slot_count]),
+          queue_capacity_(slot_count) {
+        scratches_.reserve(thread_count);
+        for (std::uint32_t i = 0; i < thread_count; ++i) {
+            scratches_.emplace_back(scratch_config);
+        }
+
+        workers_.reserve(thread_count);
+        try {
+            for (std::uint32_t i = 0; i < thread_count; ++i) {
+                workers_.emplace_back([this, i]() noexcept { worker_loop(i); });
+            }
+        } catch (...) {
+            stop();
+            throw;
+        }
+    }
+
+    ~ScriptedPool() {
+        stop();
+    }
+
+    [[nodiscard]] bool enqueue(std::uint32_t slot) noexcept {
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (queue_size_ >= queue_capacity_ || stopping_) {
+                return false;
+            }
+            queue_[queue_tail_] = slot;
+            queue_tail_ = (queue_tail_ + 1U) % queue_capacity_;
+            ++queue_size_;
+        }
+        ready_.notify_one();
+        return true;
+    }
+
+    void stop() noexcept {
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            stopping_ = true;
+        }
+        ready_.notify_all();
+        for (std::thread& worker : workers_) {
+            if (worker.joinable()) {
+                worker.join();
+            }
+        }
+    }
+
+private:
+    void worker_loop(std::uint32_t worker_index) noexcept {
+        while (true) {
+            std::uint32_t slot = 0U;
+            {
+                std::unique_lock<std::mutex> lock(mutex_);
+                ready_.wait(lock, [this]() { return stopping_ || queue_size_ != 0U; });
+                if (queue_size_ == 0U) {
+                    return;
+                }
+                slot = queue_[queue_head_];
+                queue_head_ = (queue_head_ + 1U) % queue_capacity_;
+                --queue_size_;
+            }
+            runner_.run_scripted_job(slot, scratches_[worker_index]);
+        }
+    }
+
+    SelfPlayRunner& runner_;
+    std::vector<Mcts> scratches_;
+    std::vector<std::thread> workers_;
+    std::unique_ptr<std::uint32_t[]> queue_;
+    std::uint32_t queue_capacity_ = 0U;
+    std::uint32_t queue_head_ = 0U;
+    std::uint32_t queue_tail_ = 0U;
+    std::uint32_t queue_size_ = 0U;
+    std::mutex mutex_;
+    std::condition_variable ready_;
+    bool stopping_ = false;
 };
 
 SelfPlayRunner::SelfPlayRunner(const SelfPlayConfig& config)
@@ -227,8 +356,17 @@ SelfPlayRunner::SelfPlayRunner(const SelfPlayConfig& config)
             config_.scaffold_sims,
             config_.c_puct,
             mcts_config_.max_tree_nodes,
-            config_.prune_treasure_plays);
-        scaffold_mcts_.emplace(scaffold_mcts_config_);
+            config_.prune_treasure_plays,
+            config_.scaffold_determinizations);
+        if (config_.scripted_threads == 0U) {
+            scaffold_mcts_.emplace(scaffold_mcts_config_);
+        } else {
+            scripted_pool_ = std::make_unique<ScriptedPool>(
+                *this,
+                config_.n_games,
+                config_.scripted_threads,
+                scaffold_mcts_config_);
+        }
     }
 
     finished_.reserve(config_.n_games);
@@ -242,12 +380,20 @@ SelfPlayRunner::SelfPlayRunner(const SelfPlayConfig& config)
     }
 }
 
-SelfPlayRunner::~SelfPlayRunner() = default;
+SelfPlayRunner::~SelfPlayRunner() {
+    if (scripted_pool_) {
+        scripted_pool_->stop();
+    }
+}
 
 std::uint32_t SelfPlayRunner::collect_leaves(std::uint32_t max_batch) noexcept {
     if (pending_count_ != 0U) {
         return pending_count_;
     }
+    // Ready jobs never touch shared runner counters. Reap them on the main
+    // thread in slot order before building the next NN batch, which makes the
+    // finished-record order less timing-dependent without coupling searches.
+    drain_scripted_ready();
     const std::uint32_t limit = std::min(
         max_batch == 0U ? config_.max_batch : max_batch,
         config_.max_batch);
@@ -259,6 +405,10 @@ std::uint32_t SelfPlayRunner::collect_leaves(std::uint32_t max_batch) noexcept {
         GameSlot& game = games_[index];
 
         if (game.pending != 0U) {
+            ++idle;
+            continue;
+        }
+        if (offload_scripted_slot(index)) {
             ++idle;
             continue;
         }
@@ -332,6 +482,12 @@ std::uint32_t SelfPlayRunner::collect_leaves(std::uint32_t max_batch) noexcept {
         ++pending_count_;
         idle = 0;
     }
+    if (pending_count_ == 0U && scripted_pool_) {
+        // A caller may immediately poll again while every slot is in a
+        // scripted job. Give those CPU workers a scheduling opportunity
+        // without delaying a non-empty NN batch.
+        std::this_thread::yield();
+    }
     return pending_count_;
 }
 
@@ -400,6 +556,7 @@ std::vector<SelfPlayRecord> SelfPlayRunner::take_finished_games() {
 
 void SelfPlayRunner::reset_game(std::uint32_t index) noexcept {
     GameSlot& game = games_[index];
+    game.scripted_status.store(ScriptedSlotStatus::Idle, std::memory_order_relaxed);
     game.setup = setup_for(index, game.generation);
     game.seed = game_seed(config_, index, game.generation);
     game.state = Game::new_game(game.setup, game.seed);
@@ -456,6 +613,20 @@ void SelfPlayRunner::drive_scripted(GameSlot& game) noexcept {
     if (!scripted_mode(config_)) {
         return;
     }
+
+    if (config_.scripted_bot == SelfPlayScriptedBotKind::Scaffold) {
+        // Async Scaffold jobs own their slots through scripted_pool_. The
+        // synchronous reference path keeps one runner-local scratch tree.
+        if (!scaffold_mcts_.has_value()) {
+            return;
+        }
+        drive_scaffold(game, *scaffold_mcts_);
+        if (game.state.phase == static_cast<std::uint8_t>(Phase::Over)) {
+            finish_game(game);
+        }
+        return;
+    }
+
     std::uint16_t guard = 0;
     while (game.state.phase != static_cast<std::uint8_t>(Phase::Over)
            && decision_player(game.state) != game.nn_player
@@ -466,19 +637,12 @@ void SelfPlayRunner::drive_scripted(GameSlot& game) noexcept {
             break;
         }
         Action action = A_PASS;
-        if (config_.scripted_bot == SelfPlayScriptedBotKind::Scaffold && scaffold_mcts_.has_value()) {
-            // Scaffold decisions cost ~10-50ms CPU each; callers control the
-            // dose through the scripted-opponent schedule.
-            scaffold_mcts_->set_rollout_seed(scaffold_rollout_seed(game.seed));
-            action = eval_scaffold_mcts_action(*scaffold_mcts_, game.state, legal, legal_count);
-        } else {
-            action = eval_scripted_action(
-                game.state,
-                legal,
-                legal_count,
-                eval_scripted_kind(config_.scripted_bot),
-                game.rng);
-        }
+        action = eval_scripted_action(
+            game.state,
+            legal,
+            legal_count,
+            eval_scripted_kind(config_.scripted_bot),
+            game.rng);
         if (!legal.test(action)) {
             action = legal.nth_set(0U);
         }
@@ -489,6 +653,111 @@ void SelfPlayRunner::drive_scripted(GameSlot& game) noexcept {
             break;
         }
     }
+}
+
+void SelfPlayRunner::drive_scaffold(GameSlot& game, Mcts& scratch) noexcept {
+    std::uint16_t guard = 0;
+    while (game.state.phase != static_cast<std::uint8_t>(Phase::Over)
+           && decision_player(game.state) != game.nn_player
+           && guard < 512U) {
+        ActionMask legal{};
+        const int legal_count = Game::legal_actions(game.state, legal);
+        if (legal_count <= 0) {
+            break;
+        }
+
+        // Re-seed every search from the game seed exactly as the serialized
+        // path did. The scratch's worker identity therefore cannot influence
+        // a game's trajectory.
+        scratch.set_rollout_seed(scaffold_rollout_seed(game.seed));
+        scratch.set_sims_per_move(scaffold_sims_for(game.state, legal));
+        Action action = eval_scaffold_mcts_action(scratch, game.state, legal, legal_count);
+        if (!legal.test(action)) {
+            action = legal.nth_set(0U);
+        }
+        const bool done = Game::step(game.state, action);
+        ++guard;
+        if (done || game.state.phase == static_cast<std::uint8_t>(Phase::Over)) {
+            break;
+        }
+    }
+}
+
+bool SelfPlayRunner::offload_scripted_slot(std::uint32_t index) noexcept {
+    if (!scripted_pool_) {
+        return false;
+    }
+
+    GameSlot& game = games_[index];
+    const ScriptedSlotStatus status = game.scripted_status.load(std::memory_order_acquire);
+    if (status == ScriptedSlotStatus::ScriptedPending
+        || status == ScriptedSlotStatus::ScriptedRunning) {
+        return true;
+    }
+    if (status == ScriptedSlotStatus::ScriptedReady) {
+        // The acquire load above pairs with the worker's Ready store, so the
+        // main thread now owns all of the job's GameSlot writes.
+        game.scripted_status.store(ScriptedSlotStatus::Idle, std::memory_order_release);
+        if (game.state.phase == static_cast<std::uint8_t>(Phase::Over)) {
+            finish_game(game);
+        }
+        return false;
+    }
+
+    if (game.state.phase == static_cast<std::uint8_t>(Phase::Over)) {
+        finish_game(game);
+        return false;
+    }
+    if (decision_player(game.state) == game.nn_player) {
+        return false;
+    }
+
+    game.scripted_status.store(ScriptedSlotStatus::ScriptedPending, std::memory_order_release);
+    if (!scripted_pool_->enqueue(index)) {
+        // This should be unreachable: every slot can be queued at most once,
+        // and the ring has one entry per slot. Keep the slot retryable rather
+        // than letting a failed enqueue strand it in Pending.
+        game.scripted_status.store(ScriptedSlotStatus::Idle, std::memory_order_release);
+        return false;
+    }
+    return true;
+}
+
+void SelfPlayRunner::drain_scripted_ready() noexcept {
+    if (!scripted_pool_) {
+        return;
+    }
+    for (std::uint32_t index = 0; index < config_.n_games; ++index) {
+        GameSlot& game = games_[index];
+        if (game.scripted_status.load(std::memory_order_acquire) != ScriptedSlotStatus::ScriptedReady) {
+            continue;
+        }
+        game.scripted_status.store(ScriptedSlotStatus::Idle, std::memory_order_release);
+        if (game.state.phase == static_cast<std::uint8_t>(Phase::Over)) {
+            finish_game(game);
+        }
+    }
+}
+
+void SelfPlayRunner::run_scripted_job(std::uint32_t index, Mcts& scratch) noexcept {
+    if (index >= config_.n_games) {
+        return;
+    }
+    GameSlot& game = games_[index];
+    game.scripted_status.store(ScriptedSlotStatus::ScriptedRunning, std::memory_order_release);
+    // This is deliberately limited to the slot and the worker's scratch.
+    // finish_game(), completed_, and finished_ remain main-thread-only.
+    drive_scaffold(game, scratch);
+    game.scripted_status.store(ScriptedSlotStatus::ScriptedReady, std::memory_order_release);
+}
+
+std::uint32_t SelfPlayRunner::scaffold_sims_for(
+    const GameState& state,
+    const ActionMask& legal) const noexcept {
+    if (config_.scaffold_sims_opening == 0U || scaffold_endgame_armed(state, legal)) {
+        return config_.scaffold_sims;
+    }
+    return config_.scaffold_sims_opening;
 }
 
 bool SelfPlayRunner::game_has_pending(std::uint32_t index) const noexcept {

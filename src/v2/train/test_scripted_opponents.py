@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import Counter
 from pathlib import Path
+import time
 
 import numpy as np
 import pytest
@@ -12,7 +13,7 @@ import dominion_v2_py as dz
 from .config import SelfPlayConfig, load_config
 from .gating import SelfPlaySegment, effective_scripted_fractions, plan_training_selfplay_segments
 from .inference_server import serialize_cpu_state_dict
-from .selfplay import make_runner_config
+from .selfplay import SelfPlayStats, _record_scripted_outcomes, make_runner_config
 from .test_train_smoke import read_metrics, tiny_config
 from .train import build_objects, run_training
 from .workers import ParallelSelfPlayPool
@@ -104,6 +105,8 @@ def test_scaffold_scripted_runner_smoke_records_only_nn_seat() -> None:
                 np.zeros((observations.shape[0],), dtype=np.float32),
                 np.zeros((observations.shape[0], dz.ACTION_SPACE_SIZE), dtype=np.float32),
             )
+        else:
+            time.sleep(0.001)
         finished = runner.finished_games()
         if finished:
             record = finished[0]
@@ -120,6 +123,117 @@ def test_scaffold_scripted_runner_smoke_records_only_nn_seat() -> None:
         record["values"],
         np.full(record["values"].shape, expected_value, dtype=np.float32),
     )
+
+
+def _collect_uniform_scripted_records(
+    scripted_bot: dz.SelfPlayScriptedBotKind,
+    *,
+    scripted_threads: int,
+    n_games: int,
+    seed: int = 0x5CAFF0D,
+) -> list[dict]:
+    config = dz.SelfPlayConfig(
+        n_games=n_games,
+        sims_per_move=2,
+        scaffold_sims=2,
+        scripted_threads=scripted_threads,
+        max_batch=32,
+        seed=seed,
+        kingdom_mode=dz.SelfPlayKingdomMode.Fixed,
+        dirichlet_frac=0.0,
+        temp_moves=0,
+        max_recorded_moves=256,
+        max_tree_nodes=256,
+        scripted_bot=scripted_bot,
+        scripted_nn_player=1,
+        auto_play_treasures=True,
+        prune_treasure_plays=True,
+    )
+    runner = dz.SelfPlayRunner(config)
+    mask = (1 << 64) - 1
+    initial_seeds = {
+        (seed + index * 0xD1B54A32D192ED03) & mask
+        for index in range(n_games)
+    }
+    records: dict[int, dict] = {}
+    deadline = time.monotonic() + 90.0
+    while set(records) != initial_seeds:
+        if time.monotonic() >= deadline:
+            raise AssertionError("uniform scripted self-play did not finish the initial slots")
+        observations, _masks = runner.collect_leaves(config.max_batch)
+        if observations.shape[0] > 0:
+            players = runner.leaf_players()
+            assert np.all(players == 1)
+            runner.provide_evaluations(
+                np.zeros((observations.shape[0],), dtype=np.float32),
+                np.zeros((observations.shape[0], dz.ACTION_SPACE_SIZE), dtype=np.float32),
+            )
+        else:
+            # All slots may briefly be in Scaffold jobs. Let those workers run
+            # without turning the test's wait loop into a hot CPU spin.
+            time.sleep(0.001)
+        for record in runner.finished_games():
+            record_seed = int(record["seed"])
+            if record_seed in initial_seeds:
+                records[record_seed] = record
+    return [records[record_seed] for record_seed in sorted(records)]
+
+
+def _assert_records_identical_by_seed(reference: list[dict], candidate: list[dict]) -> None:
+    assert [int(record["seed"]) for record in reference] == [int(record["seed"]) for record in candidate]
+    for expected, actual in zip(reference, candidate, strict=True):
+        assert expected["winner"] == actual["winner"]
+        assert expected["scripted_nn_player"] == actual["scripted_nn_player"]
+        np.testing.assert_array_equal(expected["observations"], actual["observations"])
+        np.testing.assert_array_equal(expected["policy_targets"], actual["policy_targets"])
+        np.testing.assert_array_equal(expected["values"], actual["values"])
+        np.testing.assert_array_equal(expected["players"], actual["players"])
+
+
+def test_threaded_scaffold_selfplay_matches_synchronous_records_by_seed() -> None:
+    threaded = _collect_uniform_scripted_records(
+        dz.SelfPlayScriptedBotKind.Scaffold,
+        scripted_threads=2,
+        n_games=8,
+    )
+    synchronous = _collect_uniform_scripted_records(
+        dz.SelfPlayScriptedBotKind.Scaffold,
+        scripted_threads=0,
+        n_games=8,
+    )
+    single_worker = _collect_uniform_scripted_records(
+        dz.SelfPlayScriptedBotKind.Scaffold,
+        scripted_threads=1,
+        n_games=8,
+    )
+
+    _assert_records_identical_by_seed(synchronous, threaded)
+    _assert_records_identical_by_seed(synchronous, single_worker)
+    synchronous_stats = SelfPlayStats()
+    _record_scripted_outcomes(synchronous_stats, synchronous, "scaffold")
+    for records in (threaded, single_worker):
+        stats = SelfPlayStats()
+        _record_scripted_outcomes(stats, records, "scaffold")
+        assert stats.scripted_games == synchronous_stats.scripted_games == 8
+        assert stats.scripted_wins == synchronous_stats.scripted_wins
+        assert stats.scripted_by_kind == synchronous_stats.scripted_by_kind
+
+
+def test_bigmoney_scripted_run_is_unaffected_by_scripted_threads() -> None:
+    synchronous = _collect_uniform_scripted_records(
+        dz.SelfPlayScriptedBotKind.BigMoney,
+        scripted_threads=0,
+        n_games=2,
+        seed=0xB16B00B5,
+    )
+    configured_threads = _collect_uniform_scripted_records(
+        dz.SelfPlayScriptedBotKind.BigMoney,
+        scripted_threads=2,
+        n_games=2,
+        seed=0xB16B00B5,
+    )
+
+    _assert_records_identical_by_seed(synchronous, configured_threads)
 
 
 def _scripted_uniform_outcomes(
@@ -385,6 +499,9 @@ def test_campaign12_config_uses_margin_targets_with_the_scaffold_curriculum() ->
     assert config.metrics_csv == "checkpoints/campaign12/metrics.csv"
     assert config.selfplay.value_target == "margin"
     assert config.selfplay.margin_scale == 20.0
+    assert config.selfplay.scaffold_sims_opening == 0
+    assert config.selfplay.scaffold_determinizations == 2
+    assert config.selfplay.scripted_threads == 2
     assert config.scripted_opponent_schedule == {
         "bigmoney": [[5, 0.0], [6, 0.01], [25, 0.20], [40, 0.20], [60, 0.05]],
         "scaffold": [[10, 0.0], [11, 0.01], [35, 0.25]],
@@ -392,11 +509,28 @@ def test_campaign12_config_uses_margin_targets_with_the_scaffold_curriculum() ->
 
 
 def test_make_runner_config_maps_and_validates_value_targets() -> None:
-    config = SelfPlayConfig(value_target="margin", margin_scale=17.5)
-    runner_config = make_runner_config(config, 12345)
+    native_defaults = dz.SelfPlayConfig()
+    assert native_defaults.scripted_threads == 2
+    assert native_defaults.scaffold_determinizations == 2
+    assert native_defaults.scaffold_sims_opening == 0
+
+    config = SelfPlayConfig(
+        value_target="margin",
+        margin_scale=17.5,
+        scaffold_sims=37,
+        scaffold_sims_opening=5,
+        scaffold_determinizations=3,
+        scripted_threads=2,
+    )
+    runner_config = make_runner_config(config, 12345, scripted_kind="scaffold")
 
     assert runner_config.value_target == dz.SelfPlayValueTarget.Margin
     assert runner_config.margin_scale == pytest.approx(17.5)
+    assert runner_config.scaffold_sims == 37
+    assert runner_config.scaffold_sims_opening == 5
+    assert runner_config.scaffold_determinizations == 3
+    assert runner_config.scripted_threads == 2
+    assert runner_config.scripted_bot == dz.SelfPlayScriptedBotKind.Scaffold
 
     with pytest.raises(ValueError, match="unknown value target"):
         make_runner_config(SelfPlayConfig(value_target="rank"), 12345)
