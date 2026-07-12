@@ -97,6 +97,13 @@ enum class ScriptedSlotStatus : std::uint8_t {
     return config.scripted_bot != SelfPlayScriptedBotKind::None;
 }
 
+[[nodiscard]] std::size_t checked_obs_size(ObsVersion version) {
+    if (!is_valid_obs_version(version)) {
+        throw std::invalid_argument("SelfPlayConfig.obs_version must be V1 or V2");
+    }
+    return obs_size_for(version);
+}
+
 [[nodiscard]] EvalScriptedBotKind eval_scripted_kind(SelfPlayScriptedBotKind kind) noexcept {
     switch (kind) {
     case SelfPlayScriptedBotKind::BigMoney:
@@ -315,10 +322,11 @@ private:
 
 SelfPlayRunner::SelfPlayRunner(const SelfPlayConfig& config)
     : config_(config),
+      obs_size_(checked_obs_size(config.obs_version)),
       mcts_config_(),
       games_(new GameSlot[std::max(1U, config.n_games)]),
       pending_(new PendingLeaf[std::max(1U, config.max_batch)]),
-      leaf_obs_(new float[static_cast<std::size_t>(std::max(1U, config.max_batch)) * OBS_SIZE]),
+      leaf_obs_(new float[static_cast<std::size_t>(std::max(1U, config.max_batch)) * obs_size_]),
       leaf_masks_(new bool[static_cast<std::size_t>(std::max(1U, config.max_batch)) * ACTION_SPACE_SIZE]),
       leaf_players_(new PlayerId[std::max(1U, config.max_batch)]),
       normalized_policy_(new float[static_cast<std::size_t>(std::max(1U, config.max_batch)) * ACTION_SPACE_SIZE]) {
@@ -372,7 +380,7 @@ SelfPlayRunner::SelfPlayRunner(const SelfPlayConfig& config)
     finished_.reserve(config_.n_games);
     for (std::uint32_t i = 0; i < config_.n_games; ++i) {
         games_[i].mcts = Mcts(mcts_config_);
-        games_[i].observations.reserve(static_cast<std::size_t>(config_.max_recorded_moves) * OBS_SIZE);
+        games_[i].observations.reserve(static_cast<std::size_t>(config_.max_recorded_moves) * obs_size_);
         games_[i].policy_targets.reserve(
             static_cast<std::size_t>(config_.max_recorded_moves) * ACTION_SPACE_SIZE);
         games_[i].players.reserve(config_.max_recorded_moves);
@@ -473,7 +481,11 @@ std::uint32_t SelfPlayRunner::collect_leaves(std::uint32_t max_batch) noexcept {
         pending.game = index;
         pending.root = leaf.node == 0U;
         leaf_players_[pending_count_] = leaf.player;
-        encode(game.mcts.state_for(leaf.state_index), leaf.player, leaf_obs_.get() + (pending_count_ * OBS_SIZE));
+        encode(
+            game.mcts.state_for(leaf.state_index),
+            leaf.player,
+            leaf_obs_.get() + (pending_count_ * obs_size_),
+            config_.obs_version);
         bool* mask = leaf_masks_.get() + (pending_count_ * ACTION_SPACE_SIZE);
         for (Action action = 0; action < ACTION_SPACE_SIZE; ++action) {
             mask[action] = leaf.legal.test(action);
@@ -529,6 +541,10 @@ const PlayerId* SelfPlayRunner::leaf_players() const noexcept {
 
 std::uint32_t SelfPlayRunner::leaf_count() const noexcept {
     return pending_count_;
+}
+
+std::size_t SelfPlayRunner::observation_size() const noexcept {
+    return obs_size_;
 }
 
 std::uint64_t SelfPlayRunner::games_completed() const noexcept {
@@ -799,8 +815,8 @@ void SelfPlayRunner::record_decision(GameSlot& game, const float* policy) noexce
         return;
     }
     const std::size_t obs_offset = game.observations.size();
-    game.observations.resize(obs_offset + OBS_SIZE);
-    encode(game.state, player, game.observations.data() + obs_offset);
+    game.observations.resize(obs_offset + obs_size_);
+    encode(game.state, player, game.observations.data() + obs_offset, config_.obs_version);
 
     const std::size_t policy_offset = game.policy_targets.size();
     game.policy_targets.resize(policy_offset + ACTION_SPACE_SIZE);

@@ -33,6 +33,7 @@ import dominion_v2_py as dz
 
 from .config import TrainConfig
 from .model import DominionNet
+from .observation import obs_size_for_config
 
 
 def _align(offset: int, alignment: int = 8) -> int:
@@ -151,7 +152,13 @@ class SharedMemoryTransport:
         atexit.register(self.close)
 
     @classmethod
-    def create(cls, worker_count: int, slots: int, max_request: int) -> SharedMemoryTransport:
+    def create(
+        cls,
+        worker_count: int,
+        slots: int,
+        max_request: int,
+        obs_size: int = dz.OBS_SIZE,
+    ) -> SharedMemoryTransport:
         if shared_memory is None:
             raise RuntimeError("multiprocessing.shared_memory is unavailable")
         if worker_count <= 0 or slots < 2 or max_request <= 0:
@@ -160,7 +167,7 @@ class SharedMemoryTransport:
         # A 12-hex token remains unique for a training invocation while
         # leaving room for the request/response and worker suffixes.
         token = f"dz{uuid.uuid4().hex[:12]}"
-        layout_spec = WorkerSharedMemorySpec("", "", slots, max_request, dz.OBS_SIZE, dz.ACTION_SPACE_SIZE)
+        layout_spec = WorkerSharedMemorySpec("", "", slots, max_request, int(obs_size), dz.ACTION_SPACE_SIZE)
         request_bytes = _request_layout(layout_spec)[3]
         response_bytes = _response_layout(layout_spec)[2]
         specs: list[WorkerSharedMemorySpec] = []
@@ -184,7 +191,7 @@ class SharedMemoryTransport:
                         response_name=response.name,
                         slots=slots,
                         max_request=max_request,
-                        obs_size=dz.OBS_SIZE,
+                        obs_size=int(obs_size),
                         action_size=dz.ACTION_SPACE_SIZE,
                     )
                 )
@@ -227,6 +234,7 @@ class InferenceServerEndpoints:
     alive_event: Any
     response_timeout_s: float
     request_batch_size: int
+    obs_size: int
     transport: str
     shared_memory_specs: list[WorkerSharedMemorySpec] | None
     poll: str
@@ -270,10 +278,10 @@ class _GenerationMetrics:
 class _PinnedStaging:
     """Persistent host staging for a complete server batch and its responses."""
 
-    def __init__(self, device: torch.device, max_batch: int):
+    def __init__(self, device: torch.device, max_batch: int, obs_size: int):
         pinned = device.type == "cuda"
         self.device = device
-        self.obs = torch.empty((max_batch, dz.OBS_SIZE), dtype=torch.float32, pin_memory=pinned)
+        self.obs = torch.empty((max_batch, int(obs_size)), dtype=torch.float32, pin_memory=pinned)
         self.masks = torch.empty((max_batch, dz.ACTION_SPACE_SIZE), dtype=torch.bool, pin_memory=pinned)
         self.values = torch.empty((max_batch,), dtype=torch.float32, pin_memory=pinned)
         self.policies = torch.empty((max_batch, dz.ACTION_SPACE_SIZE), dtype=torch.float32, pin_memory=pinned)
@@ -334,9 +342,10 @@ def _server_main(
     views: list[WorkerSharedMemoryViews] = []
     try:
         device = _server_device(config.server_device)
-        model = DominionNet(dz.OBS_SIZE, dz.ACTION_SPACE_SIZE, config.model.hidden_sizes).to(device)
+        obs_size = obs_size_for_config(config)
+        model = DominionNet(obs_size, dz.ACTION_SPACE_SIZE, config.model.hidden_sizes).to(device)
         model.eval()
-        staging = _PinnedStaging(device, int(config.server_max_batch))
+        staging = _PinnedStaging(device, int(config.server_max_batch), obs_size)
         if endpoints.transport == "shm":
             assert endpoints.shared_memory_specs is not None
             views = [WorkerSharedMemoryViews(spec) for spec in endpoints.shared_memory_specs]
@@ -441,7 +450,11 @@ def _server_main(
                 worker_id, request_id, obs, masks = endpoints.request_queue.get(timeout=timeout)
             obs = np.ascontiguousarray(obs, dtype=np.float32)
             masks = np.ascontiguousarray(masks, dtype=np.uint8)
-            if obs.ndim != 2 or masks.shape != (obs.shape[0], dz.ACTION_SPACE_SIZE):
+            if (
+                obs.ndim != 2
+                or obs.shape[1] != endpoints.obs_size
+                or masks.shape != (obs.shape[0], dz.ACTION_SPACE_SIZE)
+            ):
                 raise ValueError("queue inference request shape mismatch")
             return _Request(int(worker_id), int(request_id), None, int(obs.shape[0]), obs, masks)
 
@@ -547,6 +560,7 @@ class InferenceServer:
         self.status_queue = context.Queue()
         self.alive_event = context.Event()
         request_batch_size = max(1, min(config.selfplay.max_batch, config.server_max_batch // worker_count))
+        obs_size = obs_size_for_config(config)
         self.shared_transport: SharedMemoryTransport | None = None
         self.transport = requested_transport
         if requested_transport == "shm":
@@ -555,6 +569,7 @@ class InferenceServer:
                     worker_count,
                     int(config.server_shm_slots),
                     request_batch_size,
+                    obs_size,
                 )
             except Exception as exc:
                 self.transport = "queue"
@@ -577,6 +592,7 @@ class InferenceServer:
             alive_event=self.alive_event,
             response_timeout_s=float(config.server_response_timeout_s),
             request_batch_size=request_batch_size,
+            obs_size=obs_size,
             transport=self.transport,
             shared_memory_specs=self.shared_transport.specs if self.shared_transport is not None else None,
             poll=self.poll,
@@ -682,7 +698,7 @@ def _bench_worker_main(
             assert endpoints.shared_memory_specs is not None
             shared_views = WorkerSharedMemoryViews(endpoints.shared_memory_specs[worker_id])
         count = endpoints.request_batch_size
-        obs = np.full((count, dz.OBS_SIZE), float(worker_id), dtype=np.float32)
+        obs = np.full((count, endpoints.obs_size), float(worker_id), dtype=np.float32)
         masks = np.ones((count, dz.ACTION_SPACE_SIZE), dtype=np.uint8)
         response_queue = endpoints.response_queues[worker_id]
         sequence = 0

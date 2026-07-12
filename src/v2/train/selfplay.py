@@ -104,6 +104,7 @@ def make_runner_config(
         temp_moves=config.temp_moves,
         max_batch=config.max_batch,
         seed=seed,
+        obs_version=int(config.obs_version),
         kingdom_mode=_kingdom_mode(config.kingdom_mode),
         kingdom=config.fixed_kingdom,
         max_recorded_moves=config.max_recorded_moves,

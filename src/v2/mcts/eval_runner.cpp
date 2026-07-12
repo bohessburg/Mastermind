@@ -113,6 +113,13 @@ struct DeckProfile {
     return config.seed + (sequence * 0x9E37'79B9'7F4A'7C15ULL);
 }
 
+[[nodiscard]] std::size_t checked_obs_size(ObsVersion version) {
+    if (!is_valid_obs_version(version)) {
+        throw std::invalid_argument("EvalRunnerConfig.obs_version must be V1 or V2");
+    }
+    return obs_size_for(version);
+}
+
 [[nodiscard]] DefId def_for_slot(const GameState& state, Slot slot) noexcept {
     return slot < state.num_slots ? state.slot_to_def[slot] : DEF_COPPER;
 }
@@ -799,10 +806,11 @@ std::uint64_t scaffold_rollout_seed(std::uint64_t game_seed) noexcept {
 
 EvalRunner::EvalRunner(const EvalRunnerConfig& config)
     : config_(config),
+      obs_size_(checked_obs_size(config.obs_version)),
       mcts_config_(),
       games_(new GameSlot[std::max(1U, config.n_games)]),
       pending_(new PendingLeaf[std::max(1U, config.max_batch)]),
-      leaf_obs_(new float[static_cast<std::size_t>(std::max(1U, config.max_batch)) * OBS_SIZE]),
+      leaf_obs_(new float[static_cast<std::size_t>(std::max(1U, config.max_batch)) * obs_size_]),
       leaf_masks_(new bool[static_cast<std::size_t>(std::max(1U, config.max_batch)) * ACTION_SPACE_SIZE]),
       normalized_policy_(new float[static_cast<std::size_t>(std::max(1U, config.max_batch)) * ACTION_SPACE_SIZE]) {
     if (config_.n_games == 0U) {
@@ -910,7 +918,11 @@ std::uint32_t EvalRunner::collect_leaves(std::uint32_t max_batch) noexcept {
         PendingLeaf& pending = pending_[pending_count_];
         pending.leaf = leaf;
         pending.game = index;
-        encode(game.mcts.state_for(leaf.state_index), leaf.player, leaf_obs_.get() + (pending_count_ * OBS_SIZE));
+        encode(
+            game.mcts.state_for(leaf.state_index),
+            leaf.player,
+            leaf_obs_.get() + (pending_count_ * obs_size_),
+            config_.obs_version);
         bool* mask = leaf_masks_.get() + (pending_count_ * ACTION_SPACE_SIZE);
         for (Action action = 0; action < ACTION_SPACE_SIZE; ++action) {
             mask[action] = leaf.legal.test(action);
@@ -954,6 +966,10 @@ const bool* EvalRunner::leaf_legal_masks() const noexcept {
 
 std::uint32_t EvalRunner::leaf_count() const noexcept {
     return pending_count_;
+}
+
+std::size_t EvalRunner::observation_size() const noexcept {
+    return obs_size_;
 }
 
 EvalRunnerResult EvalRunner::result() const noexcept {

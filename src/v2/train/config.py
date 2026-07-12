@@ -22,6 +22,9 @@ class SelfPlayConfig:
     dirichlet_alpha: float = 0.30
     dirichlet_frac: float = 0.25
     temp_moves: int = 12
+    # v1 remains the default so existing campaigns and checkpoints retain
+    # their exact model input shape until a run explicitly opts into v2.
+    obs_version: int = 1
     kingdom_mode: str = "random"
     fixed_kingdom: list[str] = field(
         default_factory=lambda: [

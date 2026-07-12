@@ -70,6 +70,20 @@ struct PyGame {
     return player >= 0 && player < static_cast<int>(state.num_players);
 }
 
+[[nodiscard]] ObsVersion parse_obs_version(int version) {
+    if (version == static_cast<int>(ObsVersion::V1)) {
+        return ObsVersion::V1;
+    }
+    if (version == static_cast<int>(ObsVersion::V2)) {
+        return ObsVersion::V2;
+    }
+    throw std::invalid_argument("obs_version must be 1 or 2");
+}
+
+[[nodiscard]] int obs_version_value(ObsVersion version) noexcept {
+    return static_cast<int>(version);
+}
+
 [[nodiscard]] PlayerId turn_player_id(const GameState& state) noexcept {
     if (state.turn_queue.size == 0U) {
         return 0U;
@@ -278,12 +292,15 @@ void append_subject_def(py::list& subjects, const GameState& state, std::int16_t
     return array;
 }
 
-[[nodiscard]] py::array_t<float> encode_array(const GameState& state, PlayerId player) {
-    py::array_t<float> array(static_cast<py::ssize_t>(OBS_SIZE));
+[[nodiscard]] py::array_t<float> encode_array(
+    const GameState& state,
+    PlayerId player,
+    ObsVersion version) {
+    py::array_t<float> array(static_cast<py::ssize_t>(obs_size_for(version)));
     float* data = array.mutable_data();
     {
         py::gil_scoped_release release;
-        encode(state, player, data);
+        encode(state, player, data, version);
     }
     return array;
 }
@@ -558,6 +575,9 @@ struct PyDecisionSearcher {
         const float c_puct = py::cast<float>(config["c_puct"]);
         const std::uint32_t determinizations = py::cast<std::uint32_t>(config["determinizations"]);
         const std::uint64_t seed = py::cast<std::uint64_t>(config["seed"]);
+        const ObsVersion obs_version = config.contains("obs_version")
+            ? parse_obs_version(py::cast<int>(config["obs_version"]))
+            : ObsVersion::V1;
         const bool auto_play_treasures = config.contains("auto_play_treasures")
             && py::cast<bool>(config["auto_play_treasures"]);
         const bool prune_treasure_plays = config.contains("prune_treasure_plays")
@@ -573,6 +593,7 @@ struct PyDecisionSearcher {
         }
 
         perspective_ = static_cast<PlayerId>(perspective_player);
+        obs_version_ = obs_version;
         root_legal_count_ = Game::legal_actions(root_, root_legal_);
         forced_action_ = auto_play_treasures
             ? mcts_canonical_treasure_play(mcts_filter_treasure_plays(root_, root_legal_))
@@ -744,6 +765,14 @@ struct PyDecisionSearcher {
         return world.mcts.state_for(world.pending_leaf.state_index);
     }
 
+    [[nodiscard]] ObsVersion obs_version() const noexcept {
+        return obs_version_;
+    }
+
+    [[nodiscard]] std::size_t observation_size() const noexcept {
+        return obs_size_for(obs_version_);
+    }
+
 private:
     static void normalize_policy(
         const float* logits,
@@ -788,6 +817,7 @@ private:
 
     GameState root_{};
     PlayerId perspective_ = 0U;
+    ObsVersion obs_version_ = ObsVersion::V1;
     ActionMask root_legal_{};
     int root_legal_count_ = 0;
     Action forced_action_ = A_PASS;
@@ -803,7 +833,7 @@ private:
     }
     py::array_t<float> obs({
         static_cast<py::ssize_t>(count),
-        static_cast<py::ssize_t>(OBS_SIZE),
+        static_cast<py::ssize_t>(searcher.observation_size()),
     });
     py::array_t<bool> masks({
         static_cast<py::ssize_t>(count),
@@ -811,7 +841,7 @@ private:
     });
     for (std::uint32_t i = 0; i < count; ++i) {
         const MctsPendingLeaf& leaf = searcher.pending_leaf(i);
-        encode(searcher.pending_state(i), leaf.player, obs.mutable_data(i, 0));
+        encode(searcher.pending_state(i), leaf.player, obs.mutable_data(i, 0), searcher.obs_version());
         bool* row = masks.mutable_data(i, 0);
         for (Action action = 0; action < ACTION_SPACE_SIZE; ++action) {
             row[action] = leaf.legal.test(action);
@@ -852,7 +882,7 @@ void decision_search_provide(
 
     py::array_t<float> obs({
         static_cast<py::ssize_t>(count),
-        static_cast<py::ssize_t>(OBS_SIZE),
+        static_cast<py::ssize_t>(runner.observation_size()),
     });
     py::array_t<bool> masks({
         static_cast<py::ssize_t>(count),
@@ -862,7 +892,7 @@ void decision_search_provide(
         std::memcpy(
             obs.mutable_data(),
             runner.leaf_observations(),
-            static_cast<std::size_t>(count) * OBS_SIZE * sizeof(float));
+            static_cast<std::size_t>(count) * runner.observation_size() * sizeof(float));
         std::memcpy(
             masks.mutable_data(),
             runner.leaf_legal_masks(),
@@ -905,12 +935,13 @@ void selfplay_provide(
 
 [[nodiscard]] py::list selfplay_finished(SelfPlayRunner& runner) {
     std::vector<SelfPlayRecord> records = runner.take_finished_games();
+    const std::size_t obs_size = runner.observation_size();
     py::list out;
     for (const SelfPlayRecord& record : records) {
         py::dict dict;
         py::array_t<float> obs({
             static_cast<py::ssize_t>(record.moves),
-            static_cast<py::ssize_t>(OBS_SIZE),
+            static_cast<py::ssize_t>(obs_size),
         });
         py::array_t<float> policies({
             static_cast<py::ssize_t>(record.moves),
@@ -922,7 +953,7 @@ void selfplay_provide(
             std::memcpy(
                 obs.mutable_data(),
                 record.observations.data(),
-                static_cast<std::size_t>(record.moves) * OBS_SIZE * sizeof(float));
+                static_cast<std::size_t>(record.moves) * obs_size * sizeof(float));
             std::memcpy(
                 policies.mutable_data(),
                 record.policy_targets.data(),
@@ -972,7 +1003,7 @@ void selfplay_provide(
 
     py::array_t<float> obs({
         static_cast<py::ssize_t>(count),
-        static_cast<py::ssize_t>(OBS_SIZE),
+        static_cast<py::ssize_t>(runner.observation_size()),
     });
     py::array_t<bool> masks({
         static_cast<py::ssize_t>(count),
@@ -982,7 +1013,7 @@ void selfplay_provide(
         std::memcpy(
             obs.mutable_data(),
             runner.leaf_observations(),
-            static_cast<std::size_t>(count) * OBS_SIZE * sizeof(float));
+            static_cast<std::size_t>(count) * runner.observation_size() * sizeof(float));
         std::memcpy(
             masks.mutable_data(),
             runner.leaf_legal_masks(),
@@ -1100,12 +1131,12 @@ PYBIND11_MODULE(dominion_v2_py, module) {
         .def("decision_context", [](const PyGame& self) {
             return decision_context_dict(self.state);
         })
-        .def("encode", [](const PyGame& self, int player) {
+        .def("encode", [](const PyGame& self, int player, int version) {
             if (!valid_player(self.state, player)) {
                 throw std::invalid_argument("invalid player");
             }
-            return encode_array(self.state, static_cast<PlayerId>(player));
-        })
+            return encode_array(self.state, static_cast<PlayerId>(player), parse_obs_version(version));
+        }, py::arg("player"), py::arg("version") = static_cast<int>(ObsVersion::V1))
         .def("clone", [](const PyGame& self) {
             return make_game(self.state);
         })
@@ -1289,6 +1320,10 @@ PYBIND11_MODULE(dominion_v2_py, module) {
             return static_cast<std::uint32_t>(searcher.best_action());
         });
 
+    py::enum_<ObsVersion>(module, "ObsVersion")
+        .value("V1", ObsVersion::V1)
+        .value("V2", ObsVersion::V2);
+
     py::enum_<SelfPlayKingdomMode>(module, "SelfPlayKingdomMode")
         .value("Fixed", SelfPlayKingdomMode::Fixed)
         .value("Random", SelfPlayKingdomMode::Random);
@@ -1327,7 +1362,8 @@ PYBIND11_MODULE(dominion_v2_py, module) {
             float margin_scale,
             std::uint8_t scripted_threads,
             std::uint8_t scaffold_determinizations,
-            std::uint32_t scaffold_sims_opening) {
+            std::uint32_t scaffold_sims_opening,
+            int obs_version) {
             SelfPlayConfig config{};
             config.n_games = n_games;
             config.sims_per_move = sims_per_move;
@@ -1350,6 +1386,7 @@ PYBIND11_MODULE(dominion_v2_py, module) {
             config.scripted_threads = scripted_threads;
             config.scaffold_determinizations = scaffold_determinizations;
             config.scaffold_sims_opening = scaffold_sims_opening;
+            config.obs_version = parse_obs_version(obs_version);
             if (!kingdom.is_none()) {
                 PySetup setup(2, kingdom, false);
                 config.fixed_setup = setup.setup;
@@ -1377,7 +1414,8 @@ PYBIND11_MODULE(dominion_v2_py, module) {
             py::arg("margin_scale") = 20.0F,
             py::arg("scripted_threads") = 2U,
             py::arg("scaffold_determinizations") = 2U,
-            py::arg("scaffold_sims_opening") = 0U)
+            py::arg("scaffold_sims_opening") = 0U,
+            py::arg("obs_version") = static_cast<int>(ObsVersion::V1))
         .def_readwrite("n_games", &SelfPlayConfig::n_games)
         .def_readwrite("sims_per_move", &SelfPlayConfig::sims_per_move)
         .def_readwrite("c_puct", &SelfPlayConfig::c_puct)
@@ -1386,6 +1424,10 @@ PYBIND11_MODULE(dominion_v2_py, module) {
         .def_readwrite("temp_moves", &SelfPlayConfig::temp_moves)
         .def_readwrite("max_batch", &SelfPlayConfig::max_batch)
         .def_readwrite("seed", &SelfPlayConfig::seed)
+        .def_property(
+            "obs_version",
+            [](const SelfPlayConfig& config) { return obs_version_value(config.obs_version); },
+            [](SelfPlayConfig& config, int version) { config.obs_version = parse_obs_version(version); })
         .def_readwrite("kingdom_mode", &SelfPlayConfig::kingdom_mode)
         .def_readwrite("max_recorded_moves", &SelfPlayConfig::max_recorded_moves)
         .def_readwrite("max_tree_nodes", &SelfPlayConfig::max_tree_nodes)
@@ -1407,6 +1449,7 @@ PYBIND11_MODULE(dominion_v2_py, module) {
         .def("provide_evaluations", &selfplay_provide, py::arg("values"), py::arg("policies"))
         .def("finished_games", &selfplay_finished)
         .def("games_completed", &SelfPlayRunner::games_completed)
+        .def("observation_size", &SelfPlayRunner::observation_size)
         .def("total_virtual_loss", &SelfPlayRunner::total_virtual_loss);
 
     py::enum_<EvalScriptedBotKind>(module, "EvalScriptedBotKind")
@@ -1430,7 +1473,8 @@ PYBIND11_MODULE(dominion_v2_py, module) {
             EvalScriptedBotKind opponent,
             bool retain_finished_games,
             bool auto_play_treasures,
-            bool prune_treasure_plays) {
+            bool prune_treasure_plays,
+            int obs_version) {
             EvalRunnerConfig config{};
             config.n_games = n_games;
             config.sims_per_move = sims_per_move;
@@ -1444,6 +1488,7 @@ PYBIND11_MODULE(dominion_v2_py, module) {
             config.retain_finished_games = retain_finished_games;
             config.auto_play_treasures = auto_play_treasures;
             config.prune_treasure_plays = prune_treasure_plays;
+            config.obs_version = parse_obs_version(obs_version);
             if (!kingdom.is_none()) {
                 PySetup setup(2, kingdom, false);
                 config.fixed_setup = setup.setup;
@@ -1462,12 +1507,17 @@ PYBIND11_MODULE(dominion_v2_py, module) {
             py::arg("opponent") = EvalScriptedBotKind::Engine,
             py::arg("retain_finished_games") = false,
             py::arg("auto_play_treasures") = false,
-            py::arg("prune_treasure_plays") = false)
+            py::arg("prune_treasure_plays") = false,
+            py::arg("obs_version") = static_cast<int>(ObsVersion::V1))
         .def_readwrite("n_games", &EvalRunnerConfig::n_games)
         .def_readwrite("sims_per_move", &EvalRunnerConfig::sims_per_move)
         .def_readwrite("c_puct", &EvalRunnerConfig::c_puct)
         .def_readwrite("max_batch", &EvalRunnerConfig::max_batch)
         .def_readwrite("seed", &EvalRunnerConfig::seed)
+        .def_property(
+            "obs_version",
+            [](const EvalRunnerConfig& config) { return obs_version_value(config.obs_version); },
+            [](EvalRunnerConfig& config, int version) { config.obs_version = parse_obs_version(version); })
         .def_readwrite("target_games", &EvalRunnerConfig::target_games)
         .def_readwrite("kingdom_mode", &EvalRunnerConfig::kingdom_mode)
         .def_readwrite("max_tree_nodes", &EvalRunnerConfig::max_tree_nodes)
@@ -1482,6 +1532,7 @@ PYBIND11_MODULE(dominion_v2_py, module) {
         .def("provide_evaluations", &eval_provide, py::arg("values"), py::arg("policies"))
         .def("result", &eval_result_dict)
         .def("games_completed", &EvalRunner::games_completed)
+        .def("observation_size", &EvalRunner::observation_size)
         .def("total_virtual_loss", &EvalRunner::total_virtual_loss)
         .def("active_nn_player", &EvalRunner::active_nn_player, py::arg("index"))
         .def("active_sequence", &EvalRunner::active_sequence, py::arg("index"))
@@ -1499,6 +1550,11 @@ PYBIND11_MODULE(dominion_v2_py, module) {
 
     module.attr("OBS_VERSION") = py::int_(OBS_VERSION);
     module.attr("OBS_SIZE") = py::int_(OBS_SIZE);
+    module.attr("OBS_SIZE_V1") = py::int_(OBS_SIZE_V1);
+    module.attr("OBS_SIZE_V2") = py::int_(OBS_SIZE_V2);
+    module.def("obs_size_for", [](int version) {
+        return py::int_(obs_size_for(parse_obs_version(version)));
+    }, py::arg("version"));
     module.attr("ACTION_SPACE_SIZE") = py::int_(ACTION_SPACE_SIZE);
     module.attr("A_PASS") = py::int_(A_PASS);
     module.attr("A_PLAY_BASE") = py::int_(A_PLAY_BASE);

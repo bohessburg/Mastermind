@@ -41,6 +41,7 @@ struct SelfPlayConfig {
     std::uint16_t temp_moves = 12;
     std::uint32_t max_batch = 256;
     std::uint64_t seed = 0x545241494EULL;
+    ObsVersion obs_version = ObsVersion::V1;
     SelfPlayKingdomMode kingdom_mode = SelfPlayKingdomMode::Random;
     Setup fixed_setup{};
     std::uint16_t max_recorded_moves = 512;
@@ -93,6 +94,7 @@ public:
     [[nodiscard]] const bool* leaf_legal_masks() const noexcept;
     [[nodiscard]] const PlayerId* leaf_players() const noexcept;
     [[nodiscard]] std::uint32_t leaf_count() const noexcept;
+    [[nodiscard]] std::size_t observation_size() const noexcept;
     [[nodiscard]] std::uint64_t games_completed() const noexcept;
     [[nodiscard]] float total_virtual_loss() const noexcept;
     // Async Scaffold jobs preserve each seed's trajectory, but cross-slot
@@ -134,6 +136,7 @@ private:
     [[nodiscard]] bool resolve_scripted_tree_leaf(GameSlot& game, const MctsPendingLeaf& leaf) noexcept;
 
     SelfPlayConfig config_{};
+    std::size_t obs_size_ = OBS_SIZE_V1;
     MctsConfig mcts_config_{};
     MctsConfig scaffold_mcts_config_{};
     // Used only for scripted_threads=0. Async Scaffold jobs use the

@@ -32,6 +32,7 @@ from .inference_server import (
     serialize_cpu_state_dict,
 )
 from .model import DominionNet
+from .observation import obs_size_for_config, obs_size_for_version
 from .selfplay import SelfPlayStats, make_runner_config, route_leaf_evaluations
 
 
@@ -103,30 +104,31 @@ def split_segments_by_quotas(
     return per_worker
 
 
-def _empty_packed_records() -> PackedGameRecords:
+def _empty_packed_records(obs_size: int = dz.OBS_SIZE) -> PackedGameRecords:
     return (
         np.empty((0,), dtype=np.int32),
-        np.empty((0, dz.OBS_SIZE), dtype=np.float32),
+        np.empty((0, int(obs_size)), dtype=np.float32),
         np.empty((0, dz.ACTION_SPACE_SIZE), dtype=np.float32),
         np.empty((0,), dtype=np.float32),
     )
 
 
-def _pack_records(records: list[dict[str, Any]]) -> PackedGameRecords:
+def _pack_records(records: list[dict[str, Any]], obs_size: int | None = None) -> PackedGameRecords:
     """Flatten finished-game dictionaries into four raw NumPy buffers.
 
     Queue messages carry only these contiguous arrays and a tiny tuple header,
     never the binding's large list-of-dicts game-record representation.
     """
     if not records:
-        return _empty_packed_records()
+        return _empty_packed_records(dz.OBS_SIZE if obs_size is None else obs_size)
     observations = [np.asarray(record["observations"], dtype=np.float32) for record in records]
     policies = [np.asarray(record["policy_targets"], dtype=np.float32) for record in records]
     values = [np.asarray(record["values"], dtype=np.float32) for record in records]
     lengths = np.asarray([obs.shape[0] for obs in observations], dtype=np.int32)
     nonempty = lengths > 0
     if not np.any(nonempty):
-        empty = _empty_packed_records()
+        width = int(observations[0].shape[1]) if obs_size is None else int(obs_size)
+        empty = _empty_packed_records(width)
         return lengths, empty[1], empty[2], empty[3]
     return (
         lengths,
@@ -287,6 +289,7 @@ def _generate_games(
     result_queue: Any,
     worker_index: int,
     generation: int,
+    obs_size: int,
 ) -> tuple[SelfPlayStats, list[dict[str, Any]]]:
     stats = SelfPlayStats()
     start = time.perf_counter()
@@ -296,7 +299,7 @@ def _generate_games(
         nonlocal sent
         if not records:
             return
-        packed = _pack_records(records)
+        packed = _pack_records(records, obs_size)
         games, positions = int(packed[0].shape[0]), int(packed[0].sum())
         # NumPy buffers keep queue serialization to raw array payloads instead
         # of pickling a large Python object graph for every game record.
@@ -368,6 +371,7 @@ def _generate_games_exact(
     worker_index: int,
     generation: int,
     scripted_kind: str | None = None,
+    obs_size: int = dz.OBS_SIZE,
 ) -> SelfPlayStats:
     """Use the persistent runner but never carry records across a segment."""
     stats = SelfPlayStats()
@@ -393,7 +397,7 @@ def _generate_games_exact(
             continue
         records = finished[: target_games - sent]
         _record_scripted_outcomes(stats, records, scripted_kind)
-        packed = _pack_records(records)
+        packed = _pack_records(records, obs_size)
         games, positions = int(packed[0].shape[0]), int(packed[0].sum())
         if games:
             result_queue.put(("records", worker_index, generation, packed))
@@ -424,6 +428,7 @@ def _generate_routed_games(
         return SelfPlayStats()
     task_config = copy.deepcopy(selfplay_config)
     task_config.n_games = max(1, min(int(task_config.n_games), int(target_games)))
+    obs_size = obs_size_for_version(int(task_config.obs_version))
     runner = dz.SelfPlayRunner(
         make_runner_config(
             task_config,
@@ -479,7 +484,7 @@ def _generate_routed_games(
             continue
         records = finished[: target_games - sent]
         _record_scripted_outcomes(stats, records, scripted_kind)
-        packed = _pack_records(records)
+        packed = _pack_records(records, obs_size)
         games, positions = int(packed[0].shape[0]), int(packed[0].sum())
         if games:
             result_queue.put(("records", worker_index, generation, packed))
@@ -530,6 +535,7 @@ def _worker_main(
         # avoids allocating the full global n_games pipeline in every worker.
         worker_selfplay.n_games = min(worker_selfplay.n_games, runner_games)
         runner = dz.SelfPlayRunner(make_runner_config(worker_selfplay, worker_seed))
+        obs_size = obs_size_for_config(config)
         if server_mode:
             assert inference_endpoints is not None
             evaluate, shared_views = _server_evaluator(inference_endpoints, worker_index)
@@ -537,7 +543,7 @@ def _worker_main(
             model: DominionNet | None = None
         else:
             assert device is not None
-            model = DominionNet(dz.OBS_SIZE, dz.ACTION_SPACE_SIZE, config.model.hidden_sizes).to(device)
+            model = DominionNet(obs_size, dz.ACTION_SPACE_SIZE, config.model.hidden_sizes).to(device)
             model.eval()
             evaluate = _local_evaluator(model, device)
             collect_max_batch = config.selfplay.max_batch
@@ -558,7 +564,7 @@ def _worker_main(
                 model.eval()
                 model_table.append(model)
                 for payload in model_state_payloads[1:]:
-                    opponent = DominionNet(dz.OBS_SIZE, dz.ACTION_SPACE_SIZE, config.model.hidden_sizes).to(device)
+                    opponent = DominionNet(obs_size, dz.ACTION_SPACE_SIZE, config.model.hidden_sizes).to(device)
                     opponent.load_state_dict(deserialize_cpu_state_dict(payload))
                     opponent.eval()
                     model_table.append(opponent)
@@ -593,6 +599,7 @@ def _worker_main(
                             worker_index,
                             int(generation),
                             segment.scripted_kind,
+                            obs_size=obs_size,
                         )
                     else:
                         if not (
@@ -634,6 +641,7 @@ def _worker_main(
                     result_queue,
                     worker_index,
                     int(generation),
+                    obs_size,
                 )
                 league_games = 0
                 route_audit = {}

@@ -121,6 +121,23 @@ TEST_CASE("v2 eval runner seat swapping alternates NN player", "[v2][eval_runner
     REQUIRE(runner.active_nn_player(3U) == 1U);
 }
 
+TEST_CASE("v2 eval runner uses the selected observation-version stride", "[v2][eval_runner][encode]") {
+    EvalRunnerConfig config = fixed_eval_config(2U, 4U, 4U, 0xE0A1'0101ULL);
+    config.obs_version = ObsVersion::V2;
+    EvalRunner runner(config);
+
+    const std::uint32_t count = runner.collect_leaves(config.max_batch);
+    REQUIRE(count > 0U);
+    REQUIRE(runner.observation_size() == OBS_SIZE_V2);
+    const float* observations = runner.leaf_observations();
+    for (std::uint32_t index = 0; index < count; ++index) {
+        const float* observation = observations + (static_cast<std::size_t>(index) * OBS_SIZE_V2);
+        CHECK(observation[OBS_V2_META_OFFSET] == static_cast<float>(ObsVersion::V2));
+        CHECK(observation[OBS_V2_META_OFFSET + 1U] == static_cast<float>(OBS_SIZE_V2));
+    }
+    provide_zero_eval(runner, count);
+}
+
 TEST_CASE("v2 eval scripted BigMoney policy follows known phase choices", "[v2][eval_runner]") {
     GameState state = Game::new_game(Setup{}, 0xE0A1'0002ULL);
     Xoshiro256pp rng = Xoshiro256pp::seeded(0xE0A1'0002ULL);

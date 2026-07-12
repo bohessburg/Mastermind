@@ -19,6 +19,7 @@ import torch
 
 from .config import TrainConfig
 from .model import DominionNet
+from .observation import obs_size_for_config
 
 
 BEST_FILENAME = "best.pt"
@@ -110,11 +111,12 @@ def load_best_checkpoint(config: TrainConfig, device: torch.device, path: str | 
         payload = torch.load(path, map_location=device, weights_only=False)
     except TypeError:  # pragma: no cover - older supported Torch versions
         payload = torch.load(path, map_location=device)
-    # Model dimensions are protocol constants; import lazily to keep this
-    # module usable by its pure persistence/sampling tests without pybind.
+    # Action-space dimensions come from the native protocol; import lazily to
+    # keep this module usable by its pure persistence/sampling tests without
+    # pybind. Observation width follows the selected training config.
     import dominion_v2_py as dz
 
-    model = DominionNet(dz.OBS_SIZE, dz.ACTION_SPACE_SIZE, config.model.hidden_sizes).to(device)
+    model = DominionNet(obs_size_for_config(config), dz.ACTION_SPACE_SIZE, config.model.hidden_sizes).to(device)
     model.load_state_dict(payload["model"])
     model.eval()
     return model, int(payload["generation"])
@@ -154,11 +156,12 @@ def _load_league_seed_checkpoint(config: TrainConfig, device: torch.device, path
             f"but the current run requires {expected_hidden_sizes}; refusing to truncate or pad weights"
         )
 
-    # Model dimensions are protocol constants; import lazily to keep this
-    # module usable by its pure persistence/sampling tests without pybind.
+    # Action-space dimensions come from the native protocol; import lazily to
+    # keep this module usable by its pure persistence/sampling tests without
+    # pybind. Observation width follows the selected training config.
     import dominion_v2_py as dz
 
-    model = DominionNet(dz.OBS_SIZE, dz.ACTION_SPACE_SIZE, expected_hidden_sizes).to(device)
+    model = DominionNet(obs_size_for_config(config), dz.ACTION_SPACE_SIZE, expected_hidden_sizes).to(device)
     try:
         model.load_state_dict(payload["model"])
     except (RuntimeError, TypeError, KeyError) as exc:
@@ -191,7 +194,7 @@ def seed_league_checkpoints(config: TrainConfig, device: torch.device) -> list[P
 def clone_model(config: TrainConfig, source: torch.nn.Module, device: torch.device) -> DominionNet:
     import dominion_v2_py as dz
 
-    clone = DominionNet(dz.OBS_SIZE, dz.ACTION_SPACE_SIZE, config.model.hidden_sizes).to(device)
+    clone = DominionNet(obs_size_for_config(config), dz.ACTION_SPACE_SIZE, config.model.hidden_sizes).to(device)
     clone.load_state_dict(source.state_dict())
     clone.eval()
     return clone

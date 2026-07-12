@@ -43,6 +43,7 @@ if __package__ in (None, ""):
     )
     from src.v2.train.inference_server import InferenceServer, serialize_cpu_state_dict
     from src.v2.train.model import DominionNet, count_parameters, masked_policy_loss
+    from src.v2.train.observation import obs_size_for_config
     from src.v2.train.replay import ReplayBuffer, load_replay_state, save_replay_state
     from src.v2.train.selfplay import SelfPlayStats, run_routed_self_play_generation, run_self_play_generation
     from src.v2.train.workers import ParallelSelfPlayPool
@@ -65,6 +66,7 @@ else:
     )
     from .inference_server import InferenceServer, serialize_cpu_state_dict
     from .model import DominionNet, count_parameters, masked_policy_loss
+    from .observation import obs_size_for_config
     from .replay import ReplayBuffer, load_replay_state, save_replay_state
     from .selfplay import SelfPlayStats, run_routed_self_play_generation, run_self_play_generation
     from .workers import ParallelSelfPlayPool
@@ -96,13 +98,14 @@ def seed_everything(seed: int, deterministic: bool = True) -> None:
 
 
 def build_objects(config: TrainConfig, device: torch.device):
-    model = DominionNet(dz.OBS_SIZE, dz.ACTION_SPACE_SIZE, config.model.hidden_sizes).to(device)
+    obs_size = obs_size_for_config(config)
+    model = DominionNet(obs_size, dz.ACTION_SPACE_SIZE, config.model.hidden_sizes).to(device)
     optimizer = torch.optim.Adam(
         model.parameters(),
         lr=config.optim.lr,
         weight_decay=config.optim.weight_decay,
     )
-    replay = ReplayBuffer(config.replay.capacity, dz.OBS_SIZE, dz.ACTION_SPACE_SIZE, config.seed ^ 0xA11CE)
+    replay = ReplayBuffer(config.replay.capacity, obs_size, dz.ACTION_SPACE_SIZE, config.seed ^ 0xA11CE)
     return model, optimizer, replay
 
 
@@ -427,7 +430,7 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
             {
                 "device": device.type,
                 "parameters": count_parameters(model),
-                "obs_size": dz.OBS_SIZE,
+                "obs_size": obs_size_for_config(config),
                 "action_size": dz.ACTION_SPACE_SIZE,
             },
             sort_keys=True,

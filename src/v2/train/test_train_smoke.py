@@ -9,7 +9,10 @@ import numpy as np
 import pytest
 import torch
 
+import dominion_v2_py as dz
+
 from .config import TrainConfig, load_config
+from .observation import obs_version_for_checkpoint
 from .train import (
     build_objects,
     load_checkpoint,
@@ -70,6 +73,33 @@ def test_tiny_training_smoke_checkpoint_and_metrics(tmp_path: Path) -> None:
         assert math.isfinite(float(row["policy_loss"]))
         assert math.isfinite(float(row["value_loss"]))
         assert math.isfinite(float(row["entropy"]))
+
+
+def test_tiny_training_v2_observation_smoke_records_v2_width(tmp_path: Path) -> None:
+    cfg = tiny_config(tmp_path, seed=20260711, generations=1)
+    cfg.model.hidden_sizes = [8]
+    cfg.selfplay.obs_version = 2
+    cfg.selfplay.n_games = 2
+    cfg.selfplay.games_per_generation = 2
+    cfg.selfplay.sims_per_move = 4
+    cfg.selfplay.max_batch = 8
+    cfg.selfplay.max_recorded_moves = 128
+    cfg.selfplay.max_tree_nodes = 256
+    cfg.optim.batch_size = 8
+    cfg.optim.train_steps_per_generation = 1
+    cfg.replay.capacity = 512
+
+    result = run_training(cfg)
+    assert len(result["metrics"]) == 1
+    checkpoint = Path(cfg.checkpoint_dir) / "gen_0001.pt"
+    payload = load_full_checkpoint(checkpoint, "cpu")
+    assert obs_version_for_checkpoint(payload) == 2
+    assert payload["config"]["selfplay"]["obs_version"] == 2
+    assert payload["model"]["trunk.0.weight"].shape[1] == dz.OBS_SIZE_V2
+
+    with np.load(Path(cfg.checkpoint_dir) / "replay_state.npz", allow_pickle=False) as archive:
+        assert archive["obs"].shape[0] > 0
+        assert archive["obs"].shape[1] == dz.OBS_SIZE_V2
 
 
 def test_split_checkpoint_roundtrip(tmp_path: Path) -> None:

@@ -111,11 +111,36 @@ def test_checkpoint_eval_vs_phase6_mcts_smoke(tmp_path: Path) -> None:
     assert stats.end_province + stats.end_piles + stats.end_trunc == stats.games
 
 
+def test_checkpoint_eval_auto_selects_v2_observation_width(tmp_path: Path) -> None:
+    cfg = tiny_config(tmp_path, seed=9292, generations=1)
+    cfg.model.hidden_sizes = [8]
+    cfg.selfplay.obs_version = 2
+    cfg.selfplay.max_tree_nodes = 256
+    model, optimizer, replay = build_objects(cfg, torch.device("cpu"))
+    checkpoint = save_checkpoint(cfg, 1, model, optimizer, replay)
+
+    stats = evaluate_checkpoint(
+        checkpoint,
+        opponent="random",
+        games=2,
+        sims=2,
+        kingdoms="fixed",
+        seed=9293,
+        device_name="cpu",
+        n_games=1,
+        max_batch=4,
+    )
+
+    assert stats.games == 2
+    assert stats.games == stats.wins + stats.losses + stats.ties
+
+
 def test_checkpoint_eval_inherits_treasure_collapse_options(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     cfg = tiny_config(tmp_path, generations=1)
+    cfg.selfplay.obs_version = 2
     cfg.selfplay.auto_play_treasures = True
     cfg.selfplay.prune_treasure_plays = True
     model, optimizer, replay = build_objects(cfg, torch.device("cpu"))
@@ -132,6 +157,7 @@ def test_checkpoint_eval_inherits_treasure_collapse_options(
     assert evaluate.evaluate_checkpoint(checkpoint, device_name="cpu") is sentinel
     assert captured["auto_play_treasures"] is True
     assert captured["prune_treasure_plays"] is True
+    assert captured["obs_version"] == 2
 
 
 def test_training_metrics_include_periodic_eval(tmp_path: Path) -> None:

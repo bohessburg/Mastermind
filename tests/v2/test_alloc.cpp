@@ -1,9 +1,11 @@
 #include "v2/drivers/bots.h"
 
 #include "v2/core/determinize.h"
+#include "v2/encode/encoder.h"
 #include "v2/mcts/tree.h"
 
 #include <catch2/catch_test_macros.hpp>
+#include <array>
 #include <cstddef>
 #include <cstdlib>
 #include <new>
@@ -108,6 +110,23 @@ TEST_CASE("v2 MCTS search allocates nothing after construction", "[v2][alloc][mc
             ActionMask legal{};
             (void)Game::legal_actions(state, legal);
             REQUIRE(legal.test(action));
+        }
+        allocations = scope.count();
+    }
+
+    REQUIRE(allocations == 0U);
+}
+
+TEST_CASE("v2 observation encoders allocate nothing in the hot path", "[v2][alloc][encode]") {
+    const GameState state = Game::new_game(Setup{}, 0xA110'C900ULL);
+    std::array<float, OBS_SIZE_V1> v1{};
+    std::array<float, OBS_SIZE_V2> v2{};
+    std::uint64_t allocations = 0;
+    {
+        AllocationScope scope;
+        for (int iteration = 0; iteration < 1000; ++iteration) {
+            encode_v1(state, 0U, v1.data());
+            encode_v2(state, 0U, v2.data());
         }
         allocations = scope.count();
     }

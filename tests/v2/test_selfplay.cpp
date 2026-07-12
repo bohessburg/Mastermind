@@ -84,6 +84,23 @@ TEST_CASE("v2 selfplay virtual loss clears after evaluations", "[v2][selfplay]")
     REQUIRE(runner.total_virtual_loss() == Catch::Approx(0.0F));
 }
 
+TEST_CASE("v2 selfplay runner uses the selected observation-version stride", "[v2][selfplay][encode]") {
+    SelfPlayConfig config = fixed_config(2U, 4U, 4U, 0x5E1F'0101ULL);
+    config.obs_version = ObsVersion::V2;
+    SelfPlayRunner runner(config);
+
+    const std::uint32_t count = runner.collect_leaves(config.max_batch);
+    REQUIRE(count > 0U);
+    REQUIRE(runner.observation_size() == OBS_SIZE_V2);
+    const float* observations = runner.leaf_observations();
+    for (std::uint32_t index = 0; index < count; ++index) {
+        const float* observation = observations + (static_cast<std::size_t>(index) * OBS_SIZE_V2);
+        CHECK(observation[OBS_V2_META_OFFSET] == static_cast<float>(ObsVersion::V2));
+        CHECK(observation[OBS_V2_META_OFFSET + 1U] == static_cast<float>(OBS_SIZE_V2));
+    }
+    provide_zero_eval(runner, count);
+}
+
 TEST_CASE("v2 external MCTS policy targets are legal-action masked", "[v2][selfplay][mcts]") {
     GameState state = Game::new_game(Setup{}, 0x5E1F'0002ULL);
     MctsConfig config{};

@@ -38,6 +38,21 @@ namespace {
     return out;
 }
 
+[[nodiscard]] std::array<float, OBS_SIZE_V2> encoded_v2(const GameState& state, PlayerId player) noexcept {
+    std::array<float, OBS_SIZE_V2> out{};
+    encode_v2(state, player, out.data());
+    return out;
+}
+
+void step_random(GameState& state, RandomBot& bot) {
+    ActionMask legal{};
+    const int legal_count = Game::legal_actions(state, legal);
+    REQUIRE(legal_count > 0);
+    const PlayerId player = Game::current_decision(state).player;
+    REQUIRE(player < state.num_players);
+    (void)Game::step(state, bot.choose_action(state, legal, legal_count));
+}
+
 void seed_hidden_pool(GameState& state) {
     PlayerState& opponent = state.players[1];
     for (std::uint8_t slot = 0; slot < state.num_slots; ++slot) {
@@ -131,6 +146,31 @@ TEST_CASE("v2 determinize resamples opponent hand across seeds", "[v2][determini
     }
 
     REQUIRE(saw_difference);
+}
+
+TEST_CASE("v2 determinize preserves full v2 observations across mid-game states", "[v2][determinize]") {
+    GameState state = Game::new_game(determinize_setup(), 0xD373'5001ULL);
+    RandomBot bot(0xD373'6001ULL);
+    int checked_states = 0;
+
+    for (int step = 0; step < 28; ++step) {
+        const auto original = encoded_v2(state, 0U);
+        for (std::uint64_t sample = 0; sample < 4U; ++sample) {
+            GameState determinized = state;
+            determinize(
+                determinized,
+                0U,
+                0xD373'7000ULL + (static_cast<std::uint64_t>(step) * 4U) + sample);
+            CHECK(encoded_v2(determinized, 0U) == original);
+        }
+        ++checked_states;
+        if (state.phase == static_cast<std::uint8_t>(Phase::Over)) {
+            break;
+        }
+        step_random(state, bot);
+    }
+
+    REQUIRE(checked_states >= 8);
 }
 
 TEST_CASE("v2 original and determinized states can finish", "[v2][determinize]") {

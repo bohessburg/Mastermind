@@ -7,6 +7,7 @@
 #include "v2/mcts/selfplay.h"
 #include "v2/mcts/tree.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <vector>
@@ -25,6 +26,7 @@ struct EvalRunnerConfig {
     float c_puct = 1.25F;
     std::uint32_t max_batch = 512;
     std::uint64_t seed = 0x4556414CULL;
+    ObsVersion obs_version = ObsVersion::V1;
     std::uint32_t target_games = 0;
     SelfPlayKingdomMode kingdom_mode = SelfPlayKingdomMode::Random;
     Setup fixed_setup{};
@@ -53,6 +55,7 @@ public:
     [[nodiscard]] const float* leaf_observations() const noexcept;
     [[nodiscard]] const bool* leaf_legal_masks() const noexcept;
     [[nodiscard]] std::uint32_t leaf_count() const noexcept;
+    [[nodiscard]] std::size_t observation_size() const noexcept;
     [[nodiscard]] EvalRunnerResult result() const noexcept;
     [[nodiscard]] std::uint64_t games_completed() const noexcept;
     [[nodiscard]] float total_virtual_loss() const noexcept;
@@ -76,6 +79,7 @@ private:
     [[nodiscard]] bool resolve_scripted_tree_leaf(GameSlot& game, const MctsPendingLeaf& leaf) noexcept;
 
     EvalRunnerConfig config_{};
+    std::size_t obs_size_ = OBS_SIZE_V1;
     MctsConfig mcts_config_{};
     MctsConfig scaffold_mcts_config_{};
     std::unique_ptr<GameSlot[]> games_;

@@ -20,10 +20,12 @@ if __package__ in (None, ""):
     sys.path.append(str(Path(__file__).resolve().parents[3]))
     from src.v2.train.config import TrainConfig, _merge_dataclass
     from src.v2.train.model import DominionNet, count_parameters
+    from src.v2.train.observation import obs_size_for_version, obs_version_for_checkpoint
     from src.v2.train.train import load_full_checkpoint, seed_everything, select_device
 else:
     from .config import TrainConfig, _merge_dataclass
     from .model import DominionNet, count_parameters
+    from .observation import obs_size_for_version, obs_version_for_checkpoint
     from .train import load_full_checkpoint, seed_everything, select_device
 
 
@@ -78,7 +80,14 @@ def _load_checkpoint_config(payload: dict[str, Any]) -> TrainConfig:
 def load_model(checkpoint: str | Path, device: torch.device) -> tuple[DominionNet, TrainConfig]:
     payload = load_full_checkpoint(checkpoint, device)
     cfg = _load_checkpoint_config(payload)
-    model = DominionNet(dz.OBS_SIZE, dz.ACTION_SPACE_SIZE, cfg.model.hidden_sizes).to(device)
+    # The saved first-layer width, rather than an optional config key, is the
+    # source of truth for legacy checkpoints and future layout migrations.
+    cfg.selfplay.obs_version = obs_version_for_checkpoint(payload)
+    model = DominionNet(
+        obs_size_for_version(cfg.selfplay.obs_version),
+        dz.ACTION_SPACE_SIZE,
+        cfg.model.hidden_sizes,
+    ).to(device)
     model.load_state_dict(payload["model"])
     model.eval()
     return model, cfg
@@ -133,6 +142,7 @@ def make_eval_runner_config(
     max_tree_nodes: int,
     auto_play_treasures: bool = False,
     prune_treasure_plays: bool = False,
+    obs_version: int = 1,
 ):
     parallel_games = max(1, min(int(n_games), int(games)))
     return dz.EvalRunnerConfig(
@@ -149,6 +159,7 @@ def make_eval_runner_config(
         retain_finished_games=True,
         auto_play_treasures=bool(auto_play_treasures),
         prune_treasure_plays=bool(prune_treasure_plays),
+        obs_version=int(obs_version),
     )
 
 
@@ -168,6 +179,7 @@ def evaluate_model(
     max_tree_nodes: int = 4096,
     auto_play_treasures: bool = False,
     prune_treasure_plays: bool = False,
+    obs_version: int = 1,
 ) -> EvalStats:
     if fixed_kingdom is None:
         fixed_kingdom = [
@@ -196,6 +208,7 @@ def evaluate_model(
             max_tree_nodes,
             auto_play_treasures,
             prune_treasure_plays,
+            obs_version,
         )
     )
     model.eval()
@@ -284,6 +297,7 @@ def evaluate_checkpoint(
         max_tree_nodes=cfg.selfplay.max_tree_nodes,
         auto_play_treasures=auto_play_treasures,
         prune_treasure_plays=prune_treasure_plays,
+        obs_version=cfg.selfplay.obs_version,
     )
 
 
@@ -378,6 +392,7 @@ def main(argv: list[str] | None = None) -> int:
                     max_tree_nodes=cfg.selfplay.max_tree_nodes,
                     auto_play_treasures=auto_play_treasures,
                     prune_treasure_plays=prune_treasure_plays,
+                    obs_version=cfg.selfplay.obs_version,
                 )
             )
     else:
@@ -397,6 +412,7 @@ def main(argv: list[str] | None = None) -> int:
                 max_tree_nodes=cfg.selfplay.max_tree_nodes,
                 auto_play_treasures=auto_play_treasures,
                 prune_treasure_plays=prune_treasure_plays,
+                obs_version=cfg.selfplay.obs_version,
             )
         )
     print_table(rows)
