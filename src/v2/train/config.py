@@ -57,6 +57,7 @@ class SelfPlayConfig:
     auto_play_treasures: bool = False
     prune_treasure_plays: bool = False
     tree_reuse: bool = False
+    min_new_sims: int = 64
     expand_top_k: int = 0
 
 

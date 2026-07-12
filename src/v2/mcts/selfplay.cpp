@@ -182,6 +182,9 @@ struct SelfPlayRunner::GameSlot {
     std::vector<PlayerId> players;
     std::uint64_t seed = 0;
     std::uint64_t generation = 0;
+    // Counts only simulations started for this decision. On a successfully
+    // adopted tree, sims_target is a visit-target-derived new-sim quota.
+    std::uint32_t sims_target = 0;
     std::uint32_t sims_started = 0;
     std::uint32_t sims_completed = 0;
     std::uint32_t pending = 0;
@@ -349,6 +352,7 @@ SelfPlayRunner::SelfPlayRunner(const SelfPlayConfig& config)
     mcts_config_.prune_treasure_plays = config_.prune_treasure_plays;
     mcts_config_.expand_top_k = config_.expand_top_k;
     mcts_config_.tree_reuse = config_.tree_reuse;
+    mcts_config_.min_new_sims = config_.min_new_sims;
     if (mcts_config_.tree_reuse && mcts_config_.determinizations != 1U) {
         // A reused subtree belongs to one root-sampled hidden-information
         // world; K>1 trees aggregate different worlds below the root.
@@ -456,7 +460,7 @@ std::uint32_t SelfPlayRunner::collect_leaves(std::uint32_t max_batch) noexcept {
         if (!game.search_active) {
             start_search(game);
         }
-        if (game.sims_started >= config_.sims_per_move) {
+        if (game.sims_started >= game.sims_target) {
             maybe_finish_move(game);
             ++idle;
             continue;
@@ -563,6 +567,21 @@ float SelfPlayRunner::total_virtual_loss() const noexcept {
     return total;
 }
 
+SelfPlaySearchStats SelfPlayRunner::search_stats(std::uint32_t index) const noexcept {
+    SelfPlaySearchStats stats{};
+    if (index >= config_.n_games) {
+        return stats;
+    }
+
+    const GameSlot& game = games_[index];
+    stats.sims_target = game.sims_target;
+    stats.sims_started = game.sims_started;
+    stats.sims_completed = game.sims_completed;
+    stats.root_visits = game.mcts.node_count() == 0U ? 0U : game.mcts.node(0U).visits;
+    stats.search_active = game.search_active;
+    return stats;
+}
+
 const std::vector<SelfPlayRecord>& SelfPlayRunner::finished_games() const noexcept {
     return finished_;
 }
@@ -585,6 +604,7 @@ void SelfPlayRunner::reset_game(std::uint32_t index) noexcept {
     game.observations.clear();
     game.policy_targets.clear();
     game.players.clear();
+    game.sims_target = 0;
     game.sims_started = 0;
     game.sims_completed = 0;
     game.pending = 0;
@@ -609,6 +629,10 @@ void SelfPlayRunner::start_search(GameSlot& game) noexcept {
     } else {
         game.mcts.reset(game.state, player);
     }
+    // Keep the counters below strictly about newly started work so parked
+    // leaves and batch completion remain balanced. Only a hash-gated adopted
+    // root turns sims_per_move into a total root-visit target.
+    game.sims_target = game.mcts.new_simulation_target(reused);
     game.sims_started = 0;
     game.sims_completed = 0;
     game.pending = 0;
@@ -851,11 +875,13 @@ bool SelfPlayRunner::game_has_pending(std::uint32_t index) const noexcept {
 }
 
 void SelfPlayRunner::maybe_finish_move(GameSlot& game) noexcept {
-    if (!game.search_active || game.pending != 0U || game.sims_completed < config_.sims_per_move) {
+    if (!game.search_active || game.pending != 0U || game.sims_completed < game.sims_target) {
         return;
     }
 
     float policy[ACTION_SPACE_SIZE]{};
+    // Re-rooting preserves child visit counts. Policy targets intentionally
+    // use those full inherited-plus-new counts as legitimate search evidence.
     game.mcts.root_visit_policy(policy, 1.0F);
     record_decision(game, policy);
 

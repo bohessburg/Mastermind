@@ -249,7 +249,20 @@ void append_subject_def(py::list& subjects, const GameState& state, std::int16_t
     py::object subject_index = py::none();
     const auto kind = static_cast<DecisionKind>(state.decision.kind);
 
-    if (frame.source == DEF_LIBRARY && kind == DecisionKind::ChooseOption) {
+    if (kind == DecisionKind::OrderTriggers && (frame.flags & FRAME_TRIGGER_ORDER) != 0U) {
+        // Trigger-order frame layout: data[0] is the number of contiguous
+        // unresolved trigger frames immediately below this frame. Options map
+        // to those frames bottom-to-top.
+        const std::uint8_t count = frame.data[0] <= 0
+            ? 0U
+            : static_cast<std::uint8_t>(frame.data[0]);
+        if (count <= state.effect_depth - 1U) {
+            const std::uint8_t first = static_cast<std::uint8_t>(state.effect_depth - 1U - count);
+            for (std::uint8_t index = first; index < state.effect_depth - 1U; ++index) {
+                subjects.append(py::int_(state.effect_stack[index].source));
+            }
+        }
+    } else if (frame.source == DEF_LIBRARY && kind == DecisionKind::ChooseOption) {
         // Library custom frame layout: data[1] is the currently drawn Action
         // slot being kept or set aside.
         append_subject_def(subjects, state, frame.data[1]);
@@ -1421,7 +1434,8 @@ PYBIND11_MODULE(dominion_v2_py, module) {
             int obs_version,
             bool tree_reuse,
             std::uint8_t expand_top_k,
-            py::object kingdom_pool) {
+            py::object kingdom_pool,
+            std::uint16_t min_new_sims) {
             SelfPlayConfig config{};
             config.n_games = n_games;
             config.sims_per_move = sims_per_move;
@@ -1447,6 +1461,7 @@ PYBIND11_MODULE(dominion_v2_py, module) {
             config.obs_version = parse_obs_version(obs_version);
             config.tree_reuse = tree_reuse;
             config.expand_top_k = expand_top_k;
+            config.min_new_sims = min_new_sims;
             if (!kingdom.is_none()) {
                 PySetup setup(2, kingdom, false);
                 config.fixed_setup = setup.setup;
@@ -1479,7 +1494,8 @@ PYBIND11_MODULE(dominion_v2_py, module) {
             py::arg("obs_version") = static_cast<int>(ObsVersion::V1),
             py::arg("tree_reuse") = false,
             py::arg("expand_top_k") = 0U,
-            py::arg("kingdom_pool") = py::none())
+            py::arg("kingdom_pool") = py::none(),
+            py::arg("min_new_sims") = 64U)
         .def_readwrite("n_games", &SelfPlayConfig::n_games)
         .def_readwrite("sims_per_move", &SelfPlayConfig::sims_per_move)
         .def_readwrite("c_puct", &SelfPlayConfig::c_puct)
@@ -1507,6 +1523,7 @@ PYBIND11_MODULE(dominion_v2_py, module) {
         .def_readwrite("auto_play_treasures", &SelfPlayConfig::auto_play_treasures)
         .def_readwrite("prune_treasure_plays", &SelfPlayConfig::prune_treasure_plays)
         .def_readwrite("tree_reuse", &SelfPlayConfig::tree_reuse)
+        .def_readwrite("min_new_sims", &SelfPlayConfig::min_new_sims)
         .def_readwrite("expand_top_k", &SelfPlayConfig::expand_top_k);
 
     py::class_<SelfPlayRunner>(module, "SelfPlayRunner")

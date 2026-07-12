@@ -1245,6 +1245,18 @@ void Mcts::reset(const GameState& root, PlayerId perspective) noexcept {
     root_node.terminal = terminal_state(root);
 }
 
+std::uint32_t Mcts::new_simulation_target(bool adopted_root) const noexcept {
+    if (!adopted_root || node_count_ == 0U) {
+        return config_.sims_per_move;
+    }
+
+    const std::uint32_t inherited_root_visits = nodes_[0].visits;
+    const std::uint32_t remaining = inherited_root_visits >= config_.sims_per_move
+        ? 0U
+        : config_.sims_per_move - inherited_root_visits;
+    return std::max(remaining, static_cast<std::uint32_t>(config_.min_new_sims));
+}
+
 bool Mcts::retain_root_child(Action action, std::uint64_t post_action_hash) noexcept {
     clear_retained_root();
     if (!config_.tree_reuse || safe_determinizations(config_) != 1U || node_count_ == 0U) {

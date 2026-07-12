@@ -528,6 +528,7 @@ def test_campaign14_config_loads_warm_start_league_and_curriculum() -> None:
     assert config.selfplay.deep_slice_fraction == pytest.approx(0.05)
     assert config.selfplay.deep_slice_sims == 4096
     assert config.selfplay.tree_reuse is True
+    assert config.selfplay.min_new_sims == 64
     assert config.selfplay.expand_top_k == 8
     assert config.selfplay.scaffold_determinizations == 1
     assert config.scripted_opponent_schedule == {}
@@ -563,6 +564,7 @@ def test_make_runner_config_maps_and_validates_value_targets() -> None:
     assert native_defaults.scaffold_determinizations == 2
     assert native_defaults.scaffold_sims_opening == 0
     assert native_defaults.tree_reuse is False
+    assert native_defaults.min_new_sims == 64
     assert native_defaults.expand_top_k == 0
 
     config = SelfPlayConfig(
@@ -573,6 +575,7 @@ def test_make_runner_config_maps_and_validates_value_targets() -> None:
         scaffold_determinizations=3,
         scripted_threads=2,
         tree_reuse=True,
+        min_new_sims=5,
         expand_top_k=8,
     )
     runner_config = make_runner_config(config, 12345, scripted_kind="scaffold")
@@ -584,6 +587,7 @@ def test_make_runner_config_maps_and_validates_value_targets() -> None:
     assert runner_config.scaffold_determinizations == 3
     assert runner_config.scripted_threads == 2
     assert runner_config.tree_reuse is True
+    assert runner_config.min_new_sims == 5
     assert runner_config.expand_top_k == 8
     assert runner_config.scripted_bot == dz.SelfPlayScriptedBotKind.Scaffold
 

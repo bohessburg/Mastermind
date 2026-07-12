@@ -74,6 +74,7 @@ struct SelfPlayConfig {
     // Training-only search-depth controls. Both remain opt-in so default
     // self-play and gate/eval behavior keep their established full trees.
     bool tree_reuse = false;
+    std::uint16_t min_new_sims = 64U;
     std::uint8_t expand_top_k = 0;
 };
 
@@ -102,6 +103,17 @@ struct SelfPlayRecord {
     PlayerId scripted_nn_player = NONE;
 };
 
+// Read-only per-slot search counters, primarily useful when profiling batched
+// self-play. sims_started/sims_completed count only work begun for the active
+// decision; root_visits includes any inherited tree-reuse evidence.
+struct SelfPlaySearchStats {
+    std::uint32_t sims_target = 0;
+    std::uint32_t sims_started = 0;
+    std::uint32_t sims_completed = 0;
+    std::uint32_t root_visits = 0;
+    bool search_active = false;
+};
+
 class SelfPlayRunner {
 public:
     explicit SelfPlayRunner(const SelfPlayConfig& config);
@@ -116,6 +128,7 @@ public:
     [[nodiscard]] std::size_t observation_size() const noexcept;
     [[nodiscard]] std::uint64_t games_completed() const noexcept;
     [[nodiscard]] float total_virtual_loss() const noexcept;
+    [[nodiscard]] SelfPlaySearchStats search_stats(std::uint32_t index) const noexcept;
     // Async Scaffold jobs preserve each seed's trajectory, but cross-slot
     // completion timing can still change the arrival order of these records.
     [[nodiscard]] const std::vector<SelfPlayRecord>& finished_games() const noexcept;

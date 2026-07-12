@@ -249,6 +249,7 @@ def test_c14_feature_combination_runs_two_real_generations_and_reports_metrics(t
     cfg.selfplay.deep_slice_fraction = 0.25
     cfg.selfplay.deep_slice_sims = 8
     cfg.selfplay.tree_reuse = True
+    cfg.selfplay.min_new_sims = 2
     cfg.selfplay.expand_top_k = 8
     cfg.league_pool_size = 2
     cfg.league_seed_checkpoints = [str(seed_one), str(seed_two)]

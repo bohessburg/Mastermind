@@ -41,6 +41,9 @@ struct MctsConfig {
     // Internal owner opt-in for cross-decision re-rooting. The runner is the
     // only current owner that enables it.
     bool tree_reuse = false;
+    // When an adopted root already has visits, this guarantees a small
+    // amount of new exploration after root-noise priors are applied.
+    std::uint16_t min_new_sims = 64U;
 };
 
 struct MctsNode {
@@ -92,6 +95,10 @@ public:
     [[nodiscard]] bool retain_root_child(Action action, std::uint64_t post_action_hash) noexcept;
     [[nodiscard]] bool adopt_retained_root(const GameState& root, PlayerId perspective) noexcept;
     void clear_retained_root() noexcept;
+    // The caller owns its per-decision started/completed counters. Pass true
+    // only after a successful cross-decision adoption; fresh roots keep the
+    // historical sims_per_move new-simulation budget.
+    [[nodiscard]] std::uint32_t new_simulation_target(bool adopted_root) const noexcept;
     // Re-normalizes priors only across the existing root children.  The
     // runner uses this when re-applying root exploration noise after reuse.
     void set_root_priors(const float* priors) noexcept;

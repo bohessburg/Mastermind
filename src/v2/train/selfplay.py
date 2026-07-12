@@ -138,6 +138,7 @@ def make_runner_config(
         auto_play_treasures=config.auto_play_treasures,
         prune_treasure_plays=config.prune_treasure_plays,
         tree_reuse=config.tree_reuse,
+        min_new_sims=config.min_new_sims,
         expand_top_k=config.expand_top_k,
         value_target=_value_target(config.value_target),
         margin_scale=config.margin_scale,

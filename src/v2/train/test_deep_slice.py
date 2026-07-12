@@ -130,6 +130,7 @@ def test_deep_runner_config_uses_override_scaled_capacity_and_search_flags() -> 
         deep_slice_fraction=0.25,
         deep_slice_sims=512,
         tree_reuse=True,
+        min_new_sims=7,
         expand_top_k=8,
     )
 
@@ -141,6 +142,7 @@ def test_deep_runner_config_uses_override_scaled_capacity_and_search_flags() -> 
     assert deep.sims_per_move == 512
     assert deep.max_tree_nodes == 1024
     assert deep.tree_reuse is True
+    assert deep.min_new_sims == 7
     assert deep.expand_top_k == 8
 
 

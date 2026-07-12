@@ -21,6 +21,9 @@ def _run_reused_selfplay(seed: int) -> dict:
         dirichlet_alpha=0.30,
         dirichlet_frac=0.25,
         tree_reuse=True,
+        # Keep this small smoke fixture close to its historical four-sim
+        # workload while exercising the adopted-root visit-target path.
+        min_new_sims=2,
         expand_top_k=8,
     )
     runner = dz.SelfPlayRunner(config)
@@ -46,3 +49,8 @@ def test_selfplay_tree_reuse_topk_is_seed_deterministic() -> None:
     assert first["kingdom"] == second["kingdom"]
     for field in ("observations", "policy_targets", "values", "players"):
         np.testing.assert_array_equal(first[field], second[field])
+
+
+def test_selfplay_tree_reuse_min_new_sims_binding_defaults_to_64() -> None:
+    assert dz.SelfPlayConfig().min_new_sims == 64
+    assert dz.SelfPlayConfig(min_new_sims=2).min_new_sims == 2

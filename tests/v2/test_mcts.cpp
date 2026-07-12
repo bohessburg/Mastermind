@@ -1,4 +1,5 @@
 #include "v2/mcts/tree.h"
+#include "v2/mcts/selfplay.h"
 
 #include "v2/core/actions.h"
 #include "v2/core/game.h"
@@ -463,6 +464,147 @@ TEST_CASE("v2 MCTS reuses only a hash-matching selected subtree", "[v2][mcts][re
     // This mirrors SelfPlayRunner::start_search's mismatch path.
     mismatching_search.reset(stale_child_state, current_player(stale_child_state));
     REQUIRE(mismatching_search.node(0U).visits == 0U);
+}
+
+TEST_CASE("v2 MCTS reuse treats adopted root visits as a visit target", "[v2][mcts][reuse]") {
+    MctsConfig config{};
+    config.sims_per_move = 40U;
+    config.min_new_sims = 3U;
+    config.determinizations = 1U;
+    config.max_tree_nodes = 256U;
+    config.rollout_step_cap = 0U;
+    config.tree_reuse = true;
+
+    GameState state = buy_position(3);
+    Mcts search(config);
+    Xoshiro256pp rng = Xoshiro256pp::seeded(0x7EEE'1001ULL);
+    search.reset(state, 0U);
+    search.run_simulations(8U, rng);
+
+    const Action action = search.best_root_action();
+    const std::uint32_t inherited_visits = search.root_visits_for(action);
+    REQUIRE(inherited_visits > 0U);
+    REQUIRE(inherited_visits < config.sims_per_move);
+
+    GameState next_state = state;
+    (void)Game::step(next_state, action);
+    REQUIRE(search.retain_root_child(action, mcts_state_hash(next_state)));
+    REQUIRE(search.adopt_retained_root(next_state, current_player(next_state)));
+    REQUIRE(search.node(0U).visits == inherited_visits);
+
+    const std::uint32_t new_sims = search.new_simulation_target(true);
+    REQUIRE(new_sims == config.sims_per_move - inherited_visits);
+    search.run_simulations(new_sims, rng);
+    REQUIRE(search.node(0U).visits == inherited_visits + new_sims);
+    REQUIRE(search.node(0U).visits == config.sims_per_move);
+}
+
+TEST_CASE("v2 MCTS reuse honors the minimum new-simulation floor", "[v2][mcts][reuse]") {
+    MctsConfig config{};
+    config.sims_per_move = 1U;
+    config.min_new_sims = 5U;
+    config.determinizations = 1U;
+    config.max_tree_nodes = 256U;
+    config.rollout_step_cap = 0U;
+    config.tree_reuse = true;
+
+    GameState state = buy_position(3);
+    Mcts search(config);
+    Xoshiro256pp rng = Xoshiro256pp::seeded(0x7EEE'1002ULL);
+    search.reset(state, 0U);
+    search.run_simulations(8U, rng);
+
+    const Action action = search.best_root_action();
+    const std::uint32_t inherited_visits = search.root_visits_for(action);
+    REQUIRE(inherited_visits >= config.sims_per_move);
+
+    GameState next_state = state;
+    (void)Game::step(next_state, action);
+    REQUIRE(search.retain_root_child(action, mcts_state_hash(next_state)));
+    REQUIRE(search.adopt_retained_root(next_state, current_player(next_state)));
+
+    const std::uint32_t new_sims = search.new_simulation_target(true);
+    REQUIRE(new_sims == config.min_new_sims);
+    search.run_simulations(new_sims, rng);
+    REQUIRE(search.node(0U).visits == inherited_visits + new_sims);
+}
+
+TEST_CASE("v2 MCTS reuse keeps fresh-tree simulation budgets unchanged", "[v2][mcts][reuse]") {
+    MctsConfig config{};
+    config.sims_per_move = 7U;
+    config.min_new_sims = 64U;
+    config.determinizations = 1U;
+    config.max_tree_nodes = 128U;
+    config.rollout_step_cap = 0U;
+    config.tree_reuse = true;
+
+    Mcts search(config);
+    const GameState state = buy_position(3);
+    search.reset(state, 0U);
+    REQUIRE(search.new_simulation_target(false) == config.sims_per_move);
+
+    Xoshiro256pp rng = Xoshiro256pp::seeded(0x7EEE'1003ULL);
+    search.run_simulations(search.new_simulation_target(false), rng);
+    REQUIRE(search.node(0U).visits == config.sims_per_move);
+
+    const SelfPlayConfig selfplay_config{};
+    REQUIRE(config.min_new_sims == 64U);
+    REQUIRE(selfplay_config.min_new_sims == 64U);
+}
+
+TEST_CASE("v2 selfplay applies the adopted-root visit target to slot counters", "[v2][mcts][reuse]") {
+    SelfPlayConfig config{};
+    config.n_games = 1U;
+    config.sims_per_move = 12U;
+    config.min_new_sims = 1U;
+    config.max_batch = 1U;
+    config.seed = 0x7EEE'1004ULL;
+    config.kingdom_mode = SelfPlayKingdomMode::Fixed;
+    config.dirichlet_frac = 0.0F;
+    config.temp_moves = 0U;
+    config.max_tree_nodes = 256U;
+    config.tree_reuse = true;
+
+    SelfPlayRunner runner(config);
+    std::array<float, 1> values{};
+    std::array<float, ACTION_SPACE_SIZE> policies{};
+    bool saw_adopted_root = false;
+    bool saw_adopted_completion = false;
+    std::uint32_t inherited_visits = 0U;
+    std::uint32_t expected_target = 0U;
+
+    for (std::uint32_t guard = 0U; guard < 512U && !saw_adopted_completion; ++guard) {
+        const std::uint32_t count = runner.collect_leaves(1U);
+        const SelfPlaySearchStats before = runner.search_stats(0U);
+        if (!saw_adopted_root && before.search_active
+            && before.sims_started == 1U && before.sims_completed == 0U
+            && before.root_visits > 0U) {
+            inherited_visits = before.root_visits;
+            const std::uint32_t remaining = inherited_visits >= config.sims_per_move
+                ? 0U
+                : config.sims_per_move - inherited_visits;
+            expected_target = remaining > config.min_new_sims ? remaining : config.min_new_sims;
+            REQUIRE(before.sims_target == expected_target);
+            REQUIRE(expected_target < config.sims_per_move);
+            saw_adopted_root = true;
+        }
+
+        if (count > 0U) {
+            REQUIRE(count == 1U);
+            runner.provide_evaluations(values.data(), policies.data(), count);
+        }
+
+        const SelfPlaySearchStats after = runner.search_stats(0U);
+        if (saw_adopted_root && !after.search_active && after.sims_target == expected_target) {
+            REQUIRE(after.sims_started == expected_target);
+            REQUIRE(after.sims_completed == expected_target);
+            REQUIRE(after.root_visits == inherited_visits + expected_target);
+            saw_adopted_completion = true;
+        }
+    }
+
+    REQUIRE(saw_adopted_root);
+    REQUIRE(saw_adopted_completion);
 }
 
 TEST_CASE("v2 MCTS tree reuse rejects multiple determinizations", "[v2][mcts][reuse]") {
