@@ -554,3 +554,38 @@ data generation (small fraction of games at 8-16x sims to bootstrap the
 value head on long plans), engine-dominant curriculum kingdoms, Jack's
 exports as seed/league material, card-structured architecture (slot
 embeddings) for cross-kingdom synergy generalization.
+
+CAMPAIGN 14 DESIGN (agreed 2026-07-12):
+- WARM-START from c13 gen_0065 (same architecture; resume-style weight
+  load into a fresh campaign dir; fresh replay buffer; lr schedule
+  restarts). Rationale: the isolate-variables era is over; every gen
+  should buy NEW capability, and a warm start makes the ancestor league
+  automatically strength-adjacent (no cold-start helplessness).
+- OPPONENT POOL: scripted opponents REMOVED from training entirely -> BM
+  + scaffold move to the EVAL LADDER as sentinels (regression alarms,
+  zero data anchoring). Training pool = mirrors + LEAGUE of past selves:
+  the banked c13 spread (gens 10-96, 12 checkpoints, all v2/scaled).
+  League sampling must be strength-matched / dose-ramped (AlphaStar
+  lesson; c5 learned-helplessness precedent). Older-campaign checkpoints
+  (v1 obs) excluded — per-seat encode plumbing not worth it.
+- KNOWN LIMIT of league-only: the family is a money-style monoculture —
+  league diversifies strength, not strategy class. Repertoire growth must
+  come from:
+- CURRICULUM KINGDOMS (new feature): a kingdom-pool schedule — phases of
+  engine-forcing boards (Village/Smithy/Lab/Market/Festival-dense, cheap
+  trashing) where money demonstrably loses, mixed back to random kingdoms
+  on a schedule, so the mirror equilibrium itself learns engines.
+- DEEP-SLICE DATA GEN (new feature): a small fraction of games at 8-16x
+  sims so search can occasionally REACH engine payoffs and bootstrap the
+  value head (depth amortization flywheel).
+- SEARCH: tree reuse (hash-gated, K=1) + top-k expansion AS AMENDED after
+  Jack's lock-in observation: full width + noise at the ROOT (targets and
+  exploration preserved), top-k only in-tree, plus one random wildcard
+  child per expansion (epsilon-exploration; prevents self-reinforcing
+  prior collapse — the top-k-everywhere variant would harden the money
+  attractor).
+Build order: (A) tree-reuse/top-k chunk in flight + amendment on landing;
+(B) curriculum kingdom schedule; (C) deep-slice sims; (D) league ramp /
+strength-matched sampling over explicit checkpoint list + eval-ladder BM/
+scaffold sentinels; (E) run_c14.json + warm-start verification. Launch
+when a new box is provisioned.
