@@ -470,3 +470,15 @@ death), cut, bank best weights, design c14 with necessary changes, and
 launch it. Reference bars: c12 hit 81.3% (v2 bot) at gen 25 and was
 plateaued at 47.7% vs BigMoney — c13's vs-BM number is the headline
 metric for whether SIGHT breaks the racing wall.
+
+C13 GEN-25 MILESTONE — THE BIGMONEY WALL FALLS (2026-07-12 ~05:30):
+overnight decision point passed at full speed. Eval 86.0% vs EngineBot v2
+(oscillating 81-87 since gen 10); first Province-majority ending mix
+(124/76). THE HEADLINE: deterministic BigMoney eval = 113W-65L-22T =
+63.5% — c12's 47.7% plateau (the blindness ceiling, flat across 5 gens)
+cleared by 16 points at gen 25. The obs-v2 thesis is CONFIRMED: opponent
+visibility -> matchup adaptation -> the pure-racer wall breaks, with no
+trade-off against general strength (bm training counter arc: 0 -> 16% ->
+30% -> 32.5% -> 28.8% at rising dose; c12 lifetime max ~18%). gen_0025
+banked locally. Run continues per the overnight contract (stall clause
+nowhere near triggering).
