@@ -174,6 +174,7 @@ def test_training_metrics_include_periodic_eval(tmp_path: Path) -> None:
     cfg.eval.eval_kingdoms = "fixed"
     cfg.eval.eval_n_games = 2
     cfg.eval.eval_max_batch = 8
+    cfg.eval.eval_sentinels = []
 
     run_training(cfg)
     rows = read_metrics(Path(cfg.metrics_csv))
@@ -183,3 +184,34 @@ def test_training_metrics_include_periodic_eval(tmp_path: Path) -> None:
     total = int(rows[0]["eval_wins"]) + int(rows[0]["eval_losses"]) + int(rows[0]["eval_ties"])
     assert total == 4
     assert int(rows[0]["eval_end_province"]) + int(rows[0]["eval_end_piles"]) + int(rows[0]["eval_end_trunc"]) == 4
+
+
+def test_periodic_eval_emits_sentinel_metric_columns(tmp_path: Path) -> None:
+    cfg = tiny_config(tmp_path, seed=6162, generations=1)
+    cfg.model.hidden_sizes = [16]
+    cfg.selfplay.n_games = 2
+    cfg.selfplay.games_per_generation = 2
+    cfg.selfplay.sims_per_move = 2
+    cfg.selfplay.max_batch = 8
+    cfg.selfplay.max_tree_nodes = 256
+    cfg.optim.train_steps_per_generation = 0
+    cfg.eval.eval_every_n_generations = 1
+    cfg.eval.eval_games = 2
+    cfg.eval.eval_sims = 2
+    cfg.eval.eval_opponent = "random"
+    cfg.eval.eval_kingdoms = "fixed"
+    cfg.eval.eval_n_games = 1
+    cfg.eval.eval_max_batch = 8
+    cfg.eval.eval_sentinels = [
+        {"opponent": "bigmoney", "games": 2},
+        {"opponent": "engine", "games": 2},
+    ]
+
+    result = run_training(cfg)
+    row = result["metrics"][0]
+    csv_row = read_metrics(Path(cfg.metrics_csv))[0]
+    for opponent in ("bigmoney", "engine"):
+        assert row[f"sentinel_{opponent}_games"] == 2
+        assert 0 <= row[f"sentinel_{opponent}_wins"] <= 2
+        assert int(csv_row[f"sentinel_{opponent}_games"]) == 2
+        assert 0 <= int(csv_row[f"sentinel_{opponent}_wins"]) <= 2

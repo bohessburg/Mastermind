@@ -13,12 +13,16 @@ from .config import TrainConfig
 from .gating import (
     GateStats,
     SelfPlaySegment,
+    archive_previous_best,
+    archive_self_checkpoint,
     best_checkpoint_path,
     compact_selfplay_segments,
+    effective_league_fraction,
     gate_result,
     initialize_best_checkpoint,
     league_checkpoint_paths,
     load_best_checkpoint,
+    league_opponent_weights,
     plan_selfplay_segments,
     run_gate_match,
     sample_league_games,
@@ -50,6 +54,29 @@ def test_league_sampling_is_exact_uniform_and_seeded() -> None:
     # League self-play is deliberately routed current-best as player zero and
     # the archived opponent as player one. Gate matches seat-swap separately.
     assert all(game.best_player == 0 for game in sampled)
+
+
+def test_strength_matched_league_sampling_favors_lower_win_rate_seededly() -> None:
+    names = ["hard.pt", "easy.pt"]
+    # Tuples are (games, current-seat-zero wins): hard is only 10%, while
+    # easy is fully beaten and remains selectable via the +0.1 floor.
+    weights = league_opponent_weights(names, {"hard.pt": (100, 10), "easy.pt": (100, 100)})
+    assert weights == pytest.approx([1.0, 0.1])
+    first = sample_league_games(1_000, 1.0, 2, seed=12345, opponent_weights=weights)
+    second = sample_league_games(1_000, 1.0, 2, seed=12345, opponent_weights=weights)
+    assert first == second
+    counts = Counter(game.opponent_index for game in first if game is not None)
+    assert counts[0] > counts[1] * 5
+    assert counts[1] > 0
+
+
+def test_league_schedule_interpolates_and_rejects_invalid_breakpoints() -> None:
+    schedule = [[1, 0.0], [3, 0.5], [5, 1.0]]
+    assert effective_league_fraction(schedule, 0.2, 0) == 0.0
+    assert effective_league_fraction(schedule, 0.2, 2) == 0.25
+    assert effective_league_fraction(schedule, 0.2, 5) == 1.0
+    with pytest.raises(ValueError, match="strictly increasing"):
+        effective_league_fraction([[1, 0.0], [1, 0.5]], 0.2, 1)
 
 
 def test_league_mix_segments_honor_fraction_and_compact_model_table() -> None:
@@ -441,6 +468,71 @@ def test_league_seed_width_mismatch_raises_hard_clear_error(tmp_path: Path) -> N
     target_cfg.league_seed_checkpoints = [str(source_checkpoint)]
     with pytest.raises(ValueError, match=r"league seed checkpoint .*hidden_sizes \[16\].*current run requires \[32\]"):
         seed_league_checkpoints(target_cfg, torch.device("cpu"))
+
+
+def test_league_seed_observation_version_mismatch_raises_hard_error(tmp_path: Path) -> None:
+    source_cfg = _small_gated_config(tmp_path / "source", generations=1)
+    source_cfg.selfplay.obs_version = 1
+    source_model, source_optimizer, source_replay = build_objects(source_cfg, torch.device("cpu"))
+    source_checkpoint = save_checkpoint(source_cfg, 1, source_model, source_optimizer, source_replay)
+
+    target_cfg = _small_gated_config(tmp_path / "target", generations=1)
+    target_cfg.selfplay.obs_version = 2
+    target_cfg.league_seed_checkpoints = [str(source_checkpoint)]
+    with pytest.raises(ValueError, match=r"stored obs_version 1 and input width .*current run requires obs_version 2"):
+        seed_league_checkpoints(target_cfg, torch.device("cpu"))
+
+
+def test_ungated_league_schedule_uses_exact_per_generation_counts(tmp_path: Path) -> None:
+    source_cfg = _small_gated_config(tmp_path / "source", generations=1)
+    source_model, source_optimizer, source_replay = build_objects(source_cfg, torch.device("cpu"))
+    source_checkpoint = save_checkpoint(source_cfg, 1, source_model, source_optimizer, source_replay)
+
+    cfg = _small_gated_config(tmp_path / "target", generations=2)
+    cfg.gate_games = 0
+    cfg.selfplay.n_games = 2
+    cfg.selfplay.games_per_generation = 4
+    cfg.selfplay.sims_per_move = 2
+    cfg.league_seed_checkpoints = [str(source_checkpoint)]
+    cfg.league_schedule = [[1, 0.25], [2, 0.75]]
+
+    result = run_training(cfg)
+    assert [row["league_games"] for row in result["metrics"]] == [1, 3]
+    csv_rows = read_metrics(Path(cfg.metrics_csv))
+    assert [int(row["league_games_seed_0.pt"]) for row in csv_rows] == [1, 3]
+    assert all("gate_result" not in row for row in result["metrics"])
+
+
+def test_periodic_self_checkpoints_are_fifo_capped_without_evicting_seeds(tmp_path: Path) -> None:
+    cfg = _small_gated_config(tmp_path, generations=1)
+    cfg.league_pool_size = 2
+    cfg.league_self_every = 1
+    source_model, source_optimizer, source_replay = build_objects(cfg, torch.device("cpu"))
+    seeds = tmp_path / "seed.pt"
+    torch.save({"generation": 0, "config": cfg.to_dict(), "model": source_model.state_dict()}, seeds)
+    cfg.league_seed_checkpoints = [str(seeds)]
+    seed_league_checkpoints(cfg, torch.device("cpu"))
+
+    for generation in range(1, 4):
+        checkpoint = save_checkpoint(cfg, generation, source_model, source_optimizer, source_replay)
+        archive_self_checkpoint(cfg, checkpoint, generation)
+
+    assert [path.name for path in league_checkpoint_paths(cfg)] == ["seed_0.pt", "self_0002.pt", "self_0003.pt"]
+
+
+def test_self_pool_fifo_orders_periodic_and_gated_history_by_addition_age(tmp_path: Path) -> None:
+    cfg = _small_gated_config(tmp_path, generations=1)
+    cfg.league_pool_size = 2
+    cfg.league_self_every = 1
+    model, optimizer, replay = build_objects(cfg, torch.device("cpu"))
+    generation_one = save_checkpoint(cfg, 1, model, optimizer, replay)
+    archive_self_checkpoint(cfg, generation_one, 1)
+    save_best_checkpoint(cfg, 1, model, best_checkpoint_path(cfg.checkpoint_dir))
+    archive_previous_best(cfg, best_checkpoint_path(cfg.checkpoint_dir), 1)
+    generation_two = save_checkpoint(cfg, 2, model, optimizer, replay)
+    archive_self_checkpoint(cfg, generation_two, 2)
+
+    assert [path.name for path in league_checkpoint_paths(cfg)] == ["best_0001.pt", "self_0002.pt"]
 
 
 def test_gate_force_accepts_only_after_configured_stale_generations(monkeypatch, tmp_path: Path) -> None:

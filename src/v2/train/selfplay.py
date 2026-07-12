@@ -35,6 +35,8 @@ class SelfPlayStats:
     deep_positions: int = 0
     # Maps scripted opponent kind to (games, neural-network wins).
     scripted_by_kind: dict[str, tuple[int, int]] = field(default_factory=dict)
+    # Maps league checkpoint basename to (games, current-seat-zero wins).
+    league_by_opponent: dict[str, tuple[int, int]] = field(default_factory=dict)
 
     @property
     def games_per_hour(self) -> float:
@@ -180,6 +182,23 @@ def _record_scripted_outcomes(
     stats.scripted_by_kind[scripted_kind] = (previous_games + games, previous_wins + wins)
 
 
+def _record_league_outcomes(
+    stats: SelfPlayStats,
+    records: list[dict],
+    league_opponent: str | None,
+) -> None:
+    if league_opponent is None:
+        return
+    # League replay deliberately preserves its established full-game behavior:
+    # _records_to_replay keeps positions from both seats. Only this metric is
+    # seat-specific, recording the current model's fixed seat-zero outcome;
+    # league games are not seat-swapped (gate matches are handled separately).
+    games = len(records)
+    wins = sum(1 for record in records if record.get("winner") is not None and int(record["winner"]) == 0)
+    previous_games, previous_wins = stats.league_by_opponent.get(league_opponent, (0, 0))
+    stats.league_by_opponent[league_opponent] = (previous_games + games, previous_wins + wins)
+
+
 def run_self_play_generation(
     model: torch.nn.Module,
     replay: ReplayBuffer,
@@ -319,6 +338,7 @@ def play_routed_games(
     kingdom_pool: Sequence[int] | None = None,
     kingdom_mode: str | None = None,
     sims_override: int = 0,
+    league_opponent: str | None = None,
 ) -> tuple[SelfPlayStats, list[dict]]:
     """Generate an exact number of games while routing every leaf by seat."""
     if target_games < 0:
@@ -381,6 +401,7 @@ def play_routed_games(
         records.extend(finished[:remaining])
     stats.games, stats.positions = _records_to_replay(records, _DiscardReplay())
     _record_scripted_outcomes(stats, records, scripted_kind)
+    _record_league_outcomes(stats, records, league_opponent)
     stats.wall_time = time.perf_counter() - start
     return stats, records
 
@@ -406,6 +427,7 @@ def run_routed_self_play_generation(
     kingdom_pool: Sequence[int] | None = None,
     kingdom_mode: str | None = None,
     sims_override: int = 0,
+    league_opponent: str | None = None,
 ) -> SelfPlayStats:
     stats, records = play_routed_games(
         seat_models,
@@ -419,6 +441,7 @@ def run_routed_self_play_generation(
         kingdom_pool=kingdom_pool,
         kingdom_mode=kingdom_mode,
         sims_override=sims_override,
+        league_opponent=league_opponent,
     )
     games, positions = _records_to_replay(records, replay)
     stats.games = games

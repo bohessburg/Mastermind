@@ -86,6 +86,15 @@ class EvalConfig:
     eval_kingdoms: str = "random"
     eval_n_games: int = 64
     eval_max_batch: int = 512
+    # These are deliberately small regression sentinels rather than another
+    # training data source. MCTS uses the expensive scaffold, so keep its
+    # default game count especially conservative.
+    eval_sentinels: list[dict[str, object]] = field(
+        default_factory=lambda: [
+            {"opponent": "bigmoney", "games": 16},
+            {"opponent": "mcts", "games": 4},
+        ]
+    )
 
 
 @dataclass
@@ -122,14 +131,21 @@ class TrainConfig:
     # data pool bootstraps past random play before strict gating engages
     # (strict gating from random init deadlocks — see docs/training-log.md).
     gate_warmup_generations: int = 0
-    # Historical-opponent games are only sampled when gating is enabled and
-    # accepted best checkpoints exist in checkpoint_dir/league/.
+    # Historical-opponent games may be sampled with or without candidate
+    # gating. ``league_schedule`` overrides this fixed fraction per generation.
     league_fraction: float = 0.0
     league_pool_size: int = 8
     # External standard-format checkpoints copied into checkpoint_dir/league/
     # before generation one. They remain standing league opponents alongside
     # archived accepted bests.
     league_seed_checkpoints: list[str] = field(default_factory=list)
+    # Every N generations, retain the newly saved candidate checkpoint as a
+    # league member. Zero disables this periodic self-checkpoint stream.
+    league_self_every: int = 0
+    # [generation, fraction] breakpoints, linearly interpolated like the
+    # scripted-opponent curriculum. A non-empty schedule overrides
+    # ``league_fraction``.
+    league_schedule: list = field(default_factory=list)
     # Fixed scripted opponents inject non-mirror game evidence into training.
     # Fractions are per generation and may be used with or without gating.
     scripted_opponents: dict[str, float] = field(default_factory=dict)

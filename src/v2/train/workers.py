@@ -93,6 +93,7 @@ def split_segments_by_quotas(
                     kingdom_pool=source.kingdom_pool,
                     kingdom_mode=source.kingdom_mode,
                     sims_override=source.sims_override,
+                    league_opponent=source.league_opponent,
                 )
             )
             needed -= take
@@ -388,6 +389,21 @@ def _record_scripted_outcomes(
     stats.scripted_by_kind[scripted_kind] = (previous_games + games, previous_wins + wins)
 
 
+def _record_league_outcomes(
+    stats: SelfPlayStats,
+    records: list[dict[str, Any]],
+    league_opponent: str | None,
+) -> None:
+    if league_opponent is None:
+        return
+    # This matches the single-process route: replay keeps both seats, while
+    # league win counters mean the current model's fixed seat-zero result.
+    games = len(records)
+    wins = sum(1 for record in records if record.get("winner") is not None and int(record["winner"]) == 0)
+    previous_games, previous_wins = stats.league_by_opponent.get(league_opponent, (0, 0))
+    stats.league_by_opponent[league_opponent] = (previous_games + games, previous_wins + wins)
+
+
 def _generate_games_exact(
     runner: Any,
     evaluate: Callable[[np.ndarray, np.ndarray], tuple[np.ndarray, np.ndarray]],
@@ -452,6 +468,7 @@ def _generate_routed_games(
     kingdom_pool: list[int] | None = None,
     kingdom_mode: str | None = None,
     sims_override: int = 0,
+    league_opponent: str | None = None,
 ) -> SelfPlayStats:
     """Generate a task with fixed models for player zero and player one."""
     if target_games <= 0:
@@ -518,6 +535,7 @@ def _generate_routed_games(
             continue
         records = finished[: target_games - sent]
         _record_scripted_outcomes(stats, records, scripted_kind)
+        _record_league_outcomes(stats, records, league_opponent)
         packed = _pack_records(records, obs_size)
         games, positions = int(packed[0].shape[0]), int(packed[0].sum())
         if games:
@@ -546,6 +564,9 @@ def _accumulate_stats(total: SelfPlayStats, update: SelfPlayStats) -> None:
     for kind, (games, wins) in update.scripted_by_kind.items():
         previous_games, previous_wins = total.scripted_by_kind.get(kind, (0, 0))
         total.scripted_by_kind[kind] = (previous_games + games, previous_wins + wins)
+    for opponent, (games, wins) in update.league_by_opponent.items():
+        previous_games, previous_wins = total.league_by_opponent.get(opponent, (0, 0))
+        total.league_by_opponent[opponent] = (previous_games + games, previous_wins + wins)
 
 
 def _worker_main(
@@ -684,6 +705,7 @@ def _worker_main(
                             segment.kingdom_pool,
                             segment.kingdom_mode,
                             segment.sims_override,
+                            segment.league_opponent,
                         )
                         if segment.is_league:
                             league_games += task_stats.games
@@ -727,6 +749,7 @@ def _worker_main(
                         stats.deep_games,
                         stats.deep_positions,
                         league_games,
+                        stats.league_by_opponent,
                         route_audit,
                     ),
                 )
@@ -851,6 +874,7 @@ class ParallelSelfPlayPool:
                 worker_deep_games,
                 worker_deep_positions,
                 worker_league_games,
+                worker_league_by_opponent,
                 worker_route_audit,
             ) = payload
             if received_by_worker[worker_index] != self.quotas[worker_index]:
@@ -875,6 +899,9 @@ class ParallelSelfPlayPool:
             for kind, (games, wins) in worker_scripted_by_kind.items():
                 previous_games, previous_wins = stats.scripted_by_kind.get(kind, (0, 0))
                 stats.scripted_by_kind[kind] = (previous_games + games, previous_wins + wins)
+            for opponent, (games, wins) in worker_league_by_opponent.items():
+                previous_games, previous_wins = stats.league_by_opponent.get(opponent, (0, 0))
+                stats.league_by_opponent[opponent] = (previous_games + games, previous_wins + wins)
             league_games += worker_league_games
             for key, count in worker_route_audit.items():
                 normalized = (int(key[0]), int(key[1]))

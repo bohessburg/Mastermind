@@ -29,6 +29,7 @@ if __package__ in (None, ""):
     from src.v2.train.gating import (
         GateStats,
         archive_previous_best,
+        archive_self_checkpoint,
         gate_result,
         gating_enabled,
         initialize_best_checkpoint,
@@ -37,7 +38,9 @@ if __package__ in (None, ""):
         compact_selfplay_segments,
         assign_kingdom_phase_to_segments,
         effective_kingdom_phase,
+        effective_league_fraction,
         effective_scripted_fractions,
+        league_opponent_weights,
         plan_training_selfplay_segments,
         run_gate_match,
         save_best_checkpoint,
@@ -54,6 +57,7 @@ else:
     from .gating import (
         GateStats,
         archive_previous_best,
+        archive_self_checkpoint,
         gate_result,
         gating_enabled,
         initialize_best_checkpoint,
@@ -62,7 +66,9 @@ else:
         compact_selfplay_segments,
         assign_kingdom_phase_to_segments,
         effective_kingdom_phase,
+        effective_league_fraction,
         effective_scripted_fractions,
+        league_opponent_weights,
         plan_training_selfplay_segments,
         run_gate_match,
         save_best_checkpoint,
@@ -216,7 +222,10 @@ def load_checkpoint(path: str | Path, device: torch.device):
     payload = load_full_checkpoint(checkpoint_path, device)
     cfg_dict = payload["config"]
     cfg = load_config(None)
-    from src.v2.train.config import _merge_dataclass  # local to keep private helper out of public API
+    if __package__ in (None, ""):
+        from src.v2.train.config import _merge_dataclass  # local keeps the helper private
+    else:
+        from .config import _merge_dataclass
 
     _merge_dataclass(cfg, cfg_dict)
     model, optimizer, replay = build_objects(cfg, device)
@@ -307,19 +316,25 @@ METRICS_FIELDNAMES = [
 ]
 
 
-def _scripted_metric_fieldnames(row: dict[str, Any]) -> list[str]:
+def _dynamic_metric_fieldnames(row: dict[str, Any]) -> list[str]:
     return sorted(
         key
         for key in row
-        if key.startswith("scripted_games_") or key.startswith("scripted_wins_")
+        if (
+            key.startswith("scripted_games_")
+            or key.startswith("scripted_wins_")
+            or key.startswith("league_games_")
+            or key.startswith("league_wins_")
+            or (key.startswith("sentinel_") and (key.endswith("_games") or key.endswith("_wins")))
+        )
     )
 
 
 def append_metrics(path: str | Path, row: dict[str, Any]) -> None:
     out = Path(path)
     out.parent.mkdir(parents=True, exist_ok=True)
-    scripted_fieldnames = _scripted_metric_fieldnames(row)
-    required_fieldnames = [*METRICS_FIELDNAMES, *scripted_fieldnames]
+    dynamic_fieldnames = _dynamic_metric_fieldnames(row)
+    required_fieldnames = [*METRICS_FIELDNAMES, *dynamic_fieldnames]
     if out.exists():
         with out.open(newline="") as handle:
             reader = csv.DictReader(handle)
@@ -345,7 +360,7 @@ def append_metrics(path: str | Path, row: dict[str, Any]) -> None:
                 writer.writerow({key: row.get(key, "") for key in fieldnames})
             return
 
-    fieldnames = [*METRICS_FIELDNAMES, *scripted_fieldnames]
+    fieldnames = [*METRICS_FIELDNAMES, *dynamic_fieldnames]
     with out.open("w", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()
@@ -369,6 +384,9 @@ def _add_stats(total: SelfPlayStats, update: SelfPlayStats) -> None:
     for kind, (games, wins) in update.scripted_by_kind.items():
         previous_games, previous_wins = total.scripted_by_kind.get(kind, (0, 0))
         total.scripted_by_kind[kind] = (previous_games + games, previous_wins + wins)
+    for opponent, (games, wins) in update.league_by_opponent.items():
+        previous_games, previous_wins = total.league_by_opponent.get(opponent, (0, 0))
+        total.league_by_opponent[opponent] = (previous_games + games, previous_wins + wins)
 
 
 def _run_segmented_single_pipeline(
@@ -396,12 +414,36 @@ def _run_segmented_single_pipeline(
             kingdom_pool=segment.kingdom_pool,
             kingdom_mode=segment.kingdom_mode,
             sims_override=segment.sims_override,
+            league_opponent=segment.league_opponent,
         )
         if segment.sims_override:
             stats.deep_games += stats.games
             stats.deep_positions += stats.positions
         _add_stats(total, stats)
     return total
+
+
+def validated_eval_sentinels(raw_sentinels: object) -> list[tuple[str, int]]:
+    """Validate the compact eval-ladder sentinel configuration."""
+    if not isinstance(raw_sentinels, list):
+        raise ValueError("eval_sentinels must be a list of {opponent, games} objects")
+    allowed = {"bigmoney", "engine", "mcts"}
+    sentinels: list[tuple[str, int]] = []
+    seen: set[str] = set()
+    for index, raw_sentinel in enumerate(raw_sentinels):
+        if not isinstance(raw_sentinel, dict):
+            raise ValueError(f"eval sentinel {index} must be an object")
+        opponent = raw_sentinel.get("opponent")
+        games = raw_sentinel.get("games")
+        if not isinstance(opponent, str) or opponent not in allowed:
+            raise ValueError(f"eval sentinel {index} opponent must be one of {', '.join(sorted(allowed))}")
+        if not isinstance(games, int) or isinstance(games, bool) or games <= 0:
+            raise ValueError(f"eval sentinel {index} games must be a positive integer")
+        if opponent in seen:
+            raise ValueError(f"eval_sentinels contains duplicate opponent {opponent!r}")
+        seen.add(opponent)
+        sentinels.append((opponent, games))
+    return sentinels
 
 
 def run_training(config: TrainConfig, resume: str | None = None, profile: bool = False) -> dict[str, Any]:
@@ -432,6 +474,8 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
         config.league_fraction = requested.league_fraction
         config.league_pool_size = requested.league_pool_size
         config.league_seed_checkpoints = requested.league_seed_checkpoints
+        config.league_self_every = requested.league_self_every
+        config.league_schedule = requested.league_schedule
         config.scripted_opponents = requested.scripted_opponents
         config.scripted_opponent_schedule = requested.scripted_opponent_schedule
         config.kingdom_curriculum = requested.kingdom_curriculum
@@ -465,17 +509,35 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
     if not isinstance(config.scripted_opponents, dict):
         raise ValueError("scripted_opponents must be an object mapping kind to fraction")
     effective_scripted_fractions(config.scripted_opponent_schedule, config.scripted_opponents, start_generation)
+    effective_league_fraction(config.league_schedule, config.league_fraction, start_generation)
+    if (
+        not isinstance(config.league_self_every, int)
+        or isinstance(config.league_self_every, bool)
+        or config.league_self_every < 0
+    ):
+        raise ValueError("league_self_every must be a non-negative integer")
     effective_kingdom_phase(config.kingdom_curriculum, config.selfplay.kingdom_mode, start_generation)
+    eval_sentinels = validated_eval_sentinels(config.eval.eval_sentinels)
     configured_scripted_kinds = sorted(
         set(config.scripted_opponents) | set(config.scripted_opponent_schedule)
     )
+    league_configured = (
+        float(config.league_fraction) > 0.0
+        or bool(config.league_schedule)
+        or bool(config.league_seed_checkpoints)
+        or int(config.league_self_every) > 0
+    )
+    league_performance: dict[str, tuple[int, int]] = {}
+    configured_league_opponents: set[str] = set()
     best_model: DominionNet | None = None
     best_generation: int | None = None
     best_path: Path | None = None
-    if use_gating:
-        # Explicit external opponents must be available before generation one;
-        # no accepted candidate is needed to start sampling them.
+    if league_configured:
+        # External opponents must be available before generation one even for
+        # ungated runs; their input pipeline is validated during this copy.
         seed_league_checkpoints(config, device)
+        configured_league_opponents.update(path.name for path in league_checkpoint_paths(config))
+    if use_gating:
         # A fresh run seeds best from the initial candidate. On resume, best.pt
         # is authoritative because rejected generation checkpoints are still
         # candidate checkpoints and must not silently become self-play policy.
@@ -497,6 +559,11 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
             lr = learning_rate_for_generation(config, generation)
             set_optimizer_lr(optimizer, lr)
             planned_league_games = 0
+            effective_league = effective_league_fraction(
+                config.league_schedule,
+                config.league_fraction,
+                generation,
+            )
             effective_scripted = effective_scripted_fractions(
                 config.scripted_opponent_schedule,
                 config.scripted_opponents,
@@ -509,6 +576,7 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
             )
             use_segments = (
                 use_gating
+                or league_configured
                 or bool(config.scripted_opponents)
                 or bool(config.scripted_opponent_schedule)
                 or bool(config.kingdom_curriculum)
@@ -531,16 +599,22 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
             else:
                 active_model = best_model if use_gating else model
                 assert active_model is not None
-                all_league_paths = league_checkpoint_paths(config) if use_gating else []
+                # This deliberately remains independent of candidate gating:
+                # margin-era runs use the current candidate as model zero.
+                all_league_paths = league_checkpoint_paths(config)
+                league_names = [path.name for path in all_league_paths]
+                configured_league_opponents.update(league_names)
                 sampled_segments = plan_training_selfplay_segments(
                     config.selfplay.games_per_generation,
-                    config.league_fraction if use_gating else 0.0,
+                    effective_league,
                     len(all_league_paths),
                     effective_scripted,
                     config.seed ^ (generation * 0xC0FFEE),
                     deep_slice_fraction=config.selfplay.deep_slice_fraction,
                     deep_slice_sims=config.selfplay.deep_slice_sims,
                     sims_per_move=config.selfplay.sims_per_move,
+                    league_opponent_weights=league_opponent_weights(league_names, league_performance),
+                    league_opponent_names=league_names,
                 )
                 sampled_segments = assign_kingdom_phase_to_segments(
                     sampled_segments,
@@ -582,6 +656,10 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
                     sp_stats = parallel_result.stats
                     aggregate_games_per_hour = parallel_result.aggregate_games_per_hour
                     planned_league_games = parallel_result.league_games
+            for opponent, (games, wins) in sp_stats.league_by_opponent.items():
+                # Use the most recently observed per-opponent rate for the
+                # following draw; unplayed opponents retain their last rate.
+                league_performance[opponent] = (games, wins)
             server_metrics = (
                 inference_server.collect_metrics(generation)
                 if inference_server is not None
@@ -645,6 +723,9 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
                 replay,
                 best_generation=best_generation if use_gating else None,
             )
+            if league_configured:
+                self_paths = archive_self_checkpoint(config, path, generation)
+                configured_league_opponents.update(path.name for path in self_paths)
             eval_row: dict[str, Any] = {}
             should_eval = (
                 not profile
@@ -684,6 +765,20 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
                     "eval_win_pct_excl_ties": stats.win_pct_excl_ties,
                     "eval_games_per_hour": stats.games_per_hour,
                 }
+                for sentinel_index, (opponent, games) in enumerate(eval_sentinels):
+                    sentinel_stats = evaluate_checkpoint(
+                        path,
+                        opponent=opponent,
+                        games=games,
+                        sims=config.eval.eval_sims,
+                        kingdoms=config.eval.eval_kingdoms,
+                        seed=(config.seed ^ (generation * 0x4556) ^ ((sentinel_index + 1) * 0x10001)),
+                        device_name=device.type,
+                        n_games=config.eval.eval_n_games,
+                        max_batch=config.eval.eval_max_batch,
+                    )
+                    eval_row[f"sentinel_{opponent}_wins"] = sentinel_stats.wins
+                    eval_row[f"sentinel_{opponent}_games"] = sentinel_stats.games
             row = {
                 "generation": generation,
                 "games": sp_stats.games,
@@ -716,6 +811,10 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
                 games, wins = sp_stats.scripted_by_kind.get(kind, (0, 0))
                 row[f"scripted_games_{kind}"] = games
                 row[f"scripted_wins_{kind}"] = wins
+            for opponent in sorted(configured_league_opponents | set(sp_stats.league_by_opponent)):
+                games, wins = sp_stats.league_by_opponent.get(opponent, (0, 0))
+                row[f"league_wins_{opponent}"] = wins
+                row[f"league_games_{opponent}"] = games
             if effective_scripted:
                 row["scripted_opponent_fractions"] = effective_scripted
             row.update(eval_row)

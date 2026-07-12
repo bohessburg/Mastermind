@@ -11,6 +11,7 @@ from __future__ import annotations
 import copy
 import math
 import random
+import re
 import shutil
 import warnings
 from dataclasses import dataclass
@@ -20,7 +21,7 @@ import torch
 
 from .config import SelfPlayConfig, TrainConfig, validate_deep_slice_config
 from .model import DominionNet
-from .observation import obs_size_for_config
+from .observation import obs_size_for_config, obs_size_for_version, obs_version_for_checkpoint
 
 
 BEST_FILENAME = "best.pt"
@@ -69,6 +70,9 @@ class SelfPlaySegment:
     # Zero uses SelfPlayConfig.sims_per_move; a positive value creates a
     # higher-budget runner for this segment only.
     sims_override: int = 0
+    # Checkpoint basename for metrics and strength-matched league sampling.
+    # It is set only on true two-model league segments.
+    league_opponent: str | None = None
 
     @property
     def is_league(self) -> bool:
@@ -140,6 +144,61 @@ def _checkpoint_input_scale(payload: object) -> float:
     return float(model.get("input_scale", 1.0))
 
 
+def _load_checkpoint_payload(path: str | Path, device: torch.device) -> dict:
+    try:
+        payload = torch.load(path, map_location=device, weights_only=False)
+    except TypeError:  # pragma: no cover - older supported Torch versions
+        payload = torch.load(path, map_location=device)
+    if not isinstance(payload, dict):
+        raise ValueError(f"league checkpoint {path} must contain an object payload")
+    return payload
+
+
+def _validate_league_checkpoint_observation(
+    config: TrainConfig,
+    payload: dict,
+    path: str | Path,
+) -> None:
+    """Reject league weights whose stored observation protocol differs.
+
+    The config's saved ``obs_version`` and the first-layer input width are
+    independent checks.  Treating either mismatch as a hard configuration
+    error avoids silently pairing a v1 opponent with a v2 runner.
+    """
+    checkpoint_config = payload.get("config")
+    if not isinstance(checkpoint_config, dict):
+        raise ValueError(f"league checkpoint {path} has a non-object 'config' payload")
+    checkpoint_selfplay = checkpoint_config.get("selfplay")
+    if not isinstance(checkpoint_selfplay, dict) or "obs_version" not in checkpoint_selfplay:
+        raise ValueError(
+            f"league checkpoint {path} is missing config.selfplay.obs_version; "
+            "cannot validate its observation pipeline"
+        )
+    stored_version = checkpoint_selfplay["obs_version"]
+    if not isinstance(stored_version, int) or isinstance(stored_version, bool):
+        raise ValueError(f"league checkpoint {path} has an invalid stored obs_version {stored_version!r}")
+    try:
+        stored_width = obs_size_for_version(stored_version)
+        model_version = obs_version_for_checkpoint(payload)
+        model_width = obs_size_for_version(model_version)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"league checkpoint {path} has an invalid observation input width: {exc}") from exc
+
+    required_version = int(config.selfplay.obs_version)
+    required_width = obs_size_for_config(config)
+    if (
+        stored_version != required_version
+        or stored_width != required_width
+        or model_version != required_version
+        or model_width != required_width
+    ):
+        raise ValueError(
+            f"league checkpoint {path} has stored obs_version {stored_version} and input width {model_width} "
+            f"(model layout v{model_version}); current run requires obs_version {required_version} "
+            f"and input width {required_width}"
+        )
+
+
 def save_best_checkpoint(config: TrainConfig, generation: int, model: torch.nn.Module, path: str | Path) -> Path:
     """Persist only the accepted model and enough metadata to reconstruct it."""
     destination = Path(path)
@@ -156,10 +215,8 @@ def save_best_checkpoint(config: TrainConfig, generation: int, model: torch.nn.M
 
 
 def load_best_checkpoint(config: TrainConfig, device: torch.device, path: str | Path) -> tuple[DominionNet, int]:
-    try:
-        payload = torch.load(path, map_location=device, weights_only=False)
-    except TypeError:  # pragma: no cover - older supported Torch versions
-        payload = torch.load(path, map_location=device)
+    payload = _load_checkpoint_payload(path, device)
+    _validate_league_checkpoint_observation(config, payload, path)
     # Action-space dimensions come from the native protocol; import lazily to
     # keep this module usable by its pure persistence/sampling tests without
     # pybind. Observation width follows the selected training config.
@@ -184,10 +241,7 @@ def _load_league_seed_checkpoint(config: TrainConfig, device: torch.device, path
     worse than a missing league member: it would silently change the intended
     external opponent.
     """
-    try:
-        payload = torch.load(path, map_location=device, weights_only=False)
-    except TypeError:  # pragma: no cover - older supported Torch versions
-        payload = torch.load(path, map_location=device)
+    payload = _load_checkpoint_payload(path, device)
     if not isinstance(payload, dict) or "model" not in payload or "config" not in payload:
         raise ValueError(
             f"league seed checkpoint {path} must use the standard payload format "
@@ -209,6 +263,8 @@ def _load_league_seed_checkpoint(config: TrainConfig, device: torch.device, path
             f"league seed checkpoint {path} has hidden_sizes {checkpoint_hidden_sizes}, "
             f"but the current run requires {expected_hidden_sizes}; refusing to truncate or pad weights"
         )
+
+    _validate_league_checkpoint_observation(config, payload, path)
 
     # Action-space dimensions come from the native protocol; import lazily to
     # keep this module usable by its pure persistence/sampling tests without
@@ -307,20 +363,59 @@ def archive_previous_best(
     destination = destination_dir / f"best_{int(best_generation):04d}.pt"
     if not destination.exists():
         shutil.copy2(best_path, destination)
-    paths = sorted(destination_dir.glob("best_*.pt"))
-    while len(paths) > keep:
+    _trim_self_league_checkpoints(config)
+    return sorted(destination_dir.glob("best_*.pt"))
+
+
+def _self_league_checkpoint_paths(config: TrainConfig) -> list[Path]:
+    directory = league_directory(config.checkpoint_dir)
+    paths = [*directory.glob("best_*.pt"), *directory.glob("self_*.pt")]
+
+    def fifo_key(path: Path) -> tuple[int, int, str]:
+        match = re.fullmatch(r"(best|self)_(\d+)\.pt", path.name)
+        if match is None:  # pragma: no cover - glob patterns above enforce this
+            return (0, 0, path.name)
+        # A periodic self checkpoint is saved before a later gate archives the
+        # same generation's accepted best, so it is the older FIFO member.
+        kind, generation = match.groups()
+        return (int(generation), 0 if kind == "self" else 1, path.name)
+
+    return sorted(paths, key=fifo_key)
+
+
+def _trim_self_league_checkpoints(config: TrainConfig) -> list[Path]:
+    """Keep a FIFO cap over self-added opponents, never over standing seeds."""
+    keep = int(config.league_pool_size)
+    paths = _self_league_checkpoint_paths(config)
+    while len(paths) > max(0, keep):
         paths.pop(0).unlink()
-    return paths
+    return _self_league_checkpoint_paths(config)
+
+
+def archive_self_checkpoint(
+    config: TrainConfig,
+    checkpoint_path: str | Path,
+    generation: int,
+) -> list[Path]:
+    """Add a periodic candidate checkpoint to the league's self pool."""
+    every = int(config.league_self_every)
+    if every <= 0 or int(generation) % every != 0 or int(config.league_pool_size) <= 0:
+        return _self_league_checkpoint_paths(config)
+    destination_dir = league_directory(config.checkpoint_dir)
+    destination_dir.mkdir(parents=True, exist_ok=True)
+    destination = destination_dir / f"self_{int(generation):04d}.pt"
+    source = Path(checkpoint_path)
+    if source.resolve() != destination.resolve():
+        shutil.copy2(source, destination)
+    return _trim_self_league_checkpoints(config)
 
 
 def league_checkpoint_paths(config: TrainConfig) -> list[Path]:
-    keep = int(config.league_pool_size)
     directory = league_directory(config.checkpoint_dir)
     # Seeds are standing external opponents; archive retention applies only to
-    # accepted-best history, not to the explicitly requested seed list.
+    # self-added history, not to the explicitly requested seed list.
     seeds = sorted(directory.glob("seed_*.pt"))
-    archived = sorted(directory.glob("best_*.pt"))
-    return [*seeds, *archived[-keep:]] if keep > 0 else seeds
+    return [*seeds, *_trim_self_league_checkpoints(config)]
 
 
 def sample_league_games(
@@ -328,8 +423,9 @@ def sample_league_games(
     fraction: float,
     pool_size: int,
     seed: int,
+    opponent_weights: list[float] | None = None,
 ) -> list[LeagueGame | None]:
-    """Return an exact-fraction per-game plan, uniformly sampling opponents."""
+    """Return an exact-fraction per-game plan with optional weighted opponents."""
     if total_games < 0:
         raise ValueError("total_games cannot be negative")
     if not 0.0 <= float(fraction) <= 1.0:
@@ -337,12 +433,21 @@ def sample_league_games(
     plan: list[LeagueGame | None] = [None] * total_games
     if total_games == 0 or pool_size <= 0 or fraction <= 0.0:
         return plan
+    if opponent_weights is not None:
+        if len(opponent_weights) != pool_size:
+            raise ValueError("league opponent weights must match league pool size")
+        if any(not math.isfinite(float(weight)) or float(weight) <= 0.0 for weight in opponent_weights):
+            raise ValueError("league opponent weights must be finite and positive")
     league_games = min(total_games, int(round(total_games * float(fraction))))
     rng = random.Random(int(seed))
     indices = sorted(rng.sample(range(total_games), league_games))
     for index in indices:
         plan[index] = LeagueGame(
-            opponent_index=rng.randrange(pool_size),
+            opponent_index=(
+                rng.randrange(pool_size)
+                if opponent_weights is None
+                else rng.choices(range(pool_size), weights=opponent_weights, k=1)[0]
+            ),
             # Self-play always places current best at seat zero and the
             # sampled archived best at seat one. Gate matches separately
             # seat-swap candidate and best for unbiased promotion decisions.
@@ -356,6 +461,8 @@ def plan_selfplay_segments(
     fraction: float,
     pool_size: int,
     seed: int,
+    opponent_weights: list[float] | None = None,
+    opponent_names: list[str] | None = None,
 ) -> list[SelfPlaySegment]:
     """Collapse a deterministic league draw into deduplicated model segments.
 
@@ -363,12 +470,23 @@ def plan_selfplay_segments(
     plus their sampled-pool index. Grouping equal pairs means workers receive
     each model state once per generation instead of one payload per game.
     """
+    if opponent_names is not None and len(opponent_names) != pool_size:
+        raise ValueError("league opponent names must match league pool size")
     counts: dict[tuple[int, int], int] = {}
-    for game in sample_league_games(total_games, fraction, pool_size, seed):
+    for game in sample_league_games(total_games, fraction, pool_size, seed, opponent_weights):
         pair = (0, 0) if game is None else (0, int(game.opponent_index) + 1)
         counts[pair] = counts.get(pair, 0) + 1
     return [
-        SelfPlaySegment(n_games=count, seat0_model_id=pair[0], seat1_model_id=pair[1])
+        SelfPlaySegment(
+            n_games=count,
+            seat0_model_id=pair[0],
+            seat1_model_id=pair[1],
+            league_opponent=(
+                None
+                if pair == (0, 0) or opponent_names is None
+                else opponent_names[pair[1] - 1]
+            ),
+        )
         for pair, count in sorted(counts.items())
         if count > 0
     ]
@@ -417,6 +535,7 @@ def carve_deep_slice_segments(
                     kingdom_pool=segment.kingdom_pool,
                     kingdom_mode=segment.kingdom_mode,
                     sims_override=segment.sims_override,
+                    league_opponent=segment.league_opponent,
                 )
             )
         carved.append(
@@ -429,6 +548,7 @@ def carve_deep_slice_segments(
                 kingdom_pool=segment.kingdom_pool,
                 kingdom_mode=segment.kingdom_mode,
                 sims_override=int(sims),
+                league_opponent=segment.league_opponent,
             )
         )
         remaining_deep_games -= segment_deep_games
@@ -536,6 +656,70 @@ def effective_scripted_fractions(
             fractions[raw_kind] = effective_fraction
 
     return fractions
+
+
+def effective_league_fraction(schedule: list, league_fraction: float, generation: int) -> float:
+    """Resolve a league dose ramp with scripted-schedule breakpoint semantics."""
+    if not isinstance(league_fraction, (int, float)) or isinstance(league_fraction, bool):
+        raise ValueError("league_fraction must be numeric")
+    fixed_fraction = float(league_fraction)
+    if not math.isfinite(fixed_fraction) or not 0.0 <= fixed_fraction <= 1.0:
+        raise ValueError("league_fraction must be between zero and one")
+    if not isinstance(schedule, list):
+        raise ValueError("league_schedule must be a list of [generation, fraction] pairs")
+    if not isinstance(generation, int) or isinstance(generation, bool):
+        raise ValueError("generation must be an integer")
+    if not schedule:
+        return fixed_fraction
+
+    breakpoints: list[tuple[int, float]] = []
+    previous_generation: int | None = None
+    for raw_breakpoint in schedule:
+        if not isinstance(raw_breakpoint, list) or len(raw_breakpoint) != 2:
+            raise ValueError("league_schedule must contain [generation, fraction] pairs")
+        raw_generation, raw_fraction = raw_breakpoint
+        if not isinstance(raw_generation, int) or isinstance(raw_generation, bool) or raw_generation < 0:
+            raise ValueError("league_schedule generation must be an integer at least zero")
+        if not isinstance(raw_fraction, (int, float)) or isinstance(raw_fraction, bool):
+            raise ValueError("league_schedule fraction must be numeric")
+        fraction = float(raw_fraction)
+        if not math.isfinite(fraction) or not 0.0 <= fraction <= 1.0:
+            raise ValueError("league_schedule fraction must be between zero and one")
+        if previous_generation is not None and raw_generation <= previous_generation:
+            raise ValueError("league_schedule generations must be strictly increasing")
+        breakpoints.append((raw_generation, fraction))
+        previous_generation = raw_generation
+
+    if generation <= breakpoints[0][0]:
+        return breakpoints[0][1]
+    if generation >= breakpoints[-1][0]:
+        return breakpoints[-1][1]
+    for (start_generation, start_fraction), (end_generation, end_fraction) in zip(
+        breakpoints, breakpoints[1:]
+    ):
+        if generation <= end_generation:
+            progress = (generation - start_generation) / (end_generation - start_generation)
+            return start_fraction + (end_fraction - start_fraction) * progress
+    raise RuntimeError("league schedule did not cover its interpolation interval")
+
+
+def league_opponent_weights(
+    opponent_names: list[str],
+    performance: dict[str, tuple[int, int]],
+) -> list[float]:
+    """Weight opponents toward lower observed current-seat win rates.
+
+    Unseen opponents are treated as zero wins from zero games. The mandatory
+    +0.1 floor leaves even a fully beaten opponent selectable.
+    """
+    weights: list[float] = []
+    for name in opponent_names:
+        games, wins = performance.get(name, (0, 0))
+        if games < 0 or wins < 0 or wins > games:
+            raise ValueError(f"league performance for {name!r} must satisfy 0 <= wins <= games")
+        net_win_rate = wins / games if games else 0.0
+        weights.append(1.0 - net_win_rate + 0.1)
+    return weights
 
 
 def _resolve_kingdom_pool(raw_pool: object, phase_index: int) -> tuple[tuple[int, ...], tuple[str, ...]]:
@@ -681,6 +865,7 @@ def assign_kingdom_phase_to_segments(
                     kingdom_pool=kingdom_pool,
                     kingdom_mode="random" if phase.mode == "pool" else phase.mode,
                     sims_override=segment.sims_override,
+                    league_opponent=segment.league_opponent,
                 )
             )
 
@@ -704,6 +889,8 @@ def plan_training_selfplay_segments(
     deep_slice_fraction: float = 0.0,
     deep_slice_sims: int = 0,
     sims_per_move: int = 64,
+    league_opponent_weights: list[float] | None = None,
+    league_opponent_names: list[str] | None = None,
 ) -> list[SelfPlaySegment]:
     """Compose normal, league, and seat-swapped scripted data segments.
 
@@ -723,7 +910,14 @@ def plan_training_selfplay_segments(
         # Preserve the existing non-scripted planner byte-for-byte, including
         # its seed behavior and segment ordering.
         return carve_deep_slice_segments(
-            plan_selfplay_segments(total_games, league_fraction, league_pool_size, seed),
+            plan_selfplay_segments(
+                total_games,
+                league_fraction,
+                league_pool_size,
+                seed,
+                league_opponent_weights,
+                league_opponent_names,
+            ),
             deep_slice_fraction,
             deep_slice_sims,
             sims_per_move,
@@ -745,7 +939,16 @@ def plan_training_selfplay_segments(
     if normal_games > 0:
         segments.append(SelfPlaySegment(normal_games, 0, 0))
     if league_games > 0:
-        segments.extend(plan_selfplay_segments(league_games, 1.0, league_pool_size, seed))
+        segments.extend(
+            plan_selfplay_segments(
+                league_games,
+                1.0,
+                league_pool_size,
+                seed,
+                league_opponent_weights,
+                league_opponent_names,
+            )
+        )
     for kind, count in scripted_counts.items():
         first_player_games = (count + 1) // 2
         second_player_games = count - first_player_games
@@ -788,6 +991,7 @@ def compact_selfplay_segments(
                 kingdom_pool=segment.kingdom_pool,
                 kingdom_mode=segment.kingdom_mode,
                 sims_override=segment.sims_override,
+                league_opponent=segment.league_opponent,
             )
             for segment in segments
         ],
