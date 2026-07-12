@@ -453,3 +453,20 @@ legacy-identical; checkpoint-persisted; commit pending in log), 16.0 in
 run_c13.json. Backlog: principled encoder pass (log1p counts, embed id
 fields, drop the size-constant feature). c13 relaunched fresh (third
 launch) with obs v2 + input_scale 16.
+
+c13 clean run (launch #4, 2026-07-12 ~03:30, running): after the two
+conditioning false starts AND a double-trainer incident (launch #2 left
+alive while #3 started — 18 stale processes killed; stop-before-launch
+discipline now mandatory), the sighted+conditioned campaign is finally
+clean: obs v2 (1717), input_scale 16, margin targets, pile-aware
+opponents, async offload, single writer verified. Gen 1: 12.7% vs
+EngineBot v2 (25/197), vloss 0.288 — healthiest gen-1 ever. GEN 5:
+55.1% (108/196) vs the PILE-AWARE EngineBot — parity-class at generation
+five, steepest opening on the hardest yardstick. Endings still rush-heavy
+(163 piles) pre-opponent-arrival (BM gen 6, scaffold gen 11).
+OVERNIGHT PLAN (Jack's instruction): run to gen 25+; if stalled by 25
+(eval flat/declining across ~3 evals, or vloss pathology, or process
+death), cut, bank best weights, design c14 with necessary changes, and
+launch it. Reference bars: c12 hit 81.3% (v2 bot) at gen 25 and was
+plateaued at 47.7% vs BigMoney — c13's vs-BM number is the headline
+metric for whether SIGHT breaks the racing wall.
