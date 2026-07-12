@@ -416,3 +416,25 @@ inputs; obs_version stays 1) — first v2-sighted net comes with c13.
 Gen-20 pre-cutover probe on record: point-greedy margin signature
 (Estate 47% at $2, Duchy 46% at $5), Province 83% at $8, action mass
 14-27% utility-flavored.
+
+Campaign 12 closeout (2026-07-11 late): cut at gen 26 on Jack's call.
+Final honest numbers: 81.3% vs EngineBot v2 at gen 25 (77.7% at 21 —
+climbing against the pile-aware yardstick), 47.7% vs BigMoney
+deterministic (plateaued: 47.5% at gen 20 — the blindness ceiling),
+scaffold training seats dominated. Margin value targets validated as the
+project's biggest single advance: 15.8% at gen ONE, parity-grade by gen
+10, 81% by gen 20-25. Artifacts: gens 20/25/26 + metrics synced locally.
+Rationale for the cut: obs-v2 changes input size, so c12's lineage cannot
+carry forward — every further gen refined a net whose weights die with
+the campaign, while its binding constraint (cannot see the opponent) was
+already proven by the vs-BM plateau.
+
+Campaign 13 (launched 2026-07-11 night, running): c12 recipe + OBS V2 —
+first sighted net (1717-float observations: opponent collection/discard/
+set-aside composition = perfect-memory information set). Net 6.45M params
+(input growth). Seed 20260721, checkpoints/campaign13, run_c13.json.
+Headline metrics: vs BigMoney deterministic (c12 baseline 47.7% — sight
+should unlock matchup recognition and convert the tie/narrow-loss mass),
+vs EngineBot v2 (c12 baseline 81.3%), and behavioral probes for
+ADAPTATION: does its buy line change when the opponent's collection says
+race vs engine? That question has never been askable before.
