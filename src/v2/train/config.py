@@ -10,6 +10,7 @@ from typing import Any
 @dataclass
 class ModelConfig:
     hidden_sizes: list[int] = field(default_factory=lambda: [1024, 1024, 512])
+    input_scale: float = 1.0
 
 
 @dataclass

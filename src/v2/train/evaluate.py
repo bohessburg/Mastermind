@@ -87,6 +87,7 @@ def load_model(checkpoint: str | Path, device: torch.device) -> tuple[DominionNe
         obs_size_for_version(cfg.selfplay.obs_version),
         dz.ACTION_SPACE_SIZE,
         cfg.model.hidden_sizes,
+        input_scale=cfg.model.input_scale,
     ).to(device)
     model.load_state_dict(payload["model"])
     model.eval()

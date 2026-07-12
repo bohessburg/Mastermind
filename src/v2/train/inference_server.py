@@ -343,7 +343,12 @@ def _server_main(
     try:
         device = _server_device(config.server_device)
         obs_size = obs_size_for_config(config)
-        model = DominionNet(obs_size, dz.ACTION_SPACE_SIZE, config.model.hidden_sizes).to(device)
+        model = DominionNet(
+            obs_size,
+            dz.ACTION_SPACE_SIZE,
+            config.model.hidden_sizes,
+            input_scale=config.model.input_scale,
+        ).to(device)
         model.eval()
         staging = _PinnedStaging(device, int(config.server_max_batch), obs_size)
         if endpoints.transport == "shm":

@@ -99,7 +99,12 @@ def seed_everything(seed: int, deterministic: bool = True) -> None:
 
 def build_objects(config: TrainConfig, device: torch.device):
     obs_size = obs_size_for_config(config)
-    model = DominionNet(obs_size, dz.ACTION_SPACE_SIZE, config.model.hidden_sizes).to(device)
+    model = DominionNet(
+        obs_size,
+        dz.ACTION_SPACE_SIZE,
+        config.model.hidden_sizes,
+        input_scale=config.model.input_scale,
+    ).to(device)
     optimizer = torch.optim.Adam(
         model.parameters(),
         lr=config.optim.lr,

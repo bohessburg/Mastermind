@@ -5,8 +5,17 @@ from torch import nn
 
 
 class DominionNet(nn.Module):
-    def __init__(self, obs_size: int, action_size: int, hidden_sizes: list[int] | tuple[int, ...] = (1024, 1024, 512)):
+    def __init__(
+        self,
+        obs_size: int,
+        action_size: int,
+        hidden_sizes: list[int] | tuple[int, ...] = (1024, 1024, 512),
+        input_scale: float = 1.0,
+    ):
         super().__init__()
+        # Deliberately not a buffer: checkpoints persist this through their
+        # config payload, keeping existing state_dicts byte-for-byte stable.
+        self.input_scale = float(input_scale)
         layers: list[nn.Module] = []
         last = obs_size
         for width in hidden_sizes:
@@ -18,6 +27,10 @@ class DominionNet(nn.Module):
         self.value_head = nn.Sequential(nn.Linear(last, 1), nn.Tanh())
 
     def forward(self, obs: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        # Preserve the legacy path exactly, including avoiding an unnecessary
+        # tensor operation for the many existing input_scale=1.0 checkpoints.
+        if self.input_scale != 1.0:
+            obs = obs / self.input_scale
         x = self.trunk(obs)
         return self.policy_head(x), self.value_head(x).squeeze(-1)
 

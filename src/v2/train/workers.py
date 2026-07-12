@@ -567,7 +567,12 @@ def _worker_main(
             model: DominionNet | None = None
         else:
             assert device is not None
-            model = DominionNet(obs_size, dz.ACTION_SPACE_SIZE, config.model.hidden_sizes).to(device)
+            model = DominionNet(
+                obs_size,
+                dz.ACTION_SPACE_SIZE,
+                config.model.hidden_sizes,
+                input_scale=config.model.input_scale,
+            ).to(device)
             model.eval()
             evaluate = _local_evaluator(model, device)
             collect_max_batch = config.selfplay.max_batch
@@ -588,7 +593,12 @@ def _worker_main(
                 model.eval()
                 model_table.append(model)
                 for payload in model_state_payloads[1:]:
-                    opponent = DominionNet(obs_size, dz.ACTION_SPACE_SIZE, config.model.hidden_sizes).to(device)
+                    opponent = DominionNet(
+                        obs_size,
+                        dz.ACTION_SPACE_SIZE,
+                        config.model.hidden_sizes,
+                        input_scale=config.model.input_scale,
+                    ).to(device)
                     opponent.load_state_dict(deserialize_cpu_state_dict(payload))
                     opponent.eval()
                     model_table.append(opponent)
