@@ -946,7 +946,7 @@ void EvalRunner::provide_evaluations(const float* values, const float* policies,
             pending.leaf.legal_count,
             normalized);
         const float value = values == nullptr ? 0.0F : values[i];
-        game.mcts.provide_external_evaluation(pending.leaf, value, normalized);
+        game.mcts.provide_external_evaluation(pending.leaf, value, normalized, game.rng);
         if (game.pending > 0U) {
             --game.pending;
         }
@@ -1218,6 +1218,6 @@ bool EvalRunner::resolve_scripted_tree_leaf(GameSlot& game, const MctsPendingLea
     }
     float priors[ACTION_SPACE_SIZE]{};
     priors[action] = 1.0F;
-    game.mcts.provide_external_evaluation(leaf, 0.0F, priors);
+    game.mcts.provide_external_evaluation(leaf, 0.0F, priors, game.rng);
     return true;
 }

@@ -966,7 +966,8 @@ ActionMask mcts_top_k_actions(
     const ActionMask& legal,
     int legal_count,
     const float* priors,
-    std::uint8_t top_k) noexcept {
+    std::uint8_t top_k,
+    Xoshiro256pp& rng) noexcept {
     if (top_k == 0U) {
         return legal;
     }
@@ -982,7 +983,8 @@ ActionMask mcts_top_k_actions(
     }
 
     ActionMask retained{};
-    for (int selected = 0; selected < retained_count; ++selected) {
+    const int ranked_count = retained_count - 1;
+    for (int selected = 0; selected < ranked_count; ++selected) {
         Action best = A_PASS;
         float best_prior = -1.0F;
         bool found = false;
@@ -1010,6 +1012,30 @@ ActionMask mcts_top_k_actions(
         }
         retained.set(best);
     }
+    const int excluded_count = actual_count - ranked_count;
+    if (excluded_count <= 0) {
+        return legal;
+    }
+    const int wildcard_index = static_cast<int>(rng.uniform(
+        static_cast<std::uint32_t>(excluded_count)));
+    Action wildcard = A_PASS;
+    bool wildcard_found = false;
+    int seen = 0;
+    for (Action action = 0; action < ACTION_SPACE_SIZE; ++action) {
+        if (!legal.test(action) || retained.test(action)) {
+            continue;
+        }
+        if (seen == wildcard_index) {
+            wildcard = action;
+            wildcard_found = true;
+            break;
+        }
+        ++seen;
+    }
+    if (!wildcard_found || !legal.test(wildcard) || retained.test(wildcard)) {
+        return legal;
+    }
+    retained.set(wildcard);
     return action_mask_count(retained) == retained_count ? retained : legal;
 }
 
@@ -1207,6 +1233,8 @@ void Mcts::reset(const GameState& root, PlayerId perspective) noexcept {
     node_count_ = 0;
     exhausted_ = false;
     root_perspective_ = perspective;
+    expansion_rng_ = Xoshiro256pp::seeded(
+        config_.rollout_seed ^ mcts_state_hash(root) ^ 0xE7A1'0F5E'BADC'0DEULL);
     const std::uint32_t root_index = allocate_node();
     assert(root_index == 0U);
     (void)root_index;
@@ -1320,7 +1348,7 @@ void Mcts::run_simulations(std::uint32_t simulations, Xoshiro256pp& rng) noexcep
 
         MctsNode& leaf = nodes_[node_index];
         if (!leaf.terminal && !leaf.expanded) {
-            const bool expanded = expand(node_index);
+            const bool expanded = expand(node_index, rng);
             if (expanded && leaf.first_child != MCTS_NULL) {
                 node_index = select_child(node_index);
                 if (depth < MCTS_MAX_PATH) {
@@ -1487,6 +1515,14 @@ void Mcts::provide_external_evaluation(
     const MctsPendingLeaf& leaf,
     float value,
     const float* priors) noexcept {
+    provide_external_evaluation(leaf, value, priors, expansion_rng_);
+}
+
+void Mcts::provide_external_evaluation(
+    const MctsPendingLeaf& leaf,
+    float value,
+    const float* priors,
+    Xoshiro256pp& rng) noexcept {
     if (!leaf.valid || leaf.node >= node_count_) {
         return;
     }
@@ -1498,7 +1534,7 @@ void Mcts::provide_external_evaluation(
 
     MctsNode& node = nodes_[leaf.node];
     if (!node.expanded && !node.terminal) {
-        (void)expand_with_priors(leaf.node, priors);
+        (void)expand_with_priors(leaf.node, priors, rng);
     }
     apply_virtual_loss(leaf.path, leaf.depth, -1.0F);
     backpropagate_value(leaf.path, leaf.depth, leaf.player, value);
@@ -1644,13 +1680,19 @@ bool Mcts::compact_subtree_to_root(
     }
 
     nodes_[0].action_from_parent = A_PASS;
+    // This child was expanded under non-root rules. Re-evaluate it as the
+    // next search root so its existing subtree is retained but any missing
+    // legal root children are restored at full width.
+    if (!nodes_[0].terminal) {
+        nodes_[0].expanded = false;
+    }
     node_count_ = retained_count;
     root_perspective_ = perspective;
     exhausted_ = false;
     return true;
 }
 
-bool Mcts::expand(std::uint32_t node_index) noexcept {
+bool Mcts::expand(std::uint32_t node_index, Xoshiro256pp& rng) noexcept {
     if (node_index >= node_count_) {
         return false;
     }
@@ -1702,15 +1744,17 @@ bool Mcts::expand(std::uint32_t node_index) noexcept {
         }
     }
 
-    // Top-k saves tree width for data generation, at the deliberate cost that
-    // a mis-priored move can become unsearchable at this node. That tradeoff
-    // is acceptable for data generation; gate/eval keep this flag off unless
-    // explicitly configured.
-    ActionMask retained = mcts_top_k_actions(
-        legal,
-        legal_count,
-        raw_priors,
-        config_.expand_top_k);
+    // Policy targets and Dirichlet exploration live at the root, so it keeps
+    // its full legal width. Interior pruning keeps a random wildcard child so
+    // a low-prior move remains searchably reachable.
+    ActionMask retained = node_index == 0U
+        ? legal
+        : mcts_top_k_actions(
+            legal,
+            legal_count,
+            raw_priors,
+            config_.expand_top_k,
+            rng);
     int retained_count = action_mask_count(retained);
     if (retained_count <= 0) {
         retained = legal;
@@ -1726,9 +1770,30 @@ bool Mcts::expand(std::uint32_t node_index) noexcept {
         prior_sum = static_cast<float>(retained_count);
     }
 
+    ActionMask existing{};
     std::uint32_t previous_child = MCTS_NULL;
+    for (std::uint32_t child_index = node.first_child; child_index != MCTS_NULL;
+         child_index = nodes_[child_index].next_sibling) {
+        const MctsNode& child = nodes_[child_index];
+        existing.set(child.action_from_parent);
+        previous_child = child_index;
+    }
     for (int i = 0; i < retained_count; ++i) {
         const Action action = retained.nth_set(static_cast<std::uint32_t>(i));
+        const float prior = raw_priors[action];
+        if (existing.test(action)) {
+            for (std::uint32_t child_index = node.first_child; child_index != MCTS_NULL;
+                 child_index = nodes_[child_index].next_sibling) {
+                MctsNode& child = nodes_[child_index];
+                if (child.action_from_parent == action) {
+                    child.prior = prior > 0.0F
+                        ? prior / prior_sum
+                        : 1.0F / static_cast<float>(retained_count);
+                    break;
+                }
+            }
+            continue;
+        }
         const std::uint32_t child_index = allocate_node();
         if (child_index == MCTS_NULL) {
             break;
@@ -1744,7 +1809,6 @@ bool Mcts::expand(std::uint32_t node_index) noexcept {
         child.action_from_parent = action;
         child.terminal = done || terminal_state(child_state);
         child.player = next_player_for_child(child_state, node.player);
-        const float prior = raw_priors[action];
         child.prior = prior > 0.0F
             ? prior / prior_sum
             : 1.0F / static_cast<float>(retained_count);
@@ -1761,7 +1825,10 @@ bool Mcts::expand(std::uint32_t node_index) noexcept {
     return node.first_child != MCTS_NULL;
 }
 
-bool Mcts::expand_with_priors(std::uint32_t node_index, const float* priors) noexcept {
+bool Mcts::expand_with_priors(
+    std::uint32_t node_index,
+    const float* priors,
+    Xoshiro256pp& rng) noexcept {
     if (node_index >= node_count_) {
         return false;
     }
@@ -1801,9 +1868,14 @@ bool Mcts::expand_with_priors(std::uint32_t node_index, const float* priors) noe
         }
     }
 
-    ActionMask retained = priors_consistent
-        ? mcts_top_k_actions(legal, legal_count, raw_priors, config_.expand_top_k)
-        : legal;
+    ActionMask retained = node_index == 0U || !priors_consistent
+        ? legal
+        : mcts_top_k_actions(
+            legal,
+            legal_count,
+            raw_priors,
+            config_.expand_top_k,
+            rng);
     int retained_count = action_mask_count(retained);
     if (retained_count <= 0) {
         retained = legal;
@@ -1819,9 +1891,28 @@ bool Mcts::expand_with_priors(std::uint32_t node_index, const float* priors) noe
         prior_sum = static_cast<float>(retained_count);
     }
 
+    ActionMask existing{};
     std::uint32_t previous_child = MCTS_NULL;
+    for (std::uint32_t child_index = node.first_child; child_index != MCTS_NULL;
+         child_index = nodes_[child_index].next_sibling) {
+        const MctsNode& child = nodes_[child_index];
+        existing.set(child.action_from_parent);
+        previous_child = child_index;
+    }
     for (int i = 0; i < retained_count; ++i) {
         const Action action = retained.nth_set(static_cast<std::uint32_t>(i));
+        const float raw_prior = use_uniform ? 1.0F : raw_priors[action];
+        if (existing.test(action)) {
+            for (std::uint32_t child_index = node.first_child; child_index != MCTS_NULL;
+                 child_index = nodes_[child_index].next_sibling) {
+                MctsNode& child = nodes_[child_index];
+                if (child.action_from_parent == action) {
+                    child.prior = raw_prior / prior_sum;
+                    break;
+                }
+            }
+            continue;
+        }
         const std::uint32_t child_index = allocate_node();
         if (child_index == MCTS_NULL) {
             break;
@@ -1837,7 +1928,6 @@ bool Mcts::expand_with_priors(std::uint32_t node_index, const float* priors) noe
         child.action_from_parent = action;
         child.terminal = done || terminal_state(child_state);
         child.player = next_player_for_child(child_state, node.player);
-        const float raw_prior = use_uniform ? 1.0F : raw_priors[action];
         child.prior = raw_prior / prior_sum;
 
         if (previous_child == MCTS_NULL) {

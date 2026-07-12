@@ -61,6 +61,26 @@ void add_to_discard(GameState& state, PlayerId player_id, DefId def, std::uint8_
     return state;
 }
 
+[[nodiscard]] GameState action_rich_position() {
+    Setup setup{};
+    setup.kingdom_count = 5U;
+    setup.kingdom[0] = DEF_VILLAGE;
+    setup.kingdom[1] = DEF_SMITHY;
+    setup.kingdom[2] = DEF_MOAT;
+    setup.kingdom[3] = DEF_MARKET;
+    setup.kingdom[4] = DEF_FESTIVAL;
+    GameState state = Game::new_game(setup, 0xAC710A01ULL);
+    clear_player_cards(state, 0U);
+    for (DefId def : {DEF_VILLAGE, DEF_SMITHY, DEF_MOAT, DEF_MARKET, DEF_FESTIVAL}) {
+        state.players[0].hand[slot_of(state, def)] = 1U;
+    }
+    state.phase = static_cast<std::uint8_t>(Phase::Action);
+    state.actions = 4U;
+    state.buys = 1U;
+    refresh_current_decision(state);
+    return state;
+}
+
 [[nodiscard]] GameState pile_clock_buy_position(bool player_ahead) {
     Setup setup{};
     setup.kingdom_count = 1U;
@@ -113,9 +133,27 @@ void add_to_discard(GameState& state, PlayerId player_id, DefId def, std::uint8_
     return count;
 }
 
+[[nodiscard]] std::uint32_t node_child_count(const Mcts& search, std::uint32_t node) {
+    std::uint32_t count = 0U;
+    for (std::uint32_t child = search.node(node).first_child; child != MCTS_NULL;
+         child = search.node(child).next_sibling) {
+        ++count;
+    }
+    return count;
+}
+
 [[nodiscard]] ActionMask root_child_actions(const Mcts& search) {
     ActionMask actions{};
     for (std::uint32_t child = search.node(0U).first_child; child != MCTS_NULL;
+         child = search.node(child).next_sibling) {
+        actions.set(search.node(child).action_from_parent);
+    }
+    return actions;
+}
+
+[[nodiscard]] ActionMask node_child_actions(const Mcts& search, std::uint32_t node) {
+    ActionMask actions{};
+    for (std::uint32_t child = search.node(node).first_child; child != MCTS_NULL;
          child = search.node(child).next_sibling) {
         actions.set(search.node(child).action_from_parent);
     }
@@ -129,6 +167,32 @@ void add_to_discard(GameState& state, PlayerId player_id, DefId def, std::uint8_
         }
     }
     return true;
+}
+
+[[nodiscard]] ActionMask highest_prior_actions(
+    const ActionMask& legal,
+    const std::array<float, ACTION_SPACE_SIZE>& priors,
+    int count) {
+    ActionMask selected{};
+    for (int rank = 0; rank < count; ++rank) {
+        Action best = A_PASS;
+        float best_prior = -1.0F;
+        bool found = false;
+        for (Action action = 0; action < ACTION_SPACE_SIZE; ++action) {
+            if (!legal.test(action) || selected.test(action)) {
+                continue;
+            }
+            if (!found || priors[action] > best_prior
+                || (priors[action] == best_prior && action < best)) {
+                best = action;
+                best_prior = priors[action];
+                found = true;
+            }
+        }
+        REQUIRE(found);
+        selected.set(best);
+    }
+    return selected;
 }
 
 struct MctsPlayer {
@@ -229,13 +293,13 @@ TEST_CASE("v2 MCTS slab exhaustion degrades to a legal action", "[v2][mcts]") {
     REQUIRE(legal_in_state(state, action));
 }
 
-TEST_CASE("v2 MCTS top-k expansion retains only ranked legal children", "[v2][mcts][topk]") {
+TEST_CASE("v2 MCTS root expansion and noise remain full-width with top-k", "[v2][mcts][topk]") {
     GameState state = buy_position(8);
     MctsConfig config{};
     config.determinizations = 1U;
     config.max_tree_nodes = 128U;
     config.rollout_policy = MctsRolloutPolicy::External;
-    config.expand_top_k = 3U;
+    config.expand_top_k = 2U;
 
     Mcts search(config);
     search.reset(state, 0U);
@@ -249,92 +313,103 @@ TEST_CASE("v2 MCTS top-k expansion retains only ranked legal children", "[v2][mc
             priors[action] = static_cast<float>(action + 1U);
         }
     }
-    const ActionMask retained = mcts_top_k_actions(
-        leaf.legal,
-        leaf.legal_count,
-        priors.data(),
-        config.expand_top_k);
-    REQUIRE(root_child_count(search) == 0U);
-
-    search.provide_external_evaluation(leaf, 0.0F, priors.data());
-    REQUIRE(root_child_count(search) == config.expand_top_k);
-    REQUIRE(same_action_mask(root_child_actions(search), retained));
-
-    float policy[ACTION_SPACE_SIZE]{};
-    search.root_visit_policy(policy, 1.0F);
-    for (Action action = 0; action < ACTION_SPACE_SIZE; ++action) {
-        if (!retained.test(action)) {
-            REQUIRE(policy[action] == 0.0F);
-        }
-    }
-    Xoshiro256pp rng = Xoshiro256pp::seeded(0x70B0'B001ULL);
-    for (int sample = 0; sample < 32; ++sample) {
-        const Action action = search.sample_root_action(1.0F, rng);
-        REQUIRE(leaf.legal.test(action));
-        REQUIRE(retained.test(action));
-    }
-}
-
-TEST_CASE("v2 MCTS root noise is structurally confined to top-k children", "[v2][mcts][topk]") {
-    GameState state = buy_position(8);
-    MctsConfig config{};
-    config.determinizations = 1U;
-    config.max_tree_nodes = 128U;
-    config.rollout_policy = MctsRolloutPolicy::External;
-    config.expand_top_k = 2U;
-
-    Mcts search(config);
-    search.reset(state, 0U);
-    MctsPendingLeaf leaf{};
-    REQUIRE(search.collect_external_leaf(leaf));
-
-    std::array<float, ACTION_SPACE_SIZE> ranked{};
+    std::array<float, ACTION_SPACE_SIZE> root_noised{};
+    float prior_sum = 0.0F;
     for (Action action = 0; action < ACTION_SPACE_SIZE; ++action) {
         if (leaf.legal.test(action)) {
-            ranked[action] = static_cast<float>(action + 1U);
+            root_noised[action] = priors[action];
+            prior_sum += root_noised[action];
         }
     }
-    const ActionMask retained = mcts_top_k_actions(
-        leaf.legal,
-        leaf.legal_count,
-        ranked.data(),
-        config.expand_top_k);
-
-    std::array<float, ACTION_SPACE_SIZE> root_noised{};
-    float retained_sum = 0.0F;
+    REQUIRE(prior_sum > 0.0F);
     for (Action action = 0; action < ACTION_SPACE_SIZE; ++action) {
-        if (retained.test(action)) {
-            root_noised[action] = ranked[action];
-            retained_sum += root_noised[action];
-        }
-    }
-    REQUIRE(retained_sum > 0.0F);
-    for (Action action = 0; action < ACTION_SPACE_SIZE; ++action) {
-        root_noised[action] = retained.test(action)
-            ? root_noised[action] / retained_sum
+        root_noised[action] = leaf.legal.test(action)
+            ? root_noised[action] / prior_sum
             : 0.0F;
     }
     Xoshiro256pp noise_rng = Xoshiro256pp::seeded(0xD1A1'C4E7ULL);
     mcts_add_dirichlet_noise(
         root_noised.data(),
-        retained,
-        config.expand_top_k,
+        leaf.legal,
+        leaf.legal_count,
         0.30F,
         1.0F,
         noise_rng);
     for (Action action = 0; action < ACTION_SPACE_SIZE; ++action) {
-        if (!retained.test(action)) {
+        if (!leaf.legal.test(action)) {
             REQUIRE(root_noised[action] == 0.0F);
+        } else {
+            REQUIRE(root_noised[action] > 0.0F);
         }
     }
-    REQUIRE(same_action_mask(mcts_top_k_actions(
-        leaf.legal,
-        leaf.legal_count,
-        root_noised.data(),
-        config.expand_top_k), retained));
-
     search.provide_external_evaluation(leaf, 0.0F, root_noised.data());
-    REQUIRE(same_action_mask(root_child_actions(search), retained));
+    REQUIRE(root_child_count(search) == static_cast<std::uint32_t>(leaf.legal_count));
+    REQUIRE(same_action_mask(root_child_actions(search), leaf.legal));
+}
+
+TEST_CASE("v2 MCTS non-root top-k keeps a deterministic off-prior wildcard", "[v2][mcts][topk]") {
+    GameState state = action_rich_position();
+    MctsConfig config{};
+    config.determinizations = 1U;
+    config.max_tree_nodes = 128U;
+    config.rollout_policy = MctsRolloutPolicy::External;
+    config.rollout_seed = 0x70B0'B001ULL;
+    config.expand_top_k = 3U;
+
+    const auto prepare_interior_leaf = [&state, &config](Mcts& search, Xoshiro256pp& rng) {
+        search.reset(state, 0U);
+        MctsPendingLeaf root{};
+        REQUIRE(search.collect_external_leaf(root));
+        std::array<float, ACTION_SPACE_SIZE> root_priors{};
+        root_priors[play_action(DEF_VILLAGE)] = 1.0F;
+        search.provide_external_evaluation(root, 0.0F, root_priors.data(), rng);
+        REQUIRE(root_child_count(search) == static_cast<std::uint32_t>(root.legal_count));
+
+        MctsPendingLeaf interior{};
+        REQUIRE(search.collect_external_leaf(interior));
+        REQUIRE(interior.node != 0U);
+        REQUIRE(interior.legal_count > static_cast<int>(config.expand_top_k));
+        return interior;
+    };
+
+    Mcts first(config);
+    Xoshiro256pp first_rng = Xoshiro256pp::seeded(config.rollout_seed);
+    const MctsPendingLeaf first_leaf = prepare_interior_leaf(first, first_rng);
+    std::array<float, ACTION_SPACE_SIZE> ranked{};
+    for (Action action = 0; action < ACTION_SPACE_SIZE; ++action) {
+        if (first_leaf.legal.test(action)) {
+            ranked[action] = static_cast<float>(action + 1U);
+        }
+    }
+    const ActionMask ranked_children = highest_prior_actions(
+        first_leaf.legal,
+        ranked,
+        static_cast<int>(config.expand_top_k) - 1);
+    first.provide_external_evaluation(first_leaf, 0.0F, ranked.data(), first_rng);
+    const ActionMask first_children = node_child_actions(first, first_leaf.node);
+    REQUIRE(node_child_count(first, first_leaf.node) == config.expand_top_k);
+    for (Action action = 0; action < ACTION_SPACE_SIZE; ++action) {
+        if (ranked_children.test(action)) {
+            REQUIRE(first_children.test(action));
+        }
+    }
+    int wildcard_count = 0;
+    for (Action action = 0; action < ACTION_SPACE_SIZE; ++action) {
+        if (first_children.test(action) && !ranked_children.test(action)) {
+            REQUIRE(first_leaf.legal.test(action));
+            ++wildcard_count;
+        }
+    }
+    REQUIRE(wildcard_count == 1);
+
+    Mcts second(config);
+    Xoshiro256pp second_rng = Xoshiro256pp::seeded(config.rollout_seed);
+    const MctsPendingLeaf second_leaf = prepare_interior_leaf(second, second_rng);
+    REQUIRE(same_action_mask(second_leaf.legal, first_leaf.legal));
+    second.provide_external_evaluation(second_leaf, 0.0F, ranked.data(), second_rng);
+    REQUIRE(same_action_mask(
+        node_child_actions(second, second_leaf.node),
+        first_children));
 }
 
 TEST_CASE("v2 MCTS reuses only a hash-matching selected subtree", "[v2][mcts][reuse]") {

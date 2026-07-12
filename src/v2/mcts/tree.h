@@ -34,8 +34,9 @@ struct MctsConfig {
     MctsPriorFn prior_fn = nullptr;
     void* prior_user = nullptr;
     bool prune_treasure_plays = false;
-    // Keeps only the highest-prior legal actions when expanding a node. Zero
-    // preserves the full legal-action expansion used by gate/eval by default.
+    // Keeps the highest-prior legal actions plus one random wildcard when
+    // expanding a non-root node. Zero preserves full-width expansion; roots
+    // always retain every legal action.
     std::uint8_t expand_top_k = 0;
     // Internal owner opt-in for cross-decision re-rooting. The runner is the
     // only current owner that enables it.
@@ -110,6 +111,11 @@ public:
         const MctsPendingLeaf& leaf,
         float value,
         const float* priors) noexcept;
+    void provide_external_evaluation(
+        const MctsPendingLeaf& leaf,
+        float value,
+        const float* priors,
+        Xoshiro256pp& rng) noexcept;
     void root_visit_policy(float* out, float temperature) const noexcept;
     [[nodiscard]] Action sample_root_action(float temperature, Xoshiro256pp& rng) const noexcept;
     [[nodiscard]] float total_virtual_loss() const noexcept;
@@ -119,8 +125,11 @@ private:
     [[nodiscard]] bool compact_subtree_to_root(
         std::uint32_t retained_root,
         PlayerId perspective) noexcept;
-    [[nodiscard]] bool expand(std::uint32_t node_index) noexcept;
-    [[nodiscard]] bool expand_with_priors(std::uint32_t node_index, const float* priors) noexcept;
+    [[nodiscard]] bool expand(std::uint32_t node_index, Xoshiro256pp& rng) noexcept;
+    [[nodiscard]] bool expand_with_priors(
+        std::uint32_t node_index,
+        const float* priors,
+        Xoshiro256pp& rng) noexcept;
     [[nodiscard]] std::uint32_t select_child(std::uint32_t node_index) const noexcept;
     void rollout(GameState& state, Xoshiro256pp& rng) const noexcept;
     void backpropagate(const std::uint32_t* path, std::uint8_t depth, const GameState& terminal) noexcept;
@@ -147,18 +156,23 @@ private:
     // Recorded against states_[retained_root_] when the runner commits an
     // action; adoption verifies both that stored child state and the live one.
     std::uint64_t retained_root_state_hash_ = 0;
+    // Deterministic fallback for external-policy callers that do not pass
+    // their search RNG into the tree.
+    Xoshiro256pp expansion_rng_ = Xoshiro256pp::seeded(0x4D435453ULL);
 };
 
 [[nodiscard]] std::uint64_t mcts_state_hash(const GameState& state) noexcept;
-// Return the legal actions retained by top-k expansion. Invalid inputs fall
-// back to the full legal mask, preserving a selectable legal action.
+// Return the top (k - 1) legal actions by prior plus one uniformly selected
+// action from the excluded remainder. Invalid inputs fall back to the full
+// legal mask, preserving a selectable legal action.
 [[nodiscard]] ActionMask mcts_top_k_actions(
     const ActionMask& legal,
     int legal_count,
     const float* priors,
-    std::uint8_t top_k) noexcept;
-// Mix Dirichlet exploration into an already selected action set. Callers that
-// use top-k must pass the retained mask, never the broader legal mask.
+    std::uint8_t top_k,
+    Xoshiro256pp& rng) noexcept;
+// Mix Dirichlet exploration into an action set. Root callers always pass the
+// complete legal mask so all legal moves receive exploration support.
 void mcts_add_dirichlet_noise(
     float* priors,
     const ActionMask& actions,

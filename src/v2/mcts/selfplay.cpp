@@ -149,14 +149,6 @@ enum class ScriptedSlotStatus : std::uint8_t {
         + (static_cast<std::uint64_t>(index) * 0xD1B5'4A32'D192'ED03ULL);
 }
 
-[[nodiscard]] int action_mask_count(const ActionMask& legal) noexcept {
-    int count = 0;
-    for (Action action = 0; action < ACTION_SPACE_SIZE; ++action) {
-        count += legal.test(action) ? 1 : 0;
-    }
-    return count;
-}
-
 [[nodiscard]] PlayerId winner_for(const GameState& state) noexcept {
     const std::int16_t score0 = score(state, 0U);
     const std::int16_t score1 = score(state, 1U);
@@ -499,7 +491,7 @@ void SelfPlayRunner::provide_evaluations(const float* values, const float* polic
             normalized,
             game.rng);
         const float value = values == nullptr ? 0.0F : values[i];
-        game.mcts.provide_external_evaluation(pending.leaf, value, normalized);
+        game.mcts.provide_external_evaluation(pending.leaf, value, normalized, game.rng);
         if (game.pending > 0U) {
             --game.pending;
         }
@@ -603,6 +595,11 @@ void SelfPlayRunner::reapply_root_noise(GameSlot& game) noexcept {
     float sum = 0.0F;
     int count = 0;
     const MctsNode& root = game.mcts.node(0U);
+    // A reused interior node is deliberately marked unexpanded so a fresh
+    // root evaluation restores every legal child before Dirichlet noise.
+    if (!root.expanded) {
+        return;
+    }
     for (std::uint32_t child_index = root.first_child; child_index != MCTS_NULL;
          child_index = game.mcts.node(child_index).next_sibling) {
         const MctsNode& child = game.mcts.node(child_index);
@@ -932,7 +929,7 @@ bool SelfPlayRunner::resolve_scripted_tree_leaf(GameSlot& game, const MctsPendin
     }
     float priors[ACTION_SPACE_SIZE]{};
     priors[action] = 1.0F;
-    game.mcts.provide_external_evaluation(leaf, 0.0F, priors);
+    game.mcts.provide_external_evaluation(leaf, 0.0F, priors, game.rng);
     return true;
 }
 
@@ -1046,44 +1043,12 @@ void SelfPlayRunner::normalize_policy(
         return;
     }
 
-    ActionMask noise_actions = legal;
-    int noise_count = legal_count;
-    if (config_.expand_top_k != 0U) {
-        const ActionMask retained = mcts_top_k_actions(
-            legal,
-            legal_count,
-            out,
-            config_.expand_top_k);
-        const int retained_count = action_mask_count(retained);
-        if (retained_count > 0 && retained_count < legal_count) {
-            float retained_sum = 0.0F;
-            for (Action action = 0; action < ACTION_SPACE_SIZE; ++action) {
-                if (retained.test(action)) {
-                    retained_sum += out[action];
-                }
-            }
-            if (retained_sum <= 0.0F) {
-                const float uniform = 1.0F / static_cast<float>(retained_count);
-                for (Action action = 0; action < ACTION_SPACE_SIZE; ++action) {
-                    out[action] = retained.test(action) ? uniform : 0.0F;
-                }
-            } else {
-                const float inv_sum = 1.0F / retained_sum;
-                for (Action action = 0; action < ACTION_SPACE_SIZE; ++action) {
-                    out[action] = retained.test(action) ? out[action] * inv_sum : 0.0F;
-                }
-            }
-            // Select top-k before noise, then restrict noise to that same
-            // set. Otherwise root Dirichlet exploration could resurrect an
-            // action that expansion deliberately made absent.
-            noise_actions = retained;
-            noise_count = retained_count;
-        }
-    }
+    // Roots are always full-width. Noise must cover the same full legal set
+    // so policy targets retain the original Dirichlet exploration guarantee.
     mcts_add_dirichlet_noise(
         out,
-        noise_actions,
-        noise_count,
+        legal,
+        legal_count,
         config_.dirichlet_alpha,
         config_.dirichlet_frac,
         rng);
