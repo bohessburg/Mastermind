@@ -589,3 +589,18 @@ Build order: (A) tree-reuse/top-k chunk in flight + amendment on landing;
 strength-matched sampling over explicit checkpoint list + eval-ladder BM/
 scaffold sentinels; (E) run_c14.json + warm-start verification. Launch
 when a new box is provisioned.
+
+C14 BUILD COMPLETE (2026-07-12): all five chunks landed and green (111
+py + full C++ suites, incl. an all-features integration smoke): (A) tree
+reuse (hash-gated, K=1) + top-k expansion with root exemption + wildcard
+child (600ec61, 2e42283); (B) kingdom curriculum with segment-exact pool
+mixtures (fa78314); (C) deep-slice data gen (9ed633c); (D) ungated league
+with loss-weighted opponent sampling over explicit checkpoint lists,
+league_schedule ramp, obs-version guards, eval sentinels (edb2db5); (E)
+--init-weights warm start (weights-only; fresh optimizer/replay/
+schedules) + run_c14.json (this commit): warm-start c13 gen-65, 12-seed
+c13 league, engine-forcing curriculum (60% pool gens 1-15, 30% to 40,
+random after), 5% deep slice @4096 sims, no scripted training opponents,
+BM sentinel eval. READY TO LAUNCH on next box provision. Hardware rec:
+1x RTX 5090, 16-24 vCPU, >=192GB cgroup RAM (v2 replay ~18GB + 8 workers
+~10GB+), 40GB disk, ~$0.30-0.40/hr; ~8h to gen 100.
