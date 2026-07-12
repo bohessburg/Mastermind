@@ -482,3 +482,16 @@ trade-off against general strength (bm training counter arc: 0 -> 16% ->
 30% -> 32.5% -> 28.8% at rising dose; c12 lifetime max ~18%). gen_0025
 banked locally. Run continues per the overnight contract (stall clause
 nowhere near triggering).
+
+THE SCAFFOLD RETIRES (2026-07-12 morning): c13 gen-40 vs the PILE-AWARE
+scaffold (400 sims, K=2), 120 games via 6 box workers: 117W-3L = 97.5%,
+endings overwhelmingly pile-outs — the net out-races a competent
+clock-defending searcher at its own game. For scale: c10-gen90 managed
+26.7% vs the WEAKER pre-fix scaffold; every campaign through c9 scored
+zero. With EngineBot v2 at ~85-89% and BigMoney at 63.5%, every scripted
+opponent in the project is now decisively beaten. The measuring ladder
+above the net is now: humans. c13 continues (gen ~62, no decay, vloss
+0.227 still descending); remaining program instruments: paired-context
+adaptation probe (needs slot_to_def pybind helper), human playtests with
+a v2-aware web loader (input_scale + obs_version plumbing — flagged for
+web session).
