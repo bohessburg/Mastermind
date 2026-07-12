@@ -42,7 +42,7 @@ DEFAULT_KINGDOM = [
     "Market",
     "Remodel",
 ]
-DEFAULT_NN_CHECKPOINT = Path("checkpoints/remote/campaign1/gen_0025.pt")
+DEFAULT_NN_CHECKPOINT = Path("checkpoints/remote/campaign13/gen_0065.pt")
 
 
 @dataclass
@@ -57,6 +57,7 @@ class _NNPolicy:
 
     model: Any
     torch: Any
+    obs_version: int
 
 
 class _NNCheckpointError(Exception):
@@ -177,17 +178,59 @@ def _load_nn_policy(checkpoint_path: Path) -> _NNPolicy:
             checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
         except TypeError:  # pragma: no cover - older supported Torch versions
             checkpoint = torch.load(checkpoint_path, map_location="cpu")
-        hidden_sizes = checkpoint["config"]["model"]["hidden_sizes"]
+        config = checkpoint["config"]
+        if not isinstance(config, dict):
+            raise TypeError("checkpoint config must be a dict")
+        model_config = config["model"]
+        if not isinstance(model_config, dict):
+            raise TypeError("checkpoint model config must be a dict")
+        hidden_sizes = model_config["hidden_sizes"]
         if not isinstance(hidden_sizes, (list, tuple)):
             raise TypeError("hidden_sizes must be a list or tuple")
-        model = DominionNet(int(dz.OBS_SIZE), int(dz.ACTION_SPACE_SIZE), hidden_sizes)
+        input_scale = float(model_config.get("input_scale", 1.0))
+
+        selfplay_config = config.get("selfplay")
+        if isinstance(selfplay_config, dict) and "obs_version" in selfplay_config:
+            obs_version = int(selfplay_config["obs_version"])
+            if obs_version not in (1, 2):
+                raise ValueError("checkpoint selfplay obs_version must be 1 or 2")
+        else:
+            model_state = checkpoint["model"]
+            if not isinstance(model_state, dict):
+                raise TypeError("checkpoint model state must be a dict")
+            weight = model_state.get("trunk.0.weight")
+            if weight is None:
+                for name, candidate in model_state.items():
+                    if str(name).startswith("trunk.") and str(name).endswith(".weight"):
+                        weight = candidate
+                        break
+            if weight is None:
+                weight = model_state.get("policy_head.weight")
+            shape = getattr(weight, "shape", None)
+            if shape is None or len(shape) != 2:
+                raise ValueError("checkpoint model is missing its input linear layer")
+            input_width = int(shape[1])
+            if input_width == int(dz.OBS_SIZE_V1):
+                obs_version = 1
+            elif input_width == int(dz.OBS_SIZE_V2):
+                obs_version = 2
+            else:
+                raise ValueError("checkpoint model input size is not a supported observation layout")
+
+        obs_size = int(dz.OBS_SIZE_V1 if obs_version == 1 else dz.OBS_SIZE_V2)
+        model = DominionNet(
+            obs_size,
+            int(dz.ACTION_SPACE_SIZE),
+            hidden_sizes,
+            input_scale=input_scale,
+        )
         model.load_state_dict(checkpoint["model"])
         model.to("cpu")
         model.eval()
     except Exception as error:
         raise _NNCheckpointError("neural-network checkpoint could not be loaded") from error
 
-    return _NNPolicy(model=model, torch=torch)
+    return _NNPolicy(model=model, torch=torch, obs_version=obs_version)
 
 
 def _load_nn_policies(seat_kinds: list[str]) -> dict[int, _NNPolicy]:
@@ -481,7 +524,9 @@ def _choose_bigmoney_action(game: Any, legal: list[int]) -> int:
 def _choose_nn_action(session: Session, seat: int) -> int:
     policy = session.nn_policies[seat]
     torch = policy.torch
-    observation = torch.as_tensor(session.game.encode(seat), dtype=torch.float32, device="cpu").unsqueeze(0)
+    observation = torch.as_tensor(
+        session.game.encode(seat, policy.obs_version), dtype=torch.float32, device="cpu"
+    ).unsqueeze(0)
     legal_mask = torch.as_tensor(session.game.legal_mask(), dtype=torch.bool, device="cpu").unsqueeze(0)
     masked_logits, _ = policy.model.evaluate(observation, legal_mask)
     return int(torch.argmax(masked_logits, dim=-1).item())
@@ -507,6 +552,7 @@ def _choose_nnmcts_action(session: Session, seat: int) -> int:
             "sims": _nn_mcts_sims(),
             "c_puct": 1.25,
             "determinizations": 2,
+            "obs_version": policy.obs_version,
             # Collapse-trained checkpoints (c7+) never search treasure plays;
             # searching them here puts the net off-distribution (see the
             # 2026-07-11 eval-flag bug in docs/training-log.md).

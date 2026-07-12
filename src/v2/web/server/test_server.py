@@ -52,17 +52,45 @@ FIXTURE_THRONE_BANDIT = Path(__file__).with_name("fixtures_throne_bandit_replay.
 
 @pytest.fixture
 def tiny_nn_checkpoint(tmp_path: Path) -> Path:
-    """A checkpoint with the same model/config keys as training output."""
+    """A legacy v1 checkpoint with the same model/config keys as training output."""
     import torch
 
     from src.v2.train.model import DominionNet
 
     torch.manual_seed(0x5105)
-    model = DominionNet(dz.OBS_SIZE, dz.ACTION_SPACE_SIZE, hidden_sizes=[32])
+    model = DominionNet(dz.OBS_SIZE_V1, dz.ACTION_SPACE_SIZE, hidden_sizes=[32])
     checkpoint = tmp_path / "tiny-random-policy.pt"
     torch.save(
         {
             "config": {"model": {"hidden_sizes": [32]}},
+            "model": model.state_dict(),
+        },
+        checkpoint,
+    )
+    return checkpoint
+
+
+@pytest.fixture
+def tiny_v2_nn_checkpoint(tmp_path: Path) -> Path:
+    """A scaled observation-v2 checkpoint with explicit self-play metadata."""
+    import torch
+
+    from src.v2.train.model import DominionNet
+
+    torch.manual_seed(0x5109)
+    model = DominionNet(
+        dz.OBS_SIZE_V2,
+        dz.ACTION_SPACE_SIZE,
+        hidden_sizes=[16],
+        input_scale=16.0,
+    )
+    checkpoint = tmp_path / "tiny-v2-random-policy.pt"
+    torch.save(
+        {
+            "config": {
+                "model": {"hidden_sizes": [16], "input_scale": 16.0},
+                "selfplay": {"obs_version": 2},
+            },
             "model": model.state_dict(),
         },
         checkpoint,
@@ -936,6 +964,8 @@ def test_human_vs_nn_bot_completes_with_legal_nn_actions(tiny_nn_checkpoint: Pat
     created = response.json()
     session = sessions[created["session_id"]]
     assert 1 in session.nn_policies
+    assert session.nn_policies[1].obs_version == 1
+    assert session.nn_policies[1].model.input_scale == 1.0
 
     with client.websocket_connect(f"/ws/{created['session_id']}/{created['seat_tokens'][0]}") as websocket:
         messages = read_initial(websocket)
@@ -962,6 +992,46 @@ def test_human_vs_nn_bot_completes_with_legal_nn_actions(tiny_nn_checkpoint: Pat
 
     assert session.game.game_over()
     assert replay.game_over()
+    assert nn_actions
+
+
+def test_human_vs_v2_nn_bot_plays_turns_without_encoding_error(tiny_v2_nn_checkpoint: Path) -> None:
+    sessions.clear()
+    client = TestClient(app)
+    response = client.post(
+        "/api/session",
+        json={
+            "seats": ["human", f"bot:nn:{tiny_v2_nn_checkpoint}"],
+            "kingdom": KINGDOM,
+            "seed": 0x5109,
+            "thinking_delay_ms": 0,
+        },
+    )
+    assert response.status_code == 200
+    created = response.json()
+    session = sessions[created["session_id"]]
+    policy = session.nn_policies[1]
+    assert policy.obs_version == 2
+    assert policy.model.input_scale == 16.0
+
+    with client.websocket_connect(f"/ws/{created['session_id']}/{created['seat_tokens'][0]}") as websocket:
+        messages = read_initial(websocket)
+        for _ in range(8):
+            if any(message["type"] == "gameover" for message in messages):
+                break
+            decision = by_type(messages, "decision")
+            if not decision["options"]:
+                messages = read_until_decision_or_gameover(websocket)
+                continue
+            websocket.send_json({"type": "act", "action": choose_big_money_action(decision)})
+            messages = read_until_decision_or_gameover(websocket)
+
+    replay = dz.new_game(session.setup, session.seed)
+    nn_actions = 0
+    for action in session.action_log:
+        if int(replay.current_decision()["player"]) == 1:
+            nn_actions += 1
+        replay.step(action)
     assert nn_actions
 
 
