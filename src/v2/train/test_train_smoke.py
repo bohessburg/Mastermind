@@ -335,10 +335,19 @@ def test_parallel_v2_records_preserve_observation_rows_in_parent_replay(tmp_path
 
     expected_rows: Counter[bytes] = Counter()
     for worker_index in range(cfg.parallel_workers):
+        # Slot manifests retain the generation-wide game index after quota
+        # splitting.  Legacy routed runs number from zero inside each worker,
+        # so shift this fixed-kingdom reference seed to reproduce the same
+        # game_seed sequence for the worker's global range.
+        global_start = worker_index * 2
+        manifest_seed = (
+            ((cfg.seed + worker_index) ^ (1 * 0x9E37))
+            + global_start * 0xD1B5_4A32_D192_ED03
+        ) & ((1 << 64) - 1)
         _, records = play_routed_games(
             (model, model),
             cfg.selfplay,
-            seed=(cfg.seed + worker_index) ^ (1 * 0x9E37),
+            seed=manifest_seed,
             device=torch.device("cpu"),
             target_games=2,
             same_model_fast_path=True,

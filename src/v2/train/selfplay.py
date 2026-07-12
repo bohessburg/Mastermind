@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import math
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Sequence
+from typing import Any, Sequence
 
 import numpy as np
 import torch
@@ -92,6 +93,102 @@ def _value_target(value_target: str):
     raise ValueError(f"unknown value target: {value_target}")
 
 
+def _manifest_value(descriptor: object, name: str, default: Any) -> Any:
+    if isinstance(descriptor, Mapping):
+        return descriptor.get(name, default)
+    return getattr(descriptor, name, default)
+
+
+def _nonnegative_int(value: Any, name: str) -> int:
+    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+        raise ValueError(f"{name} must be a non-negative integer")
+    return int(value)
+
+
+def _slot_manifest_configs(
+    config: SelfPlayConfig,
+    slot_manifest: Sequence[object],
+) -> list[dz.SelfPlaySlotConfig]:
+    """Translate Python slot descriptors into the native immutable manifest.
+
+    ``workers.py`` deliberately keeps counter-only metadata (league checkpoint
+    name and kingdom phase) on its descriptor; the runner receives just the
+    game attributes needed to drive an independent live slot.
+    """
+    if not slot_manifest:
+        raise ValueError("slot_manifest must contain at least one slot when supplied")
+    slots: list[dz.SelfPlaySlotConfig] = []
+    seen_game_indices: set[int] = set()
+    for position, descriptor in enumerate(slot_manifest):
+        if isinstance(descriptor, dz.SelfPlaySlotConfig):
+            # Copy through public fields so later caller mutations cannot make
+            # the Python manifest disagree with the runner's config object.
+            slot = dz.SelfPlaySlotConfig()
+            slot.game_index = int(descriptor.game_index)
+            slot.seat0_model_id = int(descriptor.seat0_model_id)
+            slot.seat1_model_id = int(descriptor.seat1_model_id)
+            slot.kingdom_mode = descriptor.kingdom_mode
+            slot.kingdom_pool = list(descriptor.kingdom_pool)
+            slot.sims_override = int(descriptor.sims_override)
+            slot.scripted_bot = descriptor.scripted_bot
+            slot.scripted_nn_player = int(descriptor.scripted_nn_player)
+        else:
+            slot = dz.SelfPlaySlotConfig()
+            game_index = _nonnegative_int(
+                _manifest_value(descriptor, "game_index", position),
+                "slot game_index",
+            )
+            seat0_model_id = _nonnegative_int(
+                _manifest_value(descriptor, "seat0_model_id", 0),
+                "slot seat0_model_id",
+            )
+            seat1_model_id = _nonnegative_int(
+                _manifest_value(descriptor, "seat1_model_id", 0),
+                "slot seat1_model_id",
+            )
+            mode = _manifest_value(descriptor, "kingdom_mode", None)
+            if mode is None:
+                mode = config.kingdom_mode
+            if isinstance(mode, str):
+                slot.kingdom_mode = _kingdom_mode(mode)
+            elif isinstance(mode, dz.SelfPlayKingdomMode):
+                slot.kingdom_mode = mode
+            else:
+                raise ValueError("slot kingdom_mode must be 'fixed' or 'random'")
+            pool = _manifest_value(descriptor, "kingdom_pool", None)
+            if pool is not None and (isinstance(pool, str) or not isinstance(pool, Sequence)):
+                raise ValueError("slot kingdom_pool must be a sequence or None")
+            slot.game_index = game_index
+            slot.seat0_model_id = seat0_model_id
+            slot.seat1_model_id = seat1_model_id
+            slot.kingdom_pool = list(pool) if pool is not None else None
+            slot.sims_override = _nonnegative_int(
+                _manifest_value(descriptor, "sims_override", 0),
+                "slot sims_override",
+            )
+            scripted_kind = _manifest_value(descriptor, "scripted_kind", None)
+            if isinstance(scripted_kind, dz.SelfPlayScriptedBotKind):
+                slot.scripted_bot = scripted_kind
+            else:
+                slot.scripted_bot = _scripted_bot_kind(scripted_kind)
+            slot.scripted_nn_player = _nonnegative_int(
+                _manifest_value(
+                    descriptor,
+                    "nn_player",
+                    _manifest_value(descriptor, "scripted_nn_player", 0),
+                ),
+                "slot nn_player",
+            )
+        game_index = _nonnegative_int(slot.game_index, "slot game_index")
+        if game_index in seen_game_indices:
+            raise ValueError("slot_manifest game_index values must be unique")
+        seen_game_indices.add(game_index)
+        if int(slot.scripted_nn_player) > 1 and slot.scripted_bot != dz.SelfPlayScriptedBotKind.None_:
+            raise ValueError("slot nn_player must be zero or one for scripted games")
+        slots.append(slot)
+    return slots
+
+
 def make_runner_config(
     config: SelfPlayConfig,
     seed: int,
@@ -100,20 +197,24 @@ def make_runner_config(
     scripted_nn_player: int = 0,
     kingdom_pool: Sequence[int] | None = None,
     sims_override: int = 0,
+    slot_manifest: Sequence[object] | None = None,
 ):
     validate_deep_slice_config(config)
     if not math.isfinite(config.margin_scale) or config.margin_scale <= 0.0:
         raise ValueError("margin_scale must be finite and positive")
     if not isinstance(sims_override, int) or isinstance(sims_override, bool) or sims_override < 0:
         raise ValueError("sims_override must be a non-negative integer")
+    native_slots = _slot_manifest_configs(config, slot_manifest) if slot_manifest is not None else []
+    max_slot_sims = max((int(slot.sims_override) for slot in native_slots), default=0)
+    effective_override = max(int(sims_override), max_slot_sims)
     runner_sims = int(sims_override) if sims_override else int(config.sims_per_move)
     runner_max_tree_nodes = int(config.max_tree_nodes)
-    if sims_override:
+    if effective_override:
         # C13 used 4,096 nodes for 512 sims (an 8x margin), but multiplying
         # that full margin for every rare 8-16x deep run is needlessly large.
         # Two nodes per simulation safely grows capacity with the budget while
         # retaining the configured cap whenever it is already larger.
-        runner_max_tree_nodes = max(runner_max_tree_nodes, runner_sims * 2)
+        runner_max_tree_nodes = max(runner_max_tree_nodes, effective_override * 2)
     runner_config = dz.SelfPlayConfig(
         n_games=config.n_games,
         sims_per_move=runner_sims,
@@ -143,6 +244,9 @@ def make_runner_config(
         value_target=_value_target(config.value_target),
         margin_scale=config.margin_scale,
     )
+    if native_slots:
+        runner_config.n_games = len(native_slots)
+        runner_config.slot_manifest = native_slots
     return runner_config
 
 

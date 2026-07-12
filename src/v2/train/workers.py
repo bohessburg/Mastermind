@@ -2,8 +2,9 @@
 
 Parallel collection deliberately does not promise a deterministic insertion
 order in the parent replay buffer: worker result messages arrive as soon as
-they are ready.  Each worker itself is seed-pinned to ``config.seed + index``
-and owns one persistent ``SelfPlayRunner``, so its game stream is reproducible.
+they are ready.  Each worker itself is seed-pinned to ``config.seed + index``;
+legacy work keeps a persistent runner, while segmented generations build one
+heterogeneous slot-manifest runner for their full assigned quota.
 """
 
 from __future__ import annotations
@@ -14,7 +15,7 @@ import queue
 import random
 import time
 import traceback
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Callable
 
 import numpy as np
@@ -53,6 +54,65 @@ class ParallelSelfPlayResult:
         return 3600.0 * self.stats.games / self.collection_wall_time
 
 
+@dataclass(frozen=True)
+class SelfPlaySlotManifest:
+    """One independently live runner slot plus Python-only attribution tags."""
+
+    game_index: int
+    seat0_model_id: int
+    seat1_model_id: int
+    scripted_kind: str | None = None
+    nn_player: int = 0
+    kingdom_pool: list[int] | None = None
+    kingdom_mode: str | None = None
+    sims_override: int = 0
+    league_opponent: str | None = None
+
+
+def index_selfplay_segments(segments: list[SelfPlaySegment]) -> list[SelfPlaySegment]:
+    """Assign stable global game ranges after the final plan is composed.
+
+    Segment allocation may deliberately reorder reserved deep or league work.
+    Each copied fragment carries this range forward, which keeps per-game
+    seeds stable even when a different worker receives the segment.
+    """
+    indexed: list[SelfPlaySegment] = []
+    next_index = 0
+    for segment in segments:
+        if segment.n_games <= 0:
+            raise ValueError("self-play segments must have positive game counts")
+        start = next_index if segment.game_index is None else int(segment.game_index)
+        if start < 0:
+            raise ValueError("self-play segment game_index must be non-negative")
+        indexed.append(replace(segment, game_index=start))
+        next_index = max(next_index, start + int(segment.n_games))
+    return indexed
+
+
+def build_slot_manifest(segments: list[SelfPlaySegment]) -> list[SelfPlaySlotManifest]:
+    """Flatten exact segment work into independently configured game slots."""
+    slots: list[SelfPlaySlotManifest] = []
+    for segment in index_selfplay_segments(segments):
+        assert segment.game_index is not None
+        for offset in range(segment.n_games):
+            slots.append(
+                SelfPlaySlotManifest(
+                    game_index=int(segment.game_index) + offset,
+                    seat0_model_id=int(segment.seat0_model_id),
+                    seat1_model_id=int(segment.seat1_model_id),
+                    scripted_kind=segment.scripted_kind,
+                    nn_player=int(segment.nn_player),
+                    kingdom_pool=(list(segment.kingdom_pool) if segment.kingdom_pool is not None else None),
+                    kingdom_mode=segment.kingdom_mode,
+                    sims_override=int(segment.sims_override),
+                    league_opponent=segment.league_opponent,
+                )
+            )
+    if len({slot.game_index for slot in slots}) != len(slots):
+        raise ValueError("self-play slot manifest contains duplicate game indices")
+    return slots
+
+
 def game_quotas(total_games: int, workers: int) -> list[int]:
     """Split a generation exactly, giving the first workers one extra game."""
     if total_games <= 0:
@@ -77,12 +137,13 @@ def split_segments_by_quotas(
     concentrating a high-cost deep slice on the last worker merely because it
     follows the normal segment in planner order.
     """
+    segments = index_selfplay_segments(segments)
     if sum(segment.n_games for segment in segments) != sum(quotas):
         raise ValueError("self-play segments must cover exactly one generation")
     if not segments:
         return [[] for _ in quotas]
 
-    def copy_with_games(source: SelfPlaySegment, n_games: int) -> SelfPlaySegment:
+    def copy_with_games(source: SelfPlaySegment, n_games: int, game_index: int) -> SelfPlaySegment:
         return SelfPlaySegment(
             n_games,
             source.seat0_model_id,
@@ -93,6 +154,7 @@ def split_segments_by_quotas(
             kingdom_mode=source.kingdom_mode,
             sims_override=source.sims_override,
             league_opponent=source.league_opponent,
+            game_index=game_index,
         )
 
     per_worker: list[list[SelfPlaySegment]] = [[] for _ in quotas]
@@ -132,7 +194,11 @@ def split_segments_by_quotas(
         for worker_index, group in assignments:
             for segment_index in group:
                 reserved[worker_index].append(
-                    copy_with_games(segments[segment_index], segments[segment_index].n_games)
+                    copy_with_games(
+                        segments[segment_index],
+                        segments[segment_index].n_games,
+                        int(segments[segment_index].game_index),
+                    )
                 )
                 assigned_indices.add(segment_index)
         return True
@@ -160,19 +226,22 @@ def split_segments_by_quotas(
     ]
     segment_index = 0
     remaining = remaining_segments[0].n_games if remaining_segments else 0
+    next_game_index = int(remaining_segments[0].game_index) if remaining_segments else 0
     for worker_index, needed in enumerate(remaining_quotas):
         while needed > 0:
             if segment_index >= len(remaining_segments):
                 raise ValueError("self-play segment allocation ended early")
             source = remaining_segments[segment_index]
             take = min(needed, remaining)
-            per_worker[worker_index].append(copy_with_games(source, take))
+            per_worker[worker_index].append(copy_with_games(source, take, next_game_index))
             needed -= take
             remaining -= take
+            next_game_index += take
             if remaining == 0:
                 segment_index += 1
                 if segment_index < len(remaining_segments):
                     remaining = remaining_segments[segment_index].n_games
+                    next_game_index = int(remaining_segments[segment_index].game_index)
     if segment_index != len(remaining_segments):
         raise ValueError("self-play segment allocation left unassigned games")
     for worker_segments, worker_reserved in zip(per_worker, reserved, strict=True):
@@ -619,6 +688,181 @@ def _generate_routed_games(
     return stats
 
 
+def _evaluate_manifest_model_groups(
+    model_table: list[torch.nn.Module],
+    obs: np.ndarray,
+    masks: np.ndarray,
+    model_ids: np.ndarray,
+    device: torch.device,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Evaluate each required model once and restore runner leaf order."""
+    ids = np.asarray(model_ids, dtype=np.uint32)
+    if ids.ndim != 1 or ids.shape[0] != obs.shape[0]:
+        raise ValueError("leaf model attribution must have one entry per observation")
+    logits_out = np.empty((obs.shape[0], dz.ACTION_SPACE_SIZE), dtype=np.float32)
+    values_out = np.empty((obs.shape[0],), dtype=np.float32)
+    with torch.no_grad():
+        for model_id in np.unique(ids):
+            index = int(model_id)
+            if not 0 <= index < len(model_table):
+                raise RuntimeError("self-play slot references an unknown model id")
+            rows = np.flatnonzero(ids == model_id)
+            model = model_table[index]
+            model.eval()
+            obs_tensor = torch.as_tensor(obs[rows], dtype=torch.float32, device=device)
+            mask_tensor = torch.as_tensor(masks[rows], dtype=torch.bool, device=device)
+            logits, values = model.evaluate(obs_tensor, mask_tensor)
+            logits_out[rows] = logits.detach().cpu().numpy().astype(np.float32, copy=False)
+            values_out[rows] = values.detach().cpu().numpy().astype(np.float32, copy=False)
+    return logits_out, values_out
+
+
+def _record_manifest_outcomes(
+    stats: SelfPlayStats,
+    records: list[dict[str, Any]],
+    slots_by_game_index: dict[int, SelfPlaySlotManifest],
+) -> None:
+    scripted: dict[str, list[dict[str, Any]]] = {}
+    league: dict[str, list[dict[str, Any]]] = {}
+    for record in records:
+        game_index = int(record.get("game_index", -1))
+        try:
+            slot = slots_by_game_index[game_index]
+        except KeyError as exc:
+            raise RuntimeError(f"self-play runner finished an unknown slot game_index {game_index}") from exc
+        if slot.scripted_kind is not None:
+            scripted.setdefault(slot.scripted_kind, []).append(record)
+        elif slot.seat0_model_id != slot.seat1_model_id and slot.league_opponent is not None:
+            league.setdefault(slot.league_opponent, []).append(record)
+        if slot.sims_override:
+            stats.deep_games += 1
+            stats.deep_positions += int(np.asarray(record["observations"]).shape[0])
+    for kind, grouped in scripted.items():
+        _record_scripted_outcomes(stats, grouped, kind)
+    for opponent, grouped in league.items():
+        _record_league_outcomes(stats, grouped, opponent)
+
+
+def _generate_manifest_games(
+    runner: Any,
+    slots: list[SelfPlaySlotManifest],
+    evaluate: Callable[[np.ndarray, np.ndarray], tuple[np.ndarray, np.ndarray]] | None,
+    model_table: list[torch.nn.Module] | None,
+    device: torch.device | None,
+    collect_max_batch: int,
+    result_queue: Any,
+    worker_index: int,
+    generation: int,
+    *,
+    obs_size: int,
+    route_audit: dict[tuple[int, int], int],
+) -> SelfPlayStats:
+    """Run all assigned segment games concurrently through one slot manifest."""
+    if not slots:
+        return SelfPlayStats()
+    if len({slot.game_index for slot in slots}) != len(slots):
+        raise RuntimeError("self-play slot manifest contains duplicate game indices")
+    if (model_table is None) == (device is not None):
+        # Local evaluation needs both a table and device; server evaluation
+        # needs neither because its closure owns the transport.
+        raise RuntimeError("invalid self-play manifest evaluator configuration")
+    if model_table is None and evaluate is None:
+        raise RuntimeError("self-play manifest has no evaluator")
+
+    slots_by_game_index = {slot.game_index: slot for slot in slots}
+    seen_game_indices: set[int] = set()
+    stats = SelfPlayStats()
+    start = time.perf_counter()
+
+    def emit(records: list[dict[str, Any]]) -> None:
+        if not records:
+            return
+        duplicate = [int(record["game_index"]) for record in records if int(record["game_index"]) in seen_game_indices]
+        if duplicate:
+            raise RuntimeError(f"self-play manifest emitted duplicate game indices: {duplicate}")
+        _record_manifest_outcomes(stats, records, slots_by_game_index)
+        seen_game_indices.update(int(record["game_index"]) for record in records)
+        packed = _pack_records(records, obs_size)
+        games, positions = int(packed[0].shape[0]), int(packed[0].sum())
+        if games:
+            result_queue.put(("records", worker_index, generation, packed))
+            stats.games += games
+            stats.positions += positions
+
+    while len(seen_game_indices) < len(slots):
+        plumbing_start = time.perf_counter()
+        obs, masks = runner.collect_leaves(collect_max_batch)
+        players = runner.leaf_players()
+        model_ids = runner.leaf_model_ids()
+        game_indices = runner.leaf_game_indices()
+        stats.plumbing_time += time.perf_counter() - plumbing_start
+        batch = int(obs.shape[0])
+        if batch == 0:
+            # A fully scripted slot can finish while collect has no NN leaves;
+            # consume those records rather than spinning forever.  Scaffold
+            # workers may temporarily own every remaining slot, so yield too.
+            emit(runner.finished_games())
+            if len(seen_game_indices) < len(slots):
+                time.sleep(0)
+            continue
+
+        players_array = np.asarray(players, dtype=np.uint8)
+        model_ids_array = np.asarray(model_ids, dtype=np.uint32)
+        game_indices_array = np.asarray(game_indices, dtype=np.uint64)
+        if (
+            players_array.shape != model_ids_array.shape
+            or players_array.shape != game_indices_array.shape
+            or players_array.shape[0] != batch
+        ):
+            raise RuntimeError("self-play runner returned misaligned leaf attribution")
+        for player, model_id in zip(players_array, model_ids_array, strict=True):
+            key = (int(player), int(model_id))
+            route_audit[key] = route_audit.get(key, 0) + 1
+
+        inference_start = time.perf_counter()
+        if model_table is None:
+            if np.any(model_ids_array != 0):
+                raise RuntimeError("inference-server self-play cannot route a historical model")
+            assert evaluate is not None
+            logits_np, values_np = evaluate(obs, masks)
+        else:
+            assert device is not None
+            logits_np, values_np = _evaluate_manifest_model_groups(
+                model_table,
+                obs,
+                masks,
+                model_ids_array,
+                device,
+            )
+        stats.inference_time += time.perf_counter() - inference_start
+        # Preserve the established metric definition: a leaf batch from a
+        # two-model league slot is "split" even when this particular pass has
+        # only one seat's leaves. The new execution still evaluates it once by
+        # model id, but the counters remain comparable with segment runners.
+        if any(
+            slots_by_game_index[int(game_index)].seat0_model_id
+            != slots_by_game_index[int(game_index)].seat1_model_id
+            for game_index in game_indices_array
+        ):
+            stats.routed_split_batches += 1
+        else:
+            stats.routed_fast_path_batches += 1
+
+        plumbing_start = time.perf_counter()
+        runner.provide_evaluations(values_np, logits_np)
+        emit(runner.finished_games())
+        stats.plumbing_time += time.perf_counter() - plumbing_start
+        stats.leaves += batch
+        stats.nn_evals += batch
+
+    if stats.games != len(slots):
+        raise RuntimeError(
+            f"self-play manifest completed {stats.games} records for {len(slots)} slots"
+        )
+    stats.wall_time = time.perf_counter() - start
+    return stats
+
+
 def _accumulate_stats(total: SelfPlayStats, update: SelfPlayStats) -> None:
     total.games += update.games
     total.positions += update.positions
@@ -663,7 +907,9 @@ def _worker_main(
         # A process needs only its generation quota of in-flight games. This
         # avoids allocating the full global n_games pipeline in every worker.
         worker_selfplay.n_games = min(worker_selfplay.n_games, runner_games)
-        runner = dz.SelfPlayRunner(make_runner_config(worker_selfplay, worker_seed))
+        # The legacy stream is allocated lazily. Segmented generations instead
+        # get exactly one manifest-backed runner for their full quota.
+        runner: Any | None = None
         obs_size = obs_size_for_config(config)
         if server_mode:
             assert inference_endpoints is not None
@@ -708,85 +954,61 @@ def _worker_main(
                     opponent.eval()
                     model_table.append(opponent)
             if segments:
-                stats = SelfPlayStats()
-                league_games = 0
+                indexed_segments = index_selfplay_segments(segments)
+                slots = build_slot_manifest(indexed_segments)
+                if len(slots) != int(target_games):
+                    raise RuntimeError("self-play slot manifest does not match the worker game quota")
+                if model is None or device is None:
+                    if any(
+                        slot.seat0_model_id != 0 or slot.seat1_model_id != 0
+                        for slot in slots
+                    ):
+                        raise RuntimeError("mini-league self-play requires worker_device='cpu' or 'cuda'")
+                    manifest_model_table: list[torch.nn.Module] | None = None
+                    manifest_device: torch.device | None = None
+                    manifest_evaluate = evaluate
+                else:
+                    if any(
+                        not (
+                            0 <= slot.seat0_model_id < len(model_table)
+                            and 0 <= slot.seat1_model_id < len(model_table)
+                        )
+                        for slot in slots
+                    ):
+                        raise RuntimeError("self-play slot references an unknown model id")
+                    manifest_model_table = list(model_table)
+                    manifest_device = device
+                    manifest_evaluate = None
+                manifest_runner = dz.SelfPlayRunner(
+                    make_runner_config(
+                        worker_selfplay,
+                        worker_seed ^ (int(generation) * 0x9E37),
+                        slot_manifest=slots,
+                    )
+                )
                 route_audit: dict[tuple[int, int], int] = {}
-                for task_index, segment in enumerate(segments):
-                    if segment.n_games <= 0:
-                        raise RuntimeError("self-play segment has a non-positive game count")
-                    if model is None or device is None:
-                        if (segment.seat0_model_id, segment.seat1_model_id) != (0, 0):
-                            raise RuntimeError("mini-league self-play requires worker_device='cpu' or 'cuda'")
-                        task_runner = runner
-                        if (
-                            segment.is_scripted
-                            or segment.kingdom_pool is not None
-                            or segment.kingdom_mode is not None
-                            or segment.sims_override > 0
-                        ):
-                            task_config = copy.deepcopy(worker_selfplay)
-                            task_config.n_games = max(1, min(int(task_config.n_games), int(segment.n_games)))
-                            if segment.kingdom_mode is not None:
-                                task_config.kingdom_mode = segment.kingdom_mode
-                            task_runner = dz.SelfPlayRunner(
-                                make_runner_config(
-                                    task_config,
-                                    worker_seed ^ (int(generation) * 0x9E37) ^ (task_index * 0x10001),
-                                    scripted_kind=segment.scripted_kind,
-                                    scripted_nn_player=segment.nn_player,
-                                    kingdom_pool=segment.kingdom_pool,
-                                    sims_override=segment.sims_override,
-                                )
-                            )
-                        task_stats = _generate_games_exact(
-                            task_runner,
-                            evaluate,
-                            collect_max_batch,
-                            segment.n_games,
-                            result_queue,
-                            worker_index,
-                            int(generation),
-                            segment.scripted_kind,
-                            obs_size=obs_size,
-                        )
-                    else:
-                        if not (
-                            0 <= segment.seat0_model_id < len(model_table)
-                            and 0 <= segment.seat1_model_id < len(model_table)
-                        ):
-                            raise RuntimeError("self-play segment references an unknown model id")
-                        # A segment can be shorter than this worker's total
-                        # quota.  Use a fresh exact-sized runner rather than
-                        # stopping the persistent quota-sized runner midway
-                        # through its in-flight games and accidentally carrying
-                        # best-vs-best state into a league segment.
-                        task_stats = _generate_routed_games(
-                            (model_table[segment.seat0_model_id], model_table[segment.seat1_model_id]),
-                            worker_selfplay,
-                            worker_seed ^ (int(generation) * 0x9E37) ^ (task_index * 0x10001),
-                            device,
-                            segment.n_games,
-                            result_queue,
-                            worker_index,
-                            int(generation),
-                            (segment.seat0_model_id, segment.seat1_model_id),
-                            route_audit,
-                            segment.seat0_model_id == segment.seat1_model_id,
-                            segment.scripted_kind,
-                            segment.nn_player,
-                            segment.kingdom_pool,
-                            segment.kingdom_mode,
-                            segment.sims_override,
-                            segment.league_opponent,
-                        )
-                        if segment.is_league:
-                            league_games += task_stats.games
-                    if segment.sims_override:
-                        task_stats.deep_games += task_stats.games
-                        task_stats.deep_positions += task_stats.positions
-                    _accumulate_stats(stats, task_stats)
+                stats = _generate_manifest_games(
+                    manifest_runner,
+                    slots,
+                    manifest_evaluate,
+                    manifest_model_table,
+                    manifest_device,
+                    collect_max_batch,
+                    result_queue,
+                    worker_index,
+                    int(generation),
+                    obs_size=obs_size,
+                    route_audit=route_audit,
+                )
+                league_games = sum(
+                    1
+                    for slot in slots
+                    if slot.scripted_kind is None and slot.seat0_model_id != slot.seat1_model_id
+                )
                 deferred = []
             else:
+                if runner is None:
+                    runner = dz.SelfPlayRunner(make_runner_config(worker_selfplay, worker_seed))
                 stats, deferred = _generate_games(
                     runner,
                     evaluate,
@@ -879,6 +1101,10 @@ class ParallelSelfPlayPool:
         else:
             state_payload = serialize_cpu_state_dict(model)
         if segments is not None:
+            # Index once before quota splitting. Reserved deep/league blocks
+            # may move between workers, but their slot seeds keep this global
+            # plan position rather than acquiring a worker-local index.
+            segments = index_selfplay_segments(segments)
             if sum(segment.n_games for segment in segments) != self.config.selfplay.games_per_generation:
                 raise ValueError("self-play segments must cover exactly one generation")
             if self.inference_server is not None and any(segment.is_league for segment in segments):

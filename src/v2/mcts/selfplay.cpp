@@ -101,8 +101,12 @@ enum class ScriptedSlotStatus : std::uint8_t {
     return false;
 }
 
+[[nodiscard]] bool scripted_mode(SelfPlayScriptedBotKind kind) noexcept {
+    return kind != SelfPlayScriptedBotKind::None;
+}
+
 [[nodiscard]] bool scripted_mode(const SelfPlayConfig& config) noexcept {
-    return config.scripted_bot != SelfPlayScriptedBotKind::None;
+    return scripted_mode(config.scripted_bot);
 }
 
 [[nodiscard]] std::size_t checked_obs_size(ObsVersion version) {
@@ -151,7 +155,7 @@ enum class ScriptedSlotStatus : std::uint8_t {
 
 [[nodiscard]] std::uint64_t game_seed(
     const SelfPlayConfig& config,
-    std::uint32_t index,
+    std::uint64_t index,
     std::uint64_t generation) noexcept {
     return config.seed
         + (generation * 0x9E37'79B9'7F4A'7C15ULL)
@@ -180,6 +184,7 @@ struct SelfPlayRunner::GameSlot {
     std::vector<float> observations;
     std::vector<float> policy_targets;
     std::vector<PlayerId> players;
+    SelfPlaySlotConfig slot{};
     std::uint64_t seed = 0;
     std::uint64_t generation = 0;
     // Counts only simulations started for this decision. On a successfully
@@ -191,6 +196,10 @@ struct SelfPlayRunner::GameSlot {
     std::uint16_t move_index = 0;
     PlayerId nn_player = NONE;
     bool search_active = false;
+    // Manifest slots represent one prescribed game for a generation.  Once
+    // complete they stay parked so a fast slot cannot begin an unassigned
+    // follow-up game while another slot is still finishing.
+    bool retired = false;
     // GameSlot is runner bookkeeping (it already owns Mcts and vectors), so
     // the atomic leaves the POD GameState/frame types untouched.
     std::atomic<ScriptedSlotStatus> scripted_status{ScriptedSlotStatus::Idle};
@@ -201,6 +210,7 @@ struct SelfPlayRunner::GameSlot {
 struct SelfPlayRunner::PendingLeaf {
     MctsPendingLeaf leaf{};
     std::uint32_t game = 0;
+    std::uint32_t model_id = 0;
     bool root = false;
 };
 
@@ -297,17 +307,28 @@ bool is_selfplay_implemented_kingdom(DefId def) noexcept {
 
 SelfPlayRunner::SelfPlayRunner(const SelfPlayConfig& config)
     : config_(config),
+      slot_count_(config.slot_manifest.empty()
+          ? config.n_games
+          : static_cast<std::uint32_t>(config.slot_manifest.size())),
+      manifest_mode_(!config.slot_manifest.empty()),
       obs_size_(checked_obs_size(config.obs_version)),
       mcts_config_(),
-      games_(new GameSlot[std::max(1U, config.n_games)]),
+      games_(new GameSlot[std::max(1U, slot_count_)]),
       pending_(new PendingLeaf[std::max(1U, config.max_batch)]),
       leaf_obs_(new float[static_cast<std::size_t>(std::max(1U, config.max_batch)) * obs_size_]),
       leaf_masks_(new bool[static_cast<std::size_t>(std::max(1U, config.max_batch)) * ACTION_SPACE_SIZE]),
       leaf_players_(new PlayerId[std::max(1U, config.max_batch)]),
+      leaf_model_ids_(new std::uint32_t[std::max(1U, config.max_batch)]),
+      leaf_game_indices_(new std::uint64_t[std::max(1U, config.max_batch)]),
       normalized_policy_(new float[static_cast<std::size_t>(std::max(1U, config.max_batch)) * ACTION_SPACE_SIZE]) {
-    if (config_.n_games == 0U) {
-        throw std::invalid_argument("SelfPlayConfig.n_games must be positive");
+    if (slot_count_ == 0U) {
+        throw std::invalid_argument(
+            manifest_mode_ ? "SelfPlayConfig.slot_manifest must not be empty"
+                           : "SelfPlayConfig.n_games must be positive");
     }
+    // Keep internal legacy helpers that still refer to n_games aligned with
+    // the real slot count.  Callers retain the original object by value.
+    config_.n_games = slot_count_;
     if (config_.max_batch == 0U) {
         throw std::invalid_argument("SelfPlayConfig.max_batch must be positive");
     }
@@ -344,6 +365,36 @@ SelfPlayRunner::SelfPlayRunner(const SelfPlayConfig& config)
         config_.fixed_setup = default_fixed_setup();
     }
     config_.fixed_setup.num_players = 2U;
+
+    for (std::size_t slot_index = 0; slot_index < config_.slot_manifest.size(); ++slot_index) {
+        const SelfPlaySlotConfig& slot = config_.slot_manifest[slot_index];
+        if (slot.kingdom_pool_count > MAX_SELFPLAY_KINGDOM_POOL) {
+            throw std::invalid_argument("SelfPlaySlotConfig.kingdom_pool has too many cards");
+        }
+        if (slot.kingdom_pool_count > 0U && slot.kingdom_pool_count < 10U) {
+            throw std::invalid_argument("SelfPlaySlotConfig.kingdom_pool must contain at least 10 cards");
+        }
+        for (std::uint8_t i = 0; i < slot.kingdom_pool_count; ++i) {
+            const DefId def = slot.kingdom_pool[i];
+            if (!implemented_kingdom(def)) {
+                throw std::invalid_argument("SelfPlaySlotConfig.kingdom_pool contains an unimplemented kingdom card");
+            }
+            for (std::uint8_t previous = 0; previous < i; ++previous) {
+                if (slot.kingdom_pool[previous] == def) {
+                    throw std::invalid_argument("SelfPlaySlotConfig.kingdom_pool contains duplicate cards");
+                }
+            }
+        }
+        if (scripted_mode(slot.scripted_bot) && slot.scripted_nn_player >= 2U) {
+            throw std::invalid_argument("SelfPlaySlotConfig.scripted_nn_player must be zero or one");
+        }
+        for (std::size_t previous = 0; previous < slot_index; ++previous) {
+            if (config_.slot_manifest[previous].game_index == slot.game_index) {
+                throw std::invalid_argument("SelfPlayConfig.slot_manifest contains duplicate game_index values");
+            }
+        }
+    }
+
     mcts_config_.sims_per_move = config_.sims_per_move;
     mcts_config_.c_puct = config_.c_puct;
     mcts_config_.determinizations = 1U;
@@ -358,7 +409,18 @@ SelfPlayRunner::SelfPlayRunner(const SelfPlayConfig& config)
         // world; K>1 trees aggregate different worlds below the root.
         throw std::invalid_argument("SelfPlayConfig.tree_reuse requires determinizations == 1");
     }
-    if (config_.tree_reuse && config_.scripted_bot == SelfPlayScriptedBotKind::Scaffold
+    const bool uses_scaffold = manifest_mode_
+        ? std::any_of(
+            config_.slot_manifest.begin(),
+            config_.slot_manifest.end(),
+            [](const SelfPlaySlotConfig& slot) {
+                return slot.scripted_bot == SelfPlayScriptedBotKind::Scaffold;
+            })
+        : config_.scripted_bot == SelfPlayScriptedBotKind::Scaffold;
+    if (uses_scaffold && config_.scaffold_sims == 0U) {
+        throw std::invalid_argument("SelfPlayConfig.scaffold_sims must be positive for Scaffold");
+    }
+    if (config_.tree_reuse && uses_scaffold
         && config_.scaffold_determinizations > 1U) {
         // Keep the self-play/scaffold configuration unambiguous: subtree
         // reuse is valid only for a single determinized world, never a
@@ -367,7 +429,7 @@ SelfPlayRunner::SelfPlayRunner(const SelfPlayConfig& config)
             "SelfPlayConfig.tree_reuse requires scaffold_determinizations <= 1");
     }
 
-    if (config_.scripted_bot == SelfPlayScriptedBotKind::Scaffold) {
+    if (uses_scaffold) {
         scaffold_mcts_config_ = make_scaffold_mcts_config(
             config_.scaffold_sims,
             config_.c_puct,
@@ -379,19 +441,37 @@ SelfPlayRunner::SelfPlayRunner(const SelfPlayConfig& config)
         } else {
             scripted_pool_ = std::make_unique<ScriptedPool>(
                 *this,
-                config_.n_games,
+                slot_count_,
                 config_.scripted_threads,
                 scaffold_mcts_config_);
         }
     }
 
-    finished_.reserve(config_.n_games);
-    for (std::uint32_t i = 0; i < config_.n_games; ++i) {
-        games_[i].mcts = Mcts(mcts_config_);
-        games_[i].observations.reserve(static_cast<std::size_t>(config_.max_recorded_moves) * obs_size_);
-        games_[i].policy_targets.reserve(
+    finished_.reserve(slot_count_);
+    for (std::uint32_t i = 0; i < slot_count_; ++i) {
+        GameSlot& game = games_[i];
+        if (manifest_mode_) {
+            game.slot = config_.slot_manifest[i];
+        } else {
+            game.slot.game_index = i;
+            game.slot.seat0_model_id = 0U;
+            game.slot.seat1_model_id = 0U;
+            game.slot.kingdom_mode = config_.kingdom_mode;
+            game.slot.kingdom_pool_count = config_.kingdom_pool_count;
+            for (std::uint8_t pool_index = 0; pool_index < config_.kingdom_pool_count; ++pool_index) {
+                game.slot.kingdom_pool[pool_index] = config_.kingdom_pool[pool_index];
+            }
+            game.slot.sims_override = 0U;
+            game.slot.scripted_bot = config_.scripted_bot;
+            game.slot.scripted_nn_player = config_.scripted_nn_player;
+        }
+        game.mcts = Mcts(mcts_config_);
+        game.mcts.set_sims_per_move(
+            game.slot.sims_override == 0U ? config_.sims_per_move : game.slot.sims_override);
+        game.observations.reserve(static_cast<std::size_t>(config_.max_recorded_moves) * obs_size_);
+        game.policy_targets.reserve(
             static_cast<std::size_t>(config_.max_recorded_moves) * ACTION_SPACE_SIZE);
-        games_[i].players.reserve(config_.max_recorded_moves);
+        game.players.reserve(config_.max_recorded_moves);
         reset_game(i);
     }
 }
@@ -415,11 +495,15 @@ std::uint32_t SelfPlayRunner::collect_leaves(std::uint32_t max_batch) noexcept {
         config_.max_batch);
     pending_count_ = 0;
     std::uint32_t idle = 0;
-    while (pending_count_ < limit && idle < config_.n_games) {
+    while (pending_count_ < limit && idle < slot_count_) {
         const std::uint32_t index = next_collect_game_;
-        next_collect_game_ = (next_collect_game_ + 1U) % config_.n_games;
+        next_collect_game_ = (next_collect_game_ + 1U) % slot_count_;
         GameSlot& game = games_[index];
 
+        if (game.retired) {
+            ++idle;
+            continue;
+        }
         if (game.pending != 0U) {
             ++idle;
             continue;
@@ -428,32 +512,48 @@ std::uint32_t SelfPlayRunner::collect_leaves(std::uint32_t max_batch) noexcept {
             ++idle;
             continue;
         }
+        if (game.retired) {
+            ++idle;
+            continue;
+        }
         drive_scripted(game);
+        if (game.retired) {
+            ++idle;
+            continue;
+        }
         if (game.pending != 0U) {
             ++idle;
             continue;
         }
-        if (scripted_mode(config_) && decision_player(game.state) != game.nn_player) {
+        if (scripted_mode(game.slot.scripted_bot) && decision_player(game.state) != game.nn_player) {
             ++idle;
             continue;
         }
         maybe_finish_move(game);
+        if (game.retired) {
+            ++idle;
+            continue;
+        }
         if (game.pending != 0U) {
             ++idle;
             continue;
         }
-        if (scripted_mode(config_) && decision_player(game.state) != game.nn_player) {
+        if (scripted_mode(game.slot.scripted_bot) && decision_player(game.state) != game.nn_player) {
             ++idle;
             continue;
         }
         if (!game.search_active) {
             auto_play_treasures(game);
         }
+        if (game.retired) {
+            ++idle;
+            continue;
+        }
         if (game.pending != 0U) {
             ++idle;
             continue;
         }
-        if (scripted_mode(config_) && decision_player(game.state) != game.nn_player) {
+        if (scripted_mode(game.slot.scripted_bot) && decision_player(game.state) != game.nn_player) {
             ++idle;
             continue;
         }
@@ -475,7 +575,7 @@ std::uint32_t SelfPlayRunner::collect_leaves(std::uint32_t max_batch) noexcept {
             idle = 0;
             continue;
         }
-        if (scripted_mode(config_) && leaf.player != game.nn_player) {
+        if (scripted_mode(game.slot.scripted_bot) && leaf.player != game.nn_player) {
             if (resolve_scripted_tree_leaf(game, leaf)) {
                 ++game.sims_completed;
             }
@@ -487,8 +587,11 @@ std::uint32_t SelfPlayRunner::collect_leaves(std::uint32_t max_batch) noexcept {
         PendingLeaf& pending = pending_[pending_count_];
         pending.leaf = leaf;
         pending.game = index;
+        pending.model_id = leaf.player == 0U ? game.slot.seat0_model_id : game.slot.seat1_model_id;
         pending.root = leaf.node == 0U;
         leaf_players_[pending_count_] = leaf.player;
+        leaf_model_ids_[pending_count_] = pending.model_id;
+        leaf_game_indices_[pending_count_] = game.slot.game_index;
         encode(
             game.mcts.state_for(leaf.state_index),
             leaf.player,
@@ -547,6 +650,14 @@ const PlayerId* SelfPlayRunner::leaf_players() const noexcept {
     return leaf_players_.get();
 }
 
+const std::uint32_t* SelfPlayRunner::leaf_model_ids() const noexcept {
+    return leaf_model_ids_.get();
+}
+
+const std::uint64_t* SelfPlayRunner::leaf_game_indices() const noexcept {
+    return leaf_game_indices_.get();
+}
+
 std::uint32_t SelfPlayRunner::leaf_count() const noexcept {
     return pending_count_;
 }
@@ -561,7 +672,7 @@ std::uint64_t SelfPlayRunner::games_completed() const noexcept {
 
 float SelfPlayRunner::total_virtual_loss() const noexcept {
     float total = 0.0F;
-    for (std::uint32_t i = 0; i < config_.n_games; ++i) {
+    for (std::uint32_t i = 0; i < slot_count_; ++i) {
         total += games_[i].mcts.total_virtual_loss();
     }
     return total;
@@ -569,7 +680,7 @@ float SelfPlayRunner::total_virtual_loss() const noexcept {
 
 SelfPlaySearchStats SelfPlayRunner::search_stats(std::uint32_t index) const noexcept {
     SelfPlaySearchStats stats{};
-    if (index >= config_.n_games) {
+    if (index >= slot_count_) {
         return stats;
     }
 
@@ -589,7 +700,7 @@ const std::vector<SelfPlayRecord>& SelfPlayRunner::finished_games() const noexce
 std::vector<SelfPlayRecord> SelfPlayRunner::take_finished_games() {
     std::vector<SelfPlayRecord> out = std::move(finished_);
     finished_.clear();
-    finished_.reserve(config_.n_games);
+    finished_.reserve(slot_count_);
     return out;
 }
 
@@ -597,8 +708,8 @@ void SelfPlayRunner::reset_game(std::uint32_t index) noexcept {
     GameSlot& game = games_[index];
     game.scripted_status.store(ScriptedSlotStatus::Idle, std::memory_order_relaxed);
     game.mcts.clear_retained_root();
-    game.setup = setup_for(index, game.generation);
-    game.seed = game_seed(config_, index, game.generation);
+    game.setup = setup_for(game);
+    game.seed = game_seed(config_, game.slot.game_index, game.generation);
     game.state = Game::new_game(game.setup, game.seed);
     game.rng = Xoshiro256pp::seeded(game.seed ^ 0x53E1'F019'0000'0001ULL);
     game.observations.clear();
@@ -609,8 +720,11 @@ void SelfPlayRunner::reset_game(std::uint32_t index) noexcept {
     game.sims_completed = 0;
     game.pending = 0;
     game.move_index = 0;
-    game.nn_player = scripted_mode(config_) ? config_.scripted_nn_player : NONE;
+    game.nn_player = scripted_mode(game.slot.scripted_bot) ? game.slot.scripted_nn_player : NONE;
     game.search_active = false;
+    game.retired = false;
+    game.mcts.set_sims_per_move(
+        game.slot.sims_override == 0U ? config_.sims_per_move : game.slot.sims_override);
 }
 
 void SelfPlayRunner::start_search(GameSlot& game) noexcept {
@@ -718,11 +832,11 @@ void SelfPlayRunner::auto_play_treasures(GameSlot& game) noexcept {
 }
 
 void SelfPlayRunner::drive_scripted(GameSlot& game) noexcept {
-    if (!scripted_mode(config_)) {
+    if (!scripted_mode(game.slot.scripted_bot)) {
         return;
     }
 
-    if (config_.scripted_bot == SelfPlayScriptedBotKind::Scaffold) {
+    if (game.slot.scripted_bot == SelfPlayScriptedBotKind::Scaffold) {
         // Async Scaffold jobs own their slots through scripted_pool_. The
         // synchronous reference path keeps one runner-local scratch tree.
         if (!scaffold_mcts_.has_value()) {
@@ -749,7 +863,7 @@ void SelfPlayRunner::drive_scripted(GameSlot& game) noexcept {
             game.state,
             legal,
             legal_count,
-            eval_scripted_kind(config_.scripted_bot),
+            eval_scripted_kind(game.slot.scripted_bot),
             game.rng);
         if (!legal.test(action)) {
             action = legal.nth_set(0U);
@@ -794,7 +908,7 @@ void SelfPlayRunner::drive_scaffold(GameSlot& game, Mcts& scratch) noexcept {
 }
 
 bool SelfPlayRunner::offload_scripted_slot(std::uint32_t index) noexcept {
-    if (!scripted_pool_) {
+    if (!scripted_pool_ || games_[index].slot.scripted_bot != SelfPlayScriptedBotKind::Scaffold) {
         return false;
     }
 
@@ -837,7 +951,7 @@ void SelfPlayRunner::drain_scripted_ready() noexcept {
     if (!scripted_pool_) {
         return;
     }
-    for (std::uint32_t index = 0; index < config_.n_games; ++index) {
+    for (std::uint32_t index = 0; index < slot_count_; ++index) {
         GameSlot& game = games_[index];
         if (game.scripted_status.load(std::memory_order_acquire) != ScriptedSlotStatus::ScriptedReady) {
             continue;
@@ -850,7 +964,7 @@ void SelfPlayRunner::drain_scripted_ready() noexcept {
 }
 
 void SelfPlayRunner::run_scripted_job(std::uint32_t index, Mcts& scratch) noexcept {
-    if (index >= config_.n_games) {
+    if (index >= slot_count_) {
         return;
     }
     GameSlot& game = games_[index];
@@ -871,7 +985,7 @@ std::uint32_t SelfPlayRunner::scaffold_sims_for(
 }
 
 bool SelfPlayRunner::game_has_pending(std::uint32_t index) const noexcept {
-    return index < config_.n_games && games_[index].pending != 0U;
+    return index < slot_count_ && games_[index].pending != 0U;
 }
 
 void SelfPlayRunner::maybe_finish_move(GameSlot& game) noexcept {
@@ -916,7 +1030,7 @@ void SelfPlayRunner::record_decision(GameSlot& game, const float* policy) noexce
         return;
     }
     const PlayerId player = decision_player(game.state);
-    if (scripted_mode(config_) && player != game.nn_player) {
+    if (scripted_mode(game.slot.scripted_bot) && player != game.nn_player) {
         return;
     }
     const std::size_t obs_offset = game.observations.size();
@@ -933,6 +1047,9 @@ void SelfPlayRunner::record_decision(GameSlot& game, const float* policy) noexce
 }
 
 void SelfPlayRunner::finish_game(GameSlot& game) noexcept {
+    if (game.retired) {
+        return;
+    }
     SelfPlayRecord record{};
     record.observations = game.observations;
     record.policy_targets = game.policy_targets;
@@ -948,6 +1065,11 @@ void SelfPlayRunner::finish_game(GameSlot& game) noexcept {
         record.scores[player] = score(game.state, player);
     }
     record.scripted_nn_player = game.nn_player;
+    record.game_index = game.slot.game_index;
+    record.seat0_model_id = game.slot.seat0_model_id;
+    record.seat1_model_id = game.slot.seat1_model_id;
+    record.scripted_bot = game.slot.scripted_bot;
+    record.sims_override = game.slot.sims_override;
     record.kingdom_count = game.setup.kingdom_count;
     for (std::uint8_t i = 0; i < game.setup.kingdom_count; ++i) {
         record.kingdom[i] = game.setup.kingdom[i];
@@ -955,6 +1077,11 @@ void SelfPlayRunner::finish_game(GameSlot& game) noexcept {
     finished_.push_back(std::move(record));
 
     ++completed_;
+    if (manifest_mode_) {
+        game.retired = true;
+        game.search_active = false;
+        return;
+    }
     ++game.generation;
     reset_game(static_cast<std::uint32_t>(&game - games_.get()));
 }
@@ -962,7 +1089,7 @@ void SelfPlayRunner::finish_game(GameSlot& game) noexcept {
 bool SelfPlayRunner::resolve_scripted_tree_leaf(GameSlot& game, const MctsPendingLeaf& leaf) noexcept {
     const GameState& leaf_state = game.mcts.state_for(leaf.state_index);
     Action action = A_PASS;
-    if (config_.scripted_bot == SelfPlayScriptedBotKind::Scaffold) {
+    if (game.slot.scripted_bot == SelfPlayScriptedBotKind::Scaffold) {
         // Actual moves keep full Scaffold fidelity in drive_scripted; charting
         // its tree leaves as Engine avoids batch stalls (2026-07-11: 36+ min
         // for ~10 Scaffold games in 1,024, versus a ~5 min baseline).
@@ -977,7 +1104,7 @@ bool SelfPlayRunner::resolve_scripted_tree_leaf(GameSlot& game, const MctsPendin
             leaf_state,
             leaf.legal,
             leaf.legal_count,
-            eval_scripted_kind(config_.scripted_bot),
+            eval_scripted_kind(game.slot.scripted_bot),
             game.rng);
     }
     if (!leaf.legal.test(action)) {
@@ -989,8 +1116,8 @@ bool SelfPlayRunner::resolve_scripted_tree_leaf(GameSlot& game, const MctsPendin
     return true;
 }
 
-Setup SelfPlayRunner::setup_for(std::uint32_t index, std::uint64_t generation) const noexcept {
-    if (config_.kingdom_mode == SelfPlayKingdomMode::Fixed) {
+Setup SelfPlayRunner::setup_for(const GameSlot& game) const noexcept {
+    if (game.slot.kingdom_mode == SelfPlayKingdomMode::Fixed) {
         Setup setup = config_.fixed_setup;
         setup.num_players = 2U;
         return setup;
@@ -1001,9 +1128,9 @@ Setup SelfPlayRunner::setup_for(std::uint32_t index, std::uint64_t generation) c
     setup.kingdom_count = 10U;
     const DefId* kingdom_pool = IMPLEMENTED_KINGDOMS;
     std::uint8_t kingdom_pool_count = IMPLEMENTED_KINGDOM_COUNT;
-    if (config_.kingdom_pool_count > 0U) {
-        kingdom_pool = config_.kingdom_pool;
-        kingdom_pool_count = config_.kingdom_pool_count;
+    if (game.slot.kingdom_pool_count > 0U) {
+        kingdom_pool = game.slot.kingdom_pool;
+        kingdom_pool_count = game.slot.kingdom_pool_count;
     }
     DefId defs[MAX_SELFPLAY_KINGDOM_POOL]{};
     for (std::uint8_t i = 0; i < kingdom_pool_count; ++i) {
@@ -1011,8 +1138,8 @@ Setup SelfPlayRunner::setup_for(std::uint32_t index, std::uint64_t generation) c
     }
     Xoshiro256pp rng = Xoshiro256pp::seeded(
         config_.seed
-        ^ (static_cast<std::uint64_t>(index + 1U) * 0xBADC'0FFE'1234'5678ULL)
-        ^ (generation * 0x9E37'79B9'7F4A'7C15ULL));
+        ^ ((game.slot.game_index + 1U) * 0xBADC'0FFE'1234'5678ULL)
+        ^ (game.generation * 0x9E37'79B9'7F4A'7C15ULL));
     for (std::uint8_t i = 0; i < setup.kingdom_count; ++i) {
         const std::uint32_t offset = rng.uniform(static_cast<std::uint32_t>(kingdom_pool_count - i));
         const std::uint8_t swap_index = static_cast<std::uint8_t>(i + offset);

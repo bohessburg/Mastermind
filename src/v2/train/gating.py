@@ -73,6 +73,10 @@ class SelfPlaySegment:
     # Checkpoint basename for metrics and strength-matched league sampling.
     # It is set only on true two-model league segments.
     league_opponent: str | None = None
+    # Assigned after the final segment plan is composed.  It identifies the
+    # first global game covered by this contiguous segment and survives worker
+    # splitting, so a slot's seed never depends on which worker owns it.
+    game_index: int | None = None
 
     @property
     def is_league(self) -> bool:

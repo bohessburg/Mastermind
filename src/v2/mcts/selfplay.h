@@ -13,8 +13,8 @@
 #include <vector>
 
 // The training curriculum can restrict random kingdoms to a larger candidate
-// pool. Keep this fixed-size so SelfPlayConfig remains safe to copy across
-// the engine's POD-oriented boundaries.
+// pool. Keep this fixed-size so individual slot descriptors remain cheap to
+// copy across the runner/pybind boundary.
 constexpr std::uint8_t MAX_SELFPLAY_KINGDOM_POOL = 32U;
 
 enum class SelfPlayKingdomMode : std::uint8_t {
@@ -37,6 +37,30 @@ enum class SelfPlayScriptedBotKind : std::uint8_t {
     Random,
     Scaffold,
 };
+
+// Per-game attributes for a heterogeneous self-play runner.  A non-empty
+// SelfPlayConfig::slot_manifest creates exactly one game for every entry;
+// unlike the legacy path, completed manifest slots are retired rather than
+// immediately reset into a new game stream.  game_index is deliberately
+// independent of the slot's storage position so worker-side segment splitting
+// or prioritization cannot perturb the game's seed.
+struct SelfPlaySlotConfig {
+    std::uint64_t game_index = 0U;
+    std::uint32_t seat0_model_id = 0U;
+    std::uint32_t seat1_model_id = 0U;
+    SelfPlayKingdomMode kingdom_mode = SelfPlayKingdomMode::Random;
+    // Empty means the complete implemented random-kingdom pool.  The pool is
+    // ignored for Fixed mode, exactly as SelfPlayConfig::kingdom_pool is.
+    DefId kingdom_pool[MAX_SELFPLAY_KINGDOM_POOL]{};
+    std::uint8_t kingdom_pool_count = 0U;
+    // Zero inherits SelfPlayConfig::sims_per_move; a positive value is a
+    // deep-search override for this slot only.
+    std::uint32_t sims_override = 0U;
+    SelfPlayScriptedBotKind scripted_bot = SelfPlayScriptedBotKind::None;
+    PlayerId scripted_nn_player = 0U;
+};
+
+static_assert(std::is_trivially_copyable_v<SelfPlaySlotConfig>);
 
 struct SelfPlayConfig {
     std::uint32_t n_games = 64;
@@ -76,9 +100,11 @@ struct SelfPlayConfig {
     bool tree_reuse = false;
     std::uint16_t min_new_sims = 64U;
     std::uint8_t expand_top_k = 0;
+    // Empty preserves the historical homogeneous, continuously-reset runner
+    // behavior.  A populated manifest makes every GameSlot independently
+    // configured and lets a worker keep all segment games live together.
+    std::vector<SelfPlaySlotConfig> slot_manifest;
 };
-
-static_assert(std::is_trivially_copyable_v<SelfPlayConfig>);
 
 [[nodiscard]] bool is_selfplay_implemented_kingdom(DefId def) noexcept;
 
@@ -101,6 +127,14 @@ struct SelfPlayRecord {
     // from this NN player, which lets Python derive cheap per-generation
     // head-to-head outcomes without inspecting private engine state.
     PlayerId scripted_nn_player = NONE;
+    // Slot metadata is surfaced with the record because heterogeneous slots
+    // complete interleaved. Python uses it for per-kind/per-opponent counters
+    // without relying on completion order.
+    std::uint64_t game_index = 0;
+    std::uint32_t seat0_model_id = 0;
+    std::uint32_t seat1_model_id = 0;
+    SelfPlayScriptedBotKind scripted_bot = SelfPlayScriptedBotKind::None;
+    std::uint32_t sims_override = 0;
 };
 
 // Read-only per-slot search counters, primarily useful when profiling batched
@@ -124,6 +158,13 @@ public:
     [[nodiscard]] const float* leaf_observations() const noexcept;
     [[nodiscard]] const bool* leaf_legal_masks() const noexcept;
     [[nodiscard]] const PlayerId* leaf_players() const noexcept;
+    // Aligned with leaf_observations()/leaf_players().  It identifies the
+    // worker-model-table entry that must evaluate this pending leaf.
+    [[nodiscard]] const std::uint32_t* leaf_model_ids() const noexcept;
+    // Aligned with the pending leaves and stable for the manifest slot's
+    // prescribed game.  It lets Python retain per-slot routing metrics while
+    // evaluations themselves are grouped by model id.
+    [[nodiscard]] const std::uint64_t* leaf_game_indices() const noexcept;
     [[nodiscard]] std::uint32_t leaf_count() const noexcept;
     [[nodiscard]] std::size_t observation_size() const noexcept;
     [[nodiscard]] std::uint64_t games_completed() const noexcept;
@@ -156,7 +197,7 @@ private:
     void maybe_finish_move(GameSlot& game) noexcept;
     void record_decision(GameSlot& game, const float* policy) noexcept;
     void finish_game(GameSlot& game) noexcept;
-    [[nodiscard]] Setup setup_for(std::uint32_t index, std::uint64_t generation) const noexcept;
+    [[nodiscard]] Setup setup_for(const GameSlot& game) const noexcept;
     [[nodiscard]] float terminal_value_for(const GameState& state, PlayerId player) const noexcept;
     void normalize_policy(
         const float* logits,
@@ -169,6 +210,8 @@ private:
     [[nodiscard]] bool resolve_scripted_tree_leaf(GameSlot& game, const MctsPendingLeaf& leaf) noexcept;
 
     SelfPlayConfig config_{};
+    std::uint32_t slot_count_ = 0;
+    bool manifest_mode_ = false;
     std::size_t obs_size_ = OBS_SIZE_V1;
     MctsConfig mcts_config_{};
     MctsConfig scaffold_mcts_config_{};
@@ -180,6 +223,8 @@ private:
     std::unique_ptr<float[]> leaf_obs_;
     std::unique_ptr<bool[]> leaf_masks_;
     std::unique_ptr<PlayerId[]> leaf_players_;
+    std::unique_ptr<std::uint32_t[]> leaf_model_ids_;
+    std::unique_ptr<std::uint64_t[]> leaf_game_indices_;
     std::unique_ptr<float[]> normalized_policy_;
     std::vector<SelfPlayRecord> finished_;
     std::uint32_t pending_count_ = 0;

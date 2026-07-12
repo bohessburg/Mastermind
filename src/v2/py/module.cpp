@@ -198,6 +198,52 @@ void set_selfplay_kingdom_pool(SelfPlayConfig& config, const py::object& kingdom
     return result;
 }
 
+void set_selfplay_slot_kingdom_pool(SelfPlaySlotConfig& slot, const py::object& kingdom_pool) {
+    if (kingdom_pool.is_none()) {
+        slot.kingdom_pool_count = 0U;
+        return;
+    }
+    if (py::isinstance<py::str>(kingdom_pool)) {
+        throw std::invalid_argument("kingdom_pool must be a sequence");
+    }
+
+    const py::sequence sequence = py::reinterpret_borrow<py::sequence>(kingdom_pool);
+    const std::size_t size = py::len(sequence);
+    if (size > MAX_SELFPLAY_KINGDOM_POOL) {
+        throw std::invalid_argument("kingdom_pool has too many cards");
+    }
+    if (size > 0U && size < 10U) {
+        throw std::invalid_argument("kingdom_pool must contain at least 10 cards");
+    }
+
+    DefId parsed[MAX_SELFPLAY_KINGDOM_POOL]{};
+    for (std::size_t i = 0; i < size; ++i) {
+        const DefId def = parse_def(sequence[i]);
+        if (!is_selfplay_implemented_kingdom(def)) {
+            throw std::invalid_argument(
+                "kingdom_pool contains an unimplemented kingdom card: " + std::string(card_def(def).name));
+        }
+        for (std::size_t previous = 0; previous < i; ++previous) {
+            if (parsed[previous] == def) {
+                throw std::invalid_argument("kingdom_pool contains duplicate cards");
+            }
+        }
+        parsed[i] = def;
+    }
+    for (std::size_t i = 0; i < size; ++i) {
+        slot.kingdom_pool[i] = parsed[i];
+    }
+    slot.kingdom_pool_count = static_cast<std::uint8_t>(size);
+}
+
+[[nodiscard]] py::list selfplay_slot_kingdom_pool(const SelfPlaySlotConfig& slot) {
+    py::list result;
+    for (std::uint8_t i = 0; i < slot.kingdom_pool_count; ++i) {
+        result.append(slot.kingdom_pool[i]);
+    }
+    return result;
+}
+
 [[nodiscard]] py::dict decision_dict(const PendingDecision& decision) {
     py::dict dict;
     dict["player"] = decision.player;
@@ -981,6 +1027,30 @@ void decision_search_provide(
     return players;
 }
 
+[[nodiscard]] py::array_t<std::uint32_t> selfplay_leaf_model_ids(const SelfPlayRunner& runner) {
+    const auto count = runner.leaf_count();
+    py::array_t<std::uint32_t> model_ids(static_cast<py::ssize_t>(count));
+    if (count != 0U) {
+        std::memcpy(
+            model_ids.mutable_data(),
+            runner.leaf_model_ids(),
+            static_cast<std::size_t>(count) * sizeof(std::uint32_t));
+    }
+    return model_ids;
+}
+
+[[nodiscard]] py::array_t<std::uint64_t> selfplay_leaf_game_indices(const SelfPlayRunner& runner) {
+    const auto count = runner.leaf_count();
+    py::array_t<std::uint64_t> game_indices(static_cast<py::ssize_t>(count));
+    if (count != 0U) {
+        std::memcpy(
+            game_indices.mutable_data(),
+            runner.leaf_game_indices(),
+            static_cast<std::size_t>(count) * sizeof(std::uint64_t));
+    }
+    return game_indices;
+}
+
 void selfplay_provide(
     SelfPlayRunner& runner,
     py::array_t<float, py::array::c_style | py::array::forcecast> values,
@@ -1057,6 +1127,11 @@ void selfplay_provide(
         dict["scripted_nn_player"] = record.scripted_nn_player == NONE
             ? py::object(py::none())
             : py::object(py::int_(record.scripted_nn_player));
+        dict["game_index"] = py::int_(record.game_index);
+        dict["seat0_model_id"] = py::int_(record.seat0_model_id);
+        dict["seat1_model_id"] = py::int_(record.seat1_model_id);
+        dict["scripted_bot"] = py::int_(static_cast<std::uint8_t>(record.scripted_bot));
+        dict["sims_override"] = py::int_(record.sims_override);
         out.append(dict);
     }
     return out;
@@ -1407,6 +1482,20 @@ PYBIND11_MODULE(dominion_v2_py, module) {
         .value("Random", SelfPlayScriptedBotKind::Random)
         .value("Scaffold", SelfPlayScriptedBotKind::Scaffold);
 
+    py::class_<SelfPlaySlotConfig>(module, "SelfPlaySlotConfig")
+        .def(py::init<>())
+        .def_readwrite("game_index", &SelfPlaySlotConfig::game_index)
+        .def_readwrite("seat0_model_id", &SelfPlaySlotConfig::seat0_model_id)
+        .def_readwrite("seat1_model_id", &SelfPlaySlotConfig::seat1_model_id)
+        .def_readwrite("kingdom_mode", &SelfPlaySlotConfig::kingdom_mode)
+        .def_property(
+            "kingdom_pool",
+            &selfplay_slot_kingdom_pool,
+            &set_selfplay_slot_kingdom_pool)
+        .def_readwrite("sims_override", &SelfPlaySlotConfig::sims_override)
+        .def_readwrite("scripted_bot", &SelfPlaySlotConfig::scripted_bot)
+        .def_readwrite("scripted_nn_player", &SelfPlaySlotConfig::scripted_nn_player);
+
     py::class_<SelfPlayConfig>(module, "SelfPlayConfig")
         .def(py::init([](
             std::uint32_t n_games,
@@ -1435,7 +1524,8 @@ PYBIND11_MODULE(dominion_v2_py, module) {
             bool tree_reuse,
             std::uint8_t expand_top_k,
             py::object kingdom_pool,
-            std::uint16_t min_new_sims) {
+            std::uint16_t min_new_sims,
+            py::object slot_manifest) {
             SelfPlayConfig config{};
             config.n_games = n_games;
             config.sims_per_move = sims_per_move;
@@ -1467,6 +1557,9 @@ PYBIND11_MODULE(dominion_v2_py, module) {
                 config.fixed_setup = setup.setup;
             }
             set_selfplay_kingdom_pool(config, kingdom_pool);
+            if (!slot_manifest.is_none()) {
+                config.slot_manifest = py::cast<std::vector<SelfPlaySlotConfig>>(slot_manifest);
+            }
             return config;
         }),
             py::arg("n_games") = 64,
@@ -1495,7 +1588,8 @@ PYBIND11_MODULE(dominion_v2_py, module) {
             py::arg("tree_reuse") = false,
             py::arg("expand_top_k") = 0U,
             py::arg("kingdom_pool") = py::none(),
-            py::arg("min_new_sims") = 64U)
+            py::arg("min_new_sims") = 64U,
+            py::arg("slot_manifest") = py::none())
         .def_readwrite("n_games", &SelfPlayConfig::n_games)
         .def_readwrite("sims_per_move", &SelfPlayConfig::sims_per_move)
         .def_readwrite("c_puct", &SelfPlayConfig::c_puct)
@@ -1524,12 +1618,15 @@ PYBIND11_MODULE(dominion_v2_py, module) {
         .def_readwrite("prune_treasure_plays", &SelfPlayConfig::prune_treasure_plays)
         .def_readwrite("tree_reuse", &SelfPlayConfig::tree_reuse)
         .def_readwrite("min_new_sims", &SelfPlayConfig::min_new_sims)
-        .def_readwrite("expand_top_k", &SelfPlayConfig::expand_top_k);
+        .def_readwrite("expand_top_k", &SelfPlayConfig::expand_top_k)
+        .def_readwrite("slot_manifest", &SelfPlayConfig::slot_manifest);
 
     py::class_<SelfPlayRunner>(module, "SelfPlayRunner")
         .def(py::init<const SelfPlayConfig&>(), py::arg("config"))
         .def("collect_leaves", &selfplay_collect, py::arg("max_batch") = 0U)
         .def("leaf_players", &selfplay_leaf_players)
+        .def("leaf_model_ids", &selfplay_leaf_model_ids)
+        .def("leaf_game_indices", &selfplay_leaf_game_indices)
         .def("provide_evaluations", &selfplay_provide, py::arg("values"), py::arg("policies"))
         .def("finished_games", &selfplay_finished)
         .def("games_completed", &SelfPlayRunner::games_completed)
