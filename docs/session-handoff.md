@@ -132,7 +132,20 @@ Decision rules agreed with Jack:
 
 ## State update (2026-07-10 midday)
 
-- RUNNING: **Campaign 10** on the box (launched 2026-07-11 ~06:00) —
+- RUNNING: **Campaign 13 clean run** (launch #4, 2026-07-12 ~03:30) —
+  checkpoints/campaign13/, campaign13.json, /root/launch13.sh. FIRST
+  SIGHTED NET: obs v2 (1717 floats, opponent collection/discard/set-aside)
+  + input_scale 16 (conditioning fix — see 2026-07-12 postmortem) + margin
+  targets + pile-aware opponents (EngineBot v2 baseline!) + async offload.
+  Gen 5 = 55.1% vs EngineBot v2. Watcher pattern unchanged (state file
+  scratchpad/c13_last_eval). OVERNIGHT CONTRACT: if stalled by gen 25,
+  cut, bank best weights, design+launch c14. HYGIENE RULES (hard-won
+  today): ALWAYS bash /root/stop_train.sh before ANY launch (double-run
+  incident); verify singleton with ps + [.]-escaped pattern (pgrep
+  self-match footgun); watcher state files must be reset when a campaign
+  restarts from scratch; watchers die silently when the box has no
+  training process during a stop window — re-check after every relaunch.
+- HISTORICAL (was): **Campaign 10** (launched 2026-07-11 ~06:00) —
   checkpoints/campaign10/, campaign10.json, /root/launch10.sh. 512 sims,
   temp 20, BM anneal-down [[5,0],[6,.01],[25,.2],[40,.2],[60,.05]],
   engine [[10,0],[11,.01],[35,.25]]. Seed 20260718. Per-kind counters
