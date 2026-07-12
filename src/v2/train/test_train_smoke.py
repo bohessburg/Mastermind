@@ -13,13 +13,15 @@ import torch
 
 import dominion_v2_py as dz
 
-from .config import TrainConfig, load_config
+from .config import TrainConfig, load_config, save_config
 from .observation import obs_version_for_checkpoint
 from .selfplay import play_routed_games
 from .train import (
     build_objects,
+    load_initial_weights,
     load_checkpoint,
     load_full_checkpoint,
+    main,
     resolve_resume_path,
     run_training,
     save_checkpoint,
@@ -61,6 +63,71 @@ def state_tensors(path: Path) -> dict[str, torch.Tensor]:
     return {key: value.detach().cpu().clone() for key, value in payload["model"].items()}
 
 
+C14_POOL = [
+    "Village",
+    "Smithy",
+    "Laboratory",
+    "Market",
+    "Festival",
+    "Cellar",
+    "Chapel",
+    "Moat",
+    "Council Room",
+    "Throne Room",
+    "Harbinger",
+    "Vassal",
+]
+
+
+def tiny_c14_config(tmp_path: Path, seed: int = 20260722, generations: int = 1) -> TrainConfig:
+    """A real CPU-sized analogue of the C14 observation and search recipe."""
+    cfg = tiny_config(tmp_path, seed=seed, generations=generations)
+    cfg.model.hidden_sizes = [8]
+    cfg.model.input_scale = 16.0
+    cfg.selfplay.n_games = 1
+    cfg.selfplay.games_per_generation = 2
+    cfg.selfplay.sims_per_move = 2
+    cfg.selfplay.max_batch = 8
+    cfg.selfplay.obs_version = 2
+    cfg.selfplay.kingdom_mode = "random"
+    cfg.selfplay.max_recorded_moves = 64
+    cfg.selfplay.max_tree_nodes = 256
+    cfg.selfplay.value_target = "margin"
+    cfg.selfplay.margin_scale = 20.0
+    cfg.selfplay.auto_play_treasures = True
+    cfg.selfplay.prune_treasure_plays = True
+    cfg.optim.batch_size = 8
+    cfg.optim.train_steps_per_generation = 1
+    cfg.replay.capacity = 512
+    return cfg
+
+
+def save_tiny_c14_checkpoint(
+    tmp_path: Path,
+    *,
+    generation: int = 65,
+    seed: int = 20260722,
+    fill_value: float = 0.125,
+) -> Path:
+    """Create a small standard checkpoint with non-empty optimizer and replay state."""
+    cfg = tiny_c14_config(tmp_path, seed=seed)
+    model, optimizer, replay = build_objects(cfg, torch.device("cpu"))
+    with torch.no_grad():
+        for parameter in model.parameters():
+            parameter.fill_(fill_value)
+    # Make the source optimizer observably non-fresh so warm-start tests can
+    # prove it was not inherited by the destination campaign.
+    for parameter in model.parameters():
+        parameter.grad = torch.ones_like(parameter)
+    optimizer.step()
+    optimizer.zero_grad(set_to_none=True)
+    marker_obs = np.full((1, replay.obs_size), -123.0, dtype=np.float32)
+    marker_policy = np.zeros((1, replay.action_size), dtype=np.float32)
+    marker_policy[:, 0] = 1.0
+    replay.add(marker_obs, marker_policy, np.array([1.0], dtype=np.float32), marker_policy > 0.0)
+    return save_checkpoint(cfg, generation, model, optimizer, replay)
+
+
 def test_tiny_training_smoke_checkpoint_and_metrics(tmp_path: Path) -> None:
     cfg = tiny_config(tmp_path)
     result = run_training(cfg)
@@ -77,6 +144,146 @@ def test_tiny_training_smoke_checkpoint_and_metrics(tmp_path: Path) -> None:
         assert math.isfinite(float(row["policy_loss"]))
         assert math.isfinite(float(row["value_loss"]))
         assert math.isfinite(float(row["entropy"]))
+
+
+def test_init_weights_warm_starts_only_model_into_fresh_generation_one_run(tmp_path: Path) -> None:
+    initial_checkpoint = save_tiny_c14_checkpoint(tmp_path / "initial", generation=65)
+    source_payload = load_full_checkpoint(initial_checkpoint, "cpu")
+    assert source_payload["optimizer"]["state"]
+
+    cfg = tiny_c14_config(tmp_path / "campaign14", seed=20260722, generations=1)
+    cfg.init_weights = str(initial_checkpoint)
+    cfg.optim.lr_schedule = "step"
+    cfg.optim.step_decay_every = 1
+    cfg.optim.train_steps_per_generation = 0
+    result = run_training(cfg)
+
+    assert [row["generation"] for row in result["metrics"]] == [1]
+    assert result["metrics"][0]["lr"] == pytest.approx(cfg.optim.lr)
+    destination = Path(cfg.checkpoint_dir) / "gen_0001.pt"
+    payload = load_full_checkpoint(destination, "cpu")
+    assert payload["generation"] == 1
+    assert payload["optimizer"]["state"] == {}
+    for key, source_value in source_payload["model"].items():
+        torch.testing.assert_close(payload["model"][key], source_value, rtol=0.0, atol=0.0)
+    # A marker in the source replay proves the new campaign did not restore it.
+    with np.load(Path(cfg.checkpoint_dir) / "replay_state.npz", allow_pickle=False) as archive:
+        assert len(archive["obs"]) > 0
+        assert not np.any(np.all(archive["obs"] == -123.0, axis=1))
+
+
+def test_cli_init_weights_overrides_config_and_loads_model_weights(tmp_path: Path) -> None:
+    initial_checkpoint = save_tiny_c14_checkpoint(tmp_path / "initial", generation=65)
+    cfg = tiny_c14_config(tmp_path / "campaign14", generations=1)
+    cfg.optim.train_steps_per_generation = 0
+    config_path = tmp_path / "run.json"
+    save_config(cfg, config_path)
+
+    assert main(["--config", str(config_path), "--init-weights", str(initial_checkpoint)]) == 0
+
+    payload = load_full_checkpoint(Path(cfg.checkpoint_dir) / "gen_0001.pt", "cpu")
+    for key, source_value in load_full_checkpoint(initial_checkpoint, "cpu")["model"].items():
+        torch.testing.assert_close(payload["model"][key], source_value, rtol=0.0, atol=0.0)
+
+
+@pytest.mark.parametrize(
+    ("mismatch", "message"),
+    [
+        ("architecture", "hidden_sizes"),
+        ("obs_version", "obs_version"),
+        ("input_scale", "input_scale"),
+    ],
+)
+def test_init_weights_rejects_incompatible_campaign_config(
+    tmp_path: Path,
+    mismatch: str,
+    message: str,
+) -> None:
+    initial_checkpoint = save_tiny_c14_checkpoint(tmp_path / "initial")
+    cfg = tiny_c14_config(tmp_path / "campaign14")
+    cfg.init_weights = str(initial_checkpoint)
+    if mismatch == "architecture":
+        cfg.model.hidden_sizes = [16]
+    elif mismatch == "obs_version":
+        cfg.selfplay.obs_version = 1
+    else:
+        cfg.model.input_scale = 1.0
+
+    with pytest.raises(ValueError, match=message):
+        run_training(cfg)
+
+
+def test_init_weights_and_resume_cannot_be_combined(tmp_path: Path) -> None:
+    initial_checkpoint = save_tiny_c14_checkpoint(tmp_path / "initial")
+    cfg = tiny_c14_config(tmp_path / "campaign14")
+    cfg.init_weights = str(initial_checkpoint)
+
+    with pytest.raises(ValueError, match="--resume and --init-weights cannot be used together"):
+        run_training(cfg, resume=str(initial_checkpoint))
+
+
+def test_load_initial_weights_leaves_existing_fresh_optimizer_and_replay_untouched(tmp_path: Path) -> None:
+    """Unit-level guard for the narrow loader boundary used by run_training."""
+    initial_checkpoint = save_tiny_c14_checkpoint(tmp_path / "initial")
+    cfg = tiny_c14_config(tmp_path / "campaign14")
+    model, optimizer, replay = build_objects(cfg, torch.device("cpu"))
+
+    load_initial_weights(initial_checkpoint, cfg, model, torch.device("cpu"))
+
+    assert optimizer.state == {}
+    assert len(replay) == 0
+    expected = state_tensors(initial_checkpoint)
+    for key, value in model.state_dict().items():
+        torch.testing.assert_close(value, expected[key], rtol=0.0, atol=0.0)
+
+
+def test_c14_feature_combination_runs_two_real_generations_and_reports_metrics(tmp_path: Path) -> None:
+    """Exercise the C14 interactions through the real trainer, not mocks."""
+    initial_checkpoint = save_tiny_c14_checkpoint(tmp_path / "initial", generation=65, fill_value=0.10)
+    seed_one = save_tiny_c14_checkpoint(tmp_path / "seed_one", generation=10, fill_value=0.15)
+    seed_two = save_tiny_c14_checkpoint(tmp_path / "seed_two", generation=20, fill_value=0.20)
+
+    cfg = tiny_c14_config(tmp_path / "campaign14", generations=2)
+    cfg.init_weights = str(initial_checkpoint)
+    cfg.selfplay.games_per_generation = 8
+    cfg.selfplay.deep_slice_fraction = 0.25
+    cfg.selfplay.deep_slice_sims = 8
+    cfg.selfplay.tree_reuse = True
+    cfg.selfplay.expand_top_k = 8
+    cfg.league_pool_size = 2
+    cfg.league_seed_checkpoints = [str(seed_one), str(seed_two)]
+    cfg.league_schedule = [[1, 0.50], [2, 0.50]]
+    cfg.kingdom_curriculum = [
+        {"generations": [1, 2], "mode": "pool", "pool": C14_POOL, "pool_fraction": 0.5}
+    ]
+
+    result = run_training(cfg)
+
+    assert [row["generation"] for row in result["metrics"]] == [1, 2]
+    assert all(row["games"] == 8 for row in result["metrics"])
+    assert all(row["league_games"] == 4 for row in result["metrics"])
+    assert all(row["deep_games"] == 1 for row in result["metrics"])
+    assert all(row["deep_positions"] > 0 for row in result["metrics"])
+    assert all(row["routed_split_batches"] > 0 for row in result["metrics"])
+    expected_phase = "1-2:pool:0.500000:" + ",".join(C14_POOL)
+    assert [row["kingdom_phase"] for row in result["metrics"]] == [expected_phase, expected_phase]
+    assert (Path(cfg.checkpoint_dir) / "league" / "seed_0.pt").exists()
+    assert (Path(cfg.checkpoint_dir) / "league" / "seed_1.pt").exists()
+
+    csv_rows = read_metrics(Path(cfg.metrics_csv))
+    required_columns = {
+        "generation",
+        "league_games",
+        "deep_games",
+        "deep_positions",
+        "kingdom_phase",
+        "routed_split_batches",
+        "league_games_seed_0.pt",
+        "league_games_seed_1.pt",
+    }
+    assert required_columns.issubset(csv_rows[0])
+    assert [int(row["league_games"]) for row in csv_rows] == [4, 4]
+    assert [int(row["deep_games"]) for row in csv_rows] == [1, 1]
 
 
 def test_tiny_training_v2_observation_smoke_records_v2_width(tmp_path: Path) -> None:

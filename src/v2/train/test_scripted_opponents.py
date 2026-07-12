@@ -508,6 +508,54 @@ def test_campaign12_config_uses_margin_targets_with_the_scaffold_curriculum() ->
     }
 
 
+def test_campaign14_config_loads_warm_start_league_and_curriculum() -> None:
+    config = load_config(Path(__file__).resolve().parents[3] / "configs" / "run_c14.json")
+
+    assert config.seed == 20260722
+    assert config.init_weights == "checkpoints/campaign13/gen_0065.pt"
+    assert config.checkpoint_dir == "checkpoints/campaign14"
+    assert config.metrics_csv == "checkpoints/campaign14/metrics.csv"
+    assert config.model.hidden_sizes == [1536, 1536, 768]
+    assert config.model.input_scale == 16.0
+    assert config.selfplay.obs_version == 2
+    assert config.selfplay.sims_per_move == 512
+    assert config.selfplay.temp_moves == 20
+    assert config.selfplay.value_target == "margin"
+    assert config.selfplay.margin_scale == 20.0
+    assert config.selfplay.auto_play_treasures is True
+    assert config.selfplay.prune_treasure_plays is True
+    assert config.selfplay.scripted_threads == 2
+    assert config.selfplay.deep_slice_fraction == pytest.approx(0.05)
+    assert config.selfplay.deep_slice_sims == 4096
+    assert config.selfplay.tree_reuse is True
+    assert config.selfplay.expand_top_k == 8
+    assert config.selfplay.scaffold_determinizations == 1
+    assert config.scripted_opponent_schedule == {}
+    assert config.eval.eval_sentinels == [{"opponent": "bigmoney", "games": 100}]
+    assert config.league_pool_size == 16
+    assert config.league_self_every == 10
+    assert config.league_schedule == [[1, 0.10], [10, 0.25], [30, 0.30]]
+    assert config.league_seed_checkpoints == [
+        "checkpoints/campaign13/gen_0010.pt",
+        "checkpoints/campaign13/gen_0020.pt",
+        "checkpoints/campaign13/gen_0025.pt",
+        "checkpoints/campaign13/gen_0030.pt",
+        "checkpoints/campaign13/gen_0040.pt",
+        "checkpoints/campaign13/gen_0050.pt",
+        "checkpoints/campaign13/gen_0060.pt",
+        "checkpoints/campaign13/gen_0065.pt",
+        "checkpoints/campaign13/gen_0070.pt",
+        "checkpoints/campaign13/gen_0080.pt",
+        "checkpoints/campaign13/gen_0090.pt",
+        "checkpoints/campaign13/gen_0096.pt",
+    ]
+    assert config.kingdom_curriculum[0]["generations"] == [1, 15]
+    assert config.kingdom_curriculum[0]["pool_fraction"] == pytest.approx(0.6)
+    assert config.kingdom_curriculum[1]["generations"] == [16, 40]
+    assert config.kingdom_curriculum[1]["pool_fraction"] == pytest.approx(0.3)
+    assert config.kingdom_curriculum[2] == {"generations": [41, 100], "mode": "random"}
+
+
 def test_make_runner_config_maps_and_validates_value_targets() -> None:
     native_defaults = dz.SelfPlayConfig()
     assert native_defaults.scripted_threads == 2

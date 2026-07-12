@@ -10,7 +10,7 @@ import tempfile
 import time
 import warnings
 from dataclasses import asdict
-from math import cos, pi
+from math import cos, isfinite, pi
 from pathlib import Path
 from typing import Any
 
@@ -48,7 +48,7 @@ if __package__ in (None, ""):
     )
     from src.v2.train.inference_server import InferenceServer, serialize_cpu_state_dict
     from src.v2.train.model import DominionNet, count_parameters, masked_policy_loss
-    from src.v2.train.observation import obs_size_for_config
+    from src.v2.train.observation import obs_size_for_config, obs_size_for_version, obs_version_for_checkpoint
     from src.v2.train.replay import ReplayBuffer, load_replay_state, save_replay_state
     from src.v2.train.selfplay import SelfPlayStats, run_routed_self_play_generation, run_self_play_generation
     from src.v2.train.workers import ParallelSelfPlayPool
@@ -76,7 +76,7 @@ else:
     )
     from .inference_server import InferenceServer, serialize_cpu_state_dict
     from .model import DominionNet, count_parameters, masked_policy_loss
-    from .observation import obs_size_for_config
+    from .observation import obs_size_for_config, obs_size_for_version, obs_version_for_checkpoint
     from .replay import ReplayBuffer, load_replay_state, save_replay_state
     from .selfplay import SelfPlayStats, run_routed_self_play_generation, run_self_play_generation
     from .workers import ParallelSelfPlayPool
@@ -247,6 +247,99 @@ def load_checkpoint(path: str | Path, device: torch.device):
     if "python_rng_state" in payload:
         random.setstate(payload["python_rng_state"])
     return cfg, int(payload["generation"]), model, optimizer, replay
+
+
+def _initial_weights_config(payload: object, path: str | Path) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Return validated metadata needed to safely warm-start a new campaign."""
+    if not isinstance(payload, dict):
+        raise ValueError(f"init-weights checkpoint {path} must contain an object payload")
+    if not isinstance(payload.get("model"), dict):
+        raise ValueError(f"init-weights checkpoint {path} is missing a model state dict")
+    checkpoint_config = payload.get("config")
+    if not isinstance(checkpoint_config, dict):
+        raise ValueError(f"init-weights checkpoint {path} has a non-object 'config' payload")
+    checkpoint_model = checkpoint_config.get("model")
+    checkpoint_selfplay = checkpoint_config.get("selfplay")
+    if not isinstance(checkpoint_model, dict):
+        raise ValueError(f"init-weights checkpoint {path} is missing config.model metadata")
+    if not isinstance(checkpoint_selfplay, dict):
+        raise ValueError(f"init-weights checkpoint {path} is missing config.selfplay metadata")
+    return checkpoint_model, checkpoint_selfplay
+
+
+def load_initial_weights(
+    path: str | Path,
+    config: TrainConfig,
+    model: torch.nn.Module,
+    device: torch.device,
+) -> None:
+    """Load only compatible network weights for a fresh training campaign.
+
+    This intentionally receives neither optimizer nor replay.  Keeping the
+    boundary narrow makes it impossible for a warm start to accidentally
+    inherit source campaign state as a full ``--resume`` does.
+    """
+    checkpoint_path = Path(path)
+    payload = load_full_checkpoint(checkpoint_path, device)
+    checkpoint_model, checkpoint_selfplay = _initial_weights_config(payload, checkpoint_path)
+
+    checkpoint_hidden_sizes = checkpoint_model.get("hidden_sizes")
+    expected_hidden_sizes = list(config.model.hidden_sizes)
+    if not isinstance(checkpoint_hidden_sizes, list):
+        raise ValueError(
+            f"init-weights checkpoint {checkpoint_path} is missing config.model.hidden_sizes; "
+            "cannot validate model architecture"
+        )
+    if checkpoint_hidden_sizes != expected_hidden_sizes:
+        raise ValueError(
+            f"init-weights checkpoint {checkpoint_path} has hidden_sizes {checkpoint_hidden_sizes}, "
+            f"but the current run requires {expected_hidden_sizes}"
+        )
+
+    stored_obs_version = checkpoint_selfplay.get("obs_version")
+    if not isinstance(stored_obs_version, int) or isinstance(stored_obs_version, bool):
+        raise ValueError(
+            f"init-weights checkpoint {checkpoint_path} is missing a valid config.selfplay.obs_version"
+        )
+    required_obs_version = int(config.selfplay.obs_version)
+    try:
+        stored_obs_width = obs_size_for_version(stored_obs_version)
+        model_obs_version = obs_version_for_checkpoint(payload)
+        model_obs_width = obs_size_for_version(model_obs_version)
+        required_obs_width = obs_size_for_config(config)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"init-weights checkpoint {checkpoint_path} has an invalid observation input layout: {exc}"
+        ) from exc
+    if (
+        stored_obs_version != required_obs_version
+        or model_obs_version != required_obs_version
+        or stored_obs_width != required_obs_width
+        or model_obs_width != required_obs_width
+    ):
+        raise ValueError(
+            f"init-weights checkpoint {checkpoint_path} has stored obs_version {stored_obs_version} "
+            f"and model layout v{model_obs_version} (input width {model_obs_width}); current run requires "
+            f"obs_version {required_obs_version} and input width {required_obs_width}"
+        )
+
+    raw_input_scale = checkpoint_model.get("input_scale", 1.0)
+    if isinstance(raw_input_scale, bool) or not isinstance(raw_input_scale, (int, float)) or not isfinite(raw_input_scale):
+        raise ValueError(f"init-weights checkpoint {checkpoint_path} has an invalid config.model.input_scale")
+    stored_input_scale = float(raw_input_scale)
+    required_input_scale = float(config.model.input_scale)
+    if stored_input_scale != required_input_scale:
+        raise ValueError(
+            f"init-weights checkpoint {checkpoint_path} has input_scale {stored_input_scale}, "
+            f"but the current run requires {required_input_scale}"
+        )
+
+    try:
+        model.load_state_dict(payload["model"])
+    except (RuntimeError, TypeError, KeyError) as exc:
+        raise ValueError(
+            f"init-weights checkpoint {checkpoint_path} cannot be loaded with the current model architecture"
+        ) from exc
 
 
 def learning_rate_for_generation(config: TrainConfig, generation: int) -> float:
@@ -448,6 +541,10 @@ def validated_eval_sentinels(raw_sentinels: object) -> list[tuple[str, int]]:
 
 def run_training(config: TrainConfig, resume: str | None = None, profile: bool = False) -> dict[str, Any]:
     requested = config
+    if not isinstance(config.init_weights, str):
+        raise ValueError("init_weights must be a checkpoint path string")
+    if resume is not None and config.init_weights:
+        raise ValueError("--resume and --init-weights cannot be used together")
     device = select_device(config.device)
     seed_everything(config.seed, deterministic=device.type == "cpu")
     resume = resolve_resume_path(resume, requested.checkpoint_dir)
@@ -485,6 +582,8 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
             config.device = device.type
     else:
         model, optimizer, replay = build_objects(config, device)
+        if config.init_weights:
+            load_initial_weights(config.init_weights, config, model, device)
         start_generation = 0
 
     validate_deep_slice_config(config.selfplay)
@@ -846,6 +945,10 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     config_path = Path(__file__).resolve().parent / "configs" / "smoke.json" if args.smoke else args.config
     config = load_config(config_path)
+    if args.resume is not None and args.init_weights is not None:
+        parser.error("--resume and --init-weights cannot be used together")
+    if args.init_weights is not None:
+        config.init_weights = args.init_weights
     if args.device is not None:
         config.device = args.device
     if args.checkpoint_dir is not None:
@@ -857,6 +960,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.smoke and args.device is None:
         config.device = "cpu"
         config.generations = 1
+    if args.resume is not None and config.init_weights:
+        parser.error("--resume and --init-weights cannot be used together")
     run_training(config, resume=args.resume, profile=args.profile)
     return 0
 

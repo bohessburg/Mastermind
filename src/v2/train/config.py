@@ -101,6 +101,10 @@ class EvalConfig:
 class TrainConfig:
     seed: int = 12345
     generations: int = 10
+    # Start a new campaign from model weights only. Unlike --resume, this
+    # deliberately does not restore optimizer, replay, RNG, or generation
+    # state from the source checkpoint.
+    init_weights: str = ""
     device: str = "auto"
     # Parallel collection is opt-in so the legacy single-pipeline run remains
     # exactly deterministic for the default configuration.
@@ -226,6 +230,7 @@ def save_config(config: TrainConfig, path: str | Path) -> None:
 def add_config_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--config", type=str, default=None)
     parser.add_argument("--resume", type=str, default=None)
+    parser.add_argument("--init-weights", type=str, default=None)
     parser.add_argument("--device", type=str, default=None)
     parser.add_argument("--checkpoint-dir", type=str, default=None)
     parser.add_argument("--profile", action="store_true")
