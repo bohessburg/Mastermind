@@ -604,3 +604,15 @@ random after), 5% deep slice @4096 sims, no scripted training opponents,
 BM sentinel eval. READY TO LAUNCH on next box provision. Hardware rec:
 1x RTX 5090, 16-24 vCPU, >=192GB cgroup RAM (v2 replay ~18GB + 8 workers
 ~10GB+), 40GB disk, ~$0.30-0.40/hr; ~8h to gen 100.
+
+Campaign 14 LAUNCHED (2026-07-12 evening, new box ssh -p 10229
+root@198.2.214.6 — RTX 5090 32GB, 183GB cgroup, 32GB disk): warm-start
+from c13 gen-65, 12-seed ancestor league (lean weights-only checkpoints;
+NOTE league loader needs payload["generation"] — patched on-box after the
+strip removed it), engine-forcing kingdom curriculum, 5% deep slice
+@4096, tree reuse + top-k(8, root-exempt+wildcard), no scripted training
+opponents, BM sentinel evals. Bootstrap notes for the record: fresh-box
+cmake needs -DBUILD_TESTS=OFF (Catch2 GitHub fetch blocked) and the
+tarball must include tests/ (v2_fuzz sources) — handoff doc updated
+mentally, launch scripts on box (/root/launch14.sh, stop_train.sh with
+worker-tree kill). GPU 95%, single writer verified.
