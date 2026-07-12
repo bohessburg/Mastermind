@@ -34,6 +34,12 @@ struct MctsConfig {
     MctsPriorFn prior_fn = nullptr;
     void* prior_user = nullptr;
     bool prune_treasure_plays = false;
+    // Keeps only the highest-prior legal actions when expanding a node. Zero
+    // preserves the full legal-action expansion used by gate/eval by default.
+    std::uint8_t expand_top_k = 0;
+    // Internal owner opt-in for cross-decision re-rooting. The runner is the
+    // only current owner that enables it.
+    bool tree_reuse = false;
 };
 
 struct MctsNode {
@@ -78,6 +84,17 @@ public:
     void reset(const GameState& root, PlayerId perspective) noexcept;
     void run_simulations(std::uint32_t simulations, Xoshiro256pp& rng) noexcept;
 
+    // Retain one selected root child until the runner knows whether its
+    // post-action state is exactly the next searched decision.  Reuse is
+    // intentionally limited to one determinization: a K>1 root aggregates
+    // incompatible hidden-information worlds below its children.
+    [[nodiscard]] bool retain_root_child(Action action, std::uint64_t post_action_hash) noexcept;
+    [[nodiscard]] bool adopt_retained_root(const GameState& root, PlayerId perspective) noexcept;
+    void clear_retained_root() noexcept;
+    // Re-normalizes priors only across the existing root children.  The
+    // runner uses this when re-applying root exploration noise after reuse.
+    void set_root_priors(const float* priors) noexcept;
+
     void add_virtual_loss(std::uint32_t node, float amount = 1.0F) noexcept;
     void revert_virtual_loss(std::uint32_t node, float amount = 1.0F) noexcept;
 
@@ -99,6 +116,9 @@ public:
 
 private:
     [[nodiscard]] std::uint32_t allocate_node() noexcept;
+    [[nodiscard]] bool compact_subtree_to_root(
+        std::uint32_t retained_root,
+        PlayerId perspective) noexcept;
     [[nodiscard]] bool expand(std::uint32_t node_index) noexcept;
     [[nodiscard]] bool expand_with_priors(std::uint32_t node_index, const float* priors) noexcept;
     [[nodiscard]] std::uint32_t select_child(std::uint32_t node_index) const noexcept;
@@ -117,12 +137,35 @@ private:
     MctsConfig config_{};
     std::unique_ptr<MctsNode[]> nodes_;
     std::unique_ptr<GameState[]> states_;
+    // Fixed remap scratch keeps re-root compaction allocation-free.
+    std::unique_ptr<std::uint32_t[]> remap_;
     std::uint32_t capacity_ = 0;
     std::uint32_t node_count_ = 0;
     PlayerId root_perspective_ = 0;
     bool exhausted_ = false;
+    std::uint32_t retained_root_ = MCTS_NULL;
+    // Recorded against states_[retained_root_] when the runner commits an
+    // action; adoption verifies both that stored child state and the live one.
+    std::uint64_t retained_root_state_hash_ = 0;
 };
 
+[[nodiscard]] std::uint64_t mcts_state_hash(const GameState& state) noexcept;
+// Return the legal actions retained by top-k expansion. Invalid inputs fall
+// back to the full legal mask, preserving a selectable legal action.
+[[nodiscard]] ActionMask mcts_top_k_actions(
+    const ActionMask& legal,
+    int legal_count,
+    const float* priors,
+    std::uint8_t top_k) noexcept;
+// Mix Dirichlet exploration into an already selected action set. Callers that
+// use top-k must pass the retained mask, never the broader legal mask.
+void mcts_add_dirichlet_noise(
+    float* priors,
+    const ActionMask& actions,
+    int action_count,
+    float alpha,
+    float frac,
+    Xoshiro256pp& rng) noexcept;
 [[nodiscard]] float mcts_terminal_value(const GameState& state, PlayerId player) noexcept;
 [[nodiscard]] ActionMask mcts_filter_treasure_plays(
     const GameState& state,

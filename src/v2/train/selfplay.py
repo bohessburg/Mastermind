@@ -117,6 +117,8 @@ def make_runner_config(
         scripted_nn_player=int(scripted_nn_player),
         auto_play_treasures=config.auto_play_treasures,
         prune_treasure_plays=config.prune_treasure_plays,
+        tree_reuse=config.tree_reuse,
+        expand_top_k=config.expand_top_k,
         value_target=_value_target(config.value_target),
         margin_scale=config.margin_scale,
     )

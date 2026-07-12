@@ -513,6 +513,8 @@ def test_make_runner_config_maps_and_validates_value_targets() -> None:
     assert native_defaults.scripted_threads == 2
     assert native_defaults.scaffold_determinizations == 2
     assert native_defaults.scaffold_sims_opening == 0
+    assert native_defaults.tree_reuse is False
+    assert native_defaults.expand_top_k == 0
 
     config = SelfPlayConfig(
         value_target="margin",
@@ -521,6 +523,8 @@ def test_make_runner_config_maps_and_validates_value_targets() -> None:
         scaffold_sims_opening=5,
         scaffold_determinizations=3,
         scripted_threads=2,
+        tree_reuse=True,
+        expand_top_k=8,
     )
     runner_config = make_runner_config(config, 12345, scripted_kind="scaffold")
 
@@ -530,6 +534,8 @@ def test_make_runner_config_maps_and_validates_value_targets() -> None:
     assert runner_config.scaffold_sims_opening == 5
     assert runner_config.scaffold_determinizations == 3
     assert runner_config.scripted_threads == 2
+    assert runner_config.tree_reuse is True
+    assert runner_config.expand_top_k == 8
     assert runner_config.scripted_bot == dz.SelfPlayScriptedBotKind.Scaffold
 
     with pytest.raises(ValueError, match="unknown value target"):

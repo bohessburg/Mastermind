@@ -1371,7 +1371,9 @@ PYBIND11_MODULE(dominion_v2_py, module) {
             std::uint8_t scripted_threads,
             std::uint8_t scaffold_determinizations,
             std::uint32_t scaffold_sims_opening,
-            int obs_version) {
+            int obs_version,
+            bool tree_reuse,
+            std::uint8_t expand_top_k) {
             SelfPlayConfig config{};
             config.n_games = n_games;
             config.sims_per_move = sims_per_move;
@@ -1395,6 +1397,8 @@ PYBIND11_MODULE(dominion_v2_py, module) {
             config.scaffold_determinizations = scaffold_determinizations;
             config.scaffold_sims_opening = scaffold_sims_opening;
             config.obs_version = parse_obs_version(obs_version);
+            config.tree_reuse = tree_reuse;
+            config.expand_top_k = expand_top_k;
             if (!kingdom.is_none()) {
                 PySetup setup(2, kingdom, false);
                 config.fixed_setup = setup.setup;
@@ -1423,7 +1427,9 @@ PYBIND11_MODULE(dominion_v2_py, module) {
             py::arg("scripted_threads") = 2U,
             py::arg("scaffold_determinizations") = 2U,
             py::arg("scaffold_sims_opening") = 0U,
-            py::arg("obs_version") = static_cast<int>(ObsVersion::V1))
+            py::arg("obs_version") = static_cast<int>(ObsVersion::V1),
+            py::arg("tree_reuse") = false,
+            py::arg("expand_top_k") = 0U)
         .def_readwrite("n_games", &SelfPlayConfig::n_games)
         .def_readwrite("sims_per_move", &SelfPlayConfig::sims_per_move)
         .def_readwrite("c_puct", &SelfPlayConfig::c_puct)
@@ -1448,7 +1454,9 @@ PYBIND11_MODULE(dominion_v2_py, module) {
         .def_readwrite("scripted_bot", &SelfPlayConfig::scripted_bot)
         .def_readwrite("scripted_nn_player", &SelfPlayConfig::scripted_nn_player)
         .def_readwrite("auto_play_treasures", &SelfPlayConfig::auto_play_treasures)
-        .def_readwrite("prune_treasure_plays", &SelfPlayConfig::prune_treasure_plays);
+        .def_readwrite("prune_treasure_plays", &SelfPlayConfig::prune_treasure_plays)
+        .def_readwrite("tree_reuse", &SelfPlayConfig::tree_reuse)
+        .def_readwrite("expand_top_k", &SelfPlayConfig::expand_top_k);
 
     py::class_<SelfPlayRunner>(module, "SelfPlayRunner")
         .def(py::init<const SelfPlayConfig&>(), py::arg("config"))

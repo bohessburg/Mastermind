@@ -60,6 +60,10 @@ struct SelfPlayConfig {
     PlayerId scripted_nn_player = 0U;
     bool auto_play_treasures = false;
     bool prune_treasure_plays = false;
+    // Training-only search-depth controls. Both remain opt-in so default
+    // self-play and gate/eval behavior keep their established full trees.
+    bool tree_reuse = false;
+    std::uint8_t expand_top_k = 0;
 };
 
 struct SelfPlayRecord {
@@ -133,6 +137,7 @@ private:
         bool add_root_noise,
         float* out,
         Xoshiro256pp& rng) noexcept;
+    void reapply_root_noise(GameSlot& game) noexcept;
     [[nodiscard]] bool resolve_scripted_tree_leaf(GameSlot& game, const MctsPendingLeaf& leaf) noexcept;
 
     SelfPlayConfig config_{};

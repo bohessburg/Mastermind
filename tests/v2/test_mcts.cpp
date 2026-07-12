@@ -8,7 +8,9 @@
 #include "v2/drivers/bots.h"
 
 #include <catch2/catch_test_macros.hpp>
+#include <array>
 #include <cstdint>
+#include <stdexcept>
 
 namespace {
 
@@ -100,6 +102,33 @@ void add_to_discard(GameState& state, PlayerId player_id, DefId def, std::uint8_
     provinces->count = 1U;
     (void)Game::step(state, buy_action(def));
     return score(state, 0U);
+}
+
+[[nodiscard]] std::uint32_t root_child_count(const Mcts& search) {
+    std::uint32_t count = 0U;
+    for (std::uint32_t child = search.node(0U).first_child; child != MCTS_NULL;
+         child = search.node(child).next_sibling) {
+        ++count;
+    }
+    return count;
+}
+
+[[nodiscard]] ActionMask root_child_actions(const Mcts& search) {
+    ActionMask actions{};
+    for (std::uint32_t child = search.node(0U).first_child; child != MCTS_NULL;
+         child = search.node(child).next_sibling) {
+        actions.set(search.node(child).action_from_parent);
+    }
+    return actions;
+}
+
+[[nodiscard]] bool same_action_mask(const ActionMask& lhs, const ActionMask& rhs) {
+    for (std::uint16_t word = 0U; word < ACTION_MASK_WORDS; ++word) {
+        if (lhs.words[word] != rhs.words[word]) {
+            return false;
+        }
+    }
+    return true;
 }
 
 struct MctsPlayer {
@@ -198,6 +227,174 @@ TEST_CASE("v2 MCTS slab exhaustion degrades to a legal action", "[v2][mcts]") {
 
     REQUIRE(search.exhausted());
     REQUIRE(legal_in_state(state, action));
+}
+
+TEST_CASE("v2 MCTS top-k expansion retains only ranked legal children", "[v2][mcts][topk]") {
+    GameState state = buy_position(8);
+    MctsConfig config{};
+    config.determinizations = 1U;
+    config.max_tree_nodes = 128U;
+    config.rollout_policy = MctsRolloutPolicy::External;
+    config.expand_top_k = 3U;
+
+    Mcts search(config);
+    search.reset(state, 0U);
+    MctsPendingLeaf leaf{};
+    REQUIRE(search.collect_external_leaf(leaf));
+    REQUIRE(leaf.legal_count > static_cast<int>(config.expand_top_k));
+
+    std::array<float, ACTION_SPACE_SIZE> priors{};
+    for (Action action = 0; action < ACTION_SPACE_SIZE; ++action) {
+        if (leaf.legal.test(action)) {
+            priors[action] = static_cast<float>(action + 1U);
+        }
+    }
+    const ActionMask retained = mcts_top_k_actions(
+        leaf.legal,
+        leaf.legal_count,
+        priors.data(),
+        config.expand_top_k);
+    REQUIRE(root_child_count(search) == 0U);
+
+    search.provide_external_evaluation(leaf, 0.0F, priors.data());
+    REQUIRE(root_child_count(search) == config.expand_top_k);
+    REQUIRE(same_action_mask(root_child_actions(search), retained));
+
+    float policy[ACTION_SPACE_SIZE]{};
+    search.root_visit_policy(policy, 1.0F);
+    for (Action action = 0; action < ACTION_SPACE_SIZE; ++action) {
+        if (!retained.test(action)) {
+            REQUIRE(policy[action] == 0.0F);
+        }
+    }
+    Xoshiro256pp rng = Xoshiro256pp::seeded(0x70B0'B001ULL);
+    for (int sample = 0; sample < 32; ++sample) {
+        const Action action = search.sample_root_action(1.0F, rng);
+        REQUIRE(leaf.legal.test(action));
+        REQUIRE(retained.test(action));
+    }
+}
+
+TEST_CASE("v2 MCTS root noise is structurally confined to top-k children", "[v2][mcts][topk]") {
+    GameState state = buy_position(8);
+    MctsConfig config{};
+    config.determinizations = 1U;
+    config.max_tree_nodes = 128U;
+    config.rollout_policy = MctsRolloutPolicy::External;
+    config.expand_top_k = 2U;
+
+    Mcts search(config);
+    search.reset(state, 0U);
+    MctsPendingLeaf leaf{};
+    REQUIRE(search.collect_external_leaf(leaf));
+
+    std::array<float, ACTION_SPACE_SIZE> ranked{};
+    for (Action action = 0; action < ACTION_SPACE_SIZE; ++action) {
+        if (leaf.legal.test(action)) {
+            ranked[action] = static_cast<float>(action + 1U);
+        }
+    }
+    const ActionMask retained = mcts_top_k_actions(
+        leaf.legal,
+        leaf.legal_count,
+        ranked.data(),
+        config.expand_top_k);
+
+    std::array<float, ACTION_SPACE_SIZE> root_noised{};
+    float retained_sum = 0.0F;
+    for (Action action = 0; action < ACTION_SPACE_SIZE; ++action) {
+        if (retained.test(action)) {
+            root_noised[action] = ranked[action];
+            retained_sum += root_noised[action];
+        }
+    }
+    REQUIRE(retained_sum > 0.0F);
+    for (Action action = 0; action < ACTION_SPACE_SIZE; ++action) {
+        root_noised[action] = retained.test(action)
+            ? root_noised[action] / retained_sum
+            : 0.0F;
+    }
+    Xoshiro256pp noise_rng = Xoshiro256pp::seeded(0xD1A1'C4E7ULL);
+    mcts_add_dirichlet_noise(
+        root_noised.data(),
+        retained,
+        config.expand_top_k,
+        0.30F,
+        1.0F,
+        noise_rng);
+    for (Action action = 0; action < ACTION_SPACE_SIZE; ++action) {
+        if (!retained.test(action)) {
+            REQUIRE(root_noised[action] == 0.0F);
+        }
+    }
+    REQUIRE(same_action_mask(mcts_top_k_actions(
+        leaf.legal,
+        leaf.legal_count,
+        root_noised.data(),
+        config.expand_top_k), retained));
+
+    search.provide_external_evaluation(leaf, 0.0F, root_noised.data());
+    REQUIRE(same_action_mask(root_child_actions(search), retained));
+}
+
+TEST_CASE("v2 MCTS reuses only a hash-matching selected subtree", "[v2][mcts][reuse]") {
+    GameState state = buy_position(3);
+    MctsConfig config{};
+    config.determinizations = 1U;
+    config.max_tree_nodes = 256U;
+    config.rollout_step_cap = 0U;
+    config.tree_reuse = true;
+
+    Mcts matching_search(config);
+    matching_search.reset(state, 0U);
+    Xoshiro256pp rng = Xoshiro256pp::seeded(0x7EEE'0001ULL);
+    matching_search.run_simulations(8U, rng);
+    const Action matched_action = matching_search.best_root_action();
+    REQUIRE(legal_in_state(state, matched_action));
+    const std::uint32_t child_visits = matching_search.root_visits_for(matched_action);
+    REQUIRE(child_visits > 0U);
+
+    GameState matching_state = state;
+    (void)Game::step(matching_state, matched_action);
+    REQUIRE(matching_search.retain_root_child(
+        matched_action,
+        mcts_state_hash(matching_state)));
+    REQUIRE(matching_search.adopt_retained_root(
+        matching_state,
+        current_player(matching_state)));
+    REQUIRE(matching_search.node(0U).visits == child_visits);
+    REQUIRE(mcts_state_hash(matching_search.state_for(
+        matching_search.node(0U).state_index)) == mcts_state_hash(matching_state));
+
+    Mcts mismatching_search(config);
+    mismatching_search.reset(state, 0U);
+    rng = Xoshiro256pp::seeded(0x7EEE'0001ULL);
+    mismatching_search.run_simulations(8U, rng);
+    const Action stale_action = mismatching_search.best_root_action();
+    GameState stale_child_state = state;
+    (void)Game::step(stale_child_state, stale_action);
+    REQUIRE(mismatching_search.retain_root_child(
+        stale_action,
+        mcts_state_hash(stale_child_state)));
+
+    ActionMask intervening_legal{};
+    REQUIRE(Game::legal_actions(stale_child_state, intervening_legal) > 0);
+    (void)Game::step(stale_child_state, intervening_legal.nth_set(0U));
+    REQUIRE(mcts_state_hash(stale_child_state) != mcts_state_hash(
+        matching_search.state_for(0U)));
+    REQUIRE_FALSE(mismatching_search.adopt_retained_root(
+        stale_child_state,
+        current_player(stale_child_state)));
+    // This mirrors SelfPlayRunner::start_search's mismatch path.
+    mismatching_search.reset(stale_child_state, current_player(stale_child_state));
+    REQUIRE(mismatching_search.node(0U).visits == 0U);
+}
+
+TEST_CASE("v2 MCTS tree reuse rejects multiple determinizations", "[v2][mcts][reuse]") {
+    MctsConfig config{};
+    config.tree_reuse = true;
+    config.determinizations = 2U;
+    REQUIRE_THROWS_AS(Mcts(config), std::invalid_argument);
 }
 
 TEST_CASE("v2 MCTS treasure pruning forces ascending treasure plays", "[v2][mcts]") {

@@ -8,6 +8,7 @@
 #include "v2/mcts/pile_clock.h"
 
 #include <algorithm>
+#include <cassert>
 #include <atomic>
 #include <cmath>
 #include <condition_variable>
@@ -17,8 +18,6 @@
 #include <thread>
 
 namespace {
-
-constexpr double PI = 3.141592653589793238462643383279502884;
 
 constexpr DefId IMPLEMENTED_KINGDOMS[] = {
     DEF_CELLAR,
@@ -150,44 +149,12 @@ enum class ScriptedSlotStatus : std::uint8_t {
         + (static_cast<std::uint64_t>(index) * 0xD1B5'4A32'D192'ED03ULL);
 }
 
-[[nodiscard]] float uniform_float(Xoshiro256pp& rng) noexcept {
-    const double value = static_cast<double>(rng.next() >> 11U) * 0x1.0p-53;
-    return static_cast<float>(value <= 0.0 ? 0x1.0p-24 : value);
-}
-
-[[nodiscard]] double normal01(Xoshiro256pp& rng) noexcept {
-    const double u1 = static_cast<double>(uniform_float(rng));
-    const double u2 = static_cast<double>(uniform_float(rng));
-    return std::sqrt(-2.0 * std::log(u1)) * std::cos(2.0 * PI * u2);
-}
-
-[[nodiscard]] double gamma_sample(double alpha, Xoshiro256pp& rng) noexcept {
-    if (alpha <= 0.0) {
-        return 0.0;
+[[nodiscard]] int action_mask_count(const ActionMask& legal) noexcept {
+    int count = 0;
+    for (Action action = 0; action < ACTION_SPACE_SIZE; ++action) {
+        count += legal.test(action) ? 1 : 0;
     }
-    if (alpha < 1.0) {
-        const double boosted = gamma_sample(alpha + 1.0, rng);
-        return boosted * std::pow(static_cast<double>(uniform_float(rng)), 1.0 / alpha);
-    }
-
-    const double d = alpha - (1.0 / 3.0);
-    const double c = 1.0 / std::sqrt(9.0 * d);
-    for (int attempt = 0; attempt < 32; ++attempt) {
-        const double x = normal01(rng);
-        const double v_base = 1.0 + (c * x);
-        if (v_base <= 0.0) {
-            continue;
-        }
-        const double v = v_base * v_base * v_base;
-        const double u = static_cast<double>(uniform_float(rng));
-        if (u < 1.0 - (0.0331 * x * x * x * x)) {
-            return d * v;
-        }
-        if (std::log(u) < (0.5 * x * x) + (d * (1.0 - v + std::log(v)))) {
-            return d * v;
-        }
-    }
-    return alpha;
+    return count;
 }
 
 [[nodiscard]] PlayerId winner_for(const GameState& state) noexcept {
@@ -358,6 +325,21 @@ SelfPlayRunner::SelfPlayRunner(const SelfPlayConfig& config)
     mcts_config_.max_tree_nodes = config_.max_tree_nodes == 0U ? 4096U : config_.max_tree_nodes;
     mcts_config_.rollout_policy = MctsRolloutPolicy::External;
     mcts_config_.prune_treasure_plays = config_.prune_treasure_plays;
+    mcts_config_.expand_top_k = config_.expand_top_k;
+    mcts_config_.tree_reuse = config_.tree_reuse;
+    if (mcts_config_.tree_reuse && mcts_config_.determinizations != 1U) {
+        // A reused subtree belongs to one root-sampled hidden-information
+        // world; K>1 trees aggregate different worlds below the root.
+        throw std::invalid_argument("SelfPlayConfig.tree_reuse requires determinizations == 1");
+    }
+    if (config_.tree_reuse && config_.scripted_bot == SelfPlayScriptedBotKind::Scaffold
+        && config_.scaffold_determinizations > 1U) {
+        // Keep the self-play/scaffold configuration unambiguous: subtree
+        // reuse is valid only for a single determinized world, never a
+        // root-level aggregate of K hidden-information samples.
+        throw std::invalid_argument(
+            "SelfPlayConfig.tree_reuse requires scaffold_determinizations <= 1");
+    }
 
     if (config_.scripted_bot == SelfPlayScriptedBotKind::Scaffold) {
         scaffold_mcts_config_ = make_scaffold_mcts_config(
@@ -573,6 +555,7 @@ std::vector<SelfPlayRecord> SelfPlayRunner::take_finished_games() {
 void SelfPlayRunner::reset_game(std::uint32_t index) noexcept {
     GameSlot& game = games_[index];
     game.scripted_status.store(ScriptedSlotStatus::Idle, std::memory_order_relaxed);
+    game.mcts.clear_retained_root();
     game.setup = setup_for(index, game.generation);
     game.seed = game_seed(config_, index, game.generation);
     game.state = Game::new_game(game.setup, game.seed);
@@ -595,11 +578,68 @@ void SelfPlayRunner::start_search(GameSlot& game) noexcept {
      * model never sees opponent private zones; determinized search remains
      * available for later imperfect-information evaluation.
      */
-    game.mcts.reset(game.state, decision_player(game.state));
+    assert(game.pending == 0U);
+    const PlayerId player = decision_player(game.state);
+    const bool reused = config_.tree_reuse
+        && game.mcts.adopt_retained_root(game.state, player);
+    if (reused) {
+        reapply_root_noise(game);
+    } else {
+        game.mcts.reset(game.state, player);
+    }
     game.sims_started = 0;
     game.sims_completed = 0;
     game.pending = 0;
     game.search_active = true;
+}
+
+void SelfPlayRunner::reapply_root_noise(GameSlot& game) noexcept {
+    if (config_.dirichlet_frac <= 0.0F || game.mcts.node_count() == 0U) {
+        return;
+    }
+
+    float priors[ACTION_SPACE_SIZE]{};
+    ActionMask retained{};
+    float sum = 0.0F;
+    int count = 0;
+    const MctsNode& root = game.mcts.node(0U);
+    for (std::uint32_t child_index = root.first_child; child_index != MCTS_NULL;
+         child_index = game.mcts.node(child_index).next_sibling) {
+        const MctsNode& child = game.mcts.node(child_index);
+        if (child.action_from_parent >= ACTION_SPACE_SIZE) {
+            continue;
+        }
+        retained.set(child.action_from_parent);
+        priors[child.action_from_parent] = child.prior > 0.0F ? child.prior : 0.0F;
+        sum += priors[child.action_from_parent];
+        ++count;
+    }
+    if (count <= 1) {
+        return;
+    }
+    if (sum <= 0.0F) {
+        const float uniform = 1.0F / static_cast<float>(count);
+        for (Action action = 0; action < ACTION_SPACE_SIZE; ++action) {
+            if (retained.test(action)) {
+                priors[action] = uniform;
+            }
+        }
+    } else {
+        const float inv_sum = 1.0F / sum;
+        for (Action action = 0; action < ACTION_SPACE_SIZE; ++action) {
+            if (retained.test(action)) {
+                priors[action] *= inv_sum;
+            }
+        }
+    }
+    mcts_add_dirichlet_noise(
+        priors,
+        retained,
+        count,
+        config_.dirichlet_alpha,
+        config_.dirichlet_frac,
+        game.rng);
+    game.mcts.set_root_priors(priors);
 }
 
 void SelfPlayRunner::auto_play_treasures(GameSlot& game) noexcept {
@@ -617,6 +657,7 @@ void SelfPlayRunner::auto_play_treasures(GameSlot& game) noexcept {
             return;
         }
         const bool done = Game::step(game.state, action);
+        game.mcts.clear_retained_root();
         ++guard;
         if (done || game.state.phase == static_cast<std::uint8_t>(Phase::Over)) {
             finish_game(game);
@@ -663,6 +704,7 @@ void SelfPlayRunner::drive_scripted(GameSlot& game) noexcept {
             action = legal.nth_set(0U);
         }
         const bool done = Game::step(game.state, action);
+        game.mcts.clear_retained_root();
         ++guard;
         if (done || game.state.phase == static_cast<std::uint8_t>(Phase::Over)) {
             finish_game(game);
@@ -692,6 +734,7 @@ void SelfPlayRunner::drive_scaffold(GameSlot& game, Mcts& scratch) noexcept {
             action = legal.nth_set(0U);
         }
         const bool done = Game::step(game.state, action);
+        game.mcts.clear_retained_root();
         ++guard;
         if (done || game.state.phase == static_cast<std::uint8_t>(Phase::Over)) {
             break;
@@ -798,6 +841,15 @@ void SelfPlayRunner::maybe_finish_move(GameSlot& game) noexcept {
     }
 
     const bool done = Game::step(game.state, action);
+    if (config_.tree_reuse && !done
+        && game.state.phase != static_cast<std::uint8_t>(Phase::Over)) {
+        // Store the runner's post-step hash with the selected child. The next
+        // search adopts it only when this exact state still survives all
+        // intervening engine/scripted work.
+        (void)game.mcts.retain_root_child(action, mcts_state_hash(game.state));
+    } else {
+        game.mcts.clear_retained_root();
+    }
     ++game.move_index;
     game.search_active = false;
     if (done || game.state.phase == static_cast<std::uint8_t>(Phase::Over)) {
@@ -993,27 +1045,46 @@ void SelfPlayRunner::normalize_policy(
     if (!add_root_noise || config_.dirichlet_frac <= 0.0F || legal_count <= 1) {
         return;
     }
-    float noise[ACTION_SPACE_SIZE]{};
-    double noise_sum = 0.0;
-    for (Action action = 0; action < ACTION_SPACE_SIZE; ++action) {
-        if (legal.test(action)) {
-            const double sample = gamma_sample(static_cast<double>(config_.dirichlet_alpha), rng);
-            noise[action] = static_cast<float>(sample);
-            noise_sum += sample;
+
+    ActionMask noise_actions = legal;
+    int noise_count = legal_count;
+    if (config_.expand_top_k != 0U) {
+        const ActionMask retained = mcts_top_k_actions(
+            legal,
+            legal_count,
+            out,
+            config_.expand_top_k);
+        const int retained_count = action_mask_count(retained);
+        if (retained_count > 0 && retained_count < legal_count) {
+            float retained_sum = 0.0F;
+            for (Action action = 0; action < ACTION_SPACE_SIZE; ++action) {
+                if (retained.test(action)) {
+                    retained_sum += out[action];
+                }
+            }
+            if (retained_sum <= 0.0F) {
+                const float uniform = 1.0F / static_cast<float>(retained_count);
+                for (Action action = 0; action < ACTION_SPACE_SIZE; ++action) {
+                    out[action] = retained.test(action) ? uniform : 0.0F;
+                }
+            } else {
+                const float inv_sum = 1.0F / retained_sum;
+                for (Action action = 0; action < ACTION_SPACE_SIZE; ++action) {
+                    out[action] = retained.test(action) ? out[action] * inv_sum : 0.0F;
+                }
+            }
+            // Select top-k before noise, then restrict noise to that same
+            // set. Otherwise root Dirichlet exploration could resurrect an
+            // action that expansion deliberately made absent.
+            noise_actions = retained;
+            noise_count = retained_count;
         }
     }
-    if (noise_sum <= 0.0) {
-        return;
-    }
-    float frac = config_.dirichlet_frac;
-    if (frac > 1.0F) {
-        frac = 1.0F;
-    }
-    const float keep = 1.0F - frac;
-    const float noise_scale = static_cast<float>(frac / noise_sum);
-    for (Action action = 0; action < ACTION_SPACE_SIZE; ++action) {
-        if (legal.test(action)) {
-            out[action] = (out[action] * keep) + (noise[action] * noise_scale);
-        }
-    }
+    mcts_add_dirichlet_noise(
+        out,
+        noise_actions,
+        noise_count,
+        config_.dirichlet_alpha,
+        config_.dirichlet_frac,
+        rng);
 }
