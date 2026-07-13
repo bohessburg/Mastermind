@@ -83,6 +83,8 @@ def prompt_for(decision: dict[str, Any], context: dict[str, Any] | None = None) 
     if kind == "ReactWindow":
         return f"{source_name}: reveal a Reaction?"
     if kind == "OrderTriggers":
+        if source_name:
+            return f"{source_name}: choose which triggered ability resolves first"
         return "Choose the next trigger to resolve"
     if kind == "ChooseGain":
         if source_name == "Workshop":
@@ -163,6 +165,8 @@ def _option_label(decision: dict[str, Any], option: int, context: dict[str, Any]
     subjects = _context_subjects(context)
     current_name = _current_subject_name(context)
     if kind == "OrderTriggers":
+        if 0 <= option < len(subjects):
+            return f"Resolve {def_name(subjects[option])}"
         return f"Resolve trigger {option + 1}"
     if kind == "ChooseOrder":
         if source_name == "Sentry" and option < len(subjects):

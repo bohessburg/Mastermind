@@ -11,6 +11,7 @@ import type {
 } from '../protocol';
 import {
   canSendDone,
+  findForcedPass,
   findNextBasicTreasurePlay,
   formatTrashEntries,
   indexDecisionOptionsByDef,
@@ -231,6 +232,25 @@ describe('client state reducer', () => {
     ).toBeUndefined();
     expect(findNextBasicTreasurePlay({ ...buyDecision, kind: 'PhaseAction' }, defs)).toBeUndefined();
     expect(findNextBasicTreasurePlay({ ...buyDecision, options: [] }, defs)).toBeUndefined();
+  });
+
+  it('finds only a forced action-phase pass', () => {
+    const actionPass: DecisionMessage = {
+      type: 'decision',
+      seat: 0,
+      kind: 'PhaseAction',
+      source: { def: 0, name: 'Copper' },
+      prompt: 'Action phase',
+      min: 0,
+      max: 0,
+      options: [{ action: 0, label: 'Pass' }],
+    };
+
+    expect(findForcedPass(actionPass)?.action).toBe(0);
+    expect(
+      findForcedPass({ ...actionPass, options: [{ action: 100, label: 'Play Village', def: 10 }, { action: 0, label: 'Pass' }] }),
+    ).toBeUndefined();
+    expect(findForcedPass({ ...actionPass, kind: 'PhaseBuy' })).toBeUndefined();
   });
 
   it('formats the full trash multiset for the trash popover', () => {

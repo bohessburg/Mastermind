@@ -15,6 +15,7 @@ import type {
 } from './protocol';
 import {
   ClientState,
+  findForcedPass,
   findNextBasicTreasurePlay,
   formatTrashEntries,
   indexDecisionOptionsByDef,
@@ -809,6 +810,7 @@ export function App() {
   const [autoPlayingTreasures, setAutoPlayingTreasures] = useState(false);
   const socketRef = useRef<GameSocket | null>(null);
   const lastAutoDecisionRef = useRef<DecisionMessage | undefined>(undefined);
+  const lastForcedPassDecisionRef = useRef<DecisionMessage | undefined>(undefined);
 
   const decisionKey = useMemo(() => {
     const decision = clientState.decision;
@@ -836,6 +838,24 @@ export function App() {
     }
     socketRef.current?.send({ type: 'act', action: option.action });
   }, [autoPlayingTreasures, clientState.decision]);
+
+  useEffect(() => {
+    const decision = clientState.decision;
+    if (
+      !decision
+      || lastForcedPassDecisionRef.current === decision
+      || clientState.undoPendingSeat !== undefined
+      || clientState.undoOfferSeat !== undefined
+    ) {
+      return;
+    }
+    const option = findForcedPass(decision);
+    if (!option) {
+      return;
+    }
+    lastForcedPassDecisionRef.current = decision;
+    socketRef.current?.send({ type: 'act', action: option.action });
+  }, [clientState.decision, clientState.undoOfferSeat, clientState.undoPendingSeat]);
 
   useEffect(() => {
     if (!credentials) {

@@ -335,6 +335,19 @@ def test_private_decision_context_labels_sentry_for_actor_only() -> None:
     assert order_labels == ["Put Copper on top (drawn next)", "Put Estate on top (drawn next)"]
 
 
+def test_order_trigger_labels_name_the_triggered_cards() -> None:
+    game = FakeDecisionGame(
+        decision(dz.DEF_SILVER, kind=9, player=0),
+        {"source_def": dz.DEF_SILVER, "subject_defs": [dz.DEF_MERCHANT, dz.DEF_MERCHANT], "subject_index": None},
+        [dz.A_OPTION_BASE, dz.A_OPTION_BASE + 1],
+    )
+
+    message = _decision_message(SimpleNamespace(game=game), 0)
+
+    assert message["prompt"] == "Silver: choose which triggered ability resolves first"
+    assert [option["label"] for option in message["options"]] == ["Resolve Merchant", "Resolve Merchant"]
+
+
 def test_card_select_decisions_include_additive_visible_zone_metadata() -> None:
     cases = [
         (decision(dz.DEF_CELLAR, kind=4), dz.DEF_COPPER, "hand"),

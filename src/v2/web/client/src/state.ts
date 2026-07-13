@@ -168,6 +168,14 @@ export function findNextBasicTreasurePlay(
   return best;
 }
 
+export function findForcedPass(decision: DecisionMessage | undefined): DecisionOption | undefined {
+  if (decision?.kind !== 'PhaseAction' || decision.options.length !== 1) {
+    return undefined;
+  }
+  const [option] = decision.options;
+  return option.label === 'Pass' ? option : undefined;
+}
+
 const BASIC_SUPPLY_ORDER = ['Copper', 'Silver', 'Gold', 'Estate', 'Duchy', 'Province', 'Curse'];
 
 /** Returns a display order without changing the server's pile array. */
