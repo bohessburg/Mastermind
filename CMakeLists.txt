@@ -40,20 +40,27 @@ add_library(dominion_v2 STATIC
 target_include_directories(dominion_v2 PUBLIC src)
 configure_v2_target(dominion_v2)
 
+add_library(dominion_v2_bots STATIC
+    src/v2/bots/scripted.cpp
+)
+target_link_libraries(dominion_v2_bots PUBLIC dominion_v2)
+target_include_directories(dominion_v2_bots PUBLIC src)
+configure_v2_target(dominion_v2_bots)
+
 add_library(dominion_v2_mcts STATIC
     src/v2/mcts/eval_runner.cpp
     src/v2/mcts/pile_clock.cpp
     src/v2/mcts/selfplay.cpp
     src/v2/mcts/tree.cpp
 )
-target_link_libraries(dominion_v2_mcts PUBLIC dominion_v2)
+target_link_libraries(dominion_v2_mcts PUBLIC dominion_v2 dominion_v2_bots)
 target_include_directories(dominion_v2_mcts PUBLIC src)
 configure_v2_target(dominion_v2_mcts)
 
 add_library(dominion_v2_drivers STATIC
     src/v2/drivers/bots.cpp
 )
-target_link_libraries(dominion_v2_drivers PUBLIC dominion_v2 dominion_v2_mcts)
+target_link_libraries(dominion_v2_drivers PUBLIC dominion_v2 dominion_v2_bots dominion_v2_mcts)
 configure_v2_target(dominion_v2_drivers)
 
 add_library(dominion_v2_encode STATIC
@@ -93,6 +100,12 @@ add_executable(v2_bench
 )
 target_link_libraries(v2_bench PRIVATE dominion_v2_drivers)
 configure_v2_target(v2_bench)
+
+add_executable(v2_botduel
+    src/v2/bench/botduel.cpp
+)
+target_link_libraries(v2_botduel PRIVATE dominion_v2_drivers)
+configure_v2_target(v2_botduel)
 
 add_executable(v2_mcts_eval
     src/v2/mcts/eval.cpp

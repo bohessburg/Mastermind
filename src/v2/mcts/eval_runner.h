@@ -13,11 +13,13 @@
 #include <vector>
 
 enum class EvalScriptedBotKind : std::uint8_t {
-    Engine,
-    BigMoney,
-    Heuristic,
-    Random,
-    Mcts,
+    Engine = 0,
+    BigMoney = 1,
+    Heuristic = 2,
+    Random = 3,
+    Mcts = 4,
+    EngineV2 = 5,
+    EngineV3 = 6,
 };
 
 struct EvalRunnerConfig {

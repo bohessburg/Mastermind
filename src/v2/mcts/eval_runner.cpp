@@ -1,5 +1,6 @@
 #include "v2/mcts/eval_runner.h"
 
+#include "v2/bots/scripted.h"
 #include "v2/mcts/pile_clock.h"
 
 #include "v2/core/game.h"
@@ -648,6 +649,8 @@ struct EvalRunner::GameSlot {
     Mcts mcts;
     std::optional<Mcts> scripted_mcts{};
     Xoshiro256pp rng{};
+    EngineBot engine_v2{};
+    EngineBotV3 engine_v3{};
     std::uint64_t seed = 0;
     std::uint64_t sequence = 0;
     std::uint32_t sims_started = 0;
@@ -1008,6 +1011,8 @@ std::vector<GameState> EvalRunner::take_finished_games() {
 
 void EvalRunner::reset_game(std::uint32_t index) noexcept {
     GameSlot& game = games_[index];
+    game.engine_v2 = EngineBot{};
+    game.engine_v3 = EngineBotV3{};
     if (config_.target_games != 0U && next_sequence_ >= config_.target_games) {
         game.state = GameState{};
         game.setup = Setup{};
@@ -1083,9 +1088,16 @@ void EvalRunner::drive_scripted(GameSlot& game) noexcept {
         if (legal_count <= 0) {
             break;
         }
-        Action action = config_.opponent == EvalScriptedBotKind::Mcts
-            ? eval_scaffold_mcts_action(*game.scripted_mcts, game.state, legal, legal_count)
-            : eval_scripted_action(game.state, legal, legal_count, config_.opponent, game.rng);
+        Action action = A_PASS;
+        if (config_.opponent == EvalScriptedBotKind::Mcts) {
+            action = eval_scaffold_mcts_action(*game.scripted_mcts, game.state, legal, legal_count);
+        } else if (config_.opponent == EvalScriptedBotKind::EngineV2) {
+            action = game.engine_v2.choose_action(game.state, legal, legal_count);
+        } else if (config_.opponent == EvalScriptedBotKind::EngineV3) {
+            action = game.engine_v3.choose_action(game.state, legal, legal_count);
+        } else {
+            action = eval_scripted_action(game.state, legal, legal_count, config_.opponent, game.rng);
+        }
         if (!legal.test(action)) {
             action = first_legal(legal);
         }
@@ -1210,9 +1222,16 @@ void EvalRunner::normalize_policy(
 
 bool EvalRunner::resolve_scripted_tree_leaf(GameSlot& game, const MctsPendingLeaf& leaf) noexcept {
     const GameState& leaf_state = game.mcts.state_for(leaf.state_index);
-    Action action = config_.opponent == EvalScriptedBotKind::Mcts
-        ? eval_scaffold_mcts_action(*game.scripted_mcts, leaf_state, leaf.legal, leaf.legal_count)
-        : eval_scripted_action(leaf_state, leaf.legal, leaf.legal_count, config_.opponent, game.rng);
+    Action action = A_PASS;
+    if (config_.opponent == EvalScriptedBotKind::Mcts) {
+        action = eval_scaffold_mcts_action(*game.scripted_mcts, leaf_state, leaf.legal, leaf.legal_count);
+    } else if (config_.opponent == EvalScriptedBotKind::EngineV2) {
+        action = game.engine_v2.choose_action(leaf_state, leaf.legal, leaf.legal_count);
+    } else if (config_.opponent == EvalScriptedBotKind::EngineV3) {
+        action = game.engine_v3.choose_action(leaf_state, leaf.legal, leaf.legal_count);
+    } else {
+        action = eval_scripted_action(leaf_state, leaf.legal, leaf.legal_count, config_.opponent, game.rng);
+    }
     if (!leaf.legal.test(action)) {
         action = leaf.legal_count > 0 ? leaf.legal.nth_set(0U) : A_PASS;
     }

@@ -175,6 +175,9 @@ void add_default_kingdom(Setup& setup) noexcept {
     if (name == "engine") {
         return BotKind::Engine;
     }
+    if (name == "engine3") {
+        return BotKind::EngineV3;
+    }
     return BotKind::BigMoney;
 }
 
@@ -184,6 +187,7 @@ void add_default_kingdom(Setup& setup) noexcept {
     BigMoneyBot& big_money,
     HeuristicBot& heuristic,
     EngineBot& engine,
+    EngineBotV3& engine_v3,
     const GameState& state,
     const ActionMask& legal,
     int legal_count) noexcept {
@@ -194,6 +198,8 @@ void add_default_kingdom(Setup& setup) noexcept {
         return heuristic.choose_action(state, legal, legal_count);
     case BotKind::Engine:
         return engine.choose_action(state, legal, legal_count);
+    case BotKind::EngineV3:
+        return engine_v3.choose_action(state, legal, legal_count);
     case BotKind::BigMoney:
     default:
         return big_money.choose_action(state, legal, legal_count);
@@ -259,6 +265,7 @@ int main(int argc, char** argv) {
     BigMoneyBot big_money{};
     HeuristicBot heuristic{};
     EngineBot engine{};
+    EngineBotV3 engine_v3{};
 
     constexpr PlayerId kHuman = 0;
     bool done = state.phase == static_cast<std::uint8_t>(Phase::Over);
@@ -272,7 +279,16 @@ int main(int argc, char** argv) {
 
         const PlayerId current = Game::current_decision(state).player;
         if (current != kHuman) {
-            const Action action = choose_bot(bot_kind, random, big_money, heuristic, engine, state, legal, legal_count);
+            const Action action = choose_bot(
+                bot_kind,
+                random,
+                big_money,
+                heuristic,
+                engine,
+                engine_v3,
+                state,
+                legal,
+                legal_count);
             std::cout << "Bot chooses " << option_label(state, action) << "\n";
             done = Game::step(state, action);
             continue;

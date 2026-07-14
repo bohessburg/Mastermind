@@ -1,4 +1,5 @@
 #include "v2/drivers/bots.h"
+#include "v2/mcts/eval.h"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -47,22 +48,59 @@ void require_bot_picks_legal(const GameState& state, const ActionMask& legal, in
     BigMoneyBot big_money{};
     HeuristicBot heuristic{};
     EngineBot engine{};
+    EngineBotV3 engine_v3{};
 
     const Action random_action = random.choose_action(state, legal, legal_count);
     const Action big_money_action = big_money.choose_action(state, legal, legal_count);
     const Action heuristic_action = heuristic.choose_action(state, legal, legal_count);
     const Action engine_action = engine.choose_action(state, legal, legal_count);
+    const Action engine_v3_action = engine_v3.choose_action(state, legal, legal_count);
 
     REQUIRE(legal.test(random_action));
     REQUIRE(legal.test(big_money_action));
     REQUIRE(legal.test(heuristic_action));
     REQUIRE(legal.test(engine_action));
+    REQUIRE(legal.test(engine_v3_action));
 }
 
 void add_options(ActionMask& mask, std::uint8_t count) noexcept {
     for (std::uint8_t option = 0; option < count; ++option) {
         mask.set(option_action(option));
     }
+}
+
+[[nodiscard]] MatchupResult random_kingdom_matchup(
+    BotSpec bot_a,
+    BotSpec bot_b,
+    std::uint16_t games,
+    std::uint64_t seed) noexcept {
+    MatchupResult result{};
+    result.games = games;
+    for (std::uint16_t game = 0; game < games; ++game) {
+        const std::uint64_t pair = static_cast<std::uint64_t>(game / 2U);
+        const Setup setup = random_mcts_eval_setup(seed ^ (0xD1B5'4A32'D192'ED03ULL * (pair + 1U)));
+        const bool swapped = (game & 1U) != 0U;
+        const std::uint64_t game_seed = seed + (0x9E37'79B9'7F4A'7C15ULL * (pair + 1U));
+        const GameResult one = run_game(
+            setup,
+            game_seed,
+            swapped ? bot_b : bot_a,
+            swapped ? bot_a : bot_b);
+        if (one.truncated) {
+            ++result.truncated;
+        }
+        if (one.winner == NONE) {
+            ++result.ties;
+        } else {
+            const bool a_won = swapped ? one.winner == 1U : one.winner == 0U;
+            if (a_won) {
+                ++result.wins_a;
+            } else {
+                ++result.wins_b;
+            }
+        }
+    }
+    return result;
 }
 
 } // namespace
@@ -99,6 +137,55 @@ TEST_CASE("v2 EngineBot beats RandomBot in eval smoke", "[v2][bots]") {
         << " truncated=" << engine_random.truncated);
     REQUIRE(engine_random.truncated == 0U);
     REQUIRE(engine_random.win_rate_a() > 0.90);
+}
+
+TEST_CASE("v2 EngineBotV3 beats RandomBot in eval smoke", "[v2][bots]") {
+    const MatchupResult engine_random = eval_matchup(
+        BotSpec{BotKind::EngineV3, 0x3001U},
+        BotSpec{BotKind::Random, 0x4001U},
+        200,
+        0x5151'0004U);
+    INFO("EngineV3 wins=" << engine_random.wins_a
+        << " Random wins=" << engine_random.wins_b
+        << " ties=" << engine_random.ties
+        << " truncated=" << engine_random.truncated);
+    REQUIRE(engine_random.truncated == 0U);
+    REQUIRE(engine_random.win_rate_a() > 0.90);
+}
+
+TEST_CASE("v2 EngineBotV3 holds its gate vs EngineBot on random kingdoms", "[v2][bots]") {
+    const MatchupResult result = random_kingdom_matchup(
+        BotSpec{BotKind::EngineV3, 0x5100U},
+        BotSpec{BotKind::Engine, 0x5200U},
+        1000U,
+        0x5151'0005U);
+    INFO("EngineV3 wins=" << result.wins_a
+        << " Engine wins=" << result.wins_b
+        << " ties=" << result.ties
+        << " truncated=" << result.truncated);
+    REQUIRE(result.games == 1000U);
+    REQUIRE(result.truncated == 0U);
+    REQUIRE(result.wins_a + result.wins_b + result.ties == result.games);
+    // Measured 2026-07-13: 50.65% seat-adjusted over 10k games (v3 ahead of
+    // v2 in decided games). Gate well below to absorb seed variance while
+    // catching real regressions toward the pre-tuning 31-45% range.
+    REQUIRE(result.wins_a >= 440U);
+    REQUIRE(result.wins_a + 40U >= result.wins_b);
+}
+
+TEST_CASE("v2 EngineBotV3 beats BigMoney on random kingdoms", "[v2][bots]") {
+    const MatchupResult result = random_kingdom_matchup(
+        BotSpec{BotKind::EngineV3, 0x5300U},
+        BotSpec{BotKind::BigMoney, 0x5400U},
+        1000U,
+        0x5151'0006U);
+    INFO("EngineV3 wins=" << result.wins_a
+        << " BigMoney wins=" << result.wins_b
+        << " ties=" << result.ties
+        << " truncated=" << result.truncated);
+    REQUIRE(result.truncated == 0U);
+    // Measured 2026-07-13: 75.4% seat-adjusted over 10k games.
+    REQUIRE(result.win_rate_a() > 0.70);
 }
 
 TEST_CASE("v2 bot policies return legal actions for every decision kind", "[v2][bots]") {
@@ -177,6 +264,7 @@ TEST_CASE("v2 bots complete all-card kingdom games without stalls", "[v2][bots]"
         BotKind::BigMoney,
         BotKind::Heuristic,
         BotKind::Engine,
+        BotKind::EngineV3,
     };
 
     for (const BotKind kind : kBots) {
