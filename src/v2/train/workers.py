@@ -32,12 +32,13 @@ from .inference_server import (
     deserialize_cpu_state_dict,
     serialize_cpu_state_dict,
 )
-from .model import DominionNet
+from .model import build_model, model_config_dict
 from .observation import obs_size_for_config, obs_size_for_version
 from .selfplay import SelfPlayStats, make_runner_config, route_leaf_evaluations
 
 
 PackedGameRecords = tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]
+ModelStatePayload = bytes | tuple[bytes, dict[str, Any]]
 
 
 @dataclass(frozen=True)
@@ -111,6 +112,23 @@ def build_slot_manifest(segments: list[SelfPlaySegment]) -> list[SelfPlaySlotMan
     if len({slot.game_index for slot in slots}) != len(slots):
         raise ValueError("self-play slot manifest contains duplicate game indices")
     return slots
+
+
+def _unpack_model_state_payload(
+    payload: ModelStatePayload,
+    fallback_model_config: object,
+) -> tuple[bytes, dict[str, Any]]:
+    """Accept legacy state-only payloads and architecture-aware new payloads."""
+    if isinstance(payload, bytes):
+        return payload, model_config_dict(fallback_model_config)
+    if (
+        isinstance(payload, tuple)
+        and len(payload) == 2
+        and isinstance(payload[0], bytes)
+        and isinstance(payload[1], dict)
+    ):
+        return payload[0], dict(payload[1])
+    raise TypeError("model state payload must be bytes or (bytes, model_config)")
 
 
 def game_quotas(total_games: int, workers: int) -> list[int]:
@@ -915,15 +933,10 @@ def _worker_main(
             assert inference_endpoints is not None
             evaluate, shared_views = _server_evaluator(inference_endpoints, worker_index)
             collect_max_batch = inference_endpoints.request_batch_size
-            model: DominionNet | None = None
+            model: torch.nn.Module | None = None
         else:
             assert device is not None
-            model = DominionNet(
-                obs_size,
-                dz.ACTION_SPACE_SIZE,
-                config.model.hidden_sizes,
-                input_scale=config.model.input_scale,
-            ).to(device)
+            model = build_model(config.model, obs_size, dz.ACTION_SPACE_SIZE).to(device)
             model.eval()
             evaluate = _local_evaluator(model, device)
             collect_max_batch = config.selfplay.max_batch
@@ -937,20 +950,19 @@ def _worker_main(
             if command[0] == "stop":
                 return
             _, generation, target_games, state_payload, segments, model_state_payloads = command
-            model_table: list[DominionNet] = []
+            model_table: list[torch.nn.Module] = []
             if model is not None:
                 primary_payload = model_state_payloads[0] if model_state_payloads else state_payload
-                model.load_state_dict(deserialize_cpu_state_dict(primary_payload))
+                if primary_payload is None:
+                    raise RuntimeError("local self-play is missing a model state payload")
+                primary_state, _ = _unpack_model_state_payload(primary_payload, config.model)
+                model.load_state_dict(deserialize_cpu_state_dict(primary_state))
                 model.eval()
                 model_table.append(model)
                 for payload in model_state_payloads[1:]:
-                    opponent = DominionNet(
-                        obs_size,
-                        dz.ACTION_SPACE_SIZE,
-                        config.model.hidden_sizes,
-                        input_scale=config.model.input_scale,
-                    ).to(device)
-                    opponent.load_state_dict(deserialize_cpu_state_dict(payload))
+                    opponent_state, opponent_config = _unpack_model_state_payload(payload, config.model)
+                    opponent = build_model(opponent_config, obs_size, dz.ACTION_SPACE_SIZE).to(device)
+                    opponent.load_state_dict(deserialize_cpu_state_dict(opponent_state))
                     opponent.eval()
                     model_table.append(opponent)
             if segments:
@@ -1089,7 +1101,7 @@ class ParallelSelfPlayPool:
         replay: Any,
         generation: int,
         segments: list[SelfPlaySegment] | None = None,
-        model_state_payloads: list[bytes] | None = None,
+        model_state_payloads: list[ModelStatePayload] | None = None,
     ) -> ParallelSelfPlayResult:
         if self.inference_server is not None:
             self.inference_server.ensure_alive()

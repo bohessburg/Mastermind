@@ -12,6 +12,7 @@ import atexit
 import copy
 import io
 import json
+import logging
 import multiprocessing as mp
 import queue
 import time
@@ -32,8 +33,11 @@ except ImportError:  # pragma: no cover - supported CPython versions provide it
 import dominion_v2_py as dz
 
 from .config import TrainConfig
-from .model import DominionNet
+from .model import build_model
 from .observation import obs_size_for_config
+
+
+logger = logging.getLogger(__name__)
 
 
 def _align(offset: int, alignment: int = 8) -> int:
@@ -275,6 +279,76 @@ class _GenerationMetrics:
         return metrics
 
 
+def _normalized_server_batch_buckets(buckets: list[int] | None) -> tuple[int, ...]:
+    """Validate and normalize configured static server forward sizes."""
+
+    if buckets is None:
+        return ()
+    if not isinstance(buckets, list):
+        raise ValueError("server_batch_buckets must be a list of positive integers or null")
+    if any(
+        not isinstance(bucket, int) or isinstance(bucket, bool) or bucket <= 0
+        for bucket in buckets
+    ):
+        raise ValueError("server_batch_buckets must contain only positive integers")
+    return tuple(sorted(set(buckets)))
+
+
+def _bucketed_batch_size(count: int, buckets: tuple[int, ...] | list[int] | None) -> int:
+    """Return the smallest configured static shape that can hold ``count``."""
+
+    if not isinstance(count, int) or isinstance(count, bool) or count <= 0:
+        raise ValueError("batch count must be a positive integer")
+    if not buckets:
+        return count
+    return min((bucket for bucket in buckets if bucket >= count), default=count)
+
+
+class _ServerEvaluator(torch.nn.Module):
+    """Make each architecture's existing ``evaluate`` path compilable as one call."""
+
+    def __init__(self, model: torch.nn.Module):
+        super().__init__()
+        self.model = model
+
+    def forward(self, obs: torch.Tensor, legal_mask: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        return self.model.evaluate(obs, legal_mask)
+
+
+def compile_server_evaluator(model: torch.nn.Module) -> torch.nn.Module:
+    """Compile the exact server evaluation path without changing weight ownership.
+
+    ``fullgraph=True`` intentionally rejects graph breaks during startup warmup
+    rather than silently partitioning a serving forward into a slower eager
+    fallback.  Static bucket inputs then let ``reduce-overhead`` capture each
+    compiled CUDA graph outside the request path.
+    """
+
+    if not hasattr(torch, "compile"):
+        raise RuntimeError("server_compile requires a PyTorch build with torch.compile")
+    return torch.compile(
+        _ServerEvaluator(model).eval(),
+        mode="reduce-overhead",
+        fullgraph=True,
+    )
+
+
+def _maybe_compile_server_evaluator(
+    model: torch.nn.Module,
+    device: torch.device,
+    enabled: bool,
+) -> torch.nn.Module | None:
+    if not enabled:
+        return None
+    if device.type != "cuda":
+        logger.warning(
+            "server_compile=true is ignored on %s; compilation is enabled only for CUDA servers",
+            device.type,
+        )
+        return None
+    return compile_server_evaluator(model)
+
+
 class _PinnedStaging:
     """Persistent host staging for a complete server batch and its responses."""
 
@@ -301,23 +375,100 @@ class _PinnedStaging:
             offset = end
         return offset
 
-    def forward(self, model: DominionNet, count: int, use_fp16: bool) -> float:
+    def zero_inputs(self, count: int) -> None:
+        """Prepare an all-zero static input shape for warmup or bucket padding."""
+
+        self.obs[:count].zero_()
+        self.masks[:count].zero_()
+
+    def forward(
+        self,
+        model: torch.nn.Module,
+        count: int,
+        use_fp16: bool,
+        *,
+        evaluator: torch.nn.Module | None = None,
+        use_bf16: bool = False,
+        batch_buckets: tuple[int, ...] | list[int] | None = None,
+    ) -> float:
+        forward_count = _bucketed_batch_size(count, batch_buckets)
+        if forward_count > self.obs.shape[0]:
+            raise ValueError("bucketed server batch exceeds staging capacity")
+        if forward_count > count:
+            # The zero legal mask is immaterial to real rows, and keeps the
+            # padded rows harmless for both architecture evaluation paths.
+            self.zero_inputs_slice(count, forward_count)
         start = time.perf_counter()
         if self.device.type == "cuda":
-            obs = self.obs[:count].to(self.device, non_blocking=True)
-            masks = self.masks[:count].to(self.device, non_blocking=True)
-            with torch.autocast(device_type="cuda", dtype=torch.float16, enabled=use_fp16):
-                policies, values = model.evaluate(obs, masks)
+            obs = self.obs[:forward_count].to(self.device, non_blocking=True)
+            masks = self.masks[:forward_count].to(self.device, non_blocking=True)
+            if use_bf16:
+                with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+                    if evaluator is None:
+                        policies, values = model.evaluate(obs, masks)
+                    else:
+                        policies, values = evaluator(obs, masks)
+            elif evaluator is None:
+                # Keep the legacy CUDA eager path structurally unchanged when
+                # every new server knob is disabled.
+                with torch.autocast(device_type="cuda", dtype=torch.float16, enabled=use_fp16):
+                    policies, values = model.evaluate(obs, masks)
+            else:
+                with torch.autocast(device_type="cuda", dtype=torch.float16, enabled=use_fp16):
+                    policies, values = evaluator(obs, masks)
             # Persistent pinned response tensors receive each aggregate output
             # once; individual worker slices are then copied into their rings.
-            self.values[:count].copy_(values.float(), non_blocking=True)
-            self.policies[:count].copy_(policies.float(), non_blocking=True)
+            if forward_count == count:
+                self.values[:count].copy_(values.float(), non_blocking=True)
+                self.policies[:count].copy_(policies.float(), non_blocking=True)
+            else:
+                self.values[:count].copy_(values[:count].float(), non_blocking=True)
+                self.policies[:count].copy_(policies[:count].float(), non_blocking=True)
             torch.cuda.current_stream(self.device).synchronize()
         else:
-            policies, values = model.evaluate(self.obs[:count], self.masks[:count])
-            self.values[:count].copy_(values.float())
-            self.policies[:count].copy_(policies.float())
+            if evaluator is None:
+                policies, values = model.evaluate(self.obs[:forward_count], self.masks[:forward_count])
+            else:
+                policies, values = evaluator(self.obs[:forward_count], self.masks[:forward_count])
+            if forward_count == count:
+                self.values[:count].copy_(values.float())
+                self.policies[:count].copy_(policies.float())
+            else:
+                self.values[:count].copy_(values[:count].float())
+                self.policies[:count].copy_(policies[:count].float())
         return time.perf_counter() - start
+
+    def zero_inputs_slice(self, start: int, end: int) -> None:
+        self.obs[start:end].zero_()
+        self.masks[start:end].zero_()
+
+
+def _warm_server_evaluator(
+    staging: _PinnedStaging,
+    model: torch.nn.Module,
+    evaluator: torch.nn.Module | None,
+    use_fp16: bool,
+    use_bf16: bool,
+    batch_buckets: tuple[int, ...],
+    server_max_batch: int,
+) -> None:
+    """Compile/capture static serving shapes before the first worker request."""
+
+    if evaluator is None and not batch_buckets:
+        return
+    warmup_sizes = batch_buckets or (int(server_max_batch),)
+    for bucket in sorted(warmup_sizes, reverse=True):
+        staging.zero_inputs(bucket)
+        with torch.no_grad():
+            elapsed = staging.forward(
+                model,
+                bucket,
+                use_fp16,
+                evaluator=evaluator,
+                use_bf16=use_bf16,
+                batch_buckets=batch_buckets,
+            )
+        logger.info("inference server warmup bucket=%d elapsed_ms=%.3f", bucket, elapsed * 1000.0)
 
 
 def _server_device(name: str) -> torch.device:
@@ -343,14 +494,39 @@ def _server_main(
     try:
         device = _server_device(config.server_device)
         obs_size = obs_size_for_config(config)
-        model = DominionNet(
-            obs_size,
-            dz.ACTION_SPACE_SIZE,
-            config.model.hidden_sizes,
-            input_scale=config.model.input_scale,
-        ).to(device)
+        model = build_model(config.model, obs_size, dz.ACTION_SPACE_SIZE).to(device)
         model.eval()
-        staging = _PinnedStaging(device, int(config.server_max_batch), obs_size)
+        batch_buckets = _normalized_server_batch_buckets(config.server_batch_buckets)
+        staging = _PinnedStaging(
+            device,
+            max(int(config.server_max_batch), max(batch_buckets, default=0)),
+            obs_size,
+        )
+        use_bf16 = bool(config.server_autocast_bf16)
+        if use_bf16 and device.type != "cuda":
+            logger.warning("server_autocast_bf16=true is ignored on %s; CUDA is required", device.type)
+            use_bf16 = False
+        if use_bf16 and config.server_fp16:
+            logger.warning("server_autocast_bf16=true takes precedence over server_fp16=true")
+        evaluator: torch.nn.Module | None = None
+        try:
+            evaluator = _maybe_compile_server_evaluator(model, device, bool(config.server_compile))
+            _warm_server_evaluator(
+                staging,
+                model,
+                evaluator,
+                bool(config.server_fp16),
+                use_bf16,
+                batch_buckets,
+                int(config.server_max_batch),
+            )
+        except Exception as exc:
+            if evaluator is not None:
+                raise RuntimeError(
+                    "server_compile warmup failed; refusing to fall back to eager execution. "
+                    "Check the full-graph compiler error above."
+                ) from exc
+            raise
         if endpoints.transport == "shm":
             assert endpoints.shared_memory_specs is not None
             views = [WorkerSharedMemoryViews(spec) for spec in endpoints.shared_memory_specs]
@@ -507,7 +683,14 @@ def _server_main(
                 break
             batch_wait = time.perf_counter() - wait_start
             assert staging.load_requests(requests) == batch_size
-            inference_time = staging.forward(model, batch_size, bool(config.server_fp16))
+            inference_time = staging.forward(
+                model,
+                batch_size,
+                bool(config.server_fp16),
+                evaluator=evaluator,
+                use_bf16=use_bf16,
+                batch_buckets=batch_buckets,
+            )
             metrics.evals += batch_size
             metrics.batches += 1
             metrics.inference_time += inference_time

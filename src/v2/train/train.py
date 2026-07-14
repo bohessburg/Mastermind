@@ -47,7 +47,7 @@ if __package__ in (None, ""):
         seed_league_checkpoints,
     )
     from src.v2.train.inference_server import InferenceServer, serialize_cpu_state_dict
-    from src.v2.train.model import DominionNet, count_parameters, masked_policy_loss
+    from src.v2.train.model import build_model, count_parameters, masked_policy_loss, model_config_dict
     from src.v2.train.observation import obs_size_for_config, obs_size_for_version, obs_version_for_checkpoint
     from src.v2.train.replay import ReplayBuffer, load_replay_state, save_replay_state
     from src.v2.train.selfplay import SelfPlayStats, run_routed_self_play_generation, run_self_play_generation
@@ -75,7 +75,7 @@ else:
         seed_league_checkpoints,
     )
     from .inference_server import InferenceServer, serialize_cpu_state_dict
-    from .model import DominionNet, count_parameters, masked_policy_loss
+    from .model import build_model, count_parameters, masked_policy_loss, model_config_dict
     from .observation import obs_size_for_config, obs_size_for_version, obs_version_for_checkpoint
     from .replay import ReplayBuffer, load_replay_state, save_replay_state
     from .selfplay import SelfPlayStats, run_routed_self_play_generation, run_self_play_generation
@@ -109,12 +109,7 @@ def seed_everything(seed: int, deterministic: bool = True) -> None:
 
 def build_objects(config: TrainConfig, device: torch.device):
     obs_size = obs_size_for_config(config)
-    model = DominionNet(
-        obs_size,
-        dz.ACTION_SPACE_SIZE,
-        config.model.hidden_sizes,
-        input_scale=config.model.input_scale,
-    ).to(device)
+    model = build_model(config.model, obs_size, dz.ACTION_SPACE_SIZE).to(device)
     optimizer = torch.optim.Adam(
         model.parameters(),
         lr=config.optim.lr,
@@ -122,6 +117,18 @@ def build_objects(config: TrainConfig, device: torch.device):
     )
     replay = ReplayBuffer(config.replay.capacity, obs_size, dz.ACTION_SPACE_SIZE, config.seed ^ 0xA11CE)
     return model, optimizer, replay
+
+
+def validate_model_config(config: TrainConfig) -> None:
+    """Validate architecture choices before a training run allocates a model."""
+    model_config = model_config_dict(config.model)
+    arch = model_config.get("arch", "mlp")
+    if not isinstance(arch, str):
+        raise ValueError("model.arch must be a string")
+    if arch not in {"mlp", "card_transformer"}:
+        raise ValueError(f"unknown model.arch {arch!r}; expected 'mlp' or 'card_transformer'")
+    if arch == "card_transformer" and int(config.selfplay.obs_version) != 2:
+        raise ValueError("model.arch='card_transformer' requires selfplay.obs_version == 2")
 
 
 def train_step(
@@ -228,6 +235,7 @@ def load_checkpoint(path: str | Path, device: torch.device):
         from .config import _merge_dataclass
 
     _merge_dataclass(cfg, cfg_dict)
+    validate_model_config(cfg)
     model, optimizer, replay = build_objects(cfg, device)
     model.load_state_dict(payload["model"])
     optimizer.load_state_dict(payload["optimizer"])
@@ -283,18 +291,37 @@ def load_initial_weights(
     payload = load_full_checkpoint(checkpoint_path, device)
     checkpoint_model, checkpoint_selfplay = _initial_weights_config(payload, checkpoint_path)
 
-    checkpoint_hidden_sizes = checkpoint_model.get("hidden_sizes")
-    expected_hidden_sizes = list(config.model.hidden_sizes)
-    if not isinstance(checkpoint_hidden_sizes, list):
+    checkpoint_arch = checkpoint_model.get("arch", "mlp")
+    expected_model = model_config_dict(config.model)
+    expected_arch = expected_model.get("arch", "mlp")
+    if checkpoint_arch != expected_arch:
         raise ValueError(
-            f"init-weights checkpoint {checkpoint_path} is missing config.model.hidden_sizes; "
-            "cannot validate model architecture"
+            f"init-weights checkpoint {checkpoint_path} has model.arch {checkpoint_arch!r}, "
+            f"but the current run requires {expected_arch!r}"
         )
-    if checkpoint_hidden_sizes != expected_hidden_sizes:
-        raise ValueError(
-            f"init-weights checkpoint {checkpoint_path} has hidden_sizes {checkpoint_hidden_sizes}, "
-            f"but the current run requires {expected_hidden_sizes}"
-        )
+    if checkpoint_arch == "mlp":
+        checkpoint_hidden_sizes = checkpoint_model.get("hidden_sizes")
+        expected_hidden_sizes = list(config.model.hidden_sizes)
+        if not isinstance(checkpoint_hidden_sizes, list):
+            raise ValueError(
+                f"init-weights checkpoint {checkpoint_path} is missing config.model.hidden_sizes; "
+                "cannot validate model architecture"
+            )
+        if checkpoint_hidden_sizes != expected_hidden_sizes:
+            raise ValueError(
+                f"init-weights checkpoint {checkpoint_path} has hidden_sizes {checkpoint_hidden_sizes}, "
+                f"but the current run requires {expected_hidden_sizes}"
+            )
+    elif checkpoint_arch == "card_transformer":
+        for key, default in (("d_model", 192), ("n_layers", 3), ("n_heads", 4), ("ffn_multiplier", 4), ("dropout", 0.0)):
+            if checkpoint_model.get(key, default) != expected_model.get(key, default):
+                raise ValueError(
+                    f"init-weights checkpoint {checkpoint_path} has {key} "
+                    f"{checkpoint_model.get(key, default)!r}, but the current run requires "
+                    f"{expected_model.get(key, default)!r}"
+                )
+    else:
+        raise ValueError(f"init-weights checkpoint {checkpoint_path} has unknown model.arch {checkpoint_arch!r}")
 
     stored_obs_version = checkpoint_selfplay.get("obs_version")
     if not isinstance(stored_obs_version, int) or isinstance(stored_obs_version, bool):
@@ -304,7 +331,7 @@ def load_initial_weights(
     required_obs_version = int(config.selfplay.obs_version)
     try:
         stored_obs_width = obs_size_for_version(stored_obs_version)
-        model_obs_version = obs_version_for_checkpoint(payload)
+        model_obs_version = 2 if checkpoint_arch == "card_transformer" else obs_version_for_checkpoint(payload)
         model_obs_width = obs_size_for_version(model_obs_version)
         required_obs_width = obs_size_for_config(config)
     except (TypeError, ValueError) as exc:
@@ -323,16 +350,17 @@ def load_initial_weights(
             f"obs_version {required_obs_version} and input width {required_obs_width}"
         )
 
-    raw_input_scale = checkpoint_model.get("input_scale", 1.0)
-    if isinstance(raw_input_scale, bool) or not isinstance(raw_input_scale, (int, float)) or not isfinite(raw_input_scale):
-        raise ValueError(f"init-weights checkpoint {checkpoint_path} has an invalid config.model.input_scale")
-    stored_input_scale = float(raw_input_scale)
-    required_input_scale = float(config.model.input_scale)
-    if stored_input_scale != required_input_scale:
-        raise ValueError(
-            f"init-weights checkpoint {checkpoint_path} has input_scale {stored_input_scale}, "
-            f"but the current run requires {required_input_scale}"
-        )
+    if checkpoint_arch == "mlp":
+        raw_input_scale = checkpoint_model.get("input_scale", 1.0)
+        if isinstance(raw_input_scale, bool) or not isinstance(raw_input_scale, (int, float)) or not isfinite(raw_input_scale):
+            raise ValueError(f"init-weights checkpoint {checkpoint_path} has an invalid config.model.input_scale")
+        stored_input_scale = float(raw_input_scale)
+        required_input_scale = float(config.model.input_scale)
+        if stored_input_scale != required_input_scale:
+            raise ValueError(
+                f"init-weights checkpoint {checkpoint_path} has input_scale {stored_input_scale}, "
+                f"but the current run requires {required_input_scale}"
+            )
 
     try:
         model.load_state_dict(payload["model"])
@@ -545,6 +573,7 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
         raise ValueError("init_weights must be a checkpoint path string")
     if resume is not None and config.init_weights:
         raise ValueError("--resume and --init-weights cannot be used together")
+    validate_model_config(config)
     device = select_device(config.device)
     seed_everything(config.seed, deterministic=device.type == "cpu")
     resume = resolve_resume_path(resume, requested.checkpoint_dir)
@@ -560,6 +589,9 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
         config.server_max_batch = requested.server_max_batch
         config.server_max_wait_ms = requested.server_max_wait_ms
         config.server_fp16 = requested.server_fp16
+        config.server_compile = requested.server_compile
+        config.server_autocast_bf16 = requested.server_autocast_bf16
+        config.server_batch_buckets = requested.server_batch_buckets
         config.server_response_timeout_s = requested.server_response_timeout_s
         config.server_transport = requested.server_transport
         config.server_shm_slots = requested.server_shm_slots
@@ -579,6 +611,7 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
         config.kingdom_curriculum = requested.kingdom_curriculum
         config.gate_warmup_generations = requested.gate_warmup_generations
         config.gate_force_accept_every = requested.gate_force_accept_every
+        validate_model_config(config)
         if config.device == "auto":
             config.device = device.type
     else:
@@ -635,7 +668,7 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
     )
     league_performance: dict[str, tuple[int, int]] = {}
     configured_league_opponents: set[str] = set()
-    best_model: DominionNet | None = None
+    best_model: torch.nn.Module | None = None
     best_generation: int | None = None
     best_path: Path | None = None
     if league_configured:
@@ -748,12 +781,23 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
                 else:
                     if inference_server is not None:
                         inference_server.sync_weights(active_model, generation)
-                    payloads = [] if inference_server is not None else [serialize_cpu_state_dict(active_model)]
+                    payloads = []
                     if inference_server is None:
-                        payloads.extend(
-                            serialize_cpu_state_dict(load_best_checkpoint(config, device, path)[0])
-                            for path in league_paths
+                        payloads.append(
+                            (
+                                serialize_cpu_state_dict(active_model),
+                                model_config_dict(getattr(active_model, "_dominion_model_config", config.model)),
+                            )
                         )
+                    if inference_server is None:
+                        for path in league_paths:
+                            opponent, _ = load_best_checkpoint(config, device, path)
+                            payloads.append(
+                                (
+                                    serialize_cpu_state_dict(opponent),
+                                    model_config_dict(getattr(opponent, "_dominion_model_config", config.model)),
+                                )
+                            )
                     parallel_result = pool.generate(
                         active_model,
                         replay,

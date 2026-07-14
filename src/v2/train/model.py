@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
+from dataclasses import asdict, is_dataclass
+from typing import Any
+
 import torch
 from torch import nn
 
@@ -39,6 +43,55 @@ class DominionNet(nn.Module):
         logits, values = self(obs)
         masked_logits = logits.masked_fill(~legal_mask, -1.0e9)
         return masked_logits, values
+
+
+def model_config_dict(model_config: Mapping[str, Any] | Any) -> dict[str, Any]:
+    """Return portable model metadata from a config mapping or dataclass."""
+    if isinstance(model_config, Mapping):
+        return dict(model_config)
+    if is_dataclass(model_config) and not isinstance(model_config, type):
+        return asdict(model_config)
+    raise TypeError("model config must be a mapping or dataclass instance")
+
+
+def build_model(model_config: Mapping[str, Any] | Any, obs_size: int, action_size: int) -> nn.Module:
+    """Build a policy/value network described by persisted model metadata.
+
+    ``arch`` intentionally defaults to ``mlp`` so checkpoints written before
+    architecture metadata existed reconstruct byte-for-byte-compatible
+    :class:`DominionNet` instances.
+    """
+    config = model_config_dict(model_config)
+    arch = config.get("arch", "mlp")
+    if not isinstance(arch, str):
+        raise ValueError("model.arch must be a string")
+    config["arch"] = arch
+
+    if arch == "mlp":
+        model: nn.Module = DominionNet(
+            obs_size,
+            action_size,
+            hidden_sizes=config.get("hidden_sizes", (1024, 1024, 512)),
+            input_scale=config.get("input_scale", 1.0),
+        )
+    elif arch == "card_transformer":
+        from .card_transformer import CardTokenNet
+
+        model = CardTokenNet(
+            obs_size,
+            action_size,
+            d_model=config.get("d_model", 192),
+            n_layers=config.get("n_layers", 3),
+            n_heads=config.get("n_heads", 4),
+            ffn_multiplier=config.get("ffn_multiplier", 4),
+            dropout=config.get("dropout", 0.0),
+        )
+    else:
+        raise ValueError(f"unknown model.arch {arch!r}; expected 'mlp' or 'card_transformer'")
+    # This non-state-dict metadata lets worker processes reconstruct a mixed
+    # league model table after its weights have been serialized independently.
+    model._dominion_model_config = config  # type: ignore[attr-defined]
+    return model
 
 
 def masked_policy_loss(logits: torch.Tensor, legal_mask: torch.Tensor, target: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:

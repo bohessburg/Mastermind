@@ -89,6 +89,7 @@ class Session:
     bandit_log_state: BanditLogState = field(default_factory=BanditLogState)
     connections: dict[str, WebSocket] = field(default_factory=dict)
     bot_rngs: list[random.Random] = field(default_factory=list)
+    scripted_bots: list[Any | None] = field(default_factory=list)
     nn_policies: dict[int, _NNPolicy] = field(default_factory=dict)
     thinking_delay_ms: int = 60
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
@@ -96,7 +97,7 @@ class Session:
 
 app = FastAPI(title="DominionZero v2 Web Server")
 sessions: dict[str, Session] = {}
-SEAT_KINDS = {"human", "bot", "bot:bigmoney", "bot:random"}
+SEAT_KINDS = {"human", "bot", "bot:engine3", "bot:bigmoney", "bot:random"}
 
 
 def _make_setup(players: int, kingdom: list[int]) -> dz.Setup:
@@ -126,6 +127,10 @@ def _seat_index(session: Session, token: str) -> int:
 
 def _is_bot_kind(kind: str) -> bool:
     return kind == "bot" or kind.startswith("bot:")
+
+
+def _is_scripted_kind(kind: str) -> bool:
+    return kind == "bot" or kind == "bot:engine3"
 
 
 def _is_nn_kind(kind: str) -> bool:
@@ -169,7 +174,7 @@ def _load_nn_policy(checkpoint_path: Path) -> _NNPolicy:
 
     try:
         import torch
-        from src.v2.train.model import DominionNet
+        from src.v2.train.model import build_model
     except ImportError as error:
         raise _NNCheckpointError("neural-network bot requires PyTorch") from error
 
@@ -184,16 +189,17 @@ def _load_nn_policy(checkpoint_path: Path) -> _NNPolicy:
         model_config = config["model"]
         if not isinstance(model_config, dict):
             raise TypeError("checkpoint model config must be a dict")
-        hidden_sizes = model_config["hidden_sizes"]
-        if not isinstance(hidden_sizes, (list, tuple)):
-            raise TypeError("hidden_sizes must be a list or tuple")
-        input_scale = float(model_config.get("input_scale", 1.0))
+        arch = model_config.get("arch", "mlp")
 
         selfplay_config = config.get("selfplay")
         if isinstance(selfplay_config, dict) and "obs_version" in selfplay_config:
             obs_version = int(selfplay_config["obs_version"])
             if obs_version not in (1, 2):
                 raise ValueError("checkpoint selfplay obs_version must be 1 or 2")
+        elif arch == "card_transformer":
+            # A CardTokenNet is structurally v2 even if a hand-written
+            # checkpoint omitted the self-play metadata.
+            obs_version = 2
         else:
             model_state = checkpoint["model"]
             if not isinstance(model_state, dict):
@@ -218,12 +224,7 @@ def _load_nn_policy(checkpoint_path: Path) -> _NNPolicy:
                 raise ValueError("checkpoint model input size is not a supported observation layout")
 
         obs_size = int(dz.OBS_SIZE_V1 if obs_version == 1 else dz.OBS_SIZE_V2)
-        model = DominionNet(
-            obs_size,
-            int(dz.ACTION_SPACE_SIZE),
-            hidden_sizes,
-            input_scale=input_scale,
-        )
+        model = build_model(model_config, obs_size, int(dz.ACTION_SPACE_SIZE))
         model.load_state_dict(checkpoint["model"])
         model.to("cpu")
         model.eval()
@@ -592,6 +593,12 @@ def _choose_bot_action(session: Session, seat: int) -> int:
     if _is_nn_kind(kind):
         return _choose_nn_action(session, seat)
 
+    if _is_scripted_kind(kind):
+        bot = session.scripted_bots[seat]
+        if bot is None:
+            raise RuntimeError(f"missing scripted bot for seat {seat}")
+        return int(bot.choose(session.game))
+
     policy = _bot_policy(kind)
     if policy == "random":
         rng = session.bot_rngs[seat]
@@ -778,7 +785,7 @@ async def create_session(payload: dict[str, Any]) -> dict[str, Any]:
             raise HTTPException(
                 status_code=400,
                 detail=(
-                    "seat kind must be human, bot, bot:bigmoney, bot:random, bot:nn, bot:nn:<path>, "
+                    "seat kind must be human, bot, bot:engine3, bot:bigmoney, bot:random, bot:nn, bot:nn:<path>, "
                     "bot:nnmcts, or bot:nnmcts:<path>"
                 ),
             )
@@ -807,6 +814,7 @@ async def create_session(payload: dict[str, Any]) -> dict[str, Any]:
             random.Random(seed ^ 0xB07 ^ ((index + 1) * 0x9E3779B97F4A7C15))
             for index in range(len(seats))
         ],
+        scripted_bots=[dz.ScriptedBot("engine3") if _is_scripted_kind(seat.kind) else None for seat in seats],
         nn_policies=nn_policies,
         thinking_delay_ms=thinking_delay_ms,
     )

@@ -10,8 +10,16 @@ from typing import Any
 
 @dataclass
 class ModelConfig:
+    # Explicit new configs self-describe their network while absent metadata
+    # in historical checkpoints remains equivalent to this default.
+    arch: str = "mlp"
     hidden_sizes: list[int] = field(default_factory=lambda: [1024, 1024, 512])
     input_scale: float = 1.0
+    d_model: int = 192
+    n_layers: int = 3
+    n_heads: int = 4
+    ffn_multiplier: int = 4
+    dropout: float = 0.0
 
 
 @dataclass
@@ -117,6 +125,16 @@ class TrainConfig:
     server_max_batch: int = 8192
     server_max_wait_ms: float = 2.0
     server_fp16: bool = False
+    # CUDA-only opt-in: compile the serving evaluation graph with
+    # torch.compile(mode="reduce-overhead"). Non-CUDA devices keep eager mode.
+    server_compile: bool = False
+    # CUDA-only opt-in. If this and server_fp16 are both enabled, bf16 wins.
+    # Server responses are always converted back to fp32 before transport.
+    server_autocast_bf16: bool = False
+    # Optional static forward sizes for CUDA graph-friendly serving. Each live
+    # batch is zero-padded to the smallest fitting bucket; larger batches run
+    # at their exact size.
+    server_batch_buckets: list[int] | None = None
     server_response_timeout_s: float = 30.0
     # Shared memory is the fast path; queue is retained for unsupported hosts.
     server_transport: str = "shm"

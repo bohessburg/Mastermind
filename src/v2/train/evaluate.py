@@ -19,12 +19,12 @@ except ModuleNotFoundError as exc:  # pragma: no cover - gives a clearer CLI err
 if __package__ in (None, ""):
     sys.path.append(str(Path(__file__).resolve().parents[3]))
     from src.v2.train.config import TrainConfig, _merge_dataclass
-    from src.v2.train.model import DominionNet, count_parameters
+    from src.v2.train.model import build_model, count_parameters
     from src.v2.train.observation import obs_size_for_version, obs_version_for_checkpoint
     from src.v2.train.train import load_full_checkpoint, seed_everything, select_device
 else:
     from .config import TrainConfig, _merge_dataclass
-    from .model import DominionNet, count_parameters
+    from .model import build_model, count_parameters
     from .observation import obs_size_for_version, obs_version_for_checkpoint
     from .train import load_full_checkpoint, seed_everything, select_device
 
@@ -77,17 +77,20 @@ def _load_checkpoint_config(payload: dict[str, Any]) -> TrainConfig:
     return cfg
 
 
-def load_model(checkpoint: str | Path, device: torch.device) -> tuple[DominionNet, TrainConfig]:
+def load_model(checkpoint: str | Path, device: torch.device) -> tuple[torch.nn.Module, TrainConfig]:
     payload = load_full_checkpoint(checkpoint, device)
     cfg = _load_checkpoint_config(payload)
-    # The saved first-layer width, rather than an optional config key, is the
-    # source of truth for legacy checkpoints and future layout migrations.
-    cfg.selfplay.obs_version = obs_version_for_checkpoint(payload)
-    model = DominionNet(
+    # Legacy MLP checkpoints infer their layout from the first-layer width.
+    # CardTokenNet has no observation-wide first layer and is intrinsically v2.
+    if cfg.model.arch == "card_transformer":
+        if int(cfg.selfplay.obs_version) != 2:
+            raise ValueError("card_transformer checkpoints require selfplay.obs_version == 2")
+    else:
+        cfg.selfplay.obs_version = obs_version_for_checkpoint(payload)
+    model = build_model(
+        cfg.model,
         obs_size_for_version(cfg.selfplay.obs_version),
         dz.ACTION_SPACE_SIZE,
-        cfg.model.hidden_sizes,
-        input_scale=cfg.model.input_scale,
     ).to(device)
     model.load_state_dict(payload["model"])
     model.eval()
@@ -107,6 +110,10 @@ def _opponent_kind(name: str):
     normalized = name.lower()
     if normalized == "engine":
         return dz.EvalScriptedBotKind.Engine
+    if normalized == "engine2":
+        return dz.EvalScriptedBotKind.EngineV2
+    if normalized == "engine3":
+        return dz.EvalScriptedBotKind.EngineV3
     if normalized == "bigmoney":
         return dz.EvalScriptedBotKind.BigMoney
     if normalized == "heuristic":
@@ -330,7 +337,11 @@ def ladder_counts(args: argparse.Namespace) -> list[tuple[str, int]]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--checkpoint", required=True)
-    parser.add_argument("--opponent", default="engine", choices=["engine", "bigmoney", "heuristic", "random", "mcts"])
+    parser.add_argument(
+        "--opponent",
+        default="engine",
+        choices=["engine", "engine2", "engine3", "bigmoney", "heuristic", "random", "mcts"],
+    )
     parser.add_argument("--games", type=int, default=200)
     parser.add_argument("--sims", type=int, default=400)
     parser.add_argument("--kingdoms", default="random", choices=["random", "fixed"])

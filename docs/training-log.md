@@ -636,3 +636,192 @@ games/hr (5x the low) AND the best eval of the campaign: 182W-15L-3T =
 features that fragment batches (by phase, by model, by sims tier) cost
 10x more than their game counts suggest; slot-level heterogeneity is the
 architecture that makes feature mixing free.
+
+C14 RUN HISTORY (2026-07-13): post-throughput-fix, c14 ran gens 8-38 at
+8.5-10K games/hr on the full recipe. Evals vs EngineBot v2 oscillated
+85-92% (gen 15 dip 84.8% coinciding with curriculum phase flip; gen 20
+89.7% with campaign-best BM sentinel 72/100 and vloss 0.251). BOX
+MIGRATION mid-run: box 2 (port 10169) proved flaky (one spontaneous
+restart wiped the container disk earlier in the campaign); migrated at
+gen 20 to a fresh RTX 5090 box (port 10913, verified different physical
+machine). gen_0020.pt pulled home (rsync --partial after two scp
+truncation corruptions — scp is banned for >10MB on this link), pushed
+to the new box with 12 lean c13 league seeds, resumed with --resume
+(config init_weights must be popped — mutual exclusion). COST: the 860MB
+replay buffer was not migrated, so gens 21+ trained from a fresh buffer:
+gen 21 dipped to 81.5%, recovered to 89.7% by gen 30; BM sentinel dropped
+to 59-60 and only partially recovered (64 at gen 35 vs 72 at gen 20).
+
+C14 REPERTOIRE PROBE (2026-07-13): c14-gen20 vs c13-gen65 policy buy
+preferences on an identical engine-forcing kingdom (Village/Smithy/Lab/
+Market/Festival/Cellar/Chapel/Moat/Council Room/Throne Room). c14 moved
+substantial probability mass from treasure to actions at the engine-
+critical price points: action mass $3: 21.3%->35.5%, $4: 31.9%->45.6%
+(Throne Room 6.5%->11.7%), $5: 27.3%->44.6% (Council Room 3.4%->6.5%).
+BUT the argmax buy remained money at every coin level (Silver at $3-5,
+Gold at $6-7). Verdict: the curriculum measurably softens the money
+prior but has not produced a committed engine line — mid-transition at
+best, and eval metrics were saturated/flat gens 20-38.
+
+C14 CUT (2026-07-13, gen 38, Jack's call): metrics plateaued (85-92%
+band, BM sentinel flat ~60-64), probe shows softening but no repertoire
+crossover. Flagship candidates: gen_0020 (89.7% eval, BM sentinel 72 —
+best sentinel) and gen_0030 (89.7% eval post-recovery). Artifacts pulled
+home: gen_0030/0035/0038 + metrics.csv + replay_state.npz (134MB, kept
+as OFFLINE VALIDATION DATA for the c15 architecture work). Conclusion
+carried forward: c13->c14 exhausted what data mixture + search tuning
+buys through a flat MLP; the remaining repertoire gap (no engine
+commitment, no attack response) is attributed to the ARCHITECTURE.
+
+C15 DESIGN — CARD-TOKEN TRANSFORMER (2026-07-13, approved by Jack):
+replace the flat MLP [1536,1536,768] over the 1717-float obs with a
+set-transformer over card tokens, built as a pure model-side change (the
+C++ encoder and obs v2 layout are UNTOUCHED; tokenization is a gather/
+reshape of the existing vector inside forward()).
+- TOKENS: one per card DefId present in the game (~17 for 2p: 10 kingdom
+  + 7 basics) + 1 global token. Card token = learned DefId embedding +
+  per-card scalars (own counts by zone log1p, opponent perfect-memory
+  counts, supply remaining, cost, type flags). Global token = phase,
+  coins/actions/buys, VP, turn, pile clock, decision kind.
+- BODY: 2-4 pre-LN transformer layers, d_model 128-256, 4 heads (~1.5-2M
+  params). Rationale: attention computes card-card relations directly
+  (Witch<->Moat, Village<->terminals) — the interaction structure a flat
+  MLP must discover as high-order feature conjunctions and demonstrably
+  hasn't.
+- POLICY: pointer head — card-indexed actions (play/buy/select X) scored
+  from card X's output token per action family; non-card actions from the
+  global token; assembled into the flat ACTION_SPACE_SIZE logit vector so
+  the evaluate(obs, mask) interface and all C++/worker plumbing are
+  unchanged. Kills the input_scale=16 hack (principled log1p featurization).
+- VALUE: from the global token. Margin targets unchanged.
+- GATES before any campaign: (1) offline fit on c14 replay_state.npz must
+  beat the MLP on held-out value+policy loss (reuse the input-conditioning
+  offline harness); (2) python-side eval throughput bench >= 70% of MLP
+  at realistic batch sizes, else shrink d_model/layers.
+- MIGRATION: from-scratch c15 (no warm start across architectures), but
+  the league loader reconstructs opponents from their own payload configs,
+  so c13/c14 checkpoints seed the ancestor league from gen 1. Recipe
+  otherwise carried over: margin targets, obs v2, league, curriculum,
+  tree reuse + guarded top-k, slot-manifest runner.
+
+C15 GATE 1 PASSED (2026-07-13): offline fit on 200K c14 replay positions
+(same split/losses, 3 epochs, lr 1e-3): CardTokenNet (1.52M params,
+d192/3L/4H) vs DominionNet (6.45M): val value MSE 0.202 vs 0.360 (-44%),
+val policy CE 1.152 vs 1.162, val total 1.354 vs 1.522 — transformer
+still improving at cutoff while the MLP had flattened. Correctness test
+validates tokenizer counts and pointer scatter against live engine state
+(tests/v2/py/test_card_transformer.py). Prototype delivered by Codex:
+src/v2/train/card_transformer.py + offline_fit.py. Remaining gate 2:
+eval throughput >=70% of MLP on a CUDA box (bench_eval.py, in progress
+with the train.py/league/web factory integration).
+
+C15 LAUNCHED (2026-07-13, box 3 ssh -p 10913): CardTokenNet from scratch
+(1,515,302 params, d192/3L/4H confirmed in launch banner) on the full c14
+recipe. Gate 2 passed on-box: compiled fullgraph + bf16 + bucketed
+inference = 364K evals/s @ bs256 / 438K @ bs1024 on the 5090 (~3-5x
+headroom over pipeline demand; eager was 69K and kernel-launch-bound).
+Integration shipped by Codex and reviewed: build_model() factory at every
+construction site (train/gating/workers/inference server/web), legacy
+arch-less checkpoints load as before (verified against real c14 gen_0020),
+server_compile/server_autocast_bf16/server_batch_buckets config knobs
+with per-bucket startup warmup, mixed-arch league worker table covered by
+tests (9 py tests green in pytest AND standalone modes). League kept per
+Jack's decision as cold-start collapse insurance (c1-c5 precedent), 11
+mixed-arch seeds (8 c13 + c14 gen_0020/0030/0038), removable mid-campaign
+for a causal read once early gens look healthy. GPU 90% at launch,
+1 trainer + 8 workers.
+
+BENCHMARK REFRAME (2026-07-13, Jack): "EngineBot" has never been a real
+engine player — it is bigmoney with extra logic (action purchases + pile
+clock), so every eval ceiling in this log (the 85-92% saturation, the
+"beat EngineBot" milestones) was measured against a money bot, and no
+part of the training loop ever contained genuine engine pressure: the
+league seeds are themselves nets trained against this benchmark, so
+seeding distilled anti-bigmoney play, not engines. This is the missing
+explanation for why engine repertoire never emerged even with the
+engine-forcing curriculum (opportunity without punishment). A separate
+session/agent is building a proper kingdom-aware engine bot that
+exploits engine-friendly kingdoms (DO NOT touch that code from this
+session). PLAN: c15 runs as designed (architecture experiment); when the
+new engine bot lands it becomes the eval benchmark AND likely a training
+opponent, and we scale back to a simpler c13-era recipe against it to
+see how much of the c14 machinery a real adversary replaces.
+
+C15 ENGINE3 CALIBRATION (2026-07-13, gen 19, 200 games @400 sims, random
+kingdoms, on-box isolated build): first honest strength reads vs the new
+kingdom-aware EngineBotV3 benchmark. c15 gen_0019 (transformer, from
+scratch, 19 gens): 94W-101L-5T = 48.2% excl ties. c14 gen_0020 (MLP
+flagship, warm-started lineage of 85+ gens): 37.4%. c13 gen_0065: 34.5%
+(other session's measurement). The 19-generation transformer beats the
+entire MLP lineage by ~11-14 points against real engine pressure and
+plays near-parity with v3 itself. Ending forensics: c15 games end by
+piles 42/200 vs c14's 12/200 — the transformer engages the pile game
+substantially more. Chart-bot evals remain saturated/uninformative;
+engine3 is now the benchmark of record per Jack.
+
+C15 CALIBRATION ADDENDUM — engine2 column (2026-07-13, same protocol):
+c15 gen_0019: 43.7% (83W-107L-10T, piles 34/200). c14 gen_0020: 35.8%
+(67W-120L-13T, piles 9/200). With c13 gen_0065 at 35.4% (engine2) /
+34.5% (engine3): both MLP flagships sit ~34-37% against either real
+engine bot; the gen-19 transformer is +8 vs engine2 and +11 vs engine3.
+
+C15 EMERGENT ATTACK RESPONSE VERIFIED (2026-07-13, gen 20): Jack observed
+anecdotal tit-for-tat attack behavior in local play. Probe (8 scripted
+games on a Witch/Militia/Moat kingdom; inject 2 Witches + 2 Militias into
+the opponent-collection obs fields, diff raw policy buy probs): c15-gen20
+attack-buy mass jumps $4: 16.0%->29.4%, $5: 25.7%->39.1%, $6-7: ~+6pts
+when the opponent owns attacks; Moat response flat (retaliation, not
+turtling); $8 stays on Province either way. c13-gen65 on identical
+protocol: <1pt movement everywhere — the MLP never learned to read the
+same perfect-memory fields. First verified emergent repertoire behavior
+attributable to the card-token architecture, present in the raw policy
+before search.
+
+C15 TIT-FOR-TAT STUDY (2026-07-13, gen 20 + sweep; 213 buy states, obs
+counterfactual edits, policy-only): (1) IN-KIND retaliation — opponent
+Witches raise own Witch buys (18.7->29.1% @$5) leaving Militia flat;
+opponent Militias do the reverse; opponent MOATS *discount* own Witch
+(18.7->16.9%), raise own Moat, and RAISE value (+0.76->+0.85). (2) Dose
+response: policy saturates at 2 enemy attacks (~39% attack mass @$5);
+value slides monotonically +0.76 / +0.24 / -0.03 / -0.28 at dose
+0/1/2/4 — one enemy attack card cuts assessed position by ~2/3. (3)
+Emergence sweep (gens 5/10/15/20, shared states): conditional response
+fully formed by GEN 5 (learned from mirror self-play; league seeds
+barely attack); later gens sharpen baseline aggression (9.7->15.4% @$4)
+rather than create the response. c13-gen65 identical protocol: <1pt.
+Probe script: titfortat_probe.py (session tmp; recreate from log if
+needed).
+
+C15 GEN-30 MILESTONES (2026-07-13): chart eval 93.9% (185-12-3), BM
+sentinel 82/100 (trajectory 58/65/64/69/75/82 — +10 past the c14-era
+ceiling of 72, still climbing, no oscillation), vloss 0.053 (best).
+ENGINE3 RE-CALIBRATION: gen_0030 100W-94L-6T = 51.6% excl ties @400
+sims — the NN is now ahead of EngineBotV3, the strongest scripted
+player, up from 48.2% at gen 19 (MLP flagships: 34-37%). First time any
+DominionZero net has beaten the best available scripted opponent.
+
+C15 SCORE-SNAPSHOT BIAS PROBE (2026-07-13, gen 30; Jack's theory from
+play: "buys Duchies to compensate when given curses"): 42 mid-game buy
+states, counterfactual obs edits. CONFIRMED at policy level: pure score
+deficit (opp +2 Duchies, own deck untouched) quadruples mid-game Duchy
+buys (1.2->4.9%); search amplifies further in real play. Twist: own +3
+curses -> reaches for ACTIONS (53.7->58.7%), not Duchies — the
+point-chasing is score-driven, not junk-driven. Deeper finding: value
+head over-prices snapshots — own +3 Estates (=+3 VP + junk) reads -0.78
+vs baseline -0.37, nearly as bad as +3 curses (-0.91): junk aversion and
+deficit aversion both directionally right but magnitude-miscalibrated.
+Same root as the 1600-sim regression (deeper search leans on value and
+amplifies distortion; 31.0% vs 48.2% @400 at gen 20). c16 candidate fix:
+temper margin targets (blend with win/loss or anneal margin weight) so
+mid-game deficits price as recoverable. Probe pattern: counterfactual
+obs edits, see also TIT-FOR-TAT STUDY entry.
+
+HUMAN BENCHMARK, STATED PLAINLY (2026-07-13, Jack): Jack has NEVER lost
+a game to any checkpoint, any architecture, any campaign. Closest ever:
+c15 gen-25, 29-27 (engine board, decided by endgame Duchy/Estates; see
+exports/rESH3EQclFbz2wN-.json). c15 gen-30 lost 48-16 to a committed
+Village/Witch/Sentry curse engine (exports/Ds7pDyZgtoXRZ74D.json).
+Scripted milestones (engine3 51.6%) establish strongest-artificial-
+player status only. Human W-L vs checkpoints is now a tracked metric of
+record; first bot win over Jack at full attention is the project's real
+milestone.

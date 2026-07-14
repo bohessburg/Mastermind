@@ -2,6 +2,7 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
+#include "v2/bots/scripted.h"
 #include "v2/core/actions.h"
 #include "v2/core/defs.h"
 #include "v2/core/determinize.h"
@@ -64,6 +65,62 @@ struct PySetup {
 
 struct PyGame {
     GameState state{};
+};
+
+struct PyScriptedBot {
+    EvalScriptedBotKind kind;
+    BigMoneyBot big_money{};
+    EngineBot engine_v2{};
+    EngineBotV3 engine_v3{};
+
+    explicit PyScriptedBot(const std::string& kind_name)
+        : PyScriptedBot(parse_kind(kind_name)) {}
+
+    explicit PyScriptedBot(EvalScriptedBotKind kind_value) : kind(kind_value) {
+        if (kind != EvalScriptedBotKind::BigMoney
+            && kind != EvalScriptedBotKind::EngineV2
+            && kind != EvalScriptedBotKind::EngineV3) {
+            throw std::invalid_argument(
+                "ScriptedBot kind must be BigMoney, EngineV2, or EngineV3");
+        }
+    }
+
+    [[nodiscard]] Action choose(const PyGame& game) {
+        if (game.state.phase == static_cast<std::uint8_t>(Phase::Over)) {
+            throw std::runtime_error("cannot choose an action for a finished game");
+        }
+
+        ActionMask legal{};
+        const int legal_count = Game::legal_actions(game.state, legal);
+        if (legal_count <= 0) {
+            throw std::runtime_error("game has no legal actions");
+        }
+
+        switch (kind) {
+        case EvalScriptedBotKind::BigMoney:
+            return big_money.choose_action(game.state, legal, legal_count);
+        case EvalScriptedBotKind::EngineV2:
+            return engine_v2.choose_action(game.state, legal, legal_count);
+        case EvalScriptedBotKind::EngineV3:
+            return engine_v3.choose_action(game.state, legal, legal_count);
+        default:
+            throw std::logic_error("unsupported ScriptedBot kind");
+        }
+    }
+
+private:
+    [[nodiscard]] static EvalScriptedBotKind parse_kind(const std::string& kind_name) {
+        if (kind_name == "bigmoney") {
+            return EvalScriptedBotKind::BigMoney;
+        }
+        if (kind_name == "engine2") {
+            return EvalScriptedBotKind::EngineV2;
+        }
+        if (kind_name == "engine3") {
+            return EvalScriptedBotKind::EngineV3;
+        }
+        throw std::invalid_argument("unknown ScriptedBot kind: " + kind_name);
+    }
 };
 
 [[nodiscard]] bool valid_player(const GameState& state, int player) noexcept {
@@ -1638,7 +1695,16 @@ PYBIND11_MODULE(dominion_v2_py, module) {
         .value("BigMoney", EvalScriptedBotKind::BigMoney)
         .value("Heuristic", EvalScriptedBotKind::Heuristic)
         .value("Random", EvalScriptedBotKind::Random)
-        .value("Mcts", EvalScriptedBotKind::Mcts);
+        .value("Mcts", EvalScriptedBotKind::Mcts)
+        .value("EngineV2", EvalScriptedBotKind::EngineV2)
+        .value("EngineV3", EvalScriptedBotKind::EngineV3);
+
+    py::class_<PyScriptedBot>(module, "ScriptedBot")
+        .def(py::init<const std::string&>(), py::arg("kind"))
+        .def(py::init<EvalScriptedBotKind>(), py::arg("kind"))
+        .def("choose", [](PyScriptedBot& self, const PyGame& game) {
+            return static_cast<std::uint32_t>(self.choose(game));
+        }, py::arg("game"));
 
     py::class_<EvalRunnerConfig>(module, "EvalRunnerConfig")
         .def(py::init([](

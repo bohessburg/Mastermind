@@ -20,7 +20,7 @@ from pathlib import Path
 import torch
 
 from .config import SelfPlayConfig, TrainConfig, validate_deep_slice_config
-from .model import DominionNet
+from .model import build_model, model_config_dict
 from .observation import obs_size_for_config, obs_size_for_version, obs_version_for_checkpoint
 
 
@@ -135,17 +135,16 @@ def _cpu_state_dict(model: torch.nn.Module) -> dict[str, torch.Tensor]:
     return {key: value.detach().cpu().clone() for key, value in model.state_dict().items()}
 
 
-def _checkpoint_input_scale(payload: object) -> float:
-    """Read optional model scaling metadata, retaining legacy checkpoint behavior."""
+def _checkpoint_model_config(payload: object, path: str | Path) -> dict:
     if not isinstance(payload, dict):
-        return 1.0
+        raise ValueError(f"league checkpoint {path} must contain an object payload")
     config = payload.get("config")
     if not isinstance(config, dict):
-        return 1.0
+        raise ValueError(f"league checkpoint {path} has a non-object 'config' payload")
     model = config.get("model")
     if not isinstance(model, dict):
-        return 1.0
-    return float(model.get("input_scale", 1.0))
+        raise ValueError(f"league checkpoint {path} is missing config.model metadata")
+    return dict(model)
 
 
 def _load_checkpoint_payload(path: str | Path, device: torch.device) -> dict:
@@ -165,9 +164,11 @@ def _validate_league_checkpoint_observation(
 ) -> None:
     """Reject league weights whose stored observation protocol differs.
 
-    The config's saved ``obs_version`` and the first-layer input width are
-    independent checks.  Treating either mismatch as a hard configuration
-    error avoids silently pairing a v1 opponent with a v2 runner.
+    The config's saved ``obs_version`` and the model's own layout are
+    independent checks. MLPs expose that layout through their first-layer
+    width; CardTokenNet is structurally v2. Treating either mismatch as a
+    hard configuration error avoids silently pairing a v1 opponent with a v2
+    runner.
     """
     checkpoint_config = payload.get("config")
     if not isinstance(checkpoint_config, dict):
@@ -183,7 +184,14 @@ def _validate_league_checkpoint_observation(
         raise ValueError(f"league checkpoint {path} has an invalid stored obs_version {stored_version!r}")
     try:
         stored_width = obs_size_for_version(stored_version)
-        model_version = obs_version_for_checkpoint(payload)
+        model_config = _checkpoint_model_config(payload, path)
+        arch = model_config.get("arch", "mlp")
+        if arch == "card_transformer":
+            model_version = 2
+        elif arch == "mlp":
+            model_version = obs_version_for_checkpoint(payload)
+        else:
+            raise ValueError(f"league checkpoint {path} has unknown model.arch {arch!r}")
         model_width = obs_size_for_version(model_version)
     except (TypeError, ValueError) as exc:
         raise ValueError(f"league checkpoint {path} has an invalid observation input width: {exc}") from exc
@@ -218,7 +226,7 @@ def save_best_checkpoint(config: TrainConfig, generation: int, model: torch.nn.M
     return destination
 
 
-def load_best_checkpoint(config: TrainConfig, device: torch.device, path: str | Path) -> tuple[DominionNet, int]:
+def load_best_checkpoint(config: TrainConfig, device: torch.device, path: str | Path) -> tuple[torch.nn.Module, int]:
     payload = _load_checkpoint_payload(path, device)
     _validate_league_checkpoint_observation(config, payload, path)
     # Action-space dimensions come from the native protocol; import lazily to
@@ -226,11 +234,10 @@ def load_best_checkpoint(config: TrainConfig, device: torch.device, path: str | 
     # pybind. Observation width follows the selected training config.
     import dominion_v2_py as dz
 
-    model = DominionNet(
+    model = build_model(
+        _checkpoint_model_config(payload, path),
         obs_size_for_config(config),
         dz.ACTION_SPACE_SIZE,
-        config.model.hidden_sizes,
-        input_scale=_checkpoint_input_scale(payload),
     ).to(device)
     model.load_state_dict(payload["model"])
     model.eval()
@@ -254,19 +261,26 @@ def _load_league_seed_checkpoint(config: TrainConfig, device: torch.device, path
     checkpoint_config = payload["config"]
     if not isinstance(checkpoint_config, dict):
         raise ValueError(f"league seed checkpoint {path} has a non-object 'config' payload")
-    checkpoint_model = checkpoint_config.get("model")
-    checkpoint_hidden_sizes = checkpoint_model.get("hidden_sizes") if isinstance(checkpoint_model, dict) else None
-    if not isinstance(checkpoint_hidden_sizes, list):
-        raise ValueError(
-            f"league seed checkpoint {path} is missing config.model.hidden_sizes; "
-            "cannot validate its architecture"
-        )
-    expected_hidden_sizes = list(config.model.hidden_sizes)
-    if checkpoint_hidden_sizes != expected_hidden_sizes:
-        raise ValueError(
-            f"league seed checkpoint {path} has hidden_sizes {checkpoint_hidden_sizes}, "
-            f"but the current run requires {expected_hidden_sizes}; refusing to truncate or pad weights"
-        )
+    checkpoint_model = _checkpoint_model_config(payload, path)
+    checkpoint_arch = checkpoint_model.get("arch", "mlp")
+    expected_model = model_config_dict(config.model)
+    expected_arch = expected_model.get("arch", "mlp")
+    # Preserve the historical same-MLP architecture guard. Different
+    # architectures intentionally coexist in a league and are loaded from
+    # their own payload metadata below.
+    if checkpoint_arch == expected_arch == "mlp":
+        checkpoint_hidden_sizes = checkpoint_model.get("hidden_sizes")
+        if not isinstance(checkpoint_hidden_sizes, list):
+            raise ValueError(
+                f"league seed checkpoint {path} is missing config.model.hidden_sizes; "
+                "cannot validate its architecture"
+            )
+        expected_hidden_sizes = list(config.model.hidden_sizes)
+        if checkpoint_hidden_sizes != expected_hidden_sizes:
+            raise ValueError(
+                f"league seed checkpoint {path} has hidden_sizes {checkpoint_hidden_sizes}, "
+                f"but the current run requires {expected_hidden_sizes}; refusing to truncate or pad weights"
+            )
 
     _validate_league_checkpoint_observation(config, payload, path)
 
@@ -275,11 +289,10 @@ def _load_league_seed_checkpoint(config: TrainConfig, device: torch.device, path
     # pybind. Observation width follows the selected training config.
     import dominion_v2_py as dz
 
-    model = DominionNet(
+    model = build_model(
+        checkpoint_model,
         obs_size_for_config(config),
         dz.ACTION_SPACE_SIZE,
-        expected_hidden_sizes,
-        input_scale=_checkpoint_input_scale(payload),
     ).to(device)
     try:
         model.load_state_dict(payload["model"])
@@ -310,15 +323,10 @@ def seed_league_checkpoints(config: TrainConfig, device: torch.device) -> list[P
     return destinations
 
 
-def clone_model(config: TrainConfig, source: torch.nn.Module, device: torch.device) -> DominionNet:
+def clone_model(config: TrainConfig, source: torch.nn.Module, device: torch.device) -> torch.nn.Module:
     import dominion_v2_py as dz
 
-    clone = DominionNet(
-        obs_size_for_config(config),
-        dz.ACTION_SPACE_SIZE,
-        config.model.hidden_sizes,
-        input_scale=config.model.input_scale,
-    ).to(device)
+    clone = build_model(config.model, obs_size_for_config(config), dz.ACTION_SPACE_SIZE).to(device)
     clone.load_state_dict(source.state_dict())
     clone.eval()
     return clone
@@ -331,7 +339,7 @@ def initialize_best_checkpoint(
     *,
     source_path: str | Path | None = None,
     start_generation: int = 0,
-) -> tuple[DominionNet, int, Path]:
+) -> tuple[torch.nn.Module, int, Path]:
     """Load a persisted best or seed the initial best from the candidate."""
     destination = best_checkpoint_path(config.checkpoint_dir)
     source = Path(source_path) if source_path is not None else destination
