@@ -548,7 +548,7 @@ def validated_eval_sentinels(raw_sentinels: object) -> list[tuple[str, int]]:
     """Validate the compact eval-ladder sentinel configuration."""
     if not isinstance(raw_sentinels, list):
         raise ValueError("eval_sentinels must be a list of {opponent, games} objects")
-    allowed = {"bigmoney", "engine", "mcts"}
+    allowed = {"bigmoney", "engine", "engine2", "engine3", "mcts"}
     sentinels: list[tuple[str, int]] = []
     seen: set[str] = set()
     for index, raw_sentinel in enumerate(raw_sentinels):

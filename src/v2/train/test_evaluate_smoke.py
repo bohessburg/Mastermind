@@ -10,7 +10,16 @@ import dominion_v2_py as dz
 from . import evaluate
 from .evaluate import classify_game_end, evaluate_checkpoint
 from .test_train_smoke import read_metrics, tiny_config
-from .train import build_objects, run_training, save_checkpoint
+from .train import build_objects, run_training, save_checkpoint, validated_eval_sentinels
+
+
+def test_eval_sentinel_validator_accepts_engine3_and_engine2() -> None:
+    assert validated_eval_sentinels(
+        [
+            {"opponent": "engine3", "games": 2},
+            {"opponent": "engine2", "games": 1},
+        ]
+    ) == [("engine3", 2), ("engine2", 1)]
 
 
 def test_checkpoint_eval_vs_random_smoke_and_determinism(tmp_path: Path) -> None:
@@ -143,6 +152,9 @@ def test_checkpoint_eval_inherits_treasure_collapse_options(
     cfg.selfplay.obs_version = 2
     cfg.selfplay.auto_play_treasures = True
     cfg.selfplay.prune_treasure_plays = True
+    cfg.selfplay.c_puct_schedule = "visit_scaled"
+    cfg.selfplay.c_puct_init = 1.5
+    cfg.selfplay.c_puct_base = 500.0
     model, optimizer, replay = build_objects(cfg, torch.device("cpu"))
     checkpoint = save_checkpoint(cfg, 1, model, optimizer, replay)
     captured: dict[str, object] = {}
@@ -158,6 +170,9 @@ def test_checkpoint_eval_inherits_treasure_collapse_options(
     assert captured["auto_play_treasures"] is True
     assert captured["prune_treasure_plays"] is True
     assert captured["obs_version"] == 2
+    assert captured["c_puct_schedule"] == "visit_scaled"
+    assert captured["c_puct_init"] == 1.5
+    assert captured["c_puct_base"] == 500.0
 
 
 def test_training_metrics_include_periodic_eval(tmp_path: Path) -> None:
@@ -205,12 +220,13 @@ def test_periodic_eval_emits_sentinel_metric_columns(tmp_path: Path) -> None:
     cfg.eval.eval_sentinels = [
         {"opponent": "bigmoney", "games": 2},
         {"opponent": "engine", "games": 2},
+        {"opponent": "engine3", "games": 2},
     ]
 
     result = run_training(cfg)
     row = result["metrics"][0]
     csv_row = read_metrics(Path(cfg.metrics_csv))[0]
-    for opponent in ("bigmoney", "engine"):
+    for opponent in ("bigmoney", "engine", "engine3"):
         assert row[f"sentinel_{opponent}_games"] == 2
         assert 0 <= row[f"sentinel_{opponent}_wins"] <= 2
         assert int(csv_row[f"sentinel_{opponent}_games"]) == 2

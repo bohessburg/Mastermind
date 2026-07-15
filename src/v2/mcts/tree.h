@@ -6,6 +6,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <type_traits>
 
 inline constexpr std::uint32_t MCTS_NULL = 0xFFFF'FFFFU;
 
@@ -22,9 +23,19 @@ enum class MctsRolloutPolicy : std::uint8_t {
     External,
 };
 
+// Keep the schedule enum-backed rather than string-backed: MctsConfig is
+// copied into every tree and selection must not allocate or parse settings.
+enum class MctsCPuctSchedule : std::uint8_t {
+    Fixed,
+    VisitScaled,
+};
+
 struct MctsConfig {
     std::uint32_t sims_per_move = 100;
     float c_puct = 1.25F;
+    MctsCPuctSchedule c_puct_schedule = MctsCPuctSchedule::Fixed;
+    float c_puct_init = 1.25F;
+    float c_puct_base = 19652.0F;
     std::uint8_t determinizations = 2;
     std::uint64_t rollout_seed = 0x4D435453ULL;
     std::uint16_t rollout_step_cap = 1024U;
@@ -45,6 +56,16 @@ struct MctsConfig {
     // amount of new exploration after root-noise priors are applied.
     std::uint16_t min_new_sims = 64U;
 };
+
+static_assert(std::is_trivially_copyable_v<MctsConfig>);
+static_assert(std::is_standard_layout_v<MctsConfig>);
+
+[[nodiscard]] bool mcts_is_valid_c_puct_schedule(MctsCPuctSchedule schedule) noexcept;
+// In visit-scaled mode this is AlphaZero's
+// c_init + log((N + c_base + 1) / c_base); fixed mode returns c_puct exactly.
+[[nodiscard]] float mcts_effective_c_puct(
+    const MctsConfig& config,
+    std::uint32_t parent_visits) noexcept;
 
 struct MctsNode {
     std::uint32_t parent = MCTS_NULL;

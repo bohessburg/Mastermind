@@ -1,5 +1,6 @@
 #include "v2/mcts/selfplay.h"
 
+#include "v2/bots/scripted.h"
 #include "v2/core/actions.h"
 #include "v2/core/game.h"
 #include "v2/core/score.h"
@@ -122,6 +123,8 @@ enum class ScriptedSlotStatus : std::uint8_t {
         return EvalScriptedBotKind::BigMoney;
     case SelfPlayScriptedBotKind::Engine:
         return EvalScriptedBotKind::Engine;
+    case SelfPlayScriptedBotKind::EngineV3:
+        return EvalScriptedBotKind::EngineV3;
     case SelfPlayScriptedBotKind::Random:
         return EvalScriptedBotKind::Random;
     case SelfPlayScriptedBotKind::Scaffold:
@@ -215,12 +218,20 @@ struct SelfPlayRunner::PendingLeaf {
 };
 
 struct SelfPlayRunner::ScriptedPool {
+    struct ScriptedBotSlot {
+        // EngineV3 keeps arrays indexed by PlayerId. One fixed-size instance
+        // per game slot prevents state from crossing game boundaries without
+        // allocating on the decision path.
+        EngineBotV3 engine_v3{};
+    };
+
     ScriptedPool(
         SelfPlayRunner& runner,
         std::uint32_t slot_count,
         std::uint8_t thread_count,
         const MctsConfig& scratch_config)
         : runner_(runner),
+          bots_(new ScriptedBotSlot[slot_count]),
           queue_(new std::uint32_t[slot_count]),
           queue_capacity_(slot_count) {
         scratches_.reserve(thread_count);
@@ -257,6 +268,26 @@ struct SelfPlayRunner::ScriptedPool {
         return true;
     }
 
+    void reset_slot(std::uint32_t slot) noexcept {
+        if (slot < queue_capacity_) {
+            bots_[slot] = ScriptedBotSlot{};
+        }
+    }
+
+    [[nodiscard]] Action choose_engine_v3(
+        std::uint32_t slot,
+        const GameState& state,
+        const ActionMask& legal,
+        int legal_count) noexcept {
+        return slot < queue_capacity_
+            ? bots_[slot].engine_v3.choose_action(state, legal, legal_count)
+            : A_PASS;
+    }
+
+    [[nodiscard]] bool has_workers() const noexcept {
+        return !workers_.empty();
+    }
+
     void stop() noexcept {
         {
             std::lock_guard<std::mutex> lock(mutex_);
@@ -289,6 +320,7 @@ private:
     }
 
     SelfPlayRunner& runner_;
+    std::unique_ptr<ScriptedBotSlot[]> bots_;
     std::vector<Mcts> scratches_;
     std::vector<std::thread> workers_;
     std::unique_ptr<std::uint32_t[]> queue_;
@@ -335,6 +367,15 @@ SelfPlayRunner::SelfPlayRunner(const SelfPlayConfig& config)
     if (config_.sims_per_move == 0U) {
         throw std::invalid_argument("SelfPlayConfig.sims_per_move must be positive");
     }
+    if (!mcts_is_valid_c_puct_schedule(config_.c_puct_schedule)) {
+        throw std::invalid_argument("SelfPlayConfig.c_puct_schedule is invalid");
+    }
+    if (!(config_.c_puct_init > 0.0F) || !std::isfinite(config_.c_puct_init)) {
+        throw std::invalid_argument("SelfPlayConfig.c_puct_init must be finite and positive");
+    }
+    if (!(config_.c_puct_base > 0.0F) || !std::isfinite(config_.c_puct_base)) {
+        throw std::invalid_argument("SelfPlayConfig.c_puct_base must be finite and positive");
+    }
     if (config_.kingdom_pool_count > MAX_SELFPLAY_KINGDOM_POOL) {
         throw std::invalid_argument("SelfPlayConfig.kingdom_pool has too many cards");
     }
@@ -354,6 +395,10 @@ SelfPlayRunner::SelfPlayRunner(const SelfPlayConfig& config)
     }
     if (!(config_.margin_scale > 0.0F) || !std::isfinite(config_.margin_scale)) {
         throw std::invalid_argument("SelfPlayConfig.margin_scale must be finite and positive");
+    }
+    if (!(config_.margin_blend_alpha >= 0.0F && config_.margin_blend_alpha <= 1.0F)
+        || !std::isfinite(config_.margin_blend_alpha)) {
+        throw std::invalid_argument("SelfPlayConfig.margin_blend_alpha must be finite and between zero and one");
     }
     if (config_.scripted_bot == SelfPlayScriptedBotKind::Scaffold && config_.scaffold_sims == 0U) {
         throw std::invalid_argument("SelfPlayConfig.scaffold_sims must be positive for Scaffold");
@@ -397,6 +442,9 @@ SelfPlayRunner::SelfPlayRunner(const SelfPlayConfig& config)
 
     mcts_config_.sims_per_move = config_.sims_per_move;
     mcts_config_.c_puct = config_.c_puct;
+    mcts_config_.c_puct_schedule = config_.c_puct_schedule;
+    mcts_config_.c_puct_init = config_.c_puct_init;
+    mcts_config_.c_puct_base = config_.c_puct_base;
     mcts_config_.determinizations = 1U;
     mcts_config_.max_tree_nodes = config_.max_tree_nodes == 0U ? 4096U : config_.max_tree_nodes;
     mcts_config_.rollout_policy = MctsRolloutPolicy::External;
@@ -409,14 +457,20 @@ SelfPlayRunner::SelfPlayRunner(const SelfPlayConfig& config)
         // world; K>1 trees aggregate different worlds below the root.
         throw std::invalid_argument("SelfPlayConfig.tree_reuse requires determinizations == 1");
     }
-    const bool uses_scaffold = manifest_mode_
-        ? std::any_of(
+    const auto manifest_uses = [this](SelfPlayScriptedBotKind kind) {
+        return std::any_of(
             config_.slot_manifest.begin(),
             config_.slot_manifest.end(),
-            [](const SelfPlaySlotConfig& slot) {
-                return slot.scripted_bot == SelfPlayScriptedBotKind::Scaffold;
-            })
+            [kind](const SelfPlaySlotConfig& slot) {
+                return slot.scripted_bot == kind;
+            });
+    };
+    const bool uses_scaffold = manifest_mode_
+        ? manifest_uses(SelfPlayScriptedBotKind::Scaffold)
         : config_.scripted_bot == SelfPlayScriptedBotKind::Scaffold;
+    const bool uses_engine_v3 = manifest_mode_
+        ? manifest_uses(SelfPlayScriptedBotKind::EngineV3)
+        : config_.scripted_bot == SelfPlayScriptedBotKind::EngineV3;
     if (uses_scaffold && config_.scaffold_sims == 0U) {
         throw std::invalid_argument("SelfPlayConfig.scaffold_sims must be positive for Scaffold");
     }
@@ -435,16 +489,23 @@ SelfPlayRunner::SelfPlayRunner(const SelfPlayConfig& config)
             config_.c_puct,
             mcts_config_.max_tree_nodes,
             config_.prune_treasure_plays,
-            config_.scaffold_determinizations);
+            config_.scaffold_determinizations,
+            config_.c_puct_schedule,
+            config_.c_puct_init,
+            config_.c_puct_base);
         if (config_.scripted_threads == 0U) {
             scaffold_mcts_.emplace(scaffold_mcts_config_);
-        } else {
-            scripted_pool_ = std::make_unique<ScriptedPool>(
-                *this,
-                slot_count_,
-                config_.scripted_threads,
-                scaffold_mcts_config_);
         }
+    }
+    // EngineV3 needs the pool's fixed per-slot bot storage even when no
+    // Scaffold worker is enabled. Passing zero workers keeps that state-only
+    // pool allocation-free during moves and avoids spawning idle threads.
+    if ((uses_scaffold && config_.scripted_threads != 0U) || uses_engine_v3) {
+        scripted_pool_ = std::make_unique<ScriptedPool>(
+            *this,
+            slot_count_,
+            uses_scaffold ? config_.scripted_threads : 0U,
+            scaffold_mcts_config_);
     }
 
     finished_.reserve(slot_count_);
@@ -707,6 +768,9 @@ std::vector<SelfPlayRecord> SelfPlayRunner::take_finished_games() {
 void SelfPlayRunner::reset_game(std::uint32_t index) noexcept {
     GameSlot& game = games_[index];
     game.scripted_status.store(ScriptedSlotStatus::Idle, std::memory_order_relaxed);
+    if (scripted_pool_) {
+        scripted_pool_->reset_slot(index);
+    }
     game.mcts.clear_retained_root();
     game.setup = setup_for(game);
     game.seed = game_seed(config_, game.slot.game_index, game.generation);
@@ -858,13 +922,7 @@ void SelfPlayRunner::drive_scripted(GameSlot& game) noexcept {
         if (legal_count <= 0) {
             break;
         }
-        Action action = A_PASS;
-        action = eval_scripted_action(
-            game.state,
-            legal,
-            legal_count,
-            eval_scripted_kind(game.slot.scripted_bot),
-            game.rng);
+        Action action = choose_scripted_action(game, game.state, legal, legal_count);
         if (!legal.test(action)) {
             action = legal.nth_set(0U);
         }
@@ -876,6 +934,32 @@ void SelfPlayRunner::drive_scripted(GameSlot& game) noexcept {
             break;
         }
     }
+}
+
+Action SelfPlayRunner::choose_scripted_action(
+    GameSlot& game,
+    const GameState& state,
+    const ActionMask& legal,
+    int legal_count) noexcept {
+    // Match EvalRunner's EngineV3 lifecycle: the bot owns state for both
+    // player indices in this one ScriptedPool slot and is reset by
+    // reset_game().
+    // Older scripted kinds retain the established eval-chart implementation,
+    // including Engine's pile-clock guarded buy behavior.
+    if (game.slot.scripted_bot == SelfPlayScriptedBotKind::EngineV3) {
+        assert(scripted_pool_);
+        if (!scripted_pool_) {
+            return A_PASS;
+        }
+        const auto slot = static_cast<std::uint32_t>(&game - games_.get());
+        return scripted_pool_->choose_engine_v3(slot, state, legal, legal_count);
+    }
+    return eval_scripted_action(
+        state,
+        legal,
+        legal_count,
+        eval_scripted_kind(game.slot.scripted_bot),
+        game.rng);
 }
 
 void SelfPlayRunner::drive_scaffold(GameSlot& game, Mcts& scratch) noexcept {
@@ -908,7 +992,8 @@ void SelfPlayRunner::drive_scaffold(GameSlot& game, Mcts& scratch) noexcept {
 }
 
 bool SelfPlayRunner::offload_scripted_slot(std::uint32_t index) noexcept {
-    if (!scripted_pool_ || games_[index].slot.scripted_bot != SelfPlayScriptedBotKind::Scaffold) {
+    if (!scripted_pool_ || !scripted_pool_->has_workers()
+        || games_[index].slot.scripted_bot != SelfPlayScriptedBotKind::Scaffold) {
         return false;
     }
 
@@ -1100,12 +1185,7 @@ bool SelfPlayRunner::resolve_scripted_tree_leaf(GameSlot& game, const MctsPendin
             EvalScriptedBotKind::Engine,
             game.rng);
     } else {
-        action = eval_scripted_action(
-            leaf_state,
-            leaf.legal,
-            leaf.legal_count,
-            eval_scripted_kind(game.slot.scripted_bot),
-            game.rng);
+        action = choose_scripted_action(game, leaf_state, leaf.legal, leaf.legal_count);
     }
     if (!leaf.legal.test(action)) {
         action = leaf.legal_count > 0 ? leaf.legal.nth_set(0U) : A_PASS;
@@ -1175,10 +1255,48 @@ float SelfPlayRunner::terminal_value_for(const GameState& state, PlayerId player
         const float graded = std::clamp(std::abs(margin), 0.0F, scale) / scale;
         return sign * (0.5F + 0.5F * graded);
     }
+    if (config_.value_target == SelfPlayValueTarget::MarginBlend) {
+        // Truncated games have no training outcome. Keep record.winner based
+        // on the final board for counters and gates, but do not turn that
+        // partial score into a value target.
+        if (state.truncated != 0U || winner == NONE) {
+            return 0.0F;
+        }
+        const PlayerId opponent = static_cast<PlayerId>(player == 0U ? 1U : 0U);
+        const float margin = static_cast<float>(
+            static_cast<int>(score(state, player)) - static_cast<int>(score(state, opponent)));
+        return selfplay_margin_blend_value(
+            margin,
+            config_.margin_scale,
+            config_.margin_blend_alpha);
+    }
     if (winner == NONE) {
         return 0.0F;
     }
     return winner == player ? 1.0F : -1.0F;
+}
+
+float selfplay_margin_blend_value(
+    float margin,
+    float margin_scale,
+    float margin_blend_alpha) noexcept {
+    if (margin == 0.0F) {
+        return 0.0F;
+    }
+    const float sign = margin > 0.0F ? 1.0F : -1.0F;
+    const float graded = std::clamp(std::abs(margin), 0.0F, margin_scale) / margin_scale;
+    const float margin_value = 0.5F + 0.5F * graded;
+    // Preserve the endpoint behavior exactly: alpha=0 is the established
+    // margin formula, while alpha=1 is the established win/loss target.
+    if (margin_blend_alpha == 0.0F) {
+        return sign * margin_value;
+    }
+    if (margin_blend_alpha == 1.0F) {
+        return sign;
+    }
+    return sign * (
+        margin_blend_alpha
+        + (1.0F - margin_blend_alpha) * margin_value);
 }
 
 void SelfPlayRunner::normalize_policy(

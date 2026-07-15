@@ -11,7 +11,12 @@ import torch
 
 import dominion_v2_py as dz
 
-from .config import SelfPlayConfig, validate_deep_slice_config
+from .config import (
+    SelfPlayConfig,
+    validate_c_puct_config,
+    validate_deep_slice_config,
+    validate_value_target_config,
+)
 from .replay import ReplayBuffer
 
 
@@ -77,6 +82,8 @@ def _scripted_bot_kind(kind: str | None):
         return dz.SelfPlayScriptedBotKind.BigMoney
     if normalized == "engine":
         return dz.SelfPlayScriptedBotKind.Engine
+    if normalized == "engine3":
+        return dz.SelfPlayScriptedBotKind.EngineV3
     if normalized == "random":
         return dz.SelfPlayScriptedBotKind.Random
     if normalized == "scaffold":
@@ -86,10 +93,12 @@ def _scripted_bot_kind(kind: str | None):
 
 def _value_target(value_target: str):
     normalized = value_target.lower()
-    if normalized == "outcome":
+    if normalized in {"outcome", "winloss"}:
         return dz.SelfPlayValueTarget.Outcome
     if normalized == "margin":
         return dz.SelfPlayValueTarget.Margin
+    if normalized == "margin_blend":
+        return dz.SelfPlayValueTarget.MarginBlend
     raise ValueError(f"unknown value target: {value_target}")
 
 
@@ -200,6 +209,8 @@ def make_runner_config(
     slot_manifest: Sequence[object] | None = None,
 ):
     validate_deep_slice_config(config)
+    validate_value_target_config(config)
+    validate_c_puct_config(config)
     if not math.isfinite(config.margin_scale) or config.margin_scale <= 0.0:
         raise ValueError("margin_scale must be finite and positive")
     if not isinstance(sims_override, int) or isinstance(sims_override, bool) or sims_override < 0:
@@ -219,6 +230,9 @@ def make_runner_config(
         n_games=config.n_games,
         sims_per_move=runner_sims,
         c_puct=config.c_puct,
+        c_puct_schedule=config.c_puct_schedule,
+        c_puct_init=config.c_puct_init,
+        c_puct_base=config.c_puct_base,
         dirichlet_alpha=config.dirichlet_alpha,
         dirichlet_frac=config.dirichlet_frac,
         temp_moves=config.temp_moves,
@@ -243,6 +257,7 @@ def make_runner_config(
         expand_top_k=config.expand_top_k,
         value_target=_value_target(config.value_target),
         margin_scale=config.margin_scale,
+        margin_blend_alpha=config.margin_blend_alpha,
     )
     if native_slots:
         runner_config.n_games = len(native_slots)

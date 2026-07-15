@@ -19,16 +19,18 @@ from pathlib import Path
 
 import torch
 
-from .config import SelfPlayConfig, TrainConfig, validate_deep_slice_config
+from .config import (
+    SCRIPTED_OPPONENT_KINDS,
+    SelfPlayConfig,
+    TrainConfig,
+    validate_deep_slice_config,
+)
 from .model import build_model, model_config_dict
 from .observation import obs_size_for_config, obs_size_for_version, obs_version_for_checkpoint
 
 
 BEST_FILENAME = "best.pt"
 LEAGUE_DIRNAME = "league"
-SCRIPTED_OPPONENT_KINDS = frozenset({"bigmoney", "engine", "random", "scaffold"})
-
-
 @dataclass(frozen=True)
 class GateStats:
     wins: int

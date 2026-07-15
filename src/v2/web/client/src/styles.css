@@ -339,6 +339,10 @@ h2 {
   color: var(--gold);
 }
 
+.resource-victory {
+  color: #65c46b;
+}
+
 .table-middle {
   display: grid;
   grid-template-columns: 220px minmax(0, 1fr);

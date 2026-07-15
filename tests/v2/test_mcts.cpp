@@ -243,6 +243,61 @@ struct MctsPlayer {
 
 } // namespace
 
+TEST_CASE("v2 MCTS visit-scaled PUCT has exact reference values", "[v2][mcts][puct]") {
+    MctsConfig config{};
+    config.c_puct_schedule = MctsCPuctSchedule::VisitScaled;
+    config.c_puct_init = 1.25F;
+
+    config.c_puct_base = 19652.0F;
+    REQUIRE(mcts_effective_c_puct(config, 0U) == 1.2500509F);
+    REQUIRE(mcts_effective_c_puct(config, 1600U) == 1.3283190F);
+
+    config.c_puct_base = 500.0F;
+    REQUIRE(mcts_effective_c_puct(config, 0U) == 1.2519980F);
+    REQUIRE(mcts_effective_c_puct(config, 1600U) == 2.6855607F);
+}
+
+TEST_CASE("v2 MCTS fixed PUCT preserves seeded tree selection", "[v2][mcts][puct]") {
+    const GameState state = buy_position(3);
+    MctsConfig legacy{};
+    legacy.sims_per_move = 48U;
+    legacy.c_puct = 1.75F;
+    legacy.determinizations = 1U;
+    legacy.max_tree_nodes = 256U;
+    legacy.rollout_step_cap = 0U;
+    legacy.rollout_seed = 0xC0FF'EE01ULL;
+
+    MctsConfig fixed = legacy;
+    fixed.c_puct_schedule = MctsCPuctSchedule::Fixed;
+    // Fixed selection must ignore both visit-scaled parameters completely.
+    fixed.c_puct_init = 9.0F;
+    fixed.c_puct_base = 0.5F;
+    REQUIRE(mcts_effective_c_puct(fixed, 1600U) == fixed.c_puct);
+
+    Mcts legacy_search(legacy);
+    Mcts fixed_search(fixed);
+    legacy_search.reset(state, 0U);
+    fixed_search.reset(state, 0U);
+    Xoshiro256pp legacy_rng = Xoshiro256pp::seeded(legacy.rollout_seed);
+    Xoshiro256pp fixed_rng = Xoshiro256pp::seeded(legacy.rollout_seed);
+    legacy_search.run_simulations(legacy.sims_per_move, legacy_rng);
+    fixed_search.run_simulations(fixed.sims_per_move, fixed_rng);
+
+    REQUIRE(fixed_search.best_root_action() == legacy_search.best_root_action());
+    REQUIRE(fixed_search.node_count() == legacy_search.node_count());
+    for (std::uint32_t index = 0U; index < legacy_search.node_count(); ++index) {
+        const MctsNode& expected = legacy_search.node(index);
+        const MctsNode& actual = fixed_search.node(index);
+        REQUIRE(actual.parent == expected.parent);
+        REQUIRE(actual.first_child == expected.first_child);
+        REQUIRE(actual.next_sibling == expected.next_sibling);
+        REQUIRE(actual.action_from_parent == expected.action_from_parent);
+        REQUIRE(actual.visits == expected.visits);
+        REQUIRE(actual.value_sum == expected.value_sum);
+        REQUIRE(actual.prior == expected.prior);
+    }
+}
+
 TEST_CASE("v2 MCTS prefers Province over Estate with eight coins", "[v2][mcts]") {
     GameState state = buy_position(8);
     Pile* provinces = find_pile(state, DEF_PROVINCE);

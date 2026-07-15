@@ -26,6 +26,9 @@ struct EvalRunnerConfig {
     std::uint32_t n_games = 64;
     std::uint32_t sims_per_move = 400;
     float c_puct = 1.25F;
+    MctsCPuctSchedule c_puct_schedule = MctsCPuctSchedule::Fixed;
+    float c_puct_init = 1.25F;
+    float c_puct_base = 19652.0F;
     std::uint32_t max_batch = 512;
     std::uint64_t seed = 0x4556414CULL;
     ObsVersion obs_version = ObsVersion::V1;
@@ -111,7 +114,10 @@ private:
     float c_puct,
     std::uint32_t max_tree_nodes,
     bool prune_treasure_plays,
-    std::uint8_t determinizations = 2U) noexcept;
+    std::uint8_t determinizations = 2U,
+    MctsCPuctSchedule c_puct_schedule = MctsCPuctSchedule::Fixed,
+    float c_puct_init = 1.25F,
+    float c_puct_base = 19652.0F) noexcept;
 [[nodiscard]] std::uint64_t scaffold_rollout_seed(std::uint64_t game_seed) noexcept;
 [[nodiscard]] Action eval_scaffold_mcts_action(
     Mcts& search,

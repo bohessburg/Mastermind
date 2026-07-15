@@ -53,6 +53,7 @@ export interface OpponentView {
   inPlay: number[];
   resources?: ResourceView;
   vp?: number | null;
+  score: number;
 }
 
 export interface ResourceView {
@@ -75,6 +76,7 @@ export interface SeatStateView {
   myDiscardCount: number;
   myDiscardTop: number | null;
   mySetAside?: number[];
+  myScore: number;
   opponents: OpponentView[];
   trash: CountedCard[];
   trashTop: number | null;

@@ -96,6 +96,8 @@ TEST_CASE("v2 new_game and BigMoney loops allocate nothing", "[v2][alloc]") {
 TEST_CASE("v2 MCTS search allocates nothing after construction", "[v2][alloc][mcts]") {
     MctsConfig config{};
     config.sims_per_move = 16U;
+    config.c_puct_schedule = MctsCPuctSchedule::VisitScaled;
+    config.c_puct_base = 500.0F;
     config.determinizations = 1U;
     config.max_tree_nodes = 512U;
     config.rollout_seed = 0xA110'C8EEULL;

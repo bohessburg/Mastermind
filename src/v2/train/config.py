@@ -8,6 +8,11 @@ from pathlib import Path
 from typing import Any
 
 
+SCRIPTED_OPPONENT_KINDS = frozenset({"bigmoney", "engine", "engine3", "random", "scaffold"})
+VALUE_TARGET_KINDS = frozenset({"outcome", "winloss", "margin", "margin_blend"})
+C_PUCT_SCHEDULES = frozenset({"fixed", "visit_scaled"})
+
+
 @dataclass
 class ModelConfig:
     # Explicit new configs self-describe their network while absent metadata
@@ -33,6 +38,9 @@ class SelfPlayConfig:
     deep_slice_sims: int = 0
     max_batch: int = 512
     c_puct: float = 1.25
+    c_puct_schedule: str = "fixed"
+    c_puct_init: float = 1.25
+    c_puct_base: float = 19652.0
     dirichlet_alpha: float = 0.30
     dirichlet_frac: float = 0.25
     temp_moves: int = 12
@@ -62,6 +70,7 @@ class SelfPlayConfig:
     scripted_threads: int = 2
     value_target: str = "outcome"
     margin_scale: float = 20.0
+    margin_blend_alpha: float = 0.6
     auto_play_treasures: bool = False
     prune_treasure_plays: bool = False
     tree_reuse: bool = False
@@ -196,6 +205,50 @@ class TrainConfig:
         return asdict(self)
 
 
+def validate_scripted_opponent_kinds(config: TrainConfig) -> None:
+    """Reject unknown scripted-opponent keys while loading a campaign config.
+
+    Fraction and breakpoint validation remains generation-aware in
+    ``gating.effective_scripted_fractions``. Keeping the vocabulary here makes
+    malformed JSON fail at config-load time instead of after model setup.
+    """
+    for field_name in ("scripted_opponents", "scripted_opponent_schedule"):
+        raw = getattr(config, field_name)
+        if not isinstance(raw, dict):
+            value_description = "fraction" if field_name == "scripted_opponents" else "breakpoints"
+            raise ValueError(f"{field_name} must be an object mapping kind to {value_description}")
+        for kind in raw:
+            if not isinstance(kind, str) or kind not in SCRIPTED_OPPONENT_KINDS:
+                allowed = ", ".join(sorted(SCRIPTED_OPPONENT_KINDS))
+                raise ValueError(f"unknown scripted opponent {kind!r}; expected one of {allowed}")
+
+
+def validate_value_target_config(config: SelfPlayConfig) -> None:
+    """Validate value-target selection independently of the training path."""
+    if not isinstance(config.value_target, str) or config.value_target.lower() not in VALUE_TARGET_KINDS:
+        allowed = ", ".join(sorted(VALUE_TARGET_KINDS))
+        raise ValueError(f"unknown value target {config.value_target!r}; expected one of {allowed}")
+    alpha = config.margin_blend_alpha
+    if isinstance(alpha, bool) or not isinstance(alpha, (int, float)):
+        raise ValueError("margin_blend_alpha must be a finite number between zero and one")
+    alpha = float(alpha)
+    if not math.isfinite(alpha) or not 0.0 <= alpha <= 1.0:
+        raise ValueError("margin_blend_alpha must be a finite number between zero and one")
+
+
+def validate_c_puct_config(config: SelfPlayConfig) -> None:
+    """Validate the Python spelling and numeric parameters for PUCT."""
+    if not isinstance(config.c_puct_schedule, str) or config.c_puct_schedule not in C_PUCT_SCHEDULES:
+        allowed = ", ".join(sorted(C_PUCT_SCHEDULES))
+        raise ValueError(f"unknown c_puct_schedule {config.c_puct_schedule!r}; expected one of {allowed}")
+    for field_name in ("c_puct_init", "c_puct_base"):
+        value = getattr(config, field_name)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError(f"{field_name} must be finite and positive")
+        if not math.isfinite(float(value)) or float(value) <= 0.0:
+            raise ValueError(f"{field_name} must be finite and positive")
+
+
 def _merge_dataclass(instance: Any, data: dict[str, Any]) -> Any:
     for key, value in data.items():
         if key.startswith("_comment"):
@@ -241,6 +294,9 @@ def load_config(path: str | Path | None) -> TrainConfig:
     if not isinstance(data, dict):
         raise ValueError("config root must be an object")
     _merge_dataclass(cfg, data)
+    validate_scripted_opponent_kinds(cfg)
+    validate_value_target_config(cfg.selfplay)
+    validate_c_puct_config(cfg.selfplay)
     validate_deep_slice_config(cfg.selfplay)
     return cfg
 

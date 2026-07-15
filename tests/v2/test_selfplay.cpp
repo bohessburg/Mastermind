@@ -4,7 +4,9 @@
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <iostream>
 #include <thread>
@@ -155,6 +157,30 @@ TEST_CASE("v2 selfplay finished records have normalized policies and terminal va
     }
 }
 
+TEST_CASE("v2 selfplay MarginBlend terminal target tempers margin influence", "[v2][selfplay][value]") {
+    constexpr float SCALE = 20.0F;
+    constexpr float ALPHA = 0.6F;
+
+    // v = sign(margin) * (alpha + (1 - alpha) *
+    //     (0.5 + 0.5 * min(abs(margin), scale) / scale)); ties are zero.
+    REQUIRE(selfplay_margin_blend_value(1.0F, SCALE, ALPHA) == Catch::Approx(0.81F));
+    REQUIRE(selfplay_margin_blend_value(5.0F, SCALE, ALPHA) == Catch::Approx(0.85F));
+    REQUIRE(selfplay_margin_blend_value(10.0F, SCALE, ALPHA) == Catch::Approx(0.9F));
+    REQUIRE(selfplay_margin_blend_value(20.0F, SCALE, ALPHA) == Catch::Approx(1.0F));
+    REQUIRE(selfplay_margin_blend_value(35.0F, SCALE, ALPHA) == Catch::Approx(1.0F));
+    REQUIRE(selfplay_margin_blend_value(-1.0F, SCALE, ALPHA) == Catch::Approx(-0.81F));
+    REQUIRE(selfplay_margin_blend_value(0.0F, SCALE, ALPHA) == 0.0F);
+
+    // Endpoint alpha values exactly recover the established target behavior.
+    for (const float margin : {-35.0F, -5.0F, 5.0F, 35.0F}) {
+        const float sign = margin > 0.0F ? 1.0F : -1.0F;
+        const float graded = std::min(std::abs(margin), SCALE) / SCALE;
+        const float existing_margin = sign * (0.5F + 0.5F * graded);
+        REQUIRE(selfplay_margin_blend_value(margin, SCALE, 0.0F) == existing_margin);
+        REQUIRE(selfplay_margin_blend_value(margin, SCALE, 1.0F) == sign);
+    }
+}
+
 TEST_CASE("v2 selfplay is deterministic with a fixed mock evaluator", "[v2][selfplay]") {
     const SelfPlayConfig config = fixed_config(4U, 16U, 16U, 0x5E1F'0004ULL);
     const std::vector<SelfPlayRecord> a = run_until_finished(config, 2U);
@@ -269,6 +295,27 @@ TEST_CASE("v2 selfplay Scaffold records only the NN seat deterministically", "[v
     REQUIRE(repeated.policy_targets == record.policy_targets);
     REQUIRE(repeated.players == record.players);
     REQUIRE(repeated.values == record.values);
+}
+
+TEST_CASE("v2 selfplay EngineV3 completes a scripted batch", "[v2][selfplay][scripted]") {
+    constexpr std::uint32_t N = 8U;
+    SelfPlayConfig config = fixed_config(4U, 2U, 16U, 0xE3B0'7001ULL);
+    config.max_tree_nodes = 512U;
+    config.scripted_bot = SelfPlayScriptedBotKind::EngineV3;
+    config.scripted_nn_player = 1U;
+    config.auto_play_treasures = true;
+    config.prune_treasure_plays = true;
+
+    const std::vector<SelfPlayRecord> records = run_until_finished(config, N);
+    REQUIRE(records.size() >= N);
+    for (const SelfPlayRecord& record : records) {
+        REQUIRE(record.scripted_bot == SelfPlayScriptedBotKind::EngineV3);
+        REQUIRE(record.scripted_nn_player == config.scripted_nn_player);
+        REQUIRE_FALSE(record.players.empty());
+        for (const PlayerId player : record.players) {
+            REQUIRE(player == config.scripted_nn_player);
+        }
+    }
 }
 
 TEST_CASE("v2 selfplay mock evaluator throughput smoke", "[v2][selfplay][throughput]") {

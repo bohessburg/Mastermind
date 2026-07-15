@@ -950,6 +950,21 @@ void count_ordered_zone(const GameState& state, const OrderedZone& zone, Rollout
 
 } // namespace
 
+bool mcts_is_valid_c_puct_schedule(MctsCPuctSchedule schedule) noexcept {
+    return schedule == MctsCPuctSchedule::Fixed
+        || schedule == MctsCPuctSchedule::VisitScaled;
+}
+
+float mcts_effective_c_puct(
+    const MctsConfig& config,
+    std::uint32_t parent_visits) noexcept {
+    if (config.c_puct_schedule == MctsCPuctSchedule::Fixed) {
+        return config.c_puct;
+    }
+    const float numerator = static_cast<float>(parent_visits) + config.c_puct_base + 1.0F;
+    return config.c_puct_init + std::log(numerator / config.c_puct_base);
+}
+
 std::uint64_t mcts_state_hash(const GameState& state) noexcept {
     constexpr std::uint64_t kOffset = 14695981039346656037ULL;
     constexpr std::uint64_t kPrime = 1099511628211ULL;
@@ -1150,6 +1165,15 @@ Mcts::Mcts(const MctsConfig& config)
       states_(new GameState[safe_capacity(config)]),
       remap_(new std::uint32_t[safe_capacity(config)]),
       capacity_(safe_capacity(config)) {
+    if (!mcts_is_valid_c_puct_schedule(config_.c_puct_schedule)) {
+        throw std::invalid_argument("MctsConfig.c_puct_schedule is invalid");
+    }
+    if (!(config_.c_puct_init > 0.0F) || !std::isfinite(config_.c_puct_init)) {
+        throw std::invalid_argument("MctsConfig.c_puct_init must be finite and positive");
+    }
+    if (!(config_.c_puct_base > 0.0F) || !std::isfinite(config_.c_puct_base)) {
+        throw std::invalid_argument("MctsConfig.c_puct_base must be finite and positive");
+    }
     if (config_.tree_reuse && safe_determinizations(config_) != 1U) {
         // Each root-sampled tree encodes a different hidden-information
         // world, so a retained child cannot safely represent their aggregate.
@@ -1960,13 +1984,16 @@ std::uint32_t Mcts::select_child(std::uint32_t node_index) const noexcept {
     float best_score = -1.0e30F;
     const float parent_visits = static_cast<float>(node.visits + 1U);
     const float exploration_base = std::sqrt(parent_visits);
+    // Fixed mode returns config_.c_puct exactly, retaining the established
+    // score calculation. VisitScaled uses the parent's pre-selection count.
+    const float c_puct = mcts_effective_c_puct(config_, node.visits);
 
     for (std::uint32_t child_index = node.first_child; child_index != MCTS_NULL;
          child_index = nodes_[child_index].next_sibling) {
         const MctsNode& child = nodes_[child_index];
         const float q = child_value_for_parent(node, child);
         const float denom = 1.0F + static_cast<float>(child.visits) + child.virtual_loss;
-        const float u = config_.c_puct * child.prior * exploration_base / denom;
+        const float u = c_puct * child.prior * exploration_base / denom;
         const float score_value = q + u - child.virtual_loss;
         if (score_value > best_score) {
             best_score = score_value;

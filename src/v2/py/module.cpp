@@ -141,6 +141,26 @@ private:
     return static_cast<int>(version);
 }
 
+[[nodiscard]] MctsCPuctSchedule parse_c_puct_schedule(const std::string& schedule) {
+    if (schedule == "fixed") {
+        return MctsCPuctSchedule::Fixed;
+    }
+    if (schedule == "visit_scaled") {
+        return MctsCPuctSchedule::VisitScaled;
+    }
+    throw std::invalid_argument("c_puct_schedule must be 'fixed' or 'visit_scaled'");
+}
+
+[[nodiscard]] const char* c_puct_schedule_name(MctsCPuctSchedule schedule) {
+    if (schedule == MctsCPuctSchedule::Fixed) {
+        return "fixed";
+    }
+    if (schedule == MctsCPuctSchedule::VisitScaled) {
+        return "visit_scaled";
+    }
+    throw std::invalid_argument("native c_puct_schedule is invalid");
+}
+
 [[nodiscard]] PlayerId turn_player_id(const GameState& state) noexcept {
     if (state.turn_queue.size == 0U) {
         return 0U;
@@ -746,6 +766,15 @@ struct PyDecisionSearcher {
         const float c_puct = py::cast<float>(config["c_puct"]);
         const std::uint32_t determinizations = py::cast<std::uint32_t>(config["determinizations"]);
         const std::uint64_t seed = py::cast<std::uint64_t>(config["seed"]);
+        const MctsCPuctSchedule c_puct_schedule = config.contains("c_puct_schedule")
+            ? parse_c_puct_schedule(py::cast<std::string>(config["c_puct_schedule"]))
+            : MctsCPuctSchedule::Fixed;
+        const float c_puct_init = config.contains("c_puct_init")
+            ? py::cast<float>(config["c_puct_init"])
+            : 1.25F;
+        const float c_puct_base = config.contains("c_puct_base")
+            ? py::cast<float>(config["c_puct_base"])
+            : 19652.0F;
         const ObsVersion obs_version = config.contains("obs_version")
             ? parse_obs_version(py::cast<int>(config["obs_version"]))
             : ObsVersion::V1;
@@ -758,6 +787,12 @@ struct PyDecisionSearcher {
         }
         if (c_puct < 0.0F) {
             throw std::invalid_argument("DecisionSearcher config c_puct must be non-negative");
+        }
+        if (!(c_puct_init > 0.0F) || !std::isfinite(c_puct_init)) {
+            throw std::invalid_argument("DecisionSearcher config c_puct_init must be finite and positive");
+        }
+        if (!(c_puct_base > 0.0F) || !std::isfinite(c_puct_base)) {
+            throw std::invalid_argument("DecisionSearcher config c_puct_base must be finite and positive");
         }
         if (determinizations == 0U || determinizations > 255U) {
             throw std::invalid_argument("DecisionSearcher config determinizations must be between 1 and 255");
@@ -780,6 +815,9 @@ struct PyDecisionSearcher {
         MctsConfig mcts_config{};
         mcts_config.sims_per_move = sims;
         mcts_config.c_puct = c_puct;
+        mcts_config.c_puct_schedule = c_puct_schedule;
+        mcts_config.c_puct_init = c_puct_init;
+        mcts_config.c_puct_base = c_puct_base;
         mcts_config.determinizations = 1U;
         mcts_config.max_tree_nodes = 4096U;
         mcts_config.rollout_policy = MctsRolloutPolicy::External;
@@ -1530,12 +1568,14 @@ PYBIND11_MODULE(dominion_v2_py, module) {
 
     py::enum_<SelfPlayValueTarget>(module, "SelfPlayValueTarget")
         .value("Outcome", SelfPlayValueTarget::Outcome)
-        .value("Margin", SelfPlayValueTarget::Margin);
+        .value("Margin", SelfPlayValueTarget::Margin)
+        .value("MarginBlend", SelfPlayValueTarget::MarginBlend);
 
     py::enum_<SelfPlayScriptedBotKind>(module, "SelfPlayScriptedBotKind")
         .value("None_", SelfPlayScriptedBotKind::None)
         .value("BigMoney", SelfPlayScriptedBotKind::BigMoney)
         .value("Engine", SelfPlayScriptedBotKind::Engine)
+        .value("EngineV3", SelfPlayScriptedBotKind::EngineV3)
         .value("Random", SelfPlayScriptedBotKind::Random)
         .value("Scaffold", SelfPlayScriptedBotKind::Scaffold);
 
@@ -1582,11 +1622,18 @@ PYBIND11_MODULE(dominion_v2_py, module) {
             std::uint8_t expand_top_k,
             py::object kingdom_pool,
             std::uint16_t min_new_sims,
-            py::object slot_manifest) {
+            py::object slot_manifest,
+            float margin_blend_alpha,
+            const std::string& c_puct_schedule,
+            float c_puct_init,
+            float c_puct_base) {
             SelfPlayConfig config{};
             config.n_games = n_games;
             config.sims_per_move = sims_per_move;
             config.c_puct = c_puct;
+            config.c_puct_schedule = parse_c_puct_schedule(c_puct_schedule);
+            config.c_puct_init = c_puct_init;
+            config.c_puct_base = c_puct_base;
             config.dirichlet_alpha = dirichlet_alpha;
             config.dirichlet_frac = dirichlet_frac;
             config.temp_moves = temp_moves;
@@ -1602,6 +1649,7 @@ PYBIND11_MODULE(dominion_v2_py, module) {
             config.scaffold_sims = scaffold_sims;
             config.value_target = value_target;
             config.margin_scale = margin_scale;
+            config.margin_blend_alpha = margin_blend_alpha;
             config.scripted_threads = scripted_threads;
             config.scaffold_determinizations = scaffold_determinizations;
             config.scaffold_sims_opening = scaffold_sims_opening;
@@ -1646,10 +1694,24 @@ PYBIND11_MODULE(dominion_v2_py, module) {
             py::arg("expand_top_k") = 0U,
             py::arg("kingdom_pool") = py::none(),
             py::arg("min_new_sims") = 64U,
-            py::arg("slot_manifest") = py::none())
+            py::arg("slot_manifest") = py::none(),
+            py::arg("margin_blend_alpha") = 0.6F,
+            py::arg("c_puct_schedule") = "fixed",
+            py::arg("c_puct_init") = 1.25F,
+            py::arg("c_puct_base") = 19652.0F)
         .def_readwrite("n_games", &SelfPlayConfig::n_games)
         .def_readwrite("sims_per_move", &SelfPlayConfig::sims_per_move)
         .def_readwrite("c_puct", &SelfPlayConfig::c_puct)
+        .def_property(
+            "c_puct_schedule",
+            [](const SelfPlayConfig& config) {
+                return std::string(c_puct_schedule_name(config.c_puct_schedule));
+            },
+            [](SelfPlayConfig& config, const std::string& schedule) {
+                config.c_puct_schedule = parse_c_puct_schedule(schedule);
+            })
+        .def_readwrite("c_puct_init", &SelfPlayConfig::c_puct_init)
+        .def_readwrite("c_puct_base", &SelfPlayConfig::c_puct_base)
         .def_readwrite("dirichlet_alpha", &SelfPlayConfig::dirichlet_alpha)
         .def_readwrite("dirichlet_frac", &SelfPlayConfig::dirichlet_frac)
         .def_readwrite("temp_moves", &SelfPlayConfig::temp_moves)
@@ -1669,6 +1731,7 @@ PYBIND11_MODULE(dominion_v2_py, module) {
         .def_readwrite("scripted_threads", &SelfPlayConfig::scripted_threads)
         .def_readwrite("value_target", &SelfPlayConfig::value_target)
         .def_readwrite("margin_scale", &SelfPlayConfig::margin_scale)
+        .def_readwrite("margin_blend_alpha", &SelfPlayConfig::margin_blend_alpha)
         .def_readwrite("scripted_bot", &SelfPlayConfig::scripted_bot)
         .def_readwrite("scripted_nn_player", &SelfPlayConfig::scripted_nn_player)
         .def_readwrite("auto_play_treasures", &SelfPlayConfig::auto_play_treasures)
@@ -1721,11 +1784,17 @@ PYBIND11_MODULE(dominion_v2_py, module) {
             bool retain_finished_games,
             bool auto_play_treasures,
             bool prune_treasure_plays,
-            int obs_version) {
+            int obs_version,
+            const std::string& c_puct_schedule,
+            float c_puct_init,
+            float c_puct_base) {
             EvalRunnerConfig config{};
             config.n_games = n_games;
             config.sims_per_move = sims_per_move;
             config.c_puct = c_puct;
+            config.c_puct_schedule = parse_c_puct_schedule(c_puct_schedule);
+            config.c_puct_init = c_puct_init;
+            config.c_puct_base = c_puct_base;
             config.max_batch = max_batch;
             config.seed = seed;
             config.target_games = target_games;
@@ -1755,10 +1824,23 @@ PYBIND11_MODULE(dominion_v2_py, module) {
             py::arg("retain_finished_games") = false,
             py::arg("auto_play_treasures") = false,
             py::arg("prune_treasure_plays") = false,
-            py::arg("obs_version") = static_cast<int>(ObsVersion::V1))
+            py::arg("obs_version") = static_cast<int>(ObsVersion::V1),
+            py::arg("c_puct_schedule") = "fixed",
+            py::arg("c_puct_init") = 1.25F,
+            py::arg("c_puct_base") = 19652.0F)
         .def_readwrite("n_games", &EvalRunnerConfig::n_games)
         .def_readwrite("sims_per_move", &EvalRunnerConfig::sims_per_move)
         .def_readwrite("c_puct", &EvalRunnerConfig::c_puct)
+        .def_property(
+            "c_puct_schedule",
+            [](const EvalRunnerConfig& config) {
+                return std::string(c_puct_schedule_name(config.c_puct_schedule));
+            },
+            [](EvalRunnerConfig& config, const std::string& schedule) {
+                config.c_puct_schedule = parse_c_puct_schedule(schedule);
+            })
+        .def_readwrite("c_puct_init", &EvalRunnerConfig::c_puct_init)
+        .def_readwrite("c_puct_base", &EvalRunnerConfig::c_puct_base)
         .def_readwrite("max_batch", &EvalRunnerConfig::max_batch)
         .def_readwrite("seed", &EvalRunnerConfig::seed)
         .def_property(

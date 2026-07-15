@@ -25,17 +25,20 @@ enum class SelfPlayKingdomMode : std::uint8_t {
 enum class SelfPlayValueTarget : std::uint8_t {
     Outcome,
     Margin,
+    MarginBlend,
 };
 
 // Training-only opponent mode. The policy implementation is shared with
 // EvalRunner so scripted data and eval use identical BigMoney/Engine/Random
-// behavior. None preserves the existing NN-vs-NN self-play path exactly.
+// behavior. EngineV3 keeps its per-game policy state in ScriptedPool's slot
+// storage. None preserves the existing NN-vs-NN self-play path exactly.
 enum class SelfPlayScriptedBotKind : std::uint8_t {
     None,
     BigMoney,
     Engine,
     Random,
     Scaffold,
+    EngineV3,
 };
 
 // Per-game attributes for a heterogeneous self-play runner.  A non-empty
@@ -66,6 +69,9 @@ struct SelfPlayConfig {
     std::uint32_t n_games = 64;
     std::uint32_t sims_per_move = 64;
     float c_puct = 1.25F;
+    MctsCPuctSchedule c_puct_schedule = MctsCPuctSchedule::Fixed;
+    float c_puct_init = 1.25F;
+    float c_puct_base = 19652.0F;
     float dirichlet_alpha = 0.30F;
     float dirichlet_frac = 0.25F;
     std::uint16_t temp_moves = 12;
@@ -91,6 +97,7 @@ struct SelfPlayConfig {
     std::uint8_t scripted_threads = 2;
     SelfPlayValueTarget value_target = SelfPlayValueTarget::Outcome;
     float margin_scale = 20.0F;
+    float margin_blend_alpha = 0.6F;
     SelfPlayScriptedBotKind scripted_bot = SelfPlayScriptedBotKind::None;
     PlayerId scripted_nn_player = 0U;
     bool auto_play_treasures = false;
@@ -107,6 +114,14 @@ struct SelfPlayConfig {
 };
 
 [[nodiscard]] bool is_selfplay_implemented_kingdom(DefId def) noexcept;
+
+// Computes the non-tie MarginBlend target after terminal scoring has
+// established a score margin. Kept separate from SelfPlayRunner so the exact
+// target transform is unit-testable without constructing a terminal game.
+[[nodiscard]] float selfplay_margin_blend_value(
+    float margin,
+    float margin_scale,
+    float margin_blend_alpha) noexcept;
 
 struct SelfPlayRecord {
     std::vector<float> observations;
@@ -184,6 +199,11 @@ private:
     void start_search(GameSlot& game) noexcept;
     void auto_play_treasures(GameSlot& game) noexcept;
     void drive_scripted(GameSlot& game) noexcept;
+    [[nodiscard]] Action choose_scripted_action(
+        GameSlot& game,
+        const GameState& state,
+        const ActionMask& legal,
+        int legal_count) noexcept;
     void drive_scaffold(GameSlot& game, Mcts& scratch) noexcept;
     // Returns true while an offloaded Scaffold job owns this slot (including
     // the pass on which the job is queued).

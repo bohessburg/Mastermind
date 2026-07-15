@@ -284,6 +284,7 @@ def _state_view(session: Session, seat: int) -> dict[str, Any]:
                 "inPlay": game.in_play(player),
                 "resources": game.resources(player),
                 "vp": game.score(player) if game.game_over() else None,
+                "score": game.score(player),
             }
         )
 
@@ -295,6 +296,7 @@ def _state_view(session: Session, seat: int) -> dict[str, Any]:
         "myDiscardCount": game.discard_count(seat),
         "myDiscardTop": game.discard_top(seat),
         "mySetAside": game.set_aside(seat),
+        "myScore": game.score(seat),
         "opponents": opponents,
         "trash": _trash_entries(game),
         "trashTop": _trash_entries(game)[-1]["def"] if _trash_entries(game) else None,

@@ -825,3 +825,157 @@ Scripted milestones (engine3 51.6%) establish strongest-artificial-
 player status only. Human W-L vs checkpoints is now a tracked metric of
 record; first bot win over Jack at full attention is the project's real
 milestone.
+
+C15 GEN-40 CALIBRATION (2026-07-14 early): 106W-90L-4T = 54.1% vs
+engine3 @400 sims. Curve: 48.2 (g19) / 51.6 (g30) / 51.8 (g35) / 54.1
+(g40) — the g30-35 flat window was a pause, not a plateau; stagnation
+call retracted pending gen-45 read (decision rule: >=55% at g45 -> c15
+continues; ~52% -> cut and launch c16). All pre-random-curriculum data;
+flip at gen 41. c16 fully staged meanwhile: engine3 selfplay opponent
+landed (136/136 C++ tests, per-kind metrics verified in worker smoke),
+run_c16.json validated (40% engine3, no curriculum/league/deep-slice,
+engine3 sentinel 200g, warm-start placeholder pending best-checkpoint
+choice).
+
+C15 GEN-45 CALIBRATION + BOX INCIDENT (2026-07-14 early): gen 45 vs
+engine3 @400 sims: 125W-74L-1T = 62.8% — +8.7 pts in five gens; the
+random-kingdom flip (gen 41) sharply accelerated honest strength.
+Curve: 48.2/51.6/51.8/54.1/62.8 at gens 19/30/35/40/45. Decision rule
+satisfied (>=55%): c15 CONTINUES; c16 stays staged. Chart eval 93.0%,
+BM sentinel 76, vloss 0.031 (steepest drop of campaign, post-flip).
+INCIDENT: immediately after the 400-sim duel completed, box 3 dropped
+("connection closed by remote host", then connection refused) during
+the 1600-sim duel — matches the vast restart signature (disk wipe +
+port reassignment). EXPOSURE: gens 35/40/45 checkpoints were never
+pulled home; best local checkpoint is gen_0030. Awaiting box
+reappearance / Jack's vast console for new port. 1600-sim maturity
+check still owed.
+
+BOX INCIDENT CORRECTION (2026-07-14): box 3 did NOT restart — uptime 35
+days, trainer PIDs continuous (29h), disk intact. The drop was a
+transient vast proxy/network outage (~25 min of refused connections).
+Gens 35/40/45 pulled home and verified during the scare (good hygiene
+regardless). Training never stopped; no resume needed. Lesson: verify
+uptime + process etimes before assuming the restart-wipe scenario;
+resume15.sh staged but correctly NOT run (a blind resume would have
+double-launched against a live trainer).
+
+C15 SEARCH-DEPTH CHECK #2 (2026-07-14, gen 45): 1600 sims = 42.4% vs
+engine3 (n=100) against 62.8% @400 — the deep-search regression
+persists at nearly the same relative magnitude as gen 20 (31.0 vs
+48.2). Value loss improving 0.067->0.031 has NOT fixed search
+amplification of value miscalibration; accuracy and calibration are
+diverging axes. Strengthens the tempered-margin-target hypothesis for
+c16. Standing policy: all evals and web play at 400 sims.
+
+C15 GEN-50 (2026-07-14): chart eval 95.9% (188-8-4, record), vloss 0.023
+(0.040->0.031->0.023 post-flip freefall), BM sentinel 72. Engine3: 113W-
+84L-3T = 57.4% — down from gen 45's 62.8 (n=200, sigma ~3.5: a ~1.5-
+sigma move; curve 48.2/51.6/51.8/54.1/62.8/57.4 at g19/30/35/40/45/50).
+Read: gen-45 was likely partly a high outlier; underlying level ~mid-to-
+high 50s and still trending up vs the 51-54 band of g30-40. Throughput
+note: random-phase gens run ~1,250 games/hr wall (thinking-denser games),
+down from ~2,100 mid-campaign; no starvation signature.
+
+C15 CUT / C16 LAUNCHED (2026-07-14 evening): gen-55 engine3 read 56.2%
+confirmed the flatten (62.8 g45 was an outlier; 57.4 g50 / 56.2 g55 =
+two consecutive flat checks; vloss halved 0.031->0.017 across the same
+span without strength gains — accuracy/calibration divergence again).
+c15 FINAL: 55 gens, best-measured engine3 62.8% (g45), underlying
+~56-57%; flagships gen_0045/0050/0055 + full eval-gen archive local.
+C16 LAUNCHED on box 3: warm start from c15 gen_0055, 40% EngineBotV3
+scripted training opponent, 100% random kingdoms, no curriculum/league/
+deep-slice, engine3 sentinel (200g) + BM sentinel (100g) every eval.
+Banner verified (1,515,302 params, obs 1717), 1 trainer + 8 workers,
+GPU 90%, box build rebuilt with engine3 selfplay C++ before launch.
+The experiment: does direct engine pressure convert vloss gains into
+honest strength where pure self-play stopped doing so.
+
+SCORE-SNAPSHOT BIAS: FIELD CONFIRMATION (2026-07-14, Jack vs c15
+gen_0045, exports/hjtaHmmk80wVPdN2.json, 35-25 Jack): trailing 5-12
+through 7-18 mid-game while being cursed, the bot bought Duchy/Estate/
+Duchy/Duchy on turns 19-27 instead of Sentry (in kingdom, never bought,
+would have trashed curses). Early game showed good instincts (t5 Witch
+retaliation, t11 Province while ahead 8-1). Exactly matches the gen-30
+probe: value head prices current differential as realized outcome.
+Fix ladder: (1) c16 may organically punish panic-greening via v3
+losses; (2) c17 lever: tempered margin targets (blend win/loss,
+early-position margin discount). Jack's human record remains unbeaten.
+
+FIRST BOT WIN OVER JACK (2026-07-14, exports/T004mAgjh84I6YKt.json):
+c15 gen_0045 @400 sims def. Jack 41-40 (Jack notes he played sloppily;
+asterisk stands, milestone stands). Bandit/Moat board: bot showed
+in-kind Bandit retaliation (6 plays) + double Moat defense, then won
+the endgame with a SIX-DUCHY close — the score-snapshot instinct
+applied at the correct time (tight race, late game) rather than
+mid-game panic. Sharpens the bias diagnosis: timing miscalibration,
+not a wrong instinct. Human record now 1 loss; first machine win in
+project history.
+
+C16 VERDICT + C17 LAUNCHED (2026-07-15): c16 engine3 sentinel through 25
+gens: 50.5/53.5/53.5/50.0/50.0/55.5 — statistically flat at ~52, ending
+where c15 rested. CONCLUSION: direct engine pressure (40% v3 opponent)
+does NOT convert value accuracy into honest strength; the value-target
+calibration is the last suspect standing. c16 cut at gen 30 (gens 25/29/
+30 banked home). C17 LAUNCHED: identical recipe + value_target
+"margin_blend" alpha 0.6 (wins train toward [0.8,1.0]; margin influence
+compressed 2.5x; formula and tests in Codex delegation, 137/137 ctest).
+Warm start c16 gen_0030. One variable changed; instruments for the
+hypothesis: Duchy-injection probe delta, 1600-vs-400 duel gap, engine3
+sentinel slope. NOTE process slip: c16 watcher silently unarmed gens
+15-25 (claimed re-armed without calling Monitor) — caught at gen 29;
+evals recovered from metrics.csv, nothing lost but the lesson stands.
+
+DEEP-SEARCH REGRESSION ROOT-CAUSED (2026-07-15, c17 gen 15 instruments):
+(1) Duchy-injection probe: margin_blend ELIMINATED the score-snapshot
+bias — P(Duchy) delta under +6 opp VP: +0.2pts (was +3.7 on old target),
+value delta -0.001 (was -0.21). Cleanest cause->fix->verify loop of the
+project. (2) BUT 1600-sim duel still regressed (37.0% vs ~49.5% @400) —
+bias wasn't the search killer. (3) c_puct sweep @1600: 1.25 -> 37.0%,
+2.0 -> 46.5%, 3.0 -> 34.0% — inverted-U; the regression is mostly
+EXPLORATION MISCALIBRATION: fixed c_puct tuned at 400 sims over-exploits
+at 1600. Fix delegated: AlphaZero visit-scaled PUCT schedule
+(c_init + log((N+c_base+1)/c_base)), opt-in config, tunable c_puct_base.
+Ops note: box-3 network now severs any SSH session >~2 min; all long
+box jobs must run detached (setsid nohup + short-connection polling).
+
+VISIT-SCALED PUCT: NEGATIVE RESULT (2026-07-15): AlphaZero schedule
+(implemented+verified, 139/139 ctest; opt-in, default off) tested at
+c17 gen-15 vs engine3: 1600 sims visit_scaled(base=1400, eff~2.0 at
+root) = 34.2% — performs like fixed-1.25 (37.0), NOT like fixed-2.0
+(46.5). Diagnosis: the formula scales by per-node visits, so interior
+low-N nodes still explore at ~init; the sweep's gain came from raising
+exploration UNIFORMLY — deep low-visit nodes are the over-trusting
+ones. 400-sim control 52.6% (schedule near-neutral at 400, as
+predicted). STANDING CONCLUSIONS: best deep config (fixed 2.0) only
+reaches PARITY with 400 sims; operating point everywhere remains 400
+sims / fixed 1.25; deep-slice stays parked; depth is a value-
+discrimination research problem, not a tuning problem. Code kept as
+config option. First gpt-5.6-sol delegation (terra at capacity) —
+inherited a capacity-crashed partial diff, fixed real gaps, delivered
+green.
+
+BOX 3 DOWN (2026-07-15): network degraded all day (SSH sessions severed
+after ~2 min), then full unreachability >1 hour on port 10913. c17 was
+at ~gen 20 when contact was lost. EXPOSURE: minimal — banked locally
+through c16 gen_0030 and c17 gen_0015; at most ~5 c17 gens (~1h) lost
+if the disk wiped. Six-hour reconnect patrol armed. If the instance is
+dead/reassigned, next steps need Jack's vast console: new port or new
+instance; re-bootstrap is scripted (source tarball + config + gen_0015
+push + launch17.sh).
+
+PHASE CLOSED — BOX LAPSED (2026-07-15, Jack): box 3 ran out of vast
+credit (explains the day-long network degradation and final outage).
+Program paused by choice; no data of consequence lost (c17 gens 16-~20
+only). FLAGSHIP OF RECORD: c15 gen_0045 — best single engine3 read
+(62.8%; honest band ~56-57), and the checkpoint that took the FIRST
+GAME off Jack (41-40). Local archive: c13 (12 ckpts incl gen_0065),
+c14 (0001/0020/0025/0030/0035/0038 + replay 1.26M), c15
+(0005-0055 eval gens), c16 (0025/0029/0030), c17 (0015). All code
+merged on v2-phase1: card-token transformer + factory + compiled
+bucketed inference, EngineBotV3 selfplay/eval/web integration,
+margin_blend targets (bias-fix VERIFIED by probe), visit-scaled PUCT
+(implemented, negative result, default off). Open threads for next
+provision: c17 strength verdict (sentinel was flat through gen 15 but
+buffer barely converted), depth-as-research-problem, obs-v3 backlog
+(trash composition, log1p pass, property-informed embeddings).

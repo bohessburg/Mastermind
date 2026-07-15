@@ -188,7 +188,7 @@ function CardTile({
   );
 }
 
-function ResourceBar({ resources }: { resources: ResourceView }) {
+function ResourceBar({ resources, myScore }: { resources: ResourceView; myScore?: number }) {
   const extras = (
     [
       ['Potion', resources.potion],
@@ -211,6 +211,11 @@ function ResourceBar({ resources }: { resources: ResourceView }) {
       <span>
         Coins <b className="resource-value resource-coins">{resources.coins}</b>
       </span>
+      {myScore !== undefined && (
+        <span>
+          Your VP <b className="resource-value resource-victory">{myScore}</b>
+        </span>
+      )}
       {extras.map(([label, value]) => (
         <span key={label}>
           {label} <b className="resource-value">{value}</b>
@@ -275,6 +280,7 @@ function OpponentStrip({ opponents, seatKinds }: { opponents: OpponentView[]; se
             <span>Hand {opponent.handCount}</span>
             <span>Deck {opponent.deckCount}</span>
             <span>Discard {opponent.discardCount}</span>
+            <span>VP {opponent.score}</span>
           </div>
           <div className="mini-row">
             <span>Discard</span>
@@ -336,12 +342,14 @@ function TrashAndResources({
   trash,
   trashTop,
   resources,
+  myScore,
   turn,
   decision,
 }: {
   trash: CountedCard[];
   trashTop: number | null;
   resources: ResourceView;
+  myScore: number;
   turn: number;
   decision?: DecisionMessage;
 }) {
@@ -355,7 +363,7 @@ function TrashAndResources({
       </div>
       <div className="turn-panel">
         <span className="turn-label">{turnLabel}</span>
-        <ResourceBar resources={resources} />
+        <ResourceBar resources={resources} myScore={myScore} />
       </div>
     </section>
   );
@@ -985,6 +993,7 @@ export function App() {
               trash={view.trash}
               trashTop={view.trashTop}
               resources={view.resources}
+              myScore={view.myScore}
               turn={view.turn}
               decision={clientState.decision}
             />

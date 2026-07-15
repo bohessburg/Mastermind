@@ -765,10 +765,16 @@ MctsConfig make_scaffold_mcts_config(
     float c_puct,
     std::uint32_t max_tree_nodes,
     bool prune_treasure_plays,
-    std::uint8_t determinizations) noexcept {
+    std::uint8_t determinizations,
+    MctsCPuctSchedule c_puct_schedule,
+    float c_puct_init,
+    float c_puct_base) noexcept {
     MctsConfig config{};
     config.sims_per_move = sims_per_move;
     config.c_puct = c_puct;
+    config.c_puct_schedule = c_puct_schedule;
+    config.c_puct_init = c_puct_init;
+    config.c_puct_base = c_puct_base;
     config.determinizations = determinizations;
     config.max_tree_nodes = max_tree_nodes;
     config.rollout_step_cap = 1024U;
@@ -825,6 +831,15 @@ EvalRunner::EvalRunner(const EvalRunnerConfig& config)
     if (config_.sims_per_move == 0U) {
         throw std::invalid_argument("EvalRunnerConfig.sims_per_move must be positive");
     }
+    if (!mcts_is_valid_c_puct_schedule(config_.c_puct_schedule)) {
+        throw std::invalid_argument("EvalRunnerConfig.c_puct_schedule is invalid");
+    }
+    if (!(config_.c_puct_init > 0.0F) || !std::isfinite(config_.c_puct_init)) {
+        throw std::invalid_argument("EvalRunnerConfig.c_puct_init must be finite and positive");
+    }
+    if (!(config_.c_puct_base > 0.0F) || !std::isfinite(config_.c_puct_base)) {
+        throw std::invalid_argument("EvalRunnerConfig.c_puct_base must be finite and positive");
+    }
     if (config_.fixed_setup.num_players == 0U) {
         config_.fixed_setup = default_fixed_setup();
     }
@@ -832,6 +847,9 @@ EvalRunner::EvalRunner(const EvalRunnerConfig& config)
 
     mcts_config_.sims_per_move = config_.sims_per_move;
     mcts_config_.c_puct = config_.c_puct;
+    mcts_config_.c_puct_schedule = config_.c_puct_schedule;
+    mcts_config_.c_puct_init = config_.c_puct_init;
+    mcts_config_.c_puct_base = config_.c_puct_base;
     mcts_config_.determinizations = 1U;
     mcts_config_.max_tree_nodes = config_.max_tree_nodes == 0U ? 4096U : config_.max_tree_nodes;
     mcts_config_.rollout_policy = MctsRolloutPolicy::External;
@@ -841,7 +859,11 @@ EvalRunner::EvalRunner(const EvalRunnerConfig& config)
         config_.sims_per_move,
         config_.c_puct,
         mcts_config_.max_tree_nodes,
-        config_.prune_treasure_plays);
+        config_.prune_treasure_plays,
+        2U,
+        config_.c_puct_schedule,
+        config_.c_puct_init,
+        config_.c_puct_base);
 
     for (std::uint32_t i = 0; i < config_.n_games; ++i) {
         games_[i].mcts = Mcts(mcts_config_);

@@ -38,7 +38,18 @@ describe('client state reducer', () => {
         myDeckCount: 5,
         myDiscardCount: 0,
         myDiscardTop: null,
-        opponents: [],
+        myScore: 3,
+        opponents: [
+          {
+            seat: 1,
+            handCount: 5,
+            deckCount: 5,
+            discardCount: 0,
+            discardTop: null,
+            inPlay: [],
+            score: 3,
+          },
+        ],
         trash: [],
         trashTop: null,
         resources: {
@@ -61,6 +72,8 @@ describe('client state reducer', () => {
     const withState = reduceServerMessage(withTable, state);
     expect(withState.table?.kingdom).toEqual([10, 11]);
     expect(withState.state?.view.myHand[0].count).toBe(3);
+    expect(withState.state?.view.myScore).toBe(3);
+    expect(withState.state?.view.opponents[0].score).toBe(3);
   });
 
   it('appends log lines', () => {

@@ -246,6 +246,9 @@ class FakeViewGame(FakeDecisionGame):
     def game_over(self):
         return False
 
+    def score(self, player):
+        return 3
+
 
 class FakeThronedBanditAutoGame:
     def __init__(self):
@@ -868,6 +871,16 @@ def test_web_session_filters_validates_labels_and_broadcasts() -> None:
             assert by_type(initial1, "table")["seats"][1]["kind"] == "human"
             assert_filtered_state(by_type(initial0, "state"))
             assert_filtered_state(by_type(initial1, "state"))
+            initial_view0 = by_type(initial0, "state")["view"]
+            initial_view1 = by_type(initial1, "state")["view"]
+            assert isinstance(initial_view0["myScore"], int)
+            assert isinstance(initial_view0["opponents"][0]["score"], int)
+            assert isinstance(initial_view1["myScore"], int)
+            assert isinstance(initial_view1["opponents"][0]["score"], int)
+            assert initial_view0["myScore"] == 3
+            assert initial_view0["opponents"][0]["score"] == 3
+            assert initial_view1["myScore"] == 3
+            assert initial_view1["opponents"][0]["score"] == 3
 
             decisions = {
                 0: by_type(initial0, "decision"),
@@ -894,6 +907,10 @@ def test_web_session_filters_validates_labels_and_broadcasts() -> None:
             assert by_type(update1, "log")["lines"]
             assert_filtered_state(by_type(update0, "state"))
             assert_filtered_state(by_type(update1, "state"))
+            for viewer, messages in enumerate((update0, update1)):
+                view = by_type(messages, "state")["view"]
+                assert view["myScore"] == session.game.score(viewer)
+                assert view["opponents"][0]["score"] == session.game.score(1 - viewer)
             decisions = {
                 0: by_type(update0, "decision"),
                 1: by_type(update1, "decision"),
