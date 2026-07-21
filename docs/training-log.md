@@ -979,3 +979,16 @@ margin_blend targets (bias-fix VERIFIED by probe), visit-scaled PUCT
 provision: c17 strength verdict (sentinel was flat through gen 15 but
 buffer barely converted), depth-as-research-problem, obs-v3 backlog
 (trash composition, log1p pass, property-informed embeddings).
+
+C15 GEN-45 SIMS SWEEP (2026-07-20, overnight local CPU, 500 games per
+point, random kingdoms, engine3): win%-excl-ties by sims —
+200: 51.9 | 400: 56.1 | 600: 53.5 | 800: 55.6 | 1000: 52.3 |
+1200: 47.5 | 1400: 41.7 | 1600: 39.7. One sigma ≈ ±2.2. READ: flat
+plateau 200-1000 (~52-56), then a smooth monotonic decline setting in
+past 1000 — not a cliff. 1600 read (39.7) replicates the training-box
+depth check (42.4), on 500 games. 400 sims confirmed as the operating
+point (web deploy default). Companion probes (2026-07-19, n=100):
+policy-only (sims=1) scored 4.0% vs engine3 — nearly all playing
+strength lives in search; policy distillation gap is a c18+ lever.
+Pile-ending rate stable ~22% across the whole sweep. Context: this is
+the deployed web checkpoint (Hetzner box, 400 sims).

@@ -718,7 +718,7 @@ function JoinScreen({ onJoin }: { onJoin: (credentials: Credentials) => void }) 
     setError(undefined);
     const seats: SeatKind[] =
       mode === 'human-bot'
-        ? ['human', 'bot']
+        ? ['human', 'bot:engine3']
         : mode === 'human-nn'
           ? ['human', 'bot:nn']
           : mode === 'human-nnmcts'
@@ -761,7 +761,7 @@ function JoinScreen({ onJoin }: { onJoin: (credentials: Credentials) => void }) 
                 setMode(event.target.value as 'human-bot' | 'human-nn' | 'human-nnmcts' | 'human-human')
               }
             >
-              <option value="human-bot">Human vs scripted bot</option>
+              <option value="human-bot">Human vs EngineBot (scripted)</option>
               <option value="human-nn">Human vs neural net</option>
               <option value="human-nnmcts">Human vs neural net + search</option>
               <option value="human-human">Human vs human</option>
