@@ -500,8 +500,9 @@ def test_live_mismatch_aborts_on_question_three_first_resolution() -> None:
     assert result.divergence_report.frame_index == 45
     assert result.divergence_report.question_index == 3
     assert "DecisionResolved answers differ" in result.reason
-    assert [gesture.question_index for gesture in actuator.gestures] == [3]
-    assert actuator.gestures[0].answer_indices == (1, 1, 0, 0)
+    assert [gesture.question_index for gesture in actuator.gestures] == [1, 3]
+    assert actuator.gestures[0].answer_indices == (0,)
+    assert actuator.gestures[1].answer_indices == (1, 1, 0, 0)
 
 
 class _SavedDOMParser(HTMLParser):
@@ -982,6 +983,115 @@ class _EmptyPage:
     def locator(self, selector: str) -> _EmptyLocator:
         assert selector == "div.card-stacks > div"
         return _EmptyLocator()
+
+
+class _CanvasButton:
+    def __init__(
+        self,
+        page: _StartModalPage,
+        index: int,
+        box: dict[str, float],
+    ) -> None:
+        self.page = page
+        self.index = index
+        self.box = box
+
+    async def is_visible(self) -> bool:
+        return True
+
+    async def bounding_box(self) -> dict[str, float]:
+        return self.box
+
+    async def click(self) -> None:
+        self.page.clicks.append(self.index)
+
+
+class _CanvasButtons:
+    def __init__(self, page: _StartModalPage) -> None:
+        self.page = page
+
+    async def count(self) -> int:
+        return len(self.page.boxes)
+
+    def nth(self, index: int) -> _CanvasButton:
+        return _CanvasButton(self.page, index, self.page.boxes[index])
+
+
+class _StartModalPage:
+    def __init__(self, boxes: list[dict[str, float]]) -> None:
+        self.boxes = boxes
+        self.clicks: list[int] = []
+
+    def locator(self, selector: str) -> _CanvasButtons:
+        assert selector == "div.game-buttons canvas"
+        return _CanvasButtons(self)
+
+
+def _start_confirmation_decision() -> PendingDecisionSnapshot:
+    return PendingDecisionSnapshot(
+        question_index=2,
+        decision_type="CHOOSE_MODE",
+        question_id="question-session-relative",
+        offered=("card-mode-97",),
+        minimum=1,
+        maximum=1,
+        association=None,
+    )
+
+
+def test_start_confirmation_uses_the_single_primary_canvas_fallback() -> None:
+    page = _StartModalPage(
+        [
+            {"x": 10.0, "width": 200.0, "height": 40.0},
+            {"x": 220.0, "width": 40.0, "height": 40.0},
+        ]
+    )
+
+    gesture = asyncio.run(
+        PlaywrightActuator(page).act(
+            int(dz.A_OPTION_BASE),
+            _start_confirmation_decision(),
+            ("card-mode-97",),
+        )
+    )
+
+    assert gesture.answer_indices == (0,)
+    assert page.clicks == [0]
+
+
+def test_start_confirmation_failure_snapshots_dom_and_names_search() -> None:
+    page = _StartModalPage(
+        [
+            {"x": 10.0, "width": 40.0, "height": 40.0},
+            {"x": 60.0, "width": 40.0, "height": 40.0},
+        ]
+    )
+    snapshots: list[str] = []
+
+    async def snapshot_dom(label: str) -> str:
+        snapshots.append(label)
+        return "dom-start-confirmation.html"
+
+    with pytest.raises(ActuationError) as caught:
+        asyncio.run(
+            PlaywrightActuator(
+                page,
+                snapshot_dom=snapshot_dom,
+            ).act(
+                int(dz.A_OPTION_BASE),
+                _start_confirmation_decision(),
+                ("card-mode-97",),
+            )
+        )
+
+    message = str(caught.value)
+    assert "start-confirmation searched div.game-buttons canvas" in message
+    assert "sole visible mode/primary button" in message
+    assert "DOM snapshot=dom-start-confirmation.html" in message
+    assert snapshots == [
+        "actuation-failure-start-confirmation-question-2"
+    ]
+    assert page.clicks == []
 
 
 def test_actuation_error_reports_offered_targets_and_failed_step() -> None:

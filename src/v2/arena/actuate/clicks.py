@@ -12,7 +12,7 @@ from abc import ABC, abstractmethod
 from collections import Counter
 from dataclasses import dataclass
 from itertools import permutations, product
-from typing import Any, Iterable, Sequence
+from typing import Any, Awaitable, Callable, Iterable, Sequence
 
 import dominion_v2_py as dz
 
@@ -117,6 +117,22 @@ def expected_answer_count(
     ):
         return 1
     return None
+
+
+def is_start_confirmation_prompt(
+    decision: PendingDecisionSnapshot,
+) -> bool:
+    """Recognize the pre-turn client handshake by its protocol shape.
+
+    The observed localization key is ``question-411``, but it is deliberately
+    not required: that identifier may move between client sessions/releases.
+    """
+    return (
+        decision.decision_type == "CHOOSE_MODE"
+        and len(decision.offered) == 1
+        and decision.offered[0].startswith("card-mode-")
+        and decision.minimum == decision.maximum == 1
+    )
 
 
 def possible_answer_indices(
@@ -354,8 +370,14 @@ class PlaywrightActuator(Actuator):
     module rather than the game loop.
     """
 
-    def __init__(self, page: Any | None) -> None:
+    def __init__(
+        self,
+        page: Any | None,
+        *,
+        snapshot_dom: Callable[[str], Awaitable[Any]] | None = None,
+    ) -> None:
         self.page = page
+        self.snapshot_dom = snapshot_dom
 
     async def act(
         self,
@@ -394,6 +416,9 @@ class PlaywrightActuator(Actuator):
                     await self._click_mode_button(
                         target.offered_index,
                         len(offered_elements),
+                        start_confirmation=is_start_confirmation_prompt(
+                            decision
+                        ),
                     )
                 elif target.region == "submit-button":
                     if _verify_selection_before_submit(decision):
@@ -404,19 +429,30 @@ class PlaywrightActuator(Actuator):
                 else:
                     await self._click_card(target)
             except _GestureStepError as error:
+                start_confirmation_context = (
+                    await self._start_confirmation_failure_context(decision)
+                    if is_start_confirmation_prompt(decision)
+                    else ""
+                )
                 raise ActuationError(
                     f"failed question {decision.question_index} gesture "
                     f"{gesture.answer_indices}; offered={offered_elements!r}; "
                     f"resolved_targets={targets!r}; step={step}/{len(targets)} "
                     f"target={target!r} status={error.status}; "
-                    f"detail={error.detail}"
+                    f"detail={error.detail}{start_confirmation_context}"
                 ) from error
             except Exception as error:
+                start_confirmation_context = (
+                    await self._start_confirmation_failure_context(decision)
+                    if is_start_confirmation_prompt(decision)
+                    else ""
+                )
                 raise ActuationError(
                     f"failed question {decision.question_index} gesture "
                     f"{gesture.answer_indices}; offered={offered_elements!r}; "
                     f"resolved_targets={targets!r}; step={step}/{len(targets)} "
                     f"target={target!r} status=click-error; detail={error}"
+                    f"{start_confirmation_context}"
                 ) from error
         return gesture
 
@@ -614,25 +650,69 @@ class PlaywrightActuator(Actuator):
                 f"{buttons[matches[0]]!r}; click={error}",
             ) from error
 
-    async def _click_mode_button(self, index: int, offered_count: int) -> None:
+    async def _click_mode_button(
+        self,
+        index: int,
+        offered_count: int,
+        *,
+        start_confirmation: bool = False,
+    ) -> None:
         locators, facts = await self._visible_button_boxes()
         buttons = sorted(
             zip(locators, facts, strict=True),
             key=lambda item: item[1].x,
         )
-        if len(buttons) != offered_count:
+        if len(buttons) == offered_count:
+            match = index
+        elif start_confirmation and offered_count == 1 and index == 0:
+            primary = [
+                button_index
+                for button_index, (_, fact) in enumerate(buttons)
+                if game_button_role(width=fact.width, height=fact.height)
+                == "primary"
+            ]
+            if len(primary) != 1:
+                raise _GestureStepError(
+                    "not-found",
+                    "start-confirmation searched div.game-buttons canvas for "
+                    "one visible mode canvas or one unambiguous primary canvas; "
+                    f"visible={len(buttons)} primary={len(primary)}; "
+                    f"buttons={facts!r}",
+                )
+            match = primary[0]
+        else:
             raise _GestureStepError(
                 "not-found",
                 f"expected {offered_count} mode canvases, found={len(buttons)}; "
                 f"buttons={facts!r}",
             )
         try:
-            await buttons[index][0].click()
+            await buttons[match][0].click()
         except Exception as error:
             raise _GestureStepError(
                 "click-error",
-                f"found={len(buttons)} mode button index={index}; click={error}",
+                f"found={len(buttons)} mode button index={match}; click={error}",
             ) from error
+
+    async def _start_confirmation_failure_context(
+        self,
+        decision: PendingDecisionSnapshot,
+    ) -> str:
+        searched = (
+            "start-confirmation searched div.game-buttons canvas for the sole "
+            "visible mode/primary button"
+        )
+        if self.snapshot_dom is None:
+            return f"; {searched}; DOM snapshot unavailable (not configured)"
+        label = (
+            "actuation-failure-start-confirmation-"
+            f"question-{decision.question_index}"
+        )
+        try:
+            destination = await self.snapshot_dom(label)
+        except Exception as error:
+            return f"; {searched}; DOM snapshot failed: {error}"
+        return f"; {searched}; DOM snapshot={destination}"
 
     async def _verify_selected_cards(self, labels: tuple[str, ...]) -> None:
         wanted = Counter(labels)

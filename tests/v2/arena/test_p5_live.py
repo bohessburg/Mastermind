@@ -69,8 +69,8 @@ def test_async_game_loop_replays_all_three_games() -> None:
         181347888,
         181348150,
     ]
-    assert sum(result.decisions for result in results) == 929
+    assert sum(result.decisions for result in results) == 932
     assert sum(result.validations for result in results) >= 929
     assert sum(result.rigged_steps for result in results) == 259
-    assert len(actuator.gestures) == 929
+    assert len(actuator.gestures) == 932
     assert not actuator.stopped

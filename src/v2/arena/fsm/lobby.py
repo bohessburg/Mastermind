@@ -65,20 +65,6 @@ TABLE_CONTAINER_SELECTOR = (
     'score-table, score-table-buttons, input[placeholder="message"]'
 )
 
-# The automatch Start game control has no saved DOM yet.  Restrict the
-# deliberate text fallback to the table UI, and rank the observed Angular
-# button shape ahead of a generic table button.
-START_GAME_TEXT_NG_CLICK_SELECTOR = "score-table button[ng-click]"
-START_GAME_TEXT_LOBBY_BUTTON_SELECTOR = "score-table button.lobby-button"
-START_GAME_TEXT_BUTTON_SELECTOR = "score-table button"
-_START_GAME_TEXT_SELECTORS = (
-    START_GAME_TEXT_NG_CLICK_SELECTOR,
-    START_GAME_TEXT_LOBBY_BUTTON_SELECTOR,
-    START_GAME_TEXT_BUTTON_SELECTOR,
-)
-START_GAME_TEXT = "start game"
-
-
 @dataclass(frozen=True, kw_only=True)
 class _ControlSpec:
     selector: str
@@ -126,12 +112,10 @@ _CONTROL_SPECS = {
 class LobbyFSM:
     """Drive only controls and state signals seen in the reference capture.
 
-    A matched automatch table can expose an unrecorded ``Start game`` button,
-    so the semantic Start game step accepts a visible, exact text match scoped
-    to the table UI in addition to the recorded hosted-table ``Ready`` control.
-    Every missing-control failure leaves a DOM snapshot when a session callback
-    is supplied, allowing that temporary text fallback to be replaced by a
-    precise selector from the next live run.
+    Automatch enters ``game-area`` directly; its apparent Start game modal is
+    an in-feed game decision handled by the game loop. The recorded hosted-table
+    ``Ready`` control remains supported for the separate table-waiting flow.
+    Every missing-control failure leaves a DOM snapshot when supplied.
     """
 
     def __init__(
@@ -180,10 +164,10 @@ class LobbyFSM:
             return
 
         self._transition(LobbyState.TABLE_WAITING)
-        start_game = await self._wait_for_control(
-            LobbyControl.START_GAME,
-            state=LobbyState.TABLE_WAITING,
-        )
+        start_game = await self._wait_for_table_start_or_game()
+        if start_game is None:
+            self._transition(LobbyState.IN_GAME)
+            return
         await self._click(start_game, LobbyControl.START_GAME)
         self._transition(LobbyState.IN_GAME)
 
@@ -241,24 +225,46 @@ class LobbyFSM:
         await self._snapshot_waiting(LobbyState.SEARCHING)
         deadline = self.clock() + self._timeout_for(LobbyState.SEARCHING)
         while True:
+            # Automatch lands directly in the game. Prefer that authoritative
+            # board signal over any stale score-table controls.
+            if await self._in_game_board_is_present():
+                return "in-game"
             start_game = await self._control_if_present(LobbyControl.START_GAME)
             if start_game is not None:
                 return "table"
-            if await self._in_game_board_is_present():
-                return "in-game"
             if await self._selector_count(TABLE_CONTAINER_SELECTOR) > 0:
                 # A table has definitely landed, but its start control may be
-                # rendering asynchronously.  Apply the table-specific timeout
-                # and retain a focused DOM snapshot through _wait_for_control.
+                # rendering asynchronously, or automatch may be about to render
+                # game-area. Apply the table-specific timeout to both signals.
                 return "table"
             if self.clock() >= deadline:
                 await self._snapshot_failure("searching-no-match-control")
                 raise self._timeout_error(
                     LobbyState.SEARCHING,
-                    "a matched table's Start game control "
-                    f"({START_GAME_SELECTOR} or visible text {START_GAME_TEXT!r} "
-                    f"within {TABLE_CONTAINER_SELECTOR}) or an in-play board "
+                    "a hosted table's Ready control "
+                    f"({START_GAME_SELECTOR}) or an in-play board "
                     f"({IN_GAME_SELECTOR})",
+                )
+            await self.sleep(self.poll_seconds)
+
+    async def _wait_for_table_start_or_game(self) -> Any | None:
+        """Return hosted-table Ready, or ``None`` when automatch enters play."""
+        await self._snapshot_waiting(LobbyState.TABLE_WAITING)
+        deadline = self.clock() + self._timeout_for(LobbyState.TABLE_WAITING)
+        while True:
+            if await self._in_game_board_is_present():
+                return None
+            locator = await self._control_if_present(LobbyControl.START_GAME)
+            if locator is not None:
+                return locator
+            if self.clock() >= deadline:
+                await self._snapshot_failure(
+                    "table_waiting-start_game-not-found"
+                )
+                raise self._timeout_error(
+                    LobbyState.TABLE_WAITING,
+                    self._control_description(LobbyControl.START_GAME)
+                    + f" or an in-play board ({IN_GAME_SELECTOR})",
                 )
             await self.sleep(self.poll_seconds)
 
@@ -315,10 +321,6 @@ class LobbyFSM:
             await self.sleep(self.poll_seconds)
 
     async def _control_if_present(self, control: LobbyControl) -> Any | None:
-        if control is LobbyControl.START_GAME:
-            text_control = await self._visible_text_start_game_control()
-            if text_control is not None:
-                return text_control
         spec = _CONTROL_SPECS[control]
         count = await self._selector_count(spec.selector)
         if count == 0:
@@ -329,34 +331,6 @@ class LobbyFSM:
                 f"matched {count} elements"
             )
         return self.page.locator(spec.selector)
-
-    async def _visible_text_start_game_control(self) -> Any | None:
-        """Find the unrecorded automatch control by its visible exact label."""
-        for selector in _START_GAME_TEXT_SELECTORS:
-            locator = self.page.locator(selector)
-            count = await self._selector_count(selector)
-            matches: list[Any] = []
-            for index in range(count):
-                candidate = locator.nth(index)
-                try:
-                    if not await candidate.is_visible():
-                        continue
-                    label = (await candidate.inner_text()).strip().casefold()
-                except Exception as error:
-                    raise self._error(
-                        "could not inspect visible Start game text in "
-                        f"{selector}: {error}"
-                    ) from error
-                if label == START_GAME_TEXT:
-                    matches.append(candidate)
-            if len(matches) == 1:
-                return matches[0]
-            if len(matches) > 1:
-                raise self._error(
-                    "ambiguous visible Start game control: selector "
-                    f"{selector} matched {len(matches)} exact-text buttons"
-                )
-        return None
 
     async def _in_game_board_is_present(self) -> bool:
         """Recognize only the recorded board, never the persistent chat pane."""
@@ -397,9 +371,8 @@ class LobbyFSM:
     def _control_description(self, control: LobbyControl) -> str:
         if control is LobbyControl.START_GAME:
             return (
-                "Start game control: recorded Ready selector "
-                f"{START_GAME_SELECTOR}, or a visible exact-text {START_GAME_TEXT!r} "
-                f"button scoped to {TABLE_CONTAINER_SELECTOR}"
+                "hosted-table Ready control "
+                f"({START_GAME_SELECTOR})"
             )
         spec = _CONTROL_SPECS[control]
         return f"{spec.label!r} ({spec.selector})"

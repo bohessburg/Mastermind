@@ -20,6 +20,7 @@ from ..actuate.clicks import (
     ClientGesture,
     MockActuator,
     expected_answer_count,
+    is_start_confirmation_prompt,
     offered_name,
     possible_answer_indices,
 )
@@ -697,19 +698,92 @@ async def run_game_loop(
                     return tuple(results)
                 continue
 
-            if (
-                not isinstance(event, PendingDecision)
-                or active.kingdom_rejected
-            ):
+            if not isinstance(event, PendingDecision):
                 continue
             snapshot = tracker.snapshot()
+            # questionAsked is a client-private inbound frame: the parser emits
+            # PendingDecision only for the connected local seat. Opponent
+            # questions appear here only as seat-tagged DecisionResolved events.
+            if snapshot.pending_decision is None:
+                raise DivergenceError(
+                    "PendingDecision was not retained by the tracker; refusing "
+                    "to leave a local client question unanswered",
+                    frame_index=frame_index,
+                    question_index=event.question_index,
+                )
+            if snapshot.our_seat is None:
+                raise DivergenceError(
+                    "PendingDecision arrived before the local seat was known; "
+                    "refusing to leave the client question unanswered",
+                    frame_index=frame_index,
+                    question_index=event.question_index,
+                )
+            if active.kingdom_rejected:
+                raise DivergenceError(
+                    "PendingDecision arrived after the kingdom was rejected; "
+                    "the resign path did not clear the local client question",
+                    frame_index=frame_index,
+                    question_index=event.question_index,
+                )
+
             if (
-                snapshot.pending_decision is None
-                or snapshot.our_seat is None
-                or snapshot.turn_owner is None
-                or snapshot.turn_number is None
+                snapshot.turn_owner is None
+                and snapshot.turn_number is None
+                and is_start_confirmation_prompt(snapshot.pending_decision)
             ):
+                await settle(frame_index)
+                plan = DecisionPlan(
+                    engine_actions=(),
+                    gesture_actions=(int(dz.A_OPTION_BASE),),
+                    answer_hint=(0,),
+                )
+                gesture = await _act_with_hint(
+                    actuator,
+                    plan.gesture_actions[0],
+                    snapshot.pending_decision,
+                    snapshot.pending_decision.offered,
+                    prior_actions=(),
+                    answer_hint=plan.answer_hint,
+                )
+                intended = IntendedAction(
+                    decision=snapshot.pending_decision,
+                    engine_actions=plan.engine_actions,
+                    gesture_actions=plan.gesture_actions,
+                    gesture=gesture,
+                    acceptable_answers=possible_answer_indices(
+                        gesture.actions,
+                        snapshot.pending_decision,
+                    ),
+                    frame_index=frame_index,
+                )
+                active.pending = intended
+                active.pending_snapshot = snapshot
+                active.pending_plan = plan
+                active.pending_events = []
+                active.decisions += 1
+                if active.archive is not None:
+                    active.archive.append_decision(
+                        DecisionRecord(
+                            frame_index=frame_index,
+                            question_index=event.question_index,
+                            question_id=event.question_id,
+                            engine_actions=plan.engine_actions,
+                            gesture_actions=plan.gesture_actions,
+                            answers=gesture.answer_indices,
+                            offered=event.offered,
+                        )
+                    )
                 continue
+            if snapshot.turn_owner is None or snapshot.turn_number is None:
+                raise DivergenceError(
+                    "unexpected pre-turn PendingDecision addressed to the local "
+                    "client; refusing to leave it unanswered: "
+                    f"type={event.decision_type!r} id={event.question_id!r} "
+                    f"offered={event.offered!r} minimum={event.minimum} "
+                    f"maximum={event.maximum}",
+                    frame_index=frame_index,
+                    question_index=event.question_index,
+                )
 
             await settle(frame_index)
             turn_key = (snapshot.game_id, snapshot.turn_number)

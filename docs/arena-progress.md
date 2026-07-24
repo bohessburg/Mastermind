@@ -121,10 +121,11 @@ person would, using the site's own client the whole way through.
     card copies, selection order, or manual-single-treasure vs autoplay);
     these are enumerated rather than guessed.
   - All three recorded games replay to `GameEnd` with **zero divergence
-    aborts**. The mock actuator submits 929 live questions (one of the 930
-    in-game questions is superseded by `GameEnd` without an answer), every
-    acted decision validates its native shadow, and 259 observed-outcome
-    steps use deck rigging/reconstruction.
+    aborts**. The mock actuator submits 932 live questions: three pre-turn
+    start handshakes plus 929 engine decisions. One of the 933 pending
+    questions is superseded by `GameEnd` without an answer. Every engine
+    decision validates its native shadow, and 259 observed-outcome steps use
+    deck rigging/reconstruction.
   - A deliberately corrupted `DecisionResolved` aborts immediately and stops
     the actuator.
 
@@ -271,16 +272,14 @@ person would, using the site's own client the whole way through.
     the **Start search** button in `dom-34066.html` and `dom-4341034.html`.
   - `score-table-buttons button.lobby-button[ng-click="$ctrl.readyClick()"]`
     is the recorded hosted-table start control (labelled **Ready** by client
-    2.2.8) in `dom-530325.html`. The live automatch **Start game** button has
-    no captured DOM yet, so it is deliberately resolved by visible, trimmed,
-    case-insensitive exact text within `score-table`, preferring an `ng-click`
-    button and then a `.lobby-button`. This is a temporary, documented
-    exception: the next live run will archive the exact table DOM so it can be
-    replaced with a precise selector.
+    2.2.8) in `dom-530325.html`. This remains specific to hosted-table flow;
+    automatch does not depend on it.
   - `game-area` is the in-play board signal, present in mid-game
     `dom-3978828.html` and `dom-2848087.html` but absent from the table-waiting
-    `dom-530325.html`. That table snapshot does contain `game-chat`, so chat
-    is now only a secondary diagnostic signal and can never skip Start game.
+    `dom-530325.html`. Automatch goes directly from search to this board; the
+    apparent **Start game** modal there is an in-feed question, not a lobby
+    control. That table snapshot does contain `game-chat`, so chat is only a
+    secondary diagnostic signal.
   - `score-table-buttons button.lobby-button[ng-click="$ctrl.leave()"]` is
     **Leave Table** in `dom-530325.html`.
   - `game-ended-notification modal-window button.lobby-button[ng-click="$ctrl.ok()"]`
@@ -300,6 +299,33 @@ person would, using the site's own client the whole way through.
   snapshot at state entry. A terminal missing-control resolution captures a
   second labeled snapshot before raising its `LobbyError`; these use
   `page.content()` only and do not touch the WebSocket/event feed.
+
+- **Automatch start-handshake fix (2026-07-24).**
+  The stalled game 181367084 archive shows `GameStart`, then local
+  `question-411` (`CHOOSE_MODE`, exactly one `card-mode-*`, exactly one
+  required answer), then the opponent's resolution and `GameEnd`, with no
+  `TurnStart`. Working and reference captures resolve both seats' corresponding
+  questions with `(0,)` before turn 1. The game loop now recognizes the local
+  prompt from that full structure while no turn exists; the literal
+  `question-411` localization key is corroborating evidence, not a dependency.
+  It submits option zero directly without building or searching a native
+  shadow game, records the decision, and verifies the ensuing
+  `DecisionResolved` immediately.
+
+  Actuation first uses the existing `CHOOSE_MODE` canvas path. A single visible
+  mode canvas is clicked directly; if other game canvases are visible, exactly
+  one wide primary canvas is accepted. Failure captures a labeled live DOM
+  snapshot and raises `ActuationError` with the selector, visible button facts,
+  and snapshot result. The live entrypoint supplies the session DOM callback.
+
+  Any other local `PendingDecision` before turn context now produces a
+  screenshot-backed divergence abort instead of the former silent `continue`.
+  Lobby automatch likewise hands off as soon as `game-area` appears and never
+  waits for a text **Start game** lobby button; only the recorded hosted-table
+  **Ready** path remains. The three reference games contain one local start
+  handshake each, so replay actuation increases from 929 to 932 gestures while
+  the 932/932 paired recorded-answer mappings remain reconciled (the one
+  terminal unanswered Sentry prompt is still not actuated).
 
 - **P6 — Lobby loop + supervisor + deploy.** Unattended base-set sessions
   with archiving and recovery.

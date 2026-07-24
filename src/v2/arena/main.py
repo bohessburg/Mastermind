@@ -187,7 +187,10 @@ async def _run_live(
             config.lobby,
             snapshot_dom=session.snapshot_dom,
         )
-        actuator = PlaywrightActuator(session.page)
+        actuator = PlaywrightActuator(
+            session.page,
+            snapshot_dom=session.snapshot_dom,
+        )
         await lobby.queue_next_game()
 
         completed_games = 0

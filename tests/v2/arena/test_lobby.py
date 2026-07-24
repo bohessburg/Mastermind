@@ -12,7 +12,6 @@ from src.v2.arena.fsm.lobby import (
     IN_GAME_SELECTOR,
     LEAVE_TABLE_SELECTOR,
     START_GAME_SELECTOR,
-    START_GAME_TEXT_LOBBY_BUTTON_SELECTOR,
     START_SEARCH_SELECTOR,
     TABLE_CONTAINER_SELECTOR,
     LobbyControl,
@@ -69,7 +68,7 @@ class _FakePage:
         self,
         *,
         missing_table_start: bool = False,
-        automatch_start_game: bool = False,
+        direct_automatch: bool = False,
         game_chat_only: bool = False,
         blank: bool = False,
         end_game_dialog: bool = True,
@@ -77,7 +76,7 @@ class _FakePage:
     ) -> None:
         self.screen = "blank" if blank else "homepage"
         self.missing_table_start = missing_table_start
-        self.automatch_start_game = automatch_start_game
+        self.direct_automatch = direct_automatch
         self.game_chat_only = game_chat_only
         self.end_game_dialog = end_game_dialog
         self.unclickable_end_game_dialog = unclickable_end_game_dialog
@@ -92,7 +91,6 @@ class _FakePage:
         if (
             self.screen == "table"
             and not self.missing_table_start
-            and not self.automatch_start_game
             and selector == START_GAME_SELECTOR
         ):
             return 1
@@ -102,11 +100,6 @@ class _FakePage:
                     not self.game_chat_only
                     or GAME_CHAT_SELECTOR in TABLE_CONTAINER_SELECTOR
                 )
-            if (
-                self.automatch_start_game
-                and selector == START_GAME_TEXT_LOBBY_BUTTON_SELECTOR
-            ):
-                return 1
             if self.game_chat_only and selector == GAME_CHAT_SELECTOR:
                 return 1
         if self.screen == "game":
@@ -119,25 +112,10 @@ class _FakePage:
                 return 1
         return 0
 
-    def text(self, selector: str) -> str:
-        if (
-            self.screen == "table"
-            and self.automatch_start_game
-            and selector == START_GAME_TEXT_LOBBY_BUTTON_SELECTOR
-        ):
-            return "  StArT GaMe  "
-        return ""
-
     def click(self, selector: str) -> None:
         self.clicks.append(selector)
         if self.screen == "homepage" and selector == START_SEARCH_SELECTOR:
-            self.screen = "table"
-        elif (
-            self.screen == "table"
-            and self.automatch_start_game
-            and selector == START_GAME_TEXT_LOBBY_BUTTON_SELECTOR
-        ):
-            self.screen = "game"
+            self.screen = "game" if self.direct_automatch else "table"
         elif self.screen == "table" and selector == START_GAME_SELECTOR:
             self.screen = "game"
         elif self.screen == "game_over" and selector == DISMISS_GAME_ENDED_SELECTOR:
@@ -247,24 +225,21 @@ def test_lobby_fsm_rejects_a_missing_recorded_table_start_control() -> None:
     clock = _FakeClock()
     lobby = LobbyFSM(page, _config(), clock=clock, sleep=clock.sleep)
 
-    with pytest.raises(LobbyError, match=r"\[table_waiting\].*Start game control"):
+    with pytest.raises(LobbyError, match=r"\[table_waiting\].*Ready control"):
         asyncio.run(lobby.queue_next_game())
 
     assert page.clicks == [START_SEARCH_SELECTOR]
 
 
-def test_lobby_fsm_clicks_visible_text_automatch_start_game_control() -> None:
-    page = _FakePage(automatch_start_game=True)
+def test_lobby_fsm_hands_direct_automatch_game_to_game_loop() -> None:
+    page = _FakePage(direct_automatch=True)
     clock = _FakeClock()
     lobby = LobbyFSM(page, _config(), clock=clock, sleep=clock.sleep)
 
     asyncio.run(lobby.queue_next_game())
 
     assert lobby.state is LobbyState.IN_GAME
-    assert page.clicks == [
-        START_SEARCH_SELECTOR,
-        START_GAME_TEXT_LOBBY_BUTTON_SELECTOR,
-    ]
+    assert page.clicks == [START_SEARCH_SELECTOR]
 
 
 def test_lobby_fsm_does_not_treat_game_chat_without_board_as_in_game() -> None:
@@ -283,7 +258,7 @@ def test_lobby_fsm_does_not_treat_game_chat_without_board_as_in_game() -> None:
         snapshot_dom=snapshot_dom,
     )
 
-    with pytest.raises(LobbyError, match=r"\[table_waiting\].*Start game control"):
+    with pytest.raises(LobbyError, match=r"\[table_waiting\].*Ready control"):
         asyncio.run(lobby.queue_next_game())
 
     assert lobby.state is LobbyState.TABLE_WAITING
