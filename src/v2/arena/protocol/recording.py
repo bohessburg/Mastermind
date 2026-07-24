@@ -99,24 +99,9 @@ def load_recording_sessions(
                 current_url = str(record.get("url", ""))
                 opened_at = _optional_int(record.get("ts"))
 
-            raw_data = record.get("data", "")
-            if record.get("b64"):
-                try:
-                    raw = base64.b64decode(raw_data, validate=True)
-                except (ValueError, TypeError) as error:
-                    raise ProtocolError(
-                        f"{path}:{line_number}: invalid base64 binary frame"
-                    ) from error
-            elif isinstance(raw_data, str):
-                raw = raw_data.encode("latin-1")
-            else:
-                raise ProtocolError(
-                    f"{path}:{line_number}: binary data must be a string"
-                )
-            frame = decode_frame(
-                raw,
-                str(record.get("dir", "")),
-                timestamp_ms=_optional_int(record.get("ts")),
+            frame = decode_record_binary(
+                record,
+                source=f"{path}:{line_number}",
             )
             if frame is not None:
                 current_frames.append(frame)
@@ -174,6 +159,34 @@ def events_from_recording(
 ) -> tuple[GameEvent, ...]:
     """Convenience recording-to-event-stream API."""
     return parse_recording(path, socket=socket).events
+
+
+def decode_record_binary(
+    record: dict[str, Any],
+    *,
+    source: str = "raw frame record",
+) -> DecodedFrame | None:
+    """Decode one recorder-format binary record through the shared envelope.
+
+    The live browser pump deliberately calls this helper too: JSONL fixtures
+    and in-memory Playwright records must have identical base64 and latin-1
+    handling before they reach :func:`decode_frame`.
+    """
+    raw_data = record.get("data", "")
+    if record.get("b64"):
+        try:
+            raw = base64.b64decode(raw_data, validate=True)
+        except (ValueError, TypeError) as error:
+            raise ProtocolError(f"{source}: invalid base64 binary frame") from error
+    elif isinstance(raw_data, str):
+        raw = raw_data.encode("latin-1")
+    else:
+        raise ProtocolError(f"{source}: binary data must be a string")
+    return decode_frame(
+        raw,
+        str(record.get("dir", "")),
+        timestamp_ms=_optional_int(record.get("ts")),
+    )
 
 
 def _optional_int(value: object) -> int | None:

@@ -137,6 +137,14 @@ person would, using the site's own client the whole way through.
   operator's single supervised live game, which will verify the documented
   client-2.2.8 canvas selectors.
 
+  The supervised live runner is now wired: `browser/session.py` launches the
+  persistent headful profile, installs the same WebSocket hook before client
+  navigation, archives every raw frame, and streams records through the shared
+  decoder/parser into the game loop without a disk round-trip. `main.py`
+  supports the operator-run live command and a queue-backed fixture dry run.
+  Lobby setup remains deliberately manual for this phase. The outstanding P5
+  acceptance step is still the operator-observed live game.
+
 - **P6 — Lobby loop + supervisor + deploy.** Unattended base-set sessions
   with archiving and recovery.
 

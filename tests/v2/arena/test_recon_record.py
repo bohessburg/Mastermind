@@ -126,6 +126,30 @@ socket.addEventListener("close", () => {{ window.__arenaDone = true; }});
     return server, f"http://127.0.0.1:{port}/"
 
 
+async def _start_protocol_echo_server() -> tuple[asyncio.AbstractServer, str]:
+    """Serve one valid inbound envelope through the existing echo transport."""
+    server: asyncio.AbstractServer
+    html = b""
+
+    async def serve(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        await _serve_connection(reader, writer, html=html)
+
+    server = await asyncio.start_server(serve, "127.0.0.1", 0)
+    port = server.sockets[0].getsockname()[1]
+    html = f"""<!doctype html>
+<script>
+const socket = new WebSocket("ws://127.0.0.1:{port}/ws");
+socket.addEventListener("open", () => {{
+  socket.send(new Uint8Array([0, 0, 0, 0, 0, 0, 0, 99]));
+}});
+socket.addEventListener("message", () => {{
+  socket.close();
+  window.__arenaDone = true;
+}});
+</script>""".encode("utf-8")
+    return server, f"http://127.0.0.1:{port}/"
+
+
 async def _require_chromium() -> None:
     pytest.importorskip("playwright.async_api", reason="Playwright is not installed")
     from playwright.async_api import Error, async_playwright
@@ -204,3 +228,43 @@ def test_recorder_captures_bidirectional_websocket_frames(tmp_path: Path) -> Non
     assert socket_records[3]["data"] == "hello arena"
     assert socket_records[4]["b64"] is True
     assert socket_records[4]["data"] == "AAEC/w=="
+
+
+async def _session_pumps_echoed_protocol_frame(tmp_path: Path) -> tuple[object, ...]:
+    from src.v2.arena.browser.session import ArenaSession
+
+    server, url = await _start_protocol_echo_server()
+    session = ArenaSession(
+        output_root=tmp_path / "archives",
+        profile_dir=tmp_path / "profile",
+        url=url,
+        game_socket=1,
+        headless=True,
+    )
+    try:
+        await session.start()
+        assert session.page is not None
+        await session.page.wait_for_function("window.__arenaDone === true")
+        events = session.events()
+        observed = [await asyncio.wait_for(anext(events), timeout=5) for _ in range(3)]
+        assert session.frames_path.is_file()
+        return tuple(observed)
+    finally:
+        await session.stop()
+        server.close()
+        await server.wait_closed()
+
+
+def test_session_pumps_live_frames_into_parser_without_disk_replay(tmp_path: Path) -> None:
+    from src.v2.arena.protocol.events import UnknownFrame
+
+    asyncio.run(_require_chromium())
+    events = asyncio.run(_session_pumps_echoed_protocol_frame(tmp_path))
+
+    assert any(
+        isinstance(event, UnknownFrame)
+        and event.direction == "in"
+        and event.msg_type == 99
+        and event.sequence == 0
+        for event in events
+    )

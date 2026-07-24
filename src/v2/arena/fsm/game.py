@@ -6,9 +6,10 @@ import asyncio
 import inspect
 import random
 from collections import Counter
+from collections.abc import AsyncIterable, AsyncIterator, Iterable
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Iterable, Protocol
+from typing import Any, Awaitable, Callable, Protocol
 
 import dominion_v2_py as dz
 
@@ -428,7 +429,7 @@ class NNMCTSDecisionProvider(BotDecisionProvider):
 
 
 async def run_game_loop(
-    events: Iterable[GameEvent],
+    events: Iterable[GameEvent] | AsyncIterable[GameEvent],
     *,
     actuator: Actuator,
     decision_provider: DecisionProvider,
@@ -520,7 +521,7 @@ async def run_game_loop(
         active.pending_plan = None
         active.pending_events.clear()
 
-    for frame_index, event in enumerate(events):
+    async for frame_index, event in _indexed_events(events):
         try:
             tracker.consume(event)
             if active is not None:
@@ -749,6 +750,20 @@ async def run_game_loop(
             return tuple(results)
 
     return tuple(results)
+
+
+async def _indexed_events(
+    events: Iterable[GameEvent] | AsyncIterable[GameEvent],
+) -> AsyncIterator[tuple[int, GameEvent]]:
+    """Preserve the synchronous API while awaiting a live event source."""
+    if isinstance(events, AsyncIterable):
+        index = 0
+        async for event in events:
+            yield index, event
+            index += 1
+        return
+    for index, event in enumerate(events):
+        yield index, event
 
 
 def _recorded_plan(

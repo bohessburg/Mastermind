@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import json
 import signal
 import sys
 from datetime import datetime, timezone
@@ -18,6 +17,8 @@ from typing import Any
 
 from playwright.async_api import BrowserContext, ConsoleMessage, Frame, Page, Playwright
 from playwright.async_api import async_playwright
+
+from ..archive import serialize_frame_record
 
 
 HOOK_PATH = Path(__file__).resolve().parents[1] / "browser" / "ws_hook.js"
@@ -183,7 +184,7 @@ class ArenaRecorder:
     def _write_record(self, record: dict[str, Any]) -> None:
         if self._frames_file is None:
             return
-        self._frames_file.write(json.dumps(record, separators=(",", ":")) + "\n")
+        self._frames_file.write(serialize_frame_record(record))
         self._frames_file.flush()
 
     async def _periodic_capture(

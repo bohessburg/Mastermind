@@ -7,7 +7,7 @@ import shutil
 from dataclasses import asdict, dataclass, is_dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterable, Mapping
+from typing import Any, Iterable, Mapping
 
 from .protocol.events import GameEvent
 
@@ -54,6 +54,7 @@ class GameArchive:
         self._decisions = (self.path / "decisions.jsonl").open(
             "w", encoding="utf-8"
         )
+        self._source_frames = Path(source_frames) if source_frames is not None else None
         if source_frames is not None:
             shutil.copyfile(source_frames, self.path / "frames.jsonl")
 
@@ -85,6 +86,7 @@ class GameArchive:
         *,
         divergence_report: Mapping[str, object] | None = None,
     ) -> None:
+        self._snapshot_source_frames()
         (self.path / "result.json").write_text(
             json.dumps(_jsonable(summary), indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
@@ -105,6 +107,12 @@ class GameArchive:
         self._events.close()
         self._decisions.close()
 
+    def _snapshot_source_frames(self) -> None:
+        """Refresh a live session's frame mirror before finalizing a game."""
+        if self._source_frames is None or not self._source_frames.is_file():
+            return
+        shutil.copyfile(self._source_frames, self.path / "frames.jsonl")
+
     def __enter__(self) -> GameArchive:
         return self
 
@@ -120,6 +128,11 @@ def copy_frame_records(
     with Path(destination).open("w", encoding="utf-8") as output:
         for record in records:
             output.write(record.rstrip("\n") + "\n")
+
+
+def serialize_frame_record(record: Mapping[str, Any]) -> str:
+    """Return one recorder-compatible raw frame JSONL line."""
+    return json.dumps(dict(record), separators=(",", ":")) + "\n"
 
 
 def _jsonable(value: object) -> object:
