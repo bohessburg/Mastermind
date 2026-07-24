@@ -75,14 +75,11 @@ def verify_action_events(
             question_index=intended.decision.question_index,
             intended=intended.gesture.answer_indices,
         )
-    if resolution.answers != intended.gesture.answer_indices:
-        raise DivergenceError(
-            "DecisionResolved answers differ from the submitted answer",
-            frame_index=frame_index,
-            question_index=intended.decision.question_index,
-            intended=intended.gesture.answer_indices,
-            observed=resolution.answers,
-        )
+    verify_action_resolution(
+        intended,
+        resolution,
+        frame_index=frame_index,
+    )
 
     expected = _expected_move(intended)
     if expected is None:
@@ -100,6 +97,31 @@ def verify_action_events(
         raise DivergenceError(
             f"{event_type.__name__} outcome is missing intended cards "
             f"{tuple(missing)}; observed {tuple(observed_names)}",
+            frame_index=frame_index,
+            question_index=intended.decision.question_index,
+            intended=intended.gesture.answer_indices,
+            observed=resolution.answers,
+        )
+
+
+def verify_action_resolution(
+    intended: IntendedAction,
+    resolution: DecisionResolved,
+    *,
+    frame_index: int | None = None,
+) -> None:
+    """Check one resolution immediately, including repeated feed copies."""
+    if resolution.question_index != intended.decision.question_index:
+        raise DivergenceError(
+            "DecisionResolved question differs from the submitted question",
+            frame_index=frame_index,
+            question_index=intended.decision.question_index,
+            intended=(intended.decision.question_index,),
+            observed=(resolution.question_index,),
+        )
+    if resolution.answers != intended.gesture.answer_indices:
+        raise DivergenceError(
+            "DecisionResolved answers differ from the submitted answer",
             frame_index=frame_index,
             question_index=intended.decision.question_index,
             intended=intended.gesture.answer_indices,

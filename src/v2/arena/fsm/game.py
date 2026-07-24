@@ -26,6 +26,7 @@ from ..actuate.verify import (
     DivergenceError,
     IntendedAction,
     verify_action_events,
+    verify_action_resolution,
 )
 from ..archive import DecisionRecord, GameArchive, ResultSummary
 from ..bot.policy import NNPolicy, choose_nnmcts_action
@@ -129,6 +130,16 @@ class _TurnStep:
     snapshot: TrackerSnapshot
     actions: tuple[int, ...]
     events: tuple[GameEvent, ...]
+
+
+@dataclass(frozen=True, kw_only=True)
+class _DeferredBuy:
+    """A buy/pass selected on the collapsed state before client autoplay."""
+
+    game_id: int | None
+    turn_number: int
+    seat: int
+    action: int
 
 
 class RecordedDecisionProvider:
@@ -287,6 +298,7 @@ class BotDecisionProvider:
             tuple[tuple[str, int], ...],
             tuple[int, ...],
         ] | None = None
+        self._deferred_buy: _DeferredBuy | None = None
 
     async def plan(
         self,
@@ -300,6 +312,26 @@ class BotDecisionProvider:
         if snapshot.our_seat is None:
             raise BridgeError("cannot choose without a local seat")
         seat = snapshot.our_seat
+
+        if self._deferred_buy is not None:
+            deferred = self._deferred_buy
+            if not (
+                decision.question_id == "GAME_BUY_PHASE"
+                and snapshot.game_id == deferred.game_id
+                and snapshot.turn_number == deferred.turn_number
+                and seat == deferred.seat
+                and not _offered_treasures(decision)
+            ):
+                raise BridgeError(
+                    "client did not confirm autoplay with a treasure-free "
+                    "follow-up buy question"
+                )
+            self._deferred_buy = None
+            _require_buy_or_pass(game, deferred.action)
+            return DecisionPlan(
+                engine_actions=(deferred.action,),
+                gesture_actions=(deferred.action,),
+            )
 
         if decision.question_id == "SENTRY_DISCARD":
             if self._sentry is None:
@@ -368,6 +400,39 @@ class BotDecisionProvider:
             self._sentry = None
             return DecisionPlan(
                 engine_actions=(*classifications, action),
+                gesture_actions=(action,),
+            )
+
+        if decision.question_id == "GAME_BUY_PHASE":
+            planning = game.clone()
+            treasure_actions = _collapse_offered_treasures(
+                planning,
+                decision,
+            )
+            action = await self._choose(planning, seat)
+            _require_buy_or_pass(planning, action)
+            if treasure_actions:
+                if not any(
+                    value.endswith("AUTOPLAY_TREASURES")
+                    for value in decision.offered
+                ):
+                    raise BridgeError(
+                        "buy question has hand treasures but no autoplay control"
+                    )
+                if snapshot.turn_number is None:
+                    raise BridgeError("cannot defer a buy without a turn number")
+                self._deferred_buy = _DeferredBuy(
+                    game_id=snapshot.game_id,
+                    turn_number=snapshot.turn_number,
+                    seat=seat,
+                    action=action,
+                )
+                return DecisionPlan(
+                    engine_actions=treasure_actions,
+                    gesture_actions=treasure_actions,
+                )
+            return DecisionPlan(
+                engine_actions=(action,),
                 gesture_actions=(action,),
             )
 
@@ -528,6 +593,17 @@ async def run_game_loop(
                 active.pending_events.append(event)
                 if active.archive is not None:
                     active.archive.append_event(frame_index, event)
+                if (
+                    active.pending is not None
+                    and isinstance(event, DecisionResolved)
+                    and event.question_index
+                    == active.pending.decision.question_index
+                ):
+                    verify_action_resolution(
+                        active.pending,
+                        event,
+                        frame_index=frame_index,
+                    )
 
             if isinstance(event, GameStart):
                 if active is None or active.game_id != event.game_id:
@@ -723,9 +799,14 @@ async def run_game_loop(
                 message=str(error),
                 game_id=snapshot.game_id,
                 question_index=(
-                    snapshot.pending_decision.question_index
-                    if snapshot.pending_decision is not None
-                    else None
+                    error.question_index
+                    if isinstance(error, DivergenceError)
+                    and error.question_index is not None
+                    else (
+                        snapshot.pending_decision.question_index
+                        if snapshot.pending_decision is not None
+                        else None
+                    )
                 ),
                 tracker_summary=_snapshot_summary(snapshot),
                 screenshot_path=screenshot,
@@ -1214,6 +1295,52 @@ def _decision_signature(game: Any) -> tuple[int, int, int]:
         int(decision.get("kind", -1)),
         int(decision.get("source", -1)),
     )
+
+
+def _offered_treasures(
+    decision: PendingDecisionSnapshot,
+) -> tuple[str, ...]:
+    return tuple(
+        value
+        for value in decision.offered
+        if value.startswith("1:0:")
+    )
+
+
+def _collapse_offered_treasures(
+    game: Any,
+    decision: PendingDecisionSnapshot,
+) -> tuple[int, ...]:
+    """Mirror SelfPlayRunner's ascending-definition treasure collapse."""
+    counts = Counter(
+        int(dz.def_id(offered_name(value)))
+        for value in _offered_treasures(decision)
+    )
+    actions: list[int] = []
+    for definition, count in sorted(counts.items()):
+        action = int(dz.A_PLAY_BASE + definition)
+        for _ in range(count):
+            legal = game.legal_mask()
+            if not 0 <= action < len(legal) or not bool(legal[action]):
+                raise BridgeError(
+                    "offered hand treasure is not legal in the shadow game"
+                )
+            game.step(action)
+            actions.append(action)
+    return tuple(actions)
+
+
+def _require_buy_or_pass(game: Any, action: int) -> None:
+    legal = game.legal_mask()
+    if not 0 <= action < len(legal) or not bool(legal[action]):
+        raise BridgeError(f"collapsed buy policy returned illegal action {action}")
+    is_buy = int(dz.A_BUY_BASE) <= action < int(
+        dz.A_BUY_BASE + dz.ACTION_DEF_COUNT
+    )
+    if action != int(dz.A_PASS) and not is_buy:
+        raise BridgeError(
+            f"collapsed buy policy returned non-buy action {action}"
+        )
 
 
 def _advance_forced_to_client_question(

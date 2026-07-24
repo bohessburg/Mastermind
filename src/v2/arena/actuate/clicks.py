@@ -53,6 +53,15 @@ class ClientGesture:
         return (*self.prior_actions, self.action)
 
 
+@dataclass(frozen=True, kw_only=True)
+class DOMClickTarget:
+    """Region-qualified physical target for one offered protocol element."""
+
+    region: str
+    identity: str
+    offered_index: int
+
+
 def offered_name(value: str) -> str:
     """Strip complex-question path prefixes from an offered element."""
     return value.rsplit(":", 1)[-1]
@@ -260,13 +269,15 @@ class PlaywrightActuator(Actuator):
 
     Mappings verified from the saved DOM snapshots:
 
-    * Offered cards are the visible, pointer-enabled direct children of
-      ``div.card-stacks``.  Their nested ``.name-layer`` text is the display
-      name used by the protocol parser.
-    * Choice/decline/done controls are canvas elements under
-      ``div.game-buttons``.  The client renders only the currently actionable
-      canvases with ``display != none``.
-    * Card-mode choices use the same visible ``game-buttons`` canvas row.
+    * ``0:<card>`` buy elements map to landscape supply piles under
+      ``div.card-stacks``. They have a visible pile counter.
+    * ``1:0:<card>`` play elements map to portrait local-hand stacks under
+      ``div.card-stacks``. Client 2.2.8 gives those stacks z-indices 2000–2999.
+    * ``2:AUTOPLAY_TREASURES`` maps to the wide (at least 3.5:1)
+      ``div.game-buttons`` canvas. The separate rightmost canvas submits a
+      decline/end-phase answer.
+    * Other hand/supply questions use the same physical-region rules;
+      revealed-card choices use the high-z-index display-card region.
 
     The client is canvas-heavy and exposes no stable test ids.  These selectors
     intentionally stay behind this interface so a client update changes one
@@ -293,23 +304,23 @@ class PlaywrightActuator(Actuator):
             prior_actions=prior_actions,
         )
         try:
-            if (
-                decision.question_id == "GAME_BUY_PHASE"
-                and gesture.answer_indices == (2, 0)
-            ):
-                await self._visible_buttons().first.click()
-            elif decision.decision_type == "CHOOSE_MODE":
-                for index in gesture.selected_indices:
-                    await self._visible_buttons().nth(index).click()
-            else:
-                used: dict[str, int] = {}
-                for index in gesture.selected_indices:
-                    name = offered_name(offered_elements[index])
-                    occurrence = used.get(name, 0)
-                    used[name] = occurrence + 1
-                    await self._click_card(name, occurrence)
+            for index in gesture.selected_indices:
+                target = dom_click_target(
+                    decision,
+                    offered_elements[index],
+                    offered_index=index,
+                )
+                if target.region == "autoplay-button":
+                    await self._click_autoplay_button()
+                elif target.region == "mode-button":
+                    await self._click_mode_button(
+                        target.offered_index,
+                        len(offered_elements),
+                    )
+                else:
+                    await self._click_card(target)
             if gesture.click_button:
-                await self._visible_buttons().first.click()
+                await self._click_submit_button(decision)
         except Exception as error:
             raise ActuationError(
                 f"failed question {decision.question_index} gesture "
@@ -317,23 +328,201 @@ class PlaywrightActuator(Actuator):
             ) from error
         return gesture
 
-    def _visible_buttons(self) -> Any:
-        return self.page.locator(
-            "div.game-buttons canvas:not([style*='display: none'])"
-        )
-
-    async def _click_card(self, name: str, occurrence: int) -> None:
-        cards = self.page.locator("div.card-stacks > div").filter(has_text=name)
-        visible: list[Any] = []
+    async def _click_card(self, target: DOMClickTarget) -> None:
+        cards = self.page.locator("div.card-stacks > div")
+        matches: list[Any] = []
         for index in range(await cards.count()):
             candidate = cards.nth(index)
-            if await candidate.is_visible():
-                visible.append(candidate)
-        if occurrence >= len(visible):
-            raise ActuationError(
-                f"no visible clickable occurrence {occurrence} of {name!r}"
+            if not await candidate.is_visible():
+                continue
+            facts = await candidate.evaluate(
+                """element => {
+                    const name = Array.from(
+                        element.querySelectorAll(".name-layer:not(.invisible)")
+                    ).map(layer => layer.textContent.trim()).filter(Boolean);
+                    const counter = Array.from(
+                        element.querySelectorAll(".counter-layer:not(.invisible)")
+                    ).some(layer => getComputedStyle(layer).display !== "none");
+                    const rect = element.getBoundingClientRect();
+                    return {
+                        name: name.length === 1 ? name[0] : null,
+                        width: rect.width,
+                        height: rect.height,
+                        zIndex: Number.parseInt(getComputedStyle(element).zIndex, 10)
+                            || 0,
+                        hasVisibleCounter: counter,
+                    };
+                }"""
             )
-        await visible[occurrence].click()
+            if (
+                facts["name"] == target.identity
+                and card_stack_region(
+                    width=float(facts["width"]),
+                    height=float(facts["height"]),
+                    z_index=int(facts["zIndex"]),
+                    has_visible_counter=bool(facts["hasVisibleCounter"]),
+                )
+                == target.region
+            ):
+                matches.append(candidate)
+        if len(matches) != 1:
+            raise ActuationError(
+                f"expected one {target.region} target for "
+                f"{target.identity!r}, found {len(matches)}"
+            )
+        await matches[0].click()
+
+    async def _visible_button_boxes(self) -> list[tuple[Any, float, float, float]]:
+        buttons = self.page.locator("div.game-buttons canvas")
+        visible: list[tuple[Any, float, float, float]] = []
+        for index in range(await buttons.count()):
+            candidate = buttons.nth(index)
+            if not await candidate.is_visible():
+                continue
+            box = await candidate.bounding_box()
+            if box is None or box["height"] <= 0:
+                continue
+            visible.append(
+                (
+                    candidate,
+                    float(box["x"]),
+                    float(box["width"]),
+                    float(box["height"]),
+                )
+            )
+        return visible
+
+    async def _click_autoplay_button(self) -> None:
+        matches = [
+            button
+            for button, _, width, height in await self._visible_button_boxes()
+            if game_button_role(width=width, height=height) == "autoplay"
+        ]
+        if len(matches) != 1:
+            raise ActuationError(
+                f"expected one autoplay canvas, found {len(matches)}"
+            )
+        await matches[0].click()
+
+    async def _click_submit_button(
+        self,
+        decision: PendingDecisionSnapshot,
+    ) -> None:
+        buttons = await self._visible_button_boxes()
+        if not buttons:
+            raise ActuationError("no visible submit canvas")
+        if decision.question_id in {
+            "GAME_ACTION_PHASE",
+            "GAME_BUY_PHASE",
+        }:
+            # End Actions/Buys is the rightmost phase control. Autoplay is the
+            # separate wide canvas to its left.
+            rightmost_x = max(x for _, x, _, _ in buttons)
+            matches = [
+                button
+                for button, x, _, _ in buttons
+                if x == rightmost_x
+            ]
+        else:
+            # Effect questions use one wide confirmation canvas (for example
+            # "Confirm Trashing") plus optional compact auxiliary controls.
+            matches = [
+                button
+                for button, _, width, height in buttons
+                if game_button_role(width=width, height=height) == "autoplay"
+            ]
+        if len(matches) != 1:
+            raise ActuationError("submit canvas is not unambiguous")
+        await matches[0].click()
+
+    async def _click_mode_button(self, index: int, offered_count: int) -> None:
+        buttons = sorted(
+            await self._visible_button_boxes(),
+            key=lambda item: item[1],
+        )
+        if len(buttons) != offered_count:
+            raise ActuationError(
+                f"expected {offered_count} mode canvases, found {len(buttons)}"
+            )
+        await buttons[index][0].click()
+
+
+_HAND_QUESTIONS = frozenset(
+    {
+        "ARTISAN_TOPDECK",
+        "CHAPEL",
+        "GAME_ACTION_PHASE",
+        "POACHER",
+        "REMODEL_TRASH",
+        "THRONE_ROOM",
+    }
+)
+_SUPPLY_QUESTIONS = frozenset(
+    {
+        "ARTISAN_GAIN",
+        "REMODEL_GAIN",
+        "WORKSHOP",
+    }
+)
+
+
+def dom_click_target(
+    decision: PendingDecisionSnapshot,
+    offered_element: str,
+    *,
+    offered_index: int,
+) -> DOMClickTarget:
+    """Resolve protocol path/identity to a physical DOM region."""
+    if decision.question_id == "GAME_BUY_PHASE":
+        if offered_element.startswith("0:"):
+            region = "supply"
+        elif offered_element.startswith("1:0:"):
+            region = "hand"
+        elif offered_element.endswith("AUTOPLAY_TREASURES"):
+            region = "autoplay-button"
+        else:
+            raise ActionMappingError(
+                f"unknown buy-region element {offered_element!r}"
+            )
+    elif decision.decision_type == "CHOOSE_MODE":
+        region = "mode-button"
+    elif decision.question_id in _HAND_QUESTIONS:
+        region = "hand"
+    elif decision.question_id in _SUPPLY_QUESTIONS:
+        region = "supply"
+    else:
+        region = "display"
+    return DOMClickTarget(
+        region=region,
+        identity=offered_name(offered_element),
+        offered_index=offered_index,
+    )
+
+
+def card_stack_region(
+    *,
+    width: float,
+    height: float,
+    z_index: int,
+    has_visible_counter: bool,
+) -> str | None:
+    """Classify one client-2.2.8 direct card-stack child."""
+    if width <= 0 or height <= 0:
+        return None
+    if width > height and has_visible_counter:
+        return "supply"
+    if height > width and 2000 <= z_index < 3000:
+        return "hand"
+    if height > width and z_index >= 10_000:
+        return "display"
+    return None
+
+
+def game_button_role(*, width: float, height: float) -> str | None:
+    """Identify the wide autoplay canvas independently of DOM list order."""
+    if width <= 0 or height <= 0:
+        return None
+    return "autoplay" if width / height >= 3.5 else "submit"
 
 
 def _gesture(

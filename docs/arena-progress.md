@@ -145,6 +145,45 @@ person would, using the site's own client the whole way through.
   Lobby setup remains deliberately manual for this phase. The outstanding P5
   acceptance step is still the operator-observed live game.
 
+- **First supervised live-game follow-up (2026-07-24).**
+  The first live game exposed two integration bugs and was stopped by the
+  divergence tripwire. The archived turn-one buy question still had three
+  Coppers in hand. `DecisionSearcher(auto_play_treasures=True)` correctly
+  returned its first forced canonical Copper play without requesting an NN
+  evaluation, but the arena provider treated that collapse step as the final
+  client decision. The provider now mirrors organic self-play: on a buy
+  question it clones the shadow, plays every offered treasure in ascending
+  definition order, asks the policy for a buy/pass only on that collapsed
+  state, submits the client's autoplay control, and defers the selected
+  buy/pass until the feed supplies the treasure-free follow-up question. This
+  keeps the checkpoint's evaluated root at the training distribution (played
+  treasures and credited coins) while retaining manual-treasure encodings in
+  recorded replay.
+
+  The same question also exposed a DOM-region collision. The old actuator
+  searched every visible card stack by display name, so the supply Copper was
+  the first match for an intended hand Copper. Client 2.2.8's saved DOM maps
+  the protocol regions as follows:
+
+  - `0:<card>`: landscape supply-pile child of `div.card-stacks`, with a
+    visible pile counter.
+  - `1:0:<card>`: portrait local-hand child of `div.card-stacks`, with the
+    client hand z-index range 2000–2999.
+  - `2:AUTOPLAY_TREASURES`: the wide (at least 3.5:1) canvas under
+    `div.game-buttons`; the separate rightmost canvas is the decline/end-phase
+    control.
+  - Effect choices: local-hand and supply questions reuse those regions;
+    revealed-card overlays use portrait display stacks at z-index 10000+.
+
+  Targets are now resolved by region plus exact identity, and actuation stops
+  if that pair does not identify exactly one physical element. Finally,
+  resolution answers are checked as soon as each `DecisionResolved` event
+  arrives. Previously the loop buffered all outcome events and called the
+  verifier only at the next `PendingDecision`; question 3's first mismatch was
+  therefore detected at question 5, making the report look one turn late.
+  Repeated/batched resolution copies are each checked against the exact
+  submitted encoding and cannot delay or weaken the first check.
+
 - **P6 — Lobby loop + supervisor + deploy.** Unattended base-set sessions
   with archiving and recovery.
 
