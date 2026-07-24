@@ -30,3 +30,5 @@ compile_commands.json
 Dominion_CompleteRules_v11.1.pdf
 __pycache__/
 exports/
+arena-recordings/
+arena-profile/
