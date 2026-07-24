@@ -1,0 +1,22 @@
+{
+  "checkpoint_path": "checkpoints/remote/campaign15/gen_0045.pt",
+  "search": {
+    "obs_version": 2,
+    "sims": 400,
+    "determinizations": 2,
+    "wall_clock_cap_seconds": 30.0
+  },
+  "think_time": {
+    "min_seconds": 1.25,
+    "max_seconds": 2.75
+  },
+  "lobby": {
+    "card_pool": "base",
+    "rated": false,
+    "requeue": false,
+    "max_games": 1
+  },
+  "chat": {
+    "announcement": "Hi! I am an openly disclosed DominionZero research bot. Thanks for playing."
+  }
+}

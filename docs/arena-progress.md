@@ -104,9 +104,39 @@ person would, using the site's own client the whole way through.
 
 ## Remaining phases (from the plan)
 
-- **P5 — Actuator + supervised game loop.** Map an engine action to the
-  matching click in the normal client UI; play one full game with a person
-  watching.
+- **P5 — Actuator + supervised game loop: offline complete (2026-07-24).**
+  `src/v2/arena/actuate/` supplies a pure engine-action → client-answer
+  mapper, a DOM/canvas Playwright actuator, an offline mock actuator, and
+  post-action verification. `src/v2/arena/fsm/game.py` is the supervised
+  asyncio loop: tracker tripwire, kingdom gate, clean phase-boundary/native
+  resync, seeded opponent interrupts, policy/provider boundary, polite
+  think-time delay, observed-draw rigging, native stepping, and loud
+  screenshot-capable divergence abort. `config.py`, `configs/arena.json`, and
+  `archive.py` provide operator settings, environment-only credentials, and
+  per-game JSONL/result records.
+
+  Offline acceptance against the reference recording:
+  - All **932/932 recorded answers** are producible by the pure mapper.
+    **152** questions have multiple equivalent encodings (duplicate physical
+    card copies, selection order, or manual-single-treasure vs autoplay);
+    these are enumerated rather than guessed.
+  - All three recorded games replay to `GameEnd` with **zero divergence
+    aborts**. The mock actuator submits 929 live questions (one of the 930
+    in-game questions is superseded by `GameEnd` without an answer), every
+    acted decision validates its native shadow, and 259 observed-outcome
+    steps use deck rigging/reconstruction.
+  - A deliberately corrupted `DecisionResolved` aborts immediately and stops
+    the actuator.
+
+  Python binding workaround: `set_deck_order()` can order only the current
+  deck, not discard just before an interpreter-internal shuffle. The loop
+  therefore retains the clean snapshot/action history for the current effect
+  segment; after observing such a shuffle it rebuilds with the known
+  deck+discard pool in observed source order and replays the native actions.
+  No C++ or binding changes were needed. The remaining P5 step is the human
+  operator's single supervised live game, which will verify the documented
+  client-2.2.8 canvas selectors.
+
 - **P6 — Lobby loop + supervisor + deploy.** Unattended base-set sessions
   with archiving and recovery.
 

@@ -69,24 +69,34 @@ treat it as client integration using the site's own client, not security work.
   Recordings/profile are gitignored under `arena-recordings/` and
   `arena-profile/`.
 
-**Next task — P5, actuator + supervised game loop** (`src/v2/arena/actuate/`
-+ `src/v2/arena/fsm/game.py`; see the plan's module layout and shadow-state
-strategy): map engine action ids to clicks in the client UI (`clicks.py`,
-using `actions.h` regions), verify each action against the next decoded
-frames (`verify.py`), and the in-game loop — wait for decision → tracker
-snapshot → bridge → `DecisionSearcher` via `bot/policy.py` → click →
-verify, with turn-boundary resync, rigged stepping via `set_deck_order` for
-mid-card questions, and divergence abort (screenshot + frame log, never play
-on). Accept: one full supervised game end-to-end with zero divergence aborts
-(needs the operator present with the logged-in `arena-profile/`).
+P5's offline half is also done (see progress doc): `actuate/clicks.py` (pure
+engine-action → client-answer mapper, all 932 recorded answers reproduced,
+152 enumerated-ambiguous; Playwright + Mock actuators), `actuate/verify.py`
+(post-action divergence check), `fsm/game.py` (supervised loop: resync,
+rigged stepping incl. shuffle reconstruction, seeded interrupts, kingdom
+gate, loud aborts), `config.py` + `configs/arena.json`, `archive.py`. All
+three recorded games replay through the real loop with zero divergence
+aborts and per-decision `validate()`.
+
+**Next task — P5 live half: the supervised game.** This is an operator step,
+not a delegation: the Playwright actuator's selectors/gestures were derived
+from recorded DOM snapshots and must be verified against the live client.
+With the human present (logged-in `arena-profile/`, headful Chromium,
+`ARENA_USER`/`ARENA_PASS` env): wire `fsm/game.py` to the live session
+(`browser/session.py` may still need a small lobby/attach shim — check
+before starting), play one full supervised base-set game, expect zero
+divergence aborts. Iterate selector fixes with small Codex delegations if
+clicking misbehaves. Then scope **P6** (lobby FSM, supervisor, Hetzner
+deploy, archiving).
 
 **Workflow notes:**
-- Per the project's Codex delegation workflow, hand P5 implementation to
+- Per the project's Codex delegation workflow, hand implementation work to
   Codex, then review the diff and run the tests yourself before accepting.
-  The live supervised game itself needs the human operator.
 - **Codex sandbox gotcha:** the rescue plugin defaults to a *read-only*
   sandbox — pass `--write` in the delegation or Codex silently can't create
-  files. Run it `--background` (P1–P3 each ran ~20–30 min).
+  files. Run long tasks `--background` (P1–P3, P5 each ran ~20–30 min).
+- Local gotcha: run the web-server pytest with `OMP_NUM_THREADS=1` (known
+  torch/OpenMP import deadlock on this Mac, predates the arena stream).
 - Build/test commands are in `CLAUDE.md`; engine bindings via `PYTHONPATH=build`.
 
-Start by reading the two docs, then scope and delegate P5.
+Start by reading the two docs, then set up the supervised live game.
