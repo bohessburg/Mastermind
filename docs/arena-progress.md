@@ -181,8 +181,8 @@ person would, using the site's own client the whole way through.
   arrives. Previously the loop buffered all outcome events and called the
   verifier only at the next `PendingDecision`; question 3's first mismatch was
   therefore detected at question 5, making the report look one turn late.
-  Repeated/batched resolution copies are each checked against the exact
-  submitted encoding and cannot delay or weaken the first check.
+  Repeated/batched resolution copies are each checked immediately and cannot
+  delay or weaken the first check.
 
 - **Second supervised live-game follow-up (2026-07-24).**
   The second run reached turn 9 with 17 verified autoplay/buy decisions, then
@@ -240,6 +240,20 @@ person would, using the site's own client the whole way through.
   65. Provider regressions retain batching for Militia, Cellar, Chapel, and
   Sentry trash/discard/topdeck; the existing reference and game-2 replay
   goldens cover their client mappings.
+
+- **Fifth supervised live-game follow-up (2026-07-24).**
+  Game 4 (id 181363348) completed end-to-end. Game 5 (id 181363699) then
+  exposed a false-positive verifier abort at action question 92: two identical
+  Witches appeared as separate offered indices but one collapsed browser stack.
+  The click submitted index 0 while the client resolved index 1; both encodings
+  map to the same engine Witch play and the observed `Play`/`Attack` events
+  confirmed that outcome. `IntendedAction` now retains the complete set of
+  mapper-enumerated encodings for the submitted gesture, and every immediate
+  and settled resolution check accepts only a member of that set. The expected
+  downstream `Play`/`Buy` event verification remains unchanged. Offline
+  regression coverage replays the archived game with the recorded submitted
+  index and continues through its available terminal frames; unit coverage
+  retains aborts for an out-of-set answer and a mismatched question index.
 
 - **P6 — Lobby loop + supervisor + deploy.** Unattended base-set sessions
   with archiving and recovery.

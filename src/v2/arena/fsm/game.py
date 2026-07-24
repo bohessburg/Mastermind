@@ -768,6 +768,10 @@ async def run_game_loop(
                 engine_actions=plan.engine_actions,
                 gesture_actions=plan.gesture_actions,
                 gesture=gesture,
+                acceptable_answers=possible_answer_indices(
+                    gesture.actions,
+                    snapshot.pending_decision,
+                ),
                 frame_index=frame_index,
             )
             active.pending = intended

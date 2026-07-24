@@ -48,6 +48,8 @@ class IntendedAction:
     engine_actions: tuple[int, ...]
     gesture_actions: tuple[int, ...]
     gesture: ClientGesture
+    # Complete mapper-enumerated encodings for the submitted gesture.
+    acceptable_answers: tuple[tuple[int, ...], ...]
     frame_index: int
 
 
@@ -119,7 +121,7 @@ def verify_action_resolution(
             intended=(intended.decision.question_index,),
             observed=(resolution.question_index,),
         )
-    if resolution.answers != intended.gesture.answer_indices:
+    if resolution.answers not in intended.acceptable_answers:
         raise DivergenceError(
             "DecisionResolved answers differ from the submitted answer",
             frame_index=frame_index,
