@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+from collections import Counter
 from dataclasses import replace
 from html.parser import HTMLParser
 from pathlib import Path
@@ -11,18 +12,31 @@ import dominion_v2_py as dz
 import pytest
 
 from src.v2.arena.actuate.clicks import (
+    ActuationError,
+    DOMCardStack,
+    DOMGameButton,
     MockActuator,
+    PlaywrightActuator,
     card_stack_region,
     dom_click_target,
     game_button_role,
+    gesture_click_targets,
     map_engine_actions,
+    resolve_card_stack_index,
+    resolve_submit_button_index,
+    selected_card_counts,
 )
 from src.v2.arena.fsm.game import (
     BotDecisionProvider,
     DecisionPlan,
+    RecordedDecisionProvider,
     run_game_loop,
 )
-from src.v2.arena.protocol.events import PendingDecision
+from src.v2.arena.protocol.events import (
+    DecisionResolved,
+    GameStart,
+    PendingDecision,
+)
 from src.v2.arena.protocol.recording import parse_recording
 from src.v2.arena.shadow.bridge import game_from_snapshot
 from src.v2.arena.shadow.tracker import (
@@ -37,6 +51,15 @@ LIVE_ARCHIVE = Path(
 )
 BUY_DOM = Path(
     "arena-recordings/20260724T142103.096991Z/dom-1508015.html"
+)
+SELECTED_DISCARD_DOM = Path(
+    "arena-recordings/20260724T142103.096991Z/dom-4326014.html"
+)
+LIVE_GAME_2_ARCHIVE = Path(
+    "exports/arena/20260724T204829.953926Z/frames.jsonl"
+)
+REFERENCE_RECORDING = Path(
+    "arena-recordings/20260724T142103.096991Z/frames.jsonl"
 )
 
 
@@ -250,6 +273,10 @@ class _SavedDOMParser(HTMLParser):
                 "style": attributes.get("style", ""),
                 "name": "",
                 "has_visible_counter": False,
+                "counter_text": "",
+                "has_visible_all": False,
+                "all_style": "",
+                "selected": False,
             }
             self.cards.append(self.current_card)
         elif self.current_card is not None and "name-layer" in classes:
@@ -258,6 +285,13 @@ class _SavedDOMParser(HTMLParser):
         elif self.current_card is not None and "counter-layer" in classes:
             if "invisible" not in classes:
                 self.current_card["has_visible_counter"] = True
+                self.current_card["reading_counter"] = True
+        elif self.current_card is not None and "all-button" in classes:
+            if "invisible" not in classes:
+                self.current_card["has_visible_all"] = True
+                self.current_card["all_style"] = attributes.get("style", "")
+        elif self.current_card is not None and tag == "selection-cross":
+            self.current_card["selected"] = True
 
         if tag == "div" and "game-buttons" in classes:
             self.game_buttons_depth = depth
@@ -278,6 +312,13 @@ class _SavedDOMParser(HTMLParser):
             self.current_card["name"] = (
                 str(self.current_card["name"]) + data
             ).strip()
+        if (
+            self.current_card is not None
+            and self.current_card.get("reading_counter")
+        ):
+            self.current_card["counter_text"] = (
+                str(self.current_card["counter_text"]) + data
+            ).strip()
 
     def handle_endtag(self, tag: str) -> None:
         if not self.stack:
@@ -287,6 +328,8 @@ class _SavedDOMParser(HTMLParser):
         if self.current_card is not None:
             if "name-layer" in classes:
                 self.current_card.pop("reading_name", None)
+            if "counter-layer" in classes:
+                self.current_card.pop("reading_counter", None)
             if depth == self.current_card["depth"]:
                 self.current_card = None
         if self.card_stacks_depth == depth:
@@ -299,6 +342,70 @@ def _style_number(style: str, name: str) -> float:
     match = re.search(rf"(?:^|;)\s*{name}:\s*([0-9.]+)", style)
     assert match is not None, (name, style)
     return float(match.group(1))
+
+
+def _style_translate_x(style: str) -> float:
+    match = re.search(r"translateX\(([0-9.]+)px\)", style)
+    assert match is not None, style
+    return float(match.group(1))
+
+
+def _dom_stack_facts(parser: _SavedDOMParser) -> tuple[DOMCardStack, ...]:
+    facts: list[DOMCardStack] = []
+    for card in parser.cards:
+        style = str(card["style"])
+        if not card["name"] or "display: none" in style:
+            continue
+        try:
+            width = _style_number(style, "width")
+            height = _style_number(style, "height")
+            z_index = int(_style_number(style, "z-index"))
+        except AssertionError:
+            continue
+        counter_text = str(card["counter_text"])
+        selected_count = (
+            int(counter_text)
+            if card["selected"] and counter_text.isdigit()
+            else 1
+            if card["selected"]
+            else 0
+        )
+        all_style = str(card["all_style"])
+        all_covers_center = False
+        if card["has_visible_all"]:
+            all_left = _style_number(all_style, "left")
+            all_top = _style_number(all_style, "top")
+            all_width = _style_number(all_style, "width")
+            all_height = _style_number(all_style, "height")
+            all_covers_center = (
+                all_left <= width / 2 <= all_left + all_width
+                and all_top <= height / 2 <= all_top + all_height
+            )
+        facts.append(
+            DOMCardStack(
+                identity=str(card["name"]),
+                width=width,
+                height=height,
+                z_index=z_index,
+                has_visible_counter=bool(card["has_visible_counter"]),
+                selected_count=selected_count,
+                clickable="cursor: pointer" in style,
+                has_visible_all=bool(card["has_visible_all"]),
+                all_covers_center=all_covers_center,
+            )
+        )
+    return tuple(facts)
+
+
+def _dom_button_facts(parser: _SavedDOMParser) -> tuple[DOMGameButton, ...]:
+    return tuple(
+        DOMGameButton(
+            x=_style_translate_x(style),
+            width=_style_number(style, "width"),
+            height=_style_number(style, "height"),
+        )
+        for style in parser.buttons
+    )
 
 
 def test_saved_dom_separates_supply_hand_and_autoplay_targets() -> None:
@@ -329,7 +436,7 @@ def test_saved_dom_separates_supply_hand_and_autoplay_targets() -> None:
         )
         for style in parser.buttons
     }
-    assert button_roles == {"autoplay", "submit"}
+    assert button_roles == {"primary", "secondary"}
 
     _, _, _, decision = _live_turn_one()
     targets = (
@@ -346,3 +453,228 @@ def test_saved_dom_separates_supply_hand_and_autoplay_targets() -> None:
         "hand",
         "autoplay-button",
     ]
+
+
+def test_saved_discard_dom_resolves_collapsed_stack_selection_and_confirm() -> None:
+    if not SELECTED_DISCARD_DOM.is_file():
+        pytest.skip(f"missing saved DOM fixture: {SELECTED_DISCARD_DOM}")
+    parser = _SavedDOMParser()
+    parser.feed(SELECTED_DISCARD_DOM.read_text(encoding="utf-8"))
+    stacks = _dom_stack_facts(parser)
+    buttons = _dom_button_facts(parser)
+    decision = PendingDecisionSnapshot(
+        question_index=1246,
+        decision_type="TRASH",
+        question_id="CHAPEL",
+        offered=("Silver", "Silver", "Province", "Silver"),
+        minimum=0,
+        maximum=4,
+        association="Chapel",
+    )
+
+    assert selected_card_counts(stacks) == Counter({"Silver": 3})
+    silver_target = dom_click_target(
+        decision,
+        "Silver",
+        offered_index=0,
+    )
+    silver_index = resolve_card_stack_index(silver_target, stacks)
+    assert stacks[silver_index].identity == "Silver"
+    assert stacks[silver_index].z_index == 2000
+    assert stacks[silver_index].has_visible_all
+    assert not stacks[silver_index].all_covers_center
+
+    assert [game_button_role(width=b.width, height=b.height) for b in buttons] == [
+        "primary",
+        "secondary",
+    ]
+    assert resolve_submit_button_index(decision, buttons) == 0
+
+    ambiguous = (
+        *stacks,
+        replace(stacks[silver_index], z_index=2004),
+    )
+    with pytest.raises(ActuationError, match="found=2"):
+        resolve_card_stack_index(silver_target, ambiguous)
+    with pytest.raises(ActuationError, match="found=2"):
+        resolve_submit_button_index(
+            decision,
+            (*buttons, replace(buttons[0], x=buttons[0].x + 20)),
+        )
+
+
+def _live_militia() -> tuple[
+    tuple[object, ...],
+    int,
+    PendingDecision,
+    PendingDecisionSnapshot,
+]:
+    if not LIVE_GAME_2_ARCHIVE.is_file():
+        pytest.skip(f"missing live arena fixture: {LIVE_GAME_2_ARCHIVE}")
+    events = parse_recording(LIVE_GAME_2_ARCHIVE).events
+    tracker = Tracker()
+    for frame_index, event in enumerate(events):
+        tracker.consume(event)
+        if isinstance(event, PendingDecision) and event.question_index == 55:
+            snapshot = tracker.snapshot()
+            assert snapshot.pending_decision is not None
+            return events, frame_index, event, snapshot.pending_decision
+    raise AssertionError("live game 2 fixture has no question 55")
+
+
+def test_live_militia_and_reference_moat_have_executable_click_plans() -> None:
+    _, _, _, militia = _live_militia()
+    gold = int(dz.A_SELECT_BASE + dz.def_id("Gold"))
+    copper = int(dz.A_SELECT_BASE + dz.def_id("Copper"))
+    actuator = MockActuator(replay=True)
+    gesture = asyncio.run(
+        actuator.act(
+            copper,
+            militia,
+            militia.offered,
+            prior_actions=(gold, copper),
+        )
+    )
+    targets = gesture_click_targets(gesture, militia, militia.offered)
+
+    assert gesture.answer_indices == (2, 0, 1)
+    assert gesture.click_button
+    assert [
+        (target.region, target.identity, target.offered_index)
+        for target in targets
+    ] == [
+        ("hand", "Gold", 2),
+        ("hand", "Copper", 0),
+        ("hand", "Copper", 1),
+        ("submit-button", "MILITIA", -1),
+    ]
+
+    three_coppers = replace(
+        militia,
+        offered=("Copper", "Copper", "Copper"),
+        minimum=3,
+        maximum=3,
+    )
+    copper_gesture = asyncio.run(
+        MockActuator(replay=True).act(
+            copper,
+            three_coppers,
+            three_coppers.offered,
+            prior_actions=(copper, copper),
+        )
+    )
+    assert [
+        (target.region, target.identity)
+        for target in gesture_click_targets(
+            copper_gesture,
+            three_coppers,
+            three_coppers.offered,
+        )
+    ] == [
+        ("hand", "Copper"),
+        ("hand", "Copper"),
+        ("hand", "Copper"),
+        ("submit-button", "MILITIA"),
+    ]
+
+    if not REFERENCE_RECORDING.is_file():
+        pytest.skip(f"missing reference fixture: {REFERENCE_RECORDING}")
+    reference = parse_recording(REFERENCE_RECORDING).events
+    assert any(
+        isinstance(event, GameStart)
+        and {"Witch", "Moat"} <= set(event.kingdom)
+        for event in reference
+    )
+    moat = PendingDecisionSnapshot(
+        question_index=1,
+        decision_type="REVEAL",
+        question_id="GAME_MAY_REACT_WITH",
+        offered=("Moat",),
+        minimum=0,
+        maximum=1,
+        association="Witch",
+    )
+    reveal = asyncio.run(
+        MockActuator(replay=True).act(
+            int(dz.A_SELECT_BASE + dz.def_id("Moat")),
+            moat,
+            moat.offered,
+        )
+    )
+    decline = asyncio.run(
+        MockActuator(replay=True).act(
+            int(dz.A_PASS),
+            moat,
+            moat.offered,
+        )
+    )
+    assert [
+        (target.region, target.identity)
+        for target in gesture_click_targets(reveal, moat, moat.offered)
+    ] == [("hand", "Moat")]
+    assert [
+        (target.region, target.identity)
+        for target in gesture_click_targets(decline, moat, moat.offered)
+    ] == [("submit-button", "GAME_MAY_REACT_WITH")]
+
+
+def test_live_game_2_replays_through_militia_question_55() -> None:
+    events, _, question, _ = _live_militia()
+    resolved = DecisionResolved(
+        timestamp_ms=question.timestamp_ms + 1,
+        question_index=question.question_index,
+        answers=(2, 0, 1),
+        seat=1,
+        auto_played=False,
+    )
+    replay_events = (*events, resolved)
+    actuator = MockActuator(replay=True)
+
+    results = asyncio.run(
+        run_game_loop(
+            replay_events,
+            actuator=actuator,
+            decision_provider=RecordedDecisionProvider(replay_events),
+        )
+    )
+
+    assert not any(result.divergence_aborted for result in results)
+    assert actuator.gestures[-1].question_index == 55
+    assert actuator.gestures[-1].answer_indices == (2, 0, 1)
+    assert actuator.gestures[-1].click_button
+
+
+class _EmptyLocator:
+    async def count(self) -> int:
+        return 0
+
+
+class _EmptyPage:
+    def locator(self, selector: str) -> _EmptyLocator:
+        assert selector == "div.card-stacks > div"
+        return _EmptyLocator()
+
+
+def test_actuation_error_reports_offered_targets_and_failed_step() -> None:
+    _, _, _, decision = _live_militia()
+    gold = int(dz.A_SELECT_BASE + dz.def_id("Gold"))
+    copper = int(dz.A_SELECT_BASE + dz.def_id("Copper"))
+
+    with pytest.raises(ActuationError) as caught:
+        asyncio.run(
+            PlaywrightActuator(_EmptyPage()).act(
+                copper,
+                decision,
+                decision.offered,
+                prior_actions=(gold, copper),
+            )
+        )
+
+    message = str(caught.value)
+    assert "gesture (2, 0, 1)" in message
+    assert f"offered={decision.offered!r}" in message
+    assert "resolved_targets=" in message
+    assert "step=1/4" in message
+    assert "target=DOMClickTarget(region='hand', identity='Gold'" in message
+    assert "status=not-found" in message
+    assert "found=0" in message

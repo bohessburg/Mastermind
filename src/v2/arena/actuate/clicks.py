@@ -9,9 +9,10 @@ of truth for both the browser actuator and offline replay.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections import Counter
 from dataclasses import dataclass
 from itertools import permutations, product
-from typing import Any, Iterable
+from typing import Any, Iterable, Sequence
 
 import dominion_v2_py as dz
 
@@ -60,6 +61,30 @@ class DOMClickTarget:
     region: str
     identity: str
     offered_index: int
+
+
+@dataclass(frozen=True, kw_only=True)
+class DOMCardStack:
+    """Recorded facts for one visible direct child of ``div.card-stacks``."""
+
+    identity: str
+    width: float
+    height: float
+    z_index: int
+    has_visible_counter: bool
+    selected_count: int
+    clickable: bool
+    has_visible_all: bool
+    all_covers_center: bool
+
+
+@dataclass(frozen=True, kw_only=True)
+class DOMGameButton:
+    """Recorded geometry for one visible ``div.game-buttons`` canvas."""
+
+    x: float
+    width: float
+    height: float
 
 
 def offered_name(value: str) -> str:
@@ -297,19 +322,27 @@ class PlaywrightActuator(Actuator):
     ) -> ClientGesture:
         if self.page is None:
             raise ActuationError("Playwright page is unavailable")
-        gesture = _gesture(
-            action,
-            decision,
-            offered_elements,
-            prior_actions=prior_actions,
-        )
         try:
-            for index in gesture.selected_indices:
-                target = dom_click_target(
-                    decision,
-                    offered_elements[index],
-                    offered_index=index,
-                )
+            gesture = _gesture(
+                action,
+                decision,
+                offered_elements,
+                prior_actions=prior_actions,
+            )
+            targets = gesture_click_targets(
+                gesture,
+                decision,
+                offered_elements,
+            )
+        except Exception as error:
+            raise ActuationError(
+                f"failed question {decision.question_index} gesture planning; "
+                f"offered={offered_elements!r}; step=plan status=not-found; "
+                f"detail={error}"
+            ) from error
+
+        for step, target in enumerate(targets, start=1):
+            try:
                 if target.region == "autoplay-button":
                     await self._click_autoplay_button()
                 elif target.region == "mode-button":
@@ -317,64 +350,135 @@ class PlaywrightActuator(Actuator):
                         target.offered_index,
                         len(offered_elements),
                     )
+                elif target.region == "submit-button":
+                    if _verify_selection_before_submit(decision):
+                        await self._verify_selected_cards(gesture.labels)
+                    await self._click_submit_button(decision)
                 else:
                     await self._click_card(target)
-            if gesture.click_button:
-                await self._click_submit_button(decision)
-        except Exception as error:
-            raise ActuationError(
-                f"failed question {decision.question_index} gesture "
-                f"{gesture.answer_indices}"
-            ) from error
+            except _GestureStepError as error:
+                raise ActuationError(
+                    f"failed question {decision.question_index} gesture "
+                    f"{gesture.answer_indices}; offered={offered_elements!r}; "
+                    f"resolved_targets={targets!r}; step={step}/{len(targets)} "
+                    f"target={target!r} status={error.status}; "
+                    f"detail={error.detail}"
+                ) from error
+            except Exception as error:
+                raise ActuationError(
+                    f"failed question {decision.question_index} gesture "
+                    f"{gesture.answer_indices}; offered={offered_elements!r}; "
+                    f"resolved_targets={targets!r}; step={step}/{len(targets)} "
+                    f"target={target!r} status=click-error; detail={error}"
+                ) from error
         return gesture
 
     async def _click_card(self, target: DOMClickTarget) -> None:
         cards = self.page.locator("div.card-stacks > div")
-        matches: list[Any] = []
+        candidates: list[Any] = []
+        facts: list[DOMCardStack] = []
         for index in range(await cards.count()):
             candidate = cards.nth(index)
             if not await candidate.is_visible():
                 continue
-            facts = await candidate.evaluate(
+            observed = await candidate.evaluate(
                 """element => {
                     const name = Array.from(
                         element.querySelectorAll(".name-layer:not(.invisible)")
                     ).map(layer => layer.textContent.trim()).filter(Boolean);
-                    const counter = Array.from(
+                    const counters = Array.from(
                         element.querySelectorAll(".counter-layer:not(.invisible)")
-                    ).some(layer => getComputedStyle(layer).display !== "none");
+                    ).filter(layer => getComputedStyle(layer).display !== "none");
+                    const selected = element.querySelector("selection-cross") !== null;
+                    const selectedCount = selected
+                        ? Number.parseInt(
+                            counters.map(layer => layer.textContent.trim())
+                                .find(text => /^\\d+$/.test(text)) || "1",
+                            10
+                        )
+                        : 0;
+                    const all = Array.from(
+                        element.querySelectorAll(".all-button:not(.invisible)")
+                    ).find(layer => getComputedStyle(layer).display !== "none");
                     const rect = element.getBoundingClientRect();
+                    const style = getComputedStyle(element);
+                    let allCoversCenter = false;
+                    if (all) {
+                        const allRect = all.getBoundingClientRect();
+                        const centerX = rect.left + rect.width / 2;
+                        const centerY = rect.top + rect.height / 2;
+                        allCoversCenter = (
+                            allRect.left <= centerX && centerX <= allRect.right
+                            && allRect.top <= centerY && centerY <= allRect.bottom
+                        );
+                    }
                     return {
                         name: name.length === 1 ? name[0] : null,
                         width: rect.width,
                         height: rect.height,
-                        zIndex: Number.parseInt(getComputedStyle(element).zIndex, 10)
-                            || 0,
-                        hasVisibleCounter: counter,
+                        zIndex: Number.parseInt(style.zIndex, 10) || 0,
+                        hasVisibleCounter: counters.length > 0,
+                        selectedCount,
+                        clickable: (
+                            style.cursor === "pointer"
+                            && style.pointerEvents !== "none"
+                        ),
+                        hasVisibleAll: Boolean(all),
+                        allCoversCenter,
                     };
                 }"""
             )
-            if (
-                facts["name"] == target.identity
-                and card_stack_region(
-                    width=float(facts["width"]),
-                    height=float(facts["height"]),
-                    z_index=int(facts["zIndex"]),
-                    has_visible_counter=bool(facts["hasVisibleCounter"]),
+            if observed["name"] is None:
+                continue
+            candidates.append(candidate)
+            facts.append(
+                DOMCardStack(
+                    identity=str(observed["name"]),
+                    width=float(observed["width"]),
+                    height=float(observed["height"]),
+                    z_index=int(observed["zIndex"]),
+                    has_visible_counter=bool(observed["hasVisibleCounter"]),
+                    selected_count=int(observed["selectedCount"]),
+                    clickable=bool(observed["clickable"]),
+                    has_visible_all=bool(observed["hasVisibleAll"]),
+                    all_covers_center=bool(observed["allCoversCenter"]),
                 )
-                == target.region
-            ):
-                matches.append(candidate)
-        if len(matches) != 1:
-            raise ActuationError(
-                f"expected one {target.region} target for "
-                f"{target.identity!r}, found {len(matches)}"
             )
-        await matches[0].click()
+        try:
+            match = resolve_card_stack_index(target, facts)
+        except ActuationError as error:
+            raise _GestureStepError("not-found", str(error)) from error
+        stack = facts[match]
+        if not stack.clickable or stack.selected_count:
+            raise _GestureStepError(
+                "not-found",
+                f"found=1 but target is not an unselected clickable stack: {stack!r}",
+            )
+        if stack.all_covers_center:
+            raise _GestureStepError(
+                "not-found",
+                "found=1 but the distinct All control covers the stack "
+                f"center: {stack!r}",
+            )
+        try:
+            await candidates[match].click(
+                position={
+                    "x": stack.width / 2,
+                    "y": stack.height / 2,
+                }
+            )
+        except Exception as error:
+            raise _GestureStepError(
+                "click-error",
+                f"found=1 stack={stack!r}; click={error}",
+            ) from error
 
-    async def _visible_button_boxes(self) -> list[tuple[Any, float, float, float]]:
+    async def _visible_button_boxes(
+        self,
+    ) -> tuple[list[Any], list[DOMGameButton]]:
         buttons = self.page.locator("div.game-buttons canvas")
-        visible: list[tuple[Any, float, float, float]] = []
+        locators: list[Any] = []
+        facts: list[DOMGameButton] = []
         for index in range(await buttons.count()):
             candidate = buttons.nth(index)
             if not await candidate.is_visible():
@@ -382,76 +486,131 @@ class PlaywrightActuator(Actuator):
             box = await candidate.bounding_box()
             if box is None or box["height"] <= 0:
                 continue
-            visible.append(
-                (
-                    candidate,
-                    float(box["x"]),
-                    float(box["width"]),
-                    float(box["height"]),
+            locators.append(candidate)
+            facts.append(
+                DOMGameButton(
+                    x=float(box["x"]),
+                    width=float(box["width"]),
+                    height=float(box["height"]),
                 )
             )
-        return visible
+        return locators, facts
 
     async def _click_autoplay_button(self) -> None:
+        locators, buttons = await self._visible_button_boxes()
         matches = [
-            button
-            for button, _, width, height in await self._visible_button_boxes()
-            if game_button_role(width=width, height=height) == "autoplay"
+            index
+            for index, button in enumerate(buttons)
+            if game_button_role(
+                width=button.width,
+                height=button.height,
+            )
+            == "primary"
         ]
         if len(matches) != 1:
-            raise ActuationError(
-                f"expected one autoplay canvas, found {len(matches)}"
+            raise _GestureStepError(
+                "not-found",
+                f"expected one primary autoplay canvas, found={len(matches)}; "
+                f"buttons={buttons!r}",
             )
-        await matches[0].click()
+        try:
+            await locators[matches[0]].click()
+        except Exception as error:
+            raise _GestureStepError(
+                "click-error",
+                f"found=1 autoplay button={buttons[matches[0]]!r}; click={error}",
+            ) from error
 
     async def _click_submit_button(
         self,
         decision: PendingDecisionSnapshot,
     ) -> None:
-        buttons = await self._visible_button_boxes()
+        locators, buttons = await self._visible_button_boxes()
         if not buttons:
-            raise ActuationError("no visible submit canvas")
-        if decision.question_id in {
-            "GAME_ACTION_PHASE",
-            "GAME_BUY_PHASE",
-        }:
-            # End Actions/Buys is the rightmost phase control. Autoplay is the
-            # separate wide canvas to its left.
-            rightmost_x = max(x for _, x, _, _ in buttons)
-            matches = [
-                button
-                for button, x, _, _ in buttons
-                if x == rightmost_x
-            ]
-        else:
-            # Effect questions use one wide confirmation canvas (for example
-            # "Confirm Trashing") plus optional compact auxiliary controls.
-            matches = [
-                button
-                for button, _, width, height in buttons
-                if game_button_role(width=width, height=height) == "autoplay"
-            ]
-        if len(matches) != 1:
-            raise ActuationError("submit canvas is not unambiguous")
-        await matches[0].click()
+            raise _GestureStepError("not-found", "no visible submit canvas; found=0")
+        try:
+            match = resolve_submit_button_index(decision, buttons)
+        except ActuationError as error:
+            raise _GestureStepError("not-found", str(error)) from error
+        try:
+            await locators[match].click()
+        except Exception as error:
+            raise _GestureStepError(
+                "click-error",
+                f"found=1 submit button={buttons[match]!r}; click={error}",
+            ) from error
 
     async def _click_mode_button(self, index: int, offered_count: int) -> None:
+        locators, facts = await self._visible_button_boxes()
         buttons = sorted(
-            await self._visible_button_boxes(),
-            key=lambda item: item[1],
+            zip(locators, facts, strict=True),
+            key=lambda item: item[1].x,
         )
         if len(buttons) != offered_count:
-            raise ActuationError(
-                f"expected {offered_count} mode canvases, found {len(buttons)}"
+            raise _GestureStepError(
+                "not-found",
+                f"expected {offered_count} mode canvases, found={len(buttons)}; "
+                f"buttons={facts!r}",
             )
-        await buttons[index][0].click()
+        try:
+            await buttons[index][0].click()
+        except Exception as error:
+            raise _GestureStepError(
+                "click-error",
+                f"found={len(buttons)} mode button index={index}; click={error}",
+            ) from error
+
+    async def _verify_selected_cards(self, labels: tuple[str, ...]) -> None:
+        wanted = Counter(labels)
+        observed: Counter[str] = Counter()
+        for attempt in range(21):
+            observed = await self._selected_card_counts()
+            if observed == wanted:
+                return
+            if attempt < 20:
+                await self.page.wait_for_timeout(50)
+        raise _GestureStepError(
+            "not-found",
+            f"selection-check expected={dict(wanted)!r} "
+            f"observed={dict(observed)!r}",
+        )
+
+    async def _selected_card_counts(self) -> Counter[str]:
+        raw = await self.page.locator("div.card-stacks > div").evaluate_all(
+            """elements => elements.flatMap(element => {
+                if (element.querySelector("selection-cross") === null) {
+                    return [];
+                }
+                const name = Array.from(
+                    element.querySelectorAll(".name-layer:not(.invisible)")
+                ).map(layer => layer.textContent.trim()).filter(Boolean);
+                if (name.length !== 1) {
+                    return [];
+                }
+                const count = Array.from(
+                    element.querySelectorAll(".counter-layer:not(.invisible)")
+                ).map(layer => layer.textContent.trim())
+                    .find(text => /^\\d+$/.test(text));
+                return [[name[0], Number.parseInt(count || "1", 10)]];
+            })"""
+        )
+        counts: Counter[str] = Counter()
+        for name, count in raw:
+            counts[str(name)] += int(count)
+        return counts
 
 
 _HAND_QUESTIONS = frozenset(
     {
         "ARTISAN_TOPDECK",
+        "BUREAUCRAT",
+        "CELLAR",
         "CHAPEL",
         "GAME_ACTION_PHASE",
+        "GAME_MAY_REACT_WITH",
+        "MILITIA",
+        "MINE_TRASH",
+        "MONEYLENDER",
         "POACHER",
         "REMODEL_TRASH",
         "THRONE_ROOM",
@@ -518,11 +677,118 @@ def card_stack_region(
     return None
 
 
+def resolve_card_stack_index(
+    target: DOMClickTarget,
+    stacks: Sequence[DOMCardStack],
+) -> int:
+    """Resolve a logical card target without conflating duplicate copies.
+
+    The client collapses unselected duplicate cards into one stack. Selected
+    copies may be rendered as a second, rotated stack with a
+    ``selection-cross``; only the region-qualified unselected stack is a
+    candidate for the next click.
+    """
+    matches = [
+        index
+        for index, stack in enumerate(stacks)
+        if stack.identity == target.identity
+        and stack.selected_count == 0
+        and card_stack_region(
+            width=stack.width,
+            height=stack.height,
+            z_index=stack.z_index,
+            has_visible_counter=stack.has_visible_counter,
+        )
+        == target.region
+    ]
+    if len(matches) != 1:
+        raise ActuationError(
+            f"expected one {target.region} target for {target.identity!r}, "
+            f"found={len(matches)}; stacks={tuple(stacks)!r}"
+        )
+    return matches[0]
+
+
+def selected_card_counts(stacks: Iterable[DOMCardStack]) -> Counter[str]:
+    """Return the selected multiset encoded by recorded selection stacks."""
+    counts: Counter[str] = Counter()
+    for stack in stacks:
+        if stack.selected_count:
+            counts[stack.identity] += stack.selected_count
+    return counts
+
+
 def game_button_role(*, width: float, height: float) -> str | None:
-    """Identify the wide autoplay canvas independently of DOM list order."""
+    """Classify recorded client-2.2.8 game-button canvas geometry."""
     if width <= 0 or height <= 0:
         return None
-    return "autoplay" if width / height >= 3.5 else "submit"
+    ratio = width / height
+    if ratio >= 3.5:
+        # The same wide primary canvas is Autoplay Treasures in buy phase and
+        # Confirm Trashing/Discarding for effect prompts.
+        return "primary"
+    return "secondary"
+
+
+def resolve_submit_button_index(
+    decision: PendingDecisionSnapshot,
+    buttons: Sequence[DOMGameButton],
+) -> int:
+    """Resolve the recorded phase or effect confirmation canvas."""
+    if decision.question_id in {
+        "GAME_ACTION_PHASE",
+        "GAME_BUY_PHASE",
+    }:
+        if not buttons:
+            matches: list[int] = []
+        else:
+            rightmost_x = max(button.x for button in buttons)
+            matches = [
+                index
+                for index, button in enumerate(buttons)
+                if button.x == rightmost_x
+            ]
+    else:
+        matches = [
+            index
+            for index, button in enumerate(buttons)
+            if game_button_role(
+                width=button.width,
+                height=button.height,
+            )
+            == "primary"
+        ]
+    if len(matches) != 1:
+        raise ActuationError(
+            f"submit canvas is not unambiguous; found={len(matches)}; "
+            f"buttons={tuple(buttons)!r}"
+        )
+    return matches[0]
+
+
+def gesture_click_targets(
+    gesture: ClientGesture,
+    decision: PendingDecisionSnapshot,
+    offered: tuple[str, ...],
+) -> tuple[DOMClickTarget, ...]:
+    """Return the complete ordered physical plan for a mapped gesture."""
+    targets = [
+        dom_click_target(
+            decision,
+            offered[index],
+            offered_index=index,
+        )
+        for index in gesture.selected_indices
+    ]
+    if gesture.click_button:
+        targets.append(
+            DOMClickTarget(
+                region="submit-button",
+                identity=decision.question_id,
+                offered_index=-1,
+            )
+        )
+    return tuple(targets)
 
 
 def _gesture(
@@ -680,8 +946,36 @@ def _needs_button(
         return not selected
     if decision.decision_type in {"CHOOSE_MODE", "ORDER_CARDS"}:
         return False
+    if decision.maximum > 1:
+        # Recorded multi-select prompts retain the selection and expose a wide
+        # primary confirmation canvas even after the maximum is selected.
+        return True
     required_to_auto_submit = min(decision.maximum, len(decision.offered))
     return len(selected) < required_to_auto_submit
+
+
+def _verify_selection_before_submit(
+    decision: PendingDecisionSnapshot,
+) -> bool:
+    return (
+        decision.maximum > 1
+        and decision.question_id
+        not in {
+            "GAME_ACTION_PHASE",
+            "GAME_BUY_PHASE",
+            "THRONE_ROOM",
+        }
+        and decision.decision_type not in {"CHOOSE_MODE", "ORDER_CARDS"}
+    )
+
+
+class _GestureStepError(RuntimeError):
+    """One planned physical gesture step failed with structured status."""
+
+    def __init__(self, status: str, detail: str) -> None:
+        super().__init__(detail)
+        self.status = status
+        self.detail = detail
 
 
 def _require_length(

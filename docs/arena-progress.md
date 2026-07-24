@@ -184,6 +184,41 @@ person would, using the site's own client the whole way through.
   Repeated/batched resolution copies are each checked against the exact
   submitted encoding and cannot delay or weaken the first check.
 
+- **Second supervised live-game follow-up (2026-07-24).**
+  The second run reached turn 9 with 17 verified autoplay/buy decisions, then
+  stopped at the first opponent-turn hand prompt: Militia question 55 offered
+  bare card names and the mapper produced `(2, 0, 1)`, but the actuator treated
+  every unknown bare-name question as a high-z-index revealed-card display.
+  The first planned click was therefore Gold in the display region; the live
+  Gold was a local-hand stack at z-index 2000–2999, so resolution found zero
+  targets and aborted before clicking any card.
+
+  Bare-name hand prompts now explicitly include Militia, Chapel, Cellar,
+  Poacher, Remodel trash, Artisan topdeck, the Moat reaction window, and the
+  other base-set hand selectors. Duplicate offered copies remain separate
+  protocol indices but deliberately produce repeated clicks on one collapsed
+  physical stack. Card-body clicks use the recorded stack center, outside the
+  distinct lower-right `.all-button`, so “All” cannot turn one intended click
+  into an unintended bulk selection.
+
+  Multi-select effects now always finish with the recorded wide primary canvas
+  (`Confirm Discarding` / `Confirm Trashing`), including when the mapped answer
+  has already reached the prompt's terminal count. Before that final click the
+  actuator reads the recorded `<selection-cross>` marker and selected-stack
+  counter, and requires the selected card multiset to exactly match the mapped
+  labels. A mismatch waits briefly for rendering and then aborts without
+  confirming. The same primary-canvas mapping handles empty decline/skip
+  submissions such as declining a Moat reaction; selecting Moat itself maps to
+  its hand stack and auto-submits.
+
+  Actuation failures now report the offered tuple, the complete resolved target
+  plan, the failing step, `not-found` versus `click-error`, and the observed
+  target/button facts. Offline regressions cover the saved duplicate-selection
+  DOM (three selected Silvers in one counted stack), confirmation versus Undo
+  canvas geometry, ambiguity rejection, three repeated Copper clicks on one
+  logical stack, the exact Militia plan, Moat reveal/decline plans, and replay
+  of the live-game-2 archive through question 55.
+
 - **P6 — Lobby loop + supervisor + deploy.** Unattended base-set sessions
   with archiving and recovery.
 
