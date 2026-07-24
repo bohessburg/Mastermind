@@ -14,12 +14,18 @@ DEFAULT_CHECKPOINT = Path("checkpoints/remote/campaign15/gen_0045.pt")
 
 @dataclass(frozen=True, kw_only=True)
 class LobbyConfig:
-    """Lobby settings retained for the P6 lobby state machine."""
+    """Automatch and timeout settings for the lobby state machine."""
 
     card_pool: str = "base"
     rated: bool = False
-    requeue: bool = False
-    max_games: int = 1
+    max_games_per_session: int = 5
+    homepage_timeout_seconds: float = 30.0
+    searching_timeout_seconds: float = 180.0
+    table_waiting_timeout_seconds: float = 30.0
+    in_game_timeout_seconds: float = 3600.0
+    game_over_timeout_seconds: float = 30.0
+    game_ended_dialog_timeout_seconds: float = 5.0
+    leaving_timeout_seconds: float = 30.0
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -33,10 +39,6 @@ class ArenaConfig:
     wall_clock_cap_seconds: float | None = 30.0
     think_time_min_seconds: float = 1.25
     think_time_max_seconds: float = 2.75
-    chat_announcement: str = (
-        "Hi! I am an openly disclosed DominionZero research bot. "
-        "Thanks for playing."
-    )
     lobby: LobbyConfig = LobbyConfig()
     arena_user: str | None = None
     arena_pass: str | None = None
@@ -61,7 +63,6 @@ class ArenaConfig:
 
         search = _object(raw, "search")
         pacing = _object(raw, "think_time")
-        chat = _object(raw, "chat")
         lobby_raw = _object(raw, "lobby")
         env = os.environ if environ is None else environ
 
@@ -79,17 +80,33 @@ class ArenaConfig:
             wall_clock_cap_seconds=cap,
             think_time_min_seconds=float(pacing.get("min_seconds", 1.25)),
             think_time_max_seconds=float(pacing.get("max_seconds", 2.75)),
-            chat_announcement=str(
-                chat.get(
-                    "announcement",
-                    cls.__dataclass_fields__["chat_announcement"].default,
-                )
-            ),
             lobby=LobbyConfig(
                 card_pool=str(lobby_raw.get("card_pool", "base")),
                 rated=bool(lobby_raw.get("rated", False)),
-                requeue=bool(lobby_raw.get("requeue", False)),
-                max_games=int(lobby_raw.get("max_games", 1)),
+                max_games_per_session=int(
+                    lobby_raw.get("max_games_per_session", 5)
+                ),
+                homepage_timeout_seconds=float(
+                    lobby_raw.get("homepage_timeout_seconds", 30.0)
+                ),
+                searching_timeout_seconds=float(
+                    lobby_raw.get("searching_timeout_seconds", 180.0)
+                ),
+                table_waiting_timeout_seconds=float(
+                    lobby_raw.get("table_waiting_timeout_seconds", 30.0)
+                ),
+                in_game_timeout_seconds=float(
+                    lobby_raw.get("in_game_timeout_seconds", 3600.0)
+                ),
+                game_over_timeout_seconds=float(
+                    lobby_raw.get("game_over_timeout_seconds", 30.0)
+                ),
+                game_ended_dialog_timeout_seconds=float(
+                    lobby_raw.get("game_ended_dialog_timeout_seconds", 5.0)
+                ),
+                leaving_timeout_seconds=float(
+                    lobby_raw.get("leaving_timeout_seconds", 30.0)
+                ),
             ),
             arena_user=env.get("ARENA_USER"),
             arena_pass=env.get("ARENA_PASS"),
@@ -114,10 +131,19 @@ class ArenaConfig:
             raise ValueError("minimum think time cannot be negative")
         if self.think_time_max_seconds < self.think_time_min_seconds:
             raise ValueError("maximum think time must be at least the minimum")
-        if self.lobby.max_games <= 0:
-            raise ValueError("lobby max_games must be greater than zero")
-        if not self.chat_announcement.strip():
-            raise ValueError("chat announcement cannot be empty")
+        if self.lobby.max_games_per_session < 0:
+            raise ValueError("lobby max_games_per_session cannot be negative")
+        for name, value in (
+            ("homepage", self.lobby.homepage_timeout_seconds),
+            ("searching", self.lobby.searching_timeout_seconds),
+            ("table_waiting", self.lobby.table_waiting_timeout_seconds),
+            ("in_game", self.lobby.in_game_timeout_seconds),
+            ("game_over", self.lobby.game_over_timeout_seconds),
+            ("game_ended_dialog", self.lobby.game_ended_dialog_timeout_seconds),
+            ("leaving", self.lobby.leaving_timeout_seconds),
+        ):
+            if value <= 0:
+                raise ValueError(f"lobby {name} timeout must be positive")
 
 
 def _object(raw: Mapping[str, object], key: str) -> Mapping[str, object]:

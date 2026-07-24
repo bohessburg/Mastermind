@@ -13,10 +13,13 @@
   "lobby": {
     "card_pool": "base",
     "rated": false,
-    "requeue": false,
-    "max_games": 1
-  },
-  "chat": {
-    "announcement": "Hi! I am an openly disclosed DominionZero research bot. Thanks for playing."
+    "max_games_per_session": 5,
+    "homepage_timeout_seconds": 30,
+    "searching_timeout_seconds": 180,
+    "table_waiting_timeout_seconds": 30,
+    "in_game_timeout_seconds": 3600,
+    "game_over_timeout_seconds": 30,
+    "game_ended_dialog_timeout_seconds": 5,
+    "leaving_timeout_seconds": 30
   }
 }

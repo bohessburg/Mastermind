@@ -19,7 +19,8 @@ from .fsm.game import (
     RecordedDecisionProvider,
     run_game_loop,
 )
-from .protocol.events import GameEvent, GameStart
+from .fsm.lobby import LobbyError, LobbyFSM
+from .protocol.events import GameEvent
 from .protocol.live import RawFrameQueue, events_from_queue
 from .protocol.recording import events_from_recording
 
@@ -139,21 +140,16 @@ async def _run_live(
     from .browser.session import ArenaSession
 
     session = ArenaSession()
+    event_pump: asyncio.Task[None] | None = None
     try:
         await session.start()
         assert session.run_dir is not None
         assert session.page is not None
         print(f"live archive: {session.run_dir}", flush=True)
-        print(
-            "Manual lobby: use the headful browser to log in (if needed) and "
-            "start or queue one base-set game. Lobby automation is not enabled; "
-            "the bot attaches when the game's full-state arrives.",
-            flush=True,
-        )
         if not (config.arena_user and config.arena_pass):
             print(
                 "ARENA_USER/ARENA_PASS are not both set; log in through the "
-                "persistent browser profile.",
+                "persistent browser profile before the homepage timeout.",
                 flush=True,
             )
 
@@ -169,9 +165,6 @@ async def _run_live(
                 )
                 return None
 
-        async def chat(message: str) -> None:
-            await _send_chat(session.page, message)
-
         async def resign() -> None:
             await _request_resign(session.page)
 
@@ -184,62 +177,101 @@ async def _run_live(
                 source_frames=session.frames_path,
             )
 
-        results = await run_game_loop(
-            _announce_games(session.events(), chat, config.chat_announcement),
-            actuator=PlaywrightActuator(session.page),
-            decision_provider=provider,
-            think_time_min_seconds=config.think_time_min_seconds,
-            think_time_max_seconds=config.think_time_max_seconds,
-            screenshot_hook=screenshot,
-            chat_hook=chat,
-            resign_hook=resign,
-            archive_factory=archive_factory,
+        events: asyncio.Queue[GameEvent | None] = asyncio.Queue()
+        event_pump = asyncio.create_task(
+            _pump_session_events(session.events(), events),
+            name="arena-live-event-pump",
         )
-        if any(result.divergence_aborted for result in results):
-            print(
-                "DIVERGENCE ABORT: the browser remains open for inspection. "
-                "Press Ctrl-C to close it cleanly.",
-                file=sys.stderr,
-                flush=True,
-            )
-            await asyncio.Event().wait()
-        return 1 if any(result.divergence_aborted for result in results) else 0
+        lobby = LobbyFSM(
+            session.page,
+            config.lobby,
+            snapshot_dom=session.snapshot_dom,
+        )
+        actuator = PlaywrightActuator(session.page)
+        await lobby.queue_next_game()
+
+        completed_games = 0
+        while True:
+            try:
+                results = await asyncio.wait_for(
+                    run_game_loop(
+                        _events_for_one_game(events),
+                        actuator=actuator,
+                        decision_provider=provider,
+                        think_time_min_seconds=config.think_time_min_seconds,
+                        think_time_max_seconds=config.think_time_max_seconds,
+                        screenshot_hook=screenshot,
+                        resign_hook=resign,
+                        archive_factory=archive_factory,
+                        max_games=1,
+                    ),
+                    timeout=config.lobby.in_game_timeout_seconds,
+                )
+            except TimeoutError as error:
+                raise LobbyError(
+                    "LOBBY ERROR [in_game]: timed out after "
+                    f"{config.lobby.in_game_timeout_seconds:.1f}s waiting for "
+                    "GameEnd. Browser left open; operator: inspect the visible "
+                    "game and either correct it or press Ctrl-C."
+                ) from error
+
+            if len(results) != 1:
+                raise RuntimeError(
+                    "live event feed ended before the next game produced GameEnd"
+                )
+            result = results[0]
+            if result.divergence_aborted:
+                print(
+                    "DIVERGENCE ABORT: the browser remains open for inspection. "
+                    "Press Ctrl-C to close it cleanly.",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                await asyncio.Event().wait()
+                return 1
+
+            completed_games += 1
+            lobby.game_ended()
+            at_limit = lobby.reached_game_limit(completed_games)
+            await lobby.leave_after_game(requeue=not at_limit)
+            if at_limit:
+                print(
+                    f"arena session completed {completed_games} game(s)",
+                    flush=True,
+                )
+                return 0
+    except LobbyError as error:
+        print(str(error), file=sys.stderr, flush=True)
+        await asyncio.Event().wait()
+        return 1
     finally:
+        if event_pump is not None:
+            event_pump.cancel()
+            await asyncio.gather(event_pump, return_exceptions=True)
         await session.stop()
 
 
-async def _announce_games(
-    events: AsyncIterable[GameEvent],
-    chat: Any,
-    announcement: str,
-) -> AsyncIterator[GameEvent]:
-    """Send the configured disclosure once per game before yielding its start."""
-    announced: set[int] = set()
-    async for event in events:
-        if isinstance(event, GameStart) and event.game_id not in announced:
-            announced.add(event.game_id)
-            await chat(announcement)
-        yield event
-
-
-async def _send_chat(page: Any, message: str) -> None:
-    """Use the recorded game's ``#game-chat-input`` form when available."""
-    input_box = page.locator("#game-chat-input")
-    if await input_box.count() == 0:
-        print(
-            "ERROR: chat was not sent: #game-chat-input was absent from the "
-            "live DOM. No unrecorded selector will be guessed.",
-            file=sys.stderr,
-            flush=True,
-        )
-        return
+async def _pump_session_events(
+    source: AsyncIterable[GameEvent],
+    destination: asyncio.Queue[GameEvent | None],
+) -> None:
+    """Keep one stateful protocol parser alive across all lobby/game cycles."""
     try:
-        await input_box.first.fill(message)
-        # The saved DOM wraps this input in form[ng-submit="$ctrl.sendChat()"],
-        # so Enter submits without inventing an unrecorded send-button selector.
-        await input_box.first.press("Enter")
-    except Exception as error:
-        print(f"ERROR: chat was not sent: {error}", file=sys.stderr, flush=True)
+        async for event in source:
+            await destination.put(event)
+    finally:
+        await destination.put(None)
+
+
+async def _events_for_one_game(
+    source: asyncio.Queue[GameEvent | None],
+) -> AsyncIterator[GameEvent]:
+    """Yield queued normalized events until a one-game loop returns."""
+    while True:
+        event = await source.get()
+        if event is None:
+            return
+        yield event
 
 
 async def _request_resign(page: Any) -> None:

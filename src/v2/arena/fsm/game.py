@@ -44,6 +44,7 @@ from ..protocol.events import (
     Reveal,
     Shuffle,
     Topdeck,
+    UnknownFrame,
     ZoneTransfer,
 )
 from ..shadow.bridge import BridgeError, game_from_snapshot, set_deck_order
@@ -513,13 +514,9 @@ async def run_game_loop(
         [int, TrackerSnapshot], str | Path | None | Awaitable[str | Path | None]
     ]
     | None = None,
-    chat_hook: Callable[[str], object | Awaitable[object]] | None = None,
     resign_hook: Callable[[], object | Awaitable[object]] | None = None,
-    kingdom_rejection_text: str = (
-        "Sorry — this bot only supports the configured base-set kingdom. "
-        "I will resign this game."
-    ),
     archive_factory: Callable[[int | None], GameArchive] | None = None,
+    max_games: int | None = None,
 ) -> tuple[GameRunResult, ...]:
     """Consume normalized events and play until every observed game ends.
 
@@ -530,6 +527,8 @@ async def run_game_loop(
         raise ValueError("minimum think time cannot be negative")
     if think_time_max_seconds < think_time_min_seconds:
         raise ValueError("maximum think time must be at least the minimum")
+    if max_games is not None and max_games <= 0:
+        raise ValueError("max_games must be positive or null")
     rng = random_source or random.Random()
     tracker = Tracker()
     active: _ActiveGame | None = None
@@ -627,12 +626,29 @@ async def run_game_loop(
                     unknown = _unknown_kingdom(event.kingdom)
                     if unknown:
                         active.kingdom_rejected = True
-                        await _maybe_await(chat_hook, kingdom_rejection_text)
                         await _maybe_await(resign_hook)
                 continue
 
             if active is None:
                 continue
+
+            if (
+                isinstance(event, UnknownFrame)
+                and event.direction == "in"
+                and event.msg_type == 37
+            ):
+                question_index = (
+                    int.from_bytes(event.raw[:4], "big", signed=True)
+                    if len(event.raw) >= 4
+                    else None
+                )
+                raise DivergenceError(
+                    "unparseable inbound questionAsked while a game is active: "
+                    f"sequence={event.sequence} bytes={len(event.raw)} "
+                    f"reason={event.reason or 'unknown parser failure'}",
+                    frame_index=frame_index,
+                    question_index=question_index,
+                )
 
             if isinstance(event, Reconnect):
                 active.shadow = None
@@ -677,6 +693,8 @@ async def run_game_loop(
                 _finish_archive(active, result)
                 results.append(result)
                 active = None
+                if max_games is not None and len(results) >= max_games:
+                    return tuple(results)
                 continue
 
             if (
@@ -873,7 +891,19 @@ def _recorded_plan(
     )
     actions: tuple[int, ...]
     question = decision.question_id
-    if question == "GAME_ACTION_PHASE":
+    if question == "GAME_MAY_REACT_WITH":
+        if answers == (0, 1, 0, 0):
+            actions = (int(dz.A_PASS),)
+        elif len(answers) == 5 and answers[:1] == (1,):
+            actions = (
+                int(
+                    dz.A_SELECT_BASE
+                    + dz.def_id(offered_name(decision.offered[answers[1]]))
+                ),
+            )
+        else:
+            raise ValueError(f"unsupported Moat reaction answer {answers}")
+    elif question == "GAME_ACTION_PHASE":
         if answers == (0, 0, 0):
             actions = (int(dz.A_PASS),)
         else:
@@ -1277,6 +1307,8 @@ def _recorded_selected_indices(
     decision: PendingDecisionSnapshot,
     answers: tuple[int, ...],
 ) -> tuple[int, ...]:
+    if decision.question_id == "GAME_MAY_REACT_WITH":
+        return (answers[1],) if len(answers) == 5 and answers[0] == 1 else ()
     if decision.question_id == "GAME_ACTION_PHASE":
         return (answers[2],) if len(answers) == 4 else ()
     if decision.question_id == "GAME_BUY_PHASE":

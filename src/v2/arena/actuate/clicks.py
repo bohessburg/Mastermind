@@ -135,6 +135,18 @@ def possible_answer_indices(
     offered = decision.offered if offered_elements is None else offered_elements
     question = decision.question_id
 
+    if question == "GAME_MAY_REACT_WITH":
+        _require_length(actions_tuple, 1, decision)
+        if actions_tuple == (int(dz.A_PASS),):
+            # The client bundle flattens the three-part COMPLEX_AND as
+            # [selection length][selection][reject length][reject][way length].
+            return ((0, 1, 0, 0),)
+        indices = _card_assignments(actions_tuple, offered, region="select")
+        return _unique(
+            (1, assignment[0], 1, 0, 0)
+            for assignment in indices
+        )
+
     if question == "GAME_ACTION_PHASE":
         if actions_tuple == (int(dz.A_PASS),):
             return ((0, 0, 0),)
@@ -387,6 +399,8 @@ class PlaywrightActuator(Actuator):
                     if _verify_selection_before_submit(decision):
                         await self._verify_selected_cards(gesture.labels)
                     await self._click_submit_button(decision)
+                elif target.region == "decline-button":
+                    await self._click_reaction_decline()
                 else:
                     await self._click_card(target)
             except _GestureStepError as error:
@@ -571,6 +585,33 @@ class PlaywrightActuator(Actuator):
             raise _GestureStepError(
                 "click-error",
                 f"found=1 submit button={buttons[match]!r}; click={error}",
+            ) from error
+
+    async def _click_reaction_decline(self) -> None:
+        """Click the one visible DONE_REACTING control, or fail loudly."""
+        locators, buttons = await self._visible_button_boxes()
+        matches = [
+            index
+            for index, button in enumerate(buttons)
+            if game_button_role(
+                width=button.width,
+                height=button.height,
+            )
+            == "primary"
+        ]
+        if len(matches) != 1:
+            raise _GestureStepError(
+                "not-found",
+                "DONE_REACTING control is not unambiguous; "
+                f"found={len(matches)}; buttons={buttons!r}",
+            )
+        try:
+            await locators[matches[0]].click()
+        except Exception as error:
+            raise _GestureStepError(
+                "click-error",
+                f"found=1 DONE_REACTING button="
+                f"{buttons[matches[0]]!r}; click={error}",
             ) from error
 
     async def _click_mode_button(self, index: int, offered_count: int) -> None:
@@ -816,7 +857,11 @@ def gesture_click_targets(
     if gesture.click_button:
         targets.append(
             DOMClickTarget(
-                region="submit-button",
+                region=(
+                    "decline-button"
+                    if decision.question_id == "GAME_MAY_REACT_WITH"
+                    else "submit-button"
+                ),
                 identity=decision.question_id,
                 offered_index=-1,
             )
@@ -945,6 +990,8 @@ def _selected_indices(
     decision: PendingDecisionSnapshot,
     answers: tuple[int, ...],
 ) -> tuple[int, ...]:
+    if decision.question_id == "GAME_MAY_REACT_WITH":
+        return (answers[1],) if len(answers) == 5 and answers[0] == 1 else ()
     if decision.question_id == "GAME_ACTION_PHASE":
         return (answers[2],) if len(answers) == 4 else ()
     if decision.question_id == "GAME_BUY_PHASE":
@@ -971,6 +1018,8 @@ def _needs_button(
     decision: PendingDecisionSnapshot,
     selected: tuple[int, ...],
 ) -> bool:
+    if decision.question_id == "GAME_MAY_REACT_WITH":
+        return not selected
     if decision.question_id in {
         "GAME_ACTION_PHASE",
         "GAME_BUY_PHASE",

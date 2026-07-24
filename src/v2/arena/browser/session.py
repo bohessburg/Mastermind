@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime, timezone
 from pathlib import Path
+import re
 from typing import Any, AsyncIterator
 
 from playwright.async_api import BrowserContext, Page, Playwright, async_playwright
@@ -118,6 +119,27 @@ class ArenaSession:
         destination = Path(path)
         destination.parent.mkdir(parents=True, exist_ok=True)
         await self.page.screenshot(path=str(destination))
+        return destination
+
+    async def snapshot_dom(self, label: str) -> Path:
+        """Archive the current DOM without affecting the live frame feed.
+
+        This deliberately mirrors ``ArenaRecorder._save_dom`` but is invoked
+        only at lobby state boundaries and terminal selector failures.  The
+        supplied label makes a missing live selector easy to identify among
+        the run's normal frame archive.
+        """
+        if self.run_dir is None:
+            raise RuntimeError("start the arena session before capturing DOM")
+        if self.page is None or self.page.is_closed():
+            raise RuntimeError("Playwright page is unavailable for DOM capture")
+        safe_label = re.sub(r"[^a-z0-9]+", "-", label.casefold()).strip("-")
+        if not safe_label:
+            safe_label = "snapshot"
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
+        destination = self.run_dir / f"dom-{timestamp}-{safe_label}.html"
+        contents = await self.page.content()
+        destination.write_text(contents, encoding="utf-8")
         return destination
 
     async def events(self) -> AsyncIterator[GameEvent]:

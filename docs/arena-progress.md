@@ -255,6 +255,52 @@ person would, using the site's own client the whole way through.
   index and continues through its available terminal frames; unit coverage
   retains aborts for an out-of-set answer and a mismatched question index.
 
+- **Lobby automation and chat silence (2026-07-24).**
+  `src/v2/arena/fsm/lobby.py` now runs the supervised inter-game flow in the
+  existing headful session: homepage → search → matched table/direct game →
+  game loop → game-over → dismiss end-game modal → leave table → requeue. It
+  has explicit HOMEPAGE, SEARCHING, TABLE_WAITING, IN_GAME, GAME_OVER, and
+  LEAVING states; all state timeouts and the per-session limit are
+  config-driven (`0` means requeue until Ctrl-C). A live protocol pump stays
+  alive across games while each game is handed to a fresh loop/tracker and
+  receives its own archive.
+
+  Every lobby selector is tied to the reference capture:
+
+  - `button.automatch-button[ng-click="$ctrl.automatch.searchNow()"]` is
+    the **Start search** button in `dom-34066.html` and `dom-4341034.html`.
+  - `score-table-buttons button.lobby-button[ng-click="$ctrl.readyClick()"]`
+    is the recorded hosted-table start control (labelled **Ready** by client
+    2.2.8) in `dom-530325.html`. The live automatch **Start game** button has
+    no captured DOM yet, so it is deliberately resolved by visible, trimmed,
+    case-insensitive exact text within `score-table`, preferring an `ng-click`
+    button and then a `.lobby-button`. This is a temporary, documented
+    exception: the next live run will archive the exact table DOM so it can be
+    replaced with a precise selector.
+  - `game-area` is the in-play board signal, present in mid-game
+    `dom-3978828.html` and `dom-2848087.html` but absent from the table-waiting
+    `dom-530325.html`. That table snapshot does contain `game-chat`, so chat
+    is now only a secondary diagnostic signal and can never skip Start game.
+  - `score-table-buttons button.lobby-button[ng-click="$ctrl.leave()"]` is
+    **Leave Table** in `dom-530325.html`.
+  - `game-ended-notification modal-window button.lobby-button[ng-click="$ctrl.ok()"]`
+    is **Ok** in the blocking game-ended modal in `dom-4326014.html`. Decoded
+    inbound message 14 (`GameEnd`) is the authoritative game-over signal; the
+    modal is dismissed and confirmed gone before the recorded `Leave Table`
+    score-page control is clicked. If that modal is absent after its short
+    config-driven wait, the FSM proceeds only when `Leave Table` is already
+    actionable; otherwise it raises a loud `LobbyError`, retains the browser
+    for the operator, and never guess-clicks.
+
+  The bot now has no chat-send path: the game-start announcement/config was
+  removed and the kingdom gate resigns silently.  Inbound `Chat` events remain
+  decoded and archived as before.
+
+  While SEARCHING or TABLE_WAITING, the live session archives a labeled DOM
+  snapshot at state entry. A terminal missing-control resolution captures a
+  second labeled snapshot before raising its `LobbyError`; these use
+  `page.content()` only and do not touch the WebSocket/event feed.
+
 - **P6 — Lobby loop + supervisor + deploy.** Unattended base-set sessions
   with archiving and recovery.
 

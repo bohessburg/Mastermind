@@ -876,7 +876,7 @@ def test_live_militia_and_reference_moat_have_executable_click_plans() -> None:
     assert [
         (target.region, target.identity)
         for target in gesture_click_targets(decline, moat, moat.offered)
-    ] == [("submit-button", "GAME_MAY_REACT_WITH")]
+    ] == [("decline-button", "GAME_MAY_REACT_WITH")]
 
 
 def test_live_game_2_replays_through_militia_question_55() -> None:

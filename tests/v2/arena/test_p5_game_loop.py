@@ -18,7 +18,12 @@ from src.v2.arena.fsm.game import (
     RecordedDecisionProvider,
     run_game_loop,
 )
-from src.v2.arena.protocol.events import DecisionResolved, PendingDecision
+from src.v2.arena.protocol.events import (
+    DecisionResolved,
+    GameEnd,
+    GameStart,
+    PendingDecision,
+)
 from src.v2.arena.protocol.recording import parse_recording
 from src.v2.arena.shadow.tracker import (
     PendingDecisionSnapshot,
@@ -171,6 +176,65 @@ def test_full_loop_replays_all_three_games_with_validated_rigged_steps() -> None
     assert len(actuator.gestures) == 929
     assert not actuator.stopped
     assert all(gesture.answer_indices is not None for gesture in actuator.gestures)
+
+
+class _ChatSilentPage:
+    """A page-shaped sentinel: only resign can be reached by the game loop."""
+
+    def __init__(self) -> None:
+        self.chat_sends: list[str] = []
+        self.resign_calls = 0
+
+    async def resign(self) -> None:
+        self.resign_calls += 1
+
+
+def test_replay_and_kingdom_gate_never_send_chat() -> None:
+    events = _fixture_events()
+    gate = (
+        GameStart(
+            game_id=999,
+            kingdom=("Unknown Test Card",),
+            players=("bot", "opponent"),
+            player_ids=(1, 2),
+            our_seat=0,
+        ),
+        GameEnd(game_id=999, reason="resigned"),
+    )
+    replay = (*gate, *events)
+    page = _ChatSilentPage()
+    actuator = MockActuator(replay=True)
+
+    results = asyncio.run(
+        run_game_loop(
+            replay,
+            actuator=actuator,
+            decision_provider=RecordedDecisionProvider(replay),
+            resign_hook=page.resign,
+        )
+    )
+
+    assert results[0].kingdom_rejected
+    assert page.resign_calls == 1
+    assert page.chat_sends == []
+    assert len(actuator.gestures) == 929
+
+
+def test_arena_source_has_no_chat_send_plumbing() -> None:
+    source_root = Path("src/v2/arena")
+    source = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in source_root.rglob("*.py")
+    )
+
+    for forbidden in (
+        "_send_chat",
+        "chat_hook",
+        "chat_announcement",
+        "sendChat",
+        "game-chat-input",
+    ):
+        assert forbidden not in source
 
 
 def test_corrupt_recorded_resolution_aborts_before_another_action() -> None:

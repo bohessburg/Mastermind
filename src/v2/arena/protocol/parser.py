@@ -215,9 +215,14 @@ RELEVANT_KEYS = frozenset(
     {
         (Direction.INBOUND, 32),
         (Direction.INBOUND, 33),
+        (Direction.INBOUND, 37),
         (Direction.OUTBOUND, 37),
     }
 )
+ABILITY_DESCRIPTION_TYPES = ("MOVEMENT_CAUSE", "BY_NAME", "WITH_ARGUMENTS")
+# Client bundle 2.2.8 insertion ordinals.
+MOAT_REACTION_ABILITY = 101
+DONE_REACTING_DECLINE_BUTTON = 4
 
 
 def _enum_name(names: tuple[str, ...], ordinal: int, prefix: str) -> str:
@@ -262,6 +267,24 @@ class _Question:
     offered: tuple[str, ...]
     minimum: int
     maximum: int
+    abilities: tuple["_AbilityDescription", ...] = ()
+    decline_button: int | None = None
+    number_default: int | None = None
+
+
+@dataclass(frozen=True)
+class _AbilityDescription:
+    description_type: str
+    name_ordinal: int
+    association: int
+    arguments: tuple[tuple[int, object], ...]
+    optional: bool
+
+
+@dataclass(frozen=True)
+class _QuestionElements:
+    offered: tuple[str, ...]
+    abilities: tuple[_AbilityDescription, ...] = ()
 
 
 class ArenaParser:
@@ -353,6 +376,11 @@ class ArenaParser:
                 return [self._parse_chat(frame, outbound=True)]
             if frame.msg_type == 37:
                 return [self._parse_answer(frame)]
+            if frame.msg_type == 38:
+                # RESIGN has no payload. The authoritative end marker remains
+                # the server's subsequent message 14.
+                Reader(frame.payload).finish()
+                return []
             if frame.msg_type == 44:
                 Reader(frame.payload).finish()
                 return []
@@ -962,6 +990,14 @@ class ArenaParser:
             value = tuple(reader.s32() for _ in range(4))
         elif argument_type == 7:  # COST
             value = tuple(reader.s32() for _ in range(3))
+        elif argument_type == 8:  # ABILITY_DESCRIPTION
+            value = self._read_ability_description(reader)
+        elif argument_type == 9:  # EVENT
+            value = (
+                reader.u32(),
+                self._read_ability_description(reader),
+                reader.array(lambda: self._read_log_argument(reader)),
+            )
         elif argument_type == 13:  # DIRECTIONAL_ZONE
             value = (reader.s32(), reader.s32())
         elif argument_type == 14:  # PLAYERS
@@ -971,6 +1007,37 @@ class ArenaParser:
         else:
             raise ProtocolError(f"unknown log argument type {argument_type}")
         return argument_type, value
+
+    def _read_ability_description(
+        self,
+        reader: Reader,
+        *,
+        include_optional: bool = False,
+    ) -> _AbilityDescription:
+        description_type = _enum_name(
+            ABILITY_DESCRIPTION_TYPES,
+            reader.u32(),
+            "ability-description",
+        )
+        if description_type.startswith("ability-description-"):
+            raise ProtocolError(
+                f"unknown ability description type {description_type}"
+            )
+        name_ordinal = reader.u32()
+        association = reader.s32()
+        arguments = (
+            reader.array(lambda: self._read_log_argument(reader))
+            if description_type == "WITH_ARGUMENTS"
+            else ()
+        )
+        optional = reader.boolean() if include_optional else False
+        return _AbilityDescription(
+            description_type=description_type,
+            name_ordinal=name_ordinal,
+            association=association,
+            arguments=arguments,
+            optional=optional,
+        )
 
     def _read_metagame_info(self, reader: Reader) -> tuple[object, ...]:
         game_id = reader.u64()
@@ -1034,25 +1101,27 @@ class ArenaParser:
             question_type, association, question_id = self._read_description(reader)
             minimum = reader.s32()
             maximum = reader.s32()
-            offered = self._read_question_elements(reader)
-            reader.s32()  # decline button
+            elements = self._read_question_elements(reader)
+            decline_button = reader.s32()
             reader.s32_array()  # accumulated answers
             reader.s32_array()  # affected cards
             return _Question(
                 question_type=question_type,
                 question_id=question_id,
                 association=association,
-                offered=offered,
+                offered=elements.offered,
                 minimum=minimum,
                 maximum=maximum,
+                abilities=elements.abilities,
+                decline_button=decline_button,
             )
 
         if question_class == 1:
             question_type, association, question_id = self._read_description(reader)
             minimum = reader.s32()
             maximum = reader.s32()
-            reader.s32()  # default
-            reader.s32()  # decline button
+            number_default = reader.s32()
+            decline_button = reader.s32()
             offered = tuple(str(value) for value in range(minimum, maximum + 1))
             return _Question(
                 question_type=question_type,
@@ -1061,6 +1130,8 @@ class ArenaParser:
                 offered=offered,
                 minimum=minimum,
                 maximum=maximum,
+                decline_button=decline_button,
+                number_default=number_default,
             )
 
         if question_class == 2:
@@ -1069,6 +1140,9 @@ class ArenaParser:
                 self._read_question(reader, reader.u32())
                 for _ in range(reader.u32())
             )
+            moat_reaction = self._normalize_moat_reaction(subquestions)
+            if moat_reaction is not None:
+                return moat_reaction
             offered = tuple(
                 f"{index}:{choice}"
                 for index, subquestion in enumerate(subquestions)
@@ -1081,6 +1155,11 @@ class ArenaParser:
                 offered=offered,
                 minimum=0,
                 maximum=len(subquestions),
+                abilities=tuple(
+                    ability
+                    for subquestion in subquestions
+                    for ability in subquestion.abilities
+                ),
             )
 
         if question_class == 3:
@@ -1108,6 +1187,58 @@ class ArenaParser:
 
         raise ProtocolError(f"unknown question class {question_class}")
 
+    def _normalize_moat_reaction(
+        self,
+        subquestions: tuple[_Question, ...],
+    ) -> _Question | None:
+        abilities = tuple(
+            ability
+            for subquestion in subquestions
+            for ability in subquestion.abilities
+        )
+        if not any(
+            ability.name_ordinal == MOAT_REACTION_ABILITY
+            for ability in abilities
+        ):
+            return None
+        if (
+            len(subquestions) != 3
+            or subquestions[0].question_type != "RESOLVE_ABILITY"
+            or subquestions[0].question_id != "GAME_MAY_RESOLVE_ABILITY"
+            or subquestions[0].minimum != 0
+            or subquestions[0].maximum != 1
+            or subquestions[0].decline_button
+            != DONE_REACTING_DECLINE_BUTTON
+            or subquestions[1].question_type != "REJECT_ABILITY"
+            or subquestions[1].offered != ("0", "1")
+            or subquestions[1].number_default != 0
+            or subquestions[2].question_type != "WAY"
+            or subquestions[2].offered
+        ):
+            raise ProtocolError("unsupported Moat reaction question shape")
+        offered = tuple(
+            self.card_by_instance.get(
+                ability.association,
+                f"card-{ability.association}",
+            )
+            for ability in subquestions[0].abilities
+            if ability.name_ordinal == MOAT_REACTION_ABILITY
+        )
+        if not offered or any(name != "Moat" for name in offered):
+            raise ProtocolError(
+                f"Moat reaction abilities resolve to {offered!r}"
+            )
+        return _Question(
+            question_type="REVEAL",
+            question_id="GAME_MAY_REACT_WITH",
+            association=-1,
+            offered=offered,
+            minimum=0,
+            maximum=1,
+            abilities=abilities,
+            decline_button=DONE_REACTING_DECLINE_BUTTON,
+        )
+
     def _read_description(self, reader: Reader) -> tuple[str, int, str]:
         question_type = _enum_name(
             QUESTION_TYPES, reader.u32(), "question-type"
@@ -1124,12 +1255,13 @@ class ArenaParser:
             self._read_log_argument(reader)
         return _enum_name(QUESTION_IDS, question_id_ordinal, "question")
 
-    def _read_question_elements(self, reader: Reader) -> tuple[str, ...]:
+    def _read_question_elements(self, reader: Reader) -> _QuestionElements:
         count = reader.u32()
         if not count:
-            return ()
+            return _QuestionElements(())
         element_type = reader.u32()
         offered: list[str] = []
+        abilities: tuple[_AbilityDescription, ...] = ()
         if element_type in (0, 3):
             for _ in range(count):
                 value = reader.s32()
@@ -1139,6 +1271,21 @@ class ArenaParser:
                     )
                 else:
                     offered.append(f"zone-{value}")
+        elif element_type == 1:
+            abilities = tuple(
+                self._read_ability_description(
+                    reader,
+                    include_optional=True,
+                )
+                for _ in range(count)
+            )
+            offered.extend(
+                self.card_by_instance.get(
+                    ability.association,
+                    f"card-{ability.association}",
+                )
+                for ability in abilities
+            )
         elif element_type == 2:
             for _ in range(count):
                 association = reader.s32()
@@ -1164,7 +1311,7 @@ class ArenaParser:
                 )
         else:
             raise ProtocolError(f"unknown question element type {element_type}")
-        return tuple(offered)
+        return _QuestionElements(tuple(offered), abilities)
 
     def _parse_answer(self, frame: DecodedFrame) -> DecisionResolved:
         reader = Reader(frame.payload)

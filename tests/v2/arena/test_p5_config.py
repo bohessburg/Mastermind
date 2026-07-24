@@ -20,6 +20,8 @@ def test_default_arena_config_loads_credentials_only_from_environment() -> None:
     )
     assert config.arena_user == "operator"
     assert config.arena_pass == "secret"
+    assert config.lobby.max_games_per_session == 5
+    assert config.lobby.searching_timeout_seconds == 180.0
 
 
 def test_arena_config_rejects_invalid_pacing(tmp_path: Path) -> None:
@@ -35,3 +37,22 @@ def test_arena_config_rejects_invalid_pacing(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="maximum think time"):
         ArenaConfig.load(path, environ={})
+
+
+def test_arena_config_accepts_unlimited_lobby_sessions_and_rejects_timeouts(
+    tmp_path: Path,
+) -> None:
+    unlimited = tmp_path / "unlimited.json"
+    unlimited.write_text(
+        json.dumps({"lobby": {"max_games_per_session": 0}}),
+        encoding="utf-8",
+    )
+    assert ArenaConfig.load(unlimited, environ={}).lobby.max_games_per_session == 0
+
+    invalid = tmp_path / "invalid.json"
+    invalid.write_text(
+        json.dumps({"lobby": {"leaving_timeout_seconds": 0}}),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="leaving timeout"):
+        ArenaConfig.load(invalid, environ={})

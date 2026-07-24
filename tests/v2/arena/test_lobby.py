@@ -1,0 +1,356 @@
+from __future__ import annotations
+
+import asyncio
+from pathlib import Path
+
+import pytest
+
+from src.v2.arena.config import LobbyConfig
+from src.v2.arena.fsm.lobby import (
+    DISMISS_GAME_ENDED_SELECTOR,
+    GAME_CHAT_SELECTOR,
+    IN_GAME_SELECTOR,
+    LEAVE_TABLE_SELECTOR,
+    START_GAME_SELECTOR,
+    START_GAME_TEXT_LOBBY_BUTTON_SELECTOR,
+    START_SEARCH_SELECTOR,
+    TABLE_CONTAINER_SELECTOR,
+    LobbyControl,
+    LobbyError,
+    LobbyFSM,
+    LobbyState,
+    recorded_control_labels,
+)
+
+
+RECORDING = Path("arena-recordings/20260724T142103.096991Z")
+
+
+class _FakeClock:
+    def __init__(self) -> None:
+        self.value = 0.0
+
+    def __call__(self) -> float:
+        return self.value
+
+    async def sleep(self, seconds: float) -> None:
+        self.value += seconds
+
+
+class _FakeLocator:
+    def __init__(
+        self,
+        page: _FakePage,
+        selector: str,
+        index: int | None = None,
+    ) -> None:
+        self.page = page
+        self.selector = selector
+        self.index = index
+
+    async def count(self) -> int:
+        return self.page.count(self.selector)
+
+    async def click(self) -> None:
+        self.page.click(self.selector)
+
+    def nth(self, index: int) -> _FakeLocator:
+        return _FakeLocator(self.page, self.selector, index)
+
+    async def is_visible(self) -> bool:
+        return self.page.count(self.selector) > 0
+
+    async def inner_text(self) -> str:
+        return self.page.text(self.selector)
+
+
+class _FakePage:
+    def __init__(
+        self,
+        *,
+        missing_table_start: bool = False,
+        automatch_start_game: bool = False,
+        game_chat_only: bool = False,
+        blank: bool = False,
+        end_game_dialog: bool = True,
+        unclickable_end_game_dialog: bool = False,
+    ) -> None:
+        self.screen = "blank" if blank else "homepage"
+        self.missing_table_start = missing_table_start
+        self.automatch_start_game = automatch_start_game
+        self.game_chat_only = game_chat_only
+        self.end_game_dialog = end_game_dialog
+        self.unclickable_end_game_dialog = unclickable_end_game_dialog
+        self.clicks: list[str] = []
+
+    def locator(self, selector: str) -> _FakeLocator:
+        return _FakeLocator(self, selector)
+
+    def count(self, selector: str) -> int:
+        if self.screen == "homepage" and selector == START_SEARCH_SELECTOR:
+            return 1
+        if (
+            self.screen == "table"
+            and not self.missing_table_start
+            and not self.automatch_start_game
+            and selector == START_GAME_SELECTOR
+        ):
+            return 1
+        if self.screen == "table":
+            if selector == TABLE_CONTAINER_SELECTOR:
+                return int(
+                    not self.game_chat_only
+                    or GAME_CHAT_SELECTOR in TABLE_CONTAINER_SELECTOR
+                )
+            if (
+                self.automatch_start_game
+                and selector == START_GAME_TEXT_LOBBY_BUTTON_SELECTOR
+            ):
+                return 1
+            if self.game_chat_only and selector == GAME_CHAT_SELECTOR:
+                return 1
+        if self.screen == "game":
+            if selector in {IN_GAME_SELECTOR, GAME_CHAT_SELECTOR}:
+                return 1
+        if self.screen == "game_over":
+            if selector == DISMISS_GAME_ENDED_SELECTOR and self.end_game_dialog:
+                return 1
+            if selector == LEAVE_TABLE_SELECTOR and not self.end_game_dialog:
+                return 1
+        return 0
+
+    def text(self, selector: str) -> str:
+        if (
+            self.screen == "table"
+            and self.automatch_start_game
+            and selector == START_GAME_TEXT_LOBBY_BUTTON_SELECTOR
+        ):
+            return "  StArT GaMe  "
+        return ""
+
+    def click(self, selector: str) -> None:
+        self.clicks.append(selector)
+        if self.screen == "homepage" and selector == START_SEARCH_SELECTOR:
+            self.screen = "table"
+        elif (
+            self.screen == "table"
+            and self.automatch_start_game
+            and selector == START_GAME_TEXT_LOBBY_BUTTON_SELECTOR
+        ):
+            self.screen = "game"
+        elif self.screen == "table" and selector == START_GAME_SELECTOR:
+            self.screen = "game"
+        elif self.screen == "game_over" and selector == DISMISS_GAME_ENDED_SELECTOR:
+            if self.unclickable_end_game_dialog:
+                raise RuntimeError("modal button is obscured")
+            self.end_game_dialog = False
+        elif (
+            self.screen == "game_over"
+            and not self.end_game_dialog
+            and selector == LEAVE_TABLE_SELECTOR
+        ):
+            self.screen = "homepage"
+        else:
+            raise AssertionError(f"unexpected click {selector} on {self.screen}")
+
+
+def _config(**changes: object) -> LobbyConfig:
+    values: dict[str, object] = {
+        "max_games_per_session": 5,
+        "homepage_timeout_seconds": 1.0,
+        "searching_timeout_seconds": 1.0,
+        "table_waiting_timeout_seconds": 1.0,
+        "in_game_timeout_seconds": 1.0,
+        "game_over_timeout_seconds": 1.0,
+        "game_ended_dialog_timeout_seconds": 1.0,
+        "leaving_timeout_seconds": 1.0,
+    }
+    values.update(changes)
+    return LobbyConfig(**values)
+
+
+def test_lobby_fsm_drives_the_full_recorded_happy_cycle() -> None:
+    page = _FakePage()
+    clock = _FakeClock()
+    lobby = LobbyFSM(page, _config(), clock=clock, sleep=clock.sleep)
+
+    asyncio.run(lobby.queue_next_game())
+
+    assert lobby.state is LobbyState.IN_GAME
+    assert page.clicks == [START_SEARCH_SELECTOR, START_GAME_SELECTOR]
+
+    page.screen = "game_over"
+    lobby.game_ended()
+    asyncio.run(lobby.leave_after_game(requeue=True))
+
+    assert lobby.state is LobbyState.IN_GAME
+    assert page.clicks == [
+        START_SEARCH_SELECTOR,
+        START_GAME_SELECTOR,
+        DISMISS_GAME_ENDED_SELECTOR,
+        LEAVE_TABLE_SELECTOR,
+        START_SEARCH_SELECTOR,
+        START_GAME_SELECTOR,
+    ]
+
+
+def test_lobby_fsm_proceeds_when_the_game_ended_dialog_is_absent() -> None:
+    page = _FakePage(end_game_dialog=False)
+    clock = _FakeClock()
+    lobby = LobbyFSM(page, _config(), clock=clock, sleep=clock.sleep)
+
+    asyncio.run(lobby.queue_next_game())
+    page.screen = "game_over"
+    lobby.game_ended()
+    asyncio.run(lobby.leave_after_game(requeue=False))
+
+    assert lobby.state is LobbyState.HOMEPAGE
+    assert page.clicks == [
+        START_SEARCH_SELECTOR,
+        START_GAME_SELECTOR,
+        LEAVE_TABLE_SELECTOR,
+    ]
+
+
+def test_lobby_fsm_rejects_an_unclickable_game_ended_dialog() -> None:
+    page = _FakePage(unclickable_end_game_dialog=True)
+    clock = _FakeClock()
+    lobby = LobbyFSM(page, _config(), clock=clock, sleep=clock.sleep)
+
+    asyncio.run(lobby.queue_next_game())
+    page.screen = "game_over"
+    lobby.game_ended()
+
+    with pytest.raises(LobbyError, match=r"\[game_over\].*could not click.*Ok"):
+        asyncio.run(lobby.leave_after_game(requeue=False))
+
+    assert page.clicks == [
+        START_SEARCH_SELECTOR,
+        START_GAME_SELECTOR,
+        DISMISS_GAME_ENDED_SELECTOR,
+    ]
+
+
+def test_lobby_fsm_times_out_loudly_without_a_homepage_control() -> None:
+    page = _FakePage(blank=True)
+    clock = _FakeClock()
+    lobby = LobbyFSM(page, _config(), clock=clock, sleep=clock.sleep)
+
+    with pytest.raises(LobbyError, match=r"\[homepage\].*Start search"):
+        asyncio.run(lobby.queue_next_game())
+
+    assert page.clicks == []
+
+
+def test_lobby_fsm_rejects_a_missing_recorded_table_start_control() -> None:
+    page = _FakePage(missing_table_start=True)
+    clock = _FakeClock()
+    lobby = LobbyFSM(page, _config(), clock=clock, sleep=clock.sleep)
+
+    with pytest.raises(LobbyError, match=r"\[table_waiting\].*Start game control"):
+        asyncio.run(lobby.queue_next_game())
+
+    assert page.clicks == [START_SEARCH_SELECTOR]
+
+
+def test_lobby_fsm_clicks_visible_text_automatch_start_game_control() -> None:
+    page = _FakePage(automatch_start_game=True)
+    clock = _FakeClock()
+    lobby = LobbyFSM(page, _config(), clock=clock, sleep=clock.sleep)
+
+    asyncio.run(lobby.queue_next_game())
+
+    assert lobby.state is LobbyState.IN_GAME
+    assert page.clicks == [
+        START_SEARCH_SELECTOR,
+        START_GAME_TEXT_LOBBY_BUTTON_SELECTOR,
+    ]
+
+
+def test_lobby_fsm_does_not_treat_game_chat_without_board_as_in_game() -> None:
+    page = _FakePage(missing_table_start=True, game_chat_only=True)
+    clock = _FakeClock()
+    snapshots: list[str] = []
+
+    async def snapshot_dom(label: str) -> None:
+        snapshots.append(label)
+
+    lobby = LobbyFSM(
+        page,
+        _config(),
+        clock=clock,
+        sleep=clock.sleep,
+        snapshot_dom=snapshot_dom,
+    )
+
+    with pytest.raises(LobbyError, match=r"\[table_waiting\].*Start game control"):
+        asyncio.run(lobby.queue_next_game())
+
+    assert lobby.state is LobbyState.TABLE_WAITING
+    assert page.clicks == [START_SEARCH_SELECTOR]
+    assert "lobby-searching-wait" in snapshots
+    assert "lobby-table-waiting-wait" in snapshots
+    assert "lobby-failure-table_waiting-start_game-not-found" in snapshots
+
+
+def test_lobby_max_games_zero_is_unlimited_and_positive_limit_stops() -> None:
+    page = _FakePage()
+    clock = _FakeClock()
+    finite = LobbyFSM(
+        page,
+        _config(max_games_per_session=1),
+        clock=clock,
+        sleep=clock.sleep,
+    )
+    unlimited = LobbyFSM(_FakePage(), _config(max_games_per_session=0))
+
+    asyncio.run(finite.queue_next_game())
+    page.screen = "game_over"
+    finite.game_ended()
+    asyncio.run(
+        finite.leave_after_game(requeue=not finite.reached_game_limit(1))
+    )
+
+    assert finite.state is LobbyState.HOMEPAGE
+    assert page.clicks == [
+        START_SEARCH_SELECTOR,
+        START_GAME_SELECTOR,
+        DISMISS_GAME_ENDED_SELECTOR,
+        LEAVE_TABLE_SELECTOR,
+    ]
+    assert not unlimited.reached_game_limit(10_000)
+
+
+def test_recorded_lobby_control_selectors_resolve_saved_dom_snapshots() -> None:
+    homepage = RECORDING / "dom-34066.html"
+    game_over = RECORDING / "dom-530325.html"
+    game_ended = RECORDING / "dom-4326014.html"
+    in_game = RECORDING / "dom-3978828.html"
+    later_in_game = RECORDING / "dom-2848087.html"
+    if (
+        not homepage.is_file()
+        or not game_over.is_file()
+        or not game_ended.is_file()
+        or not in_game.is_file()
+        or not later_in_game.is_file()
+    ):
+        pytest.skip("missing required recorded lobby DOM snapshots")
+
+    assert recorded_control_labels(
+        homepage.read_text(encoding="utf-8"),
+        LobbyControl.START_SEARCH,
+    ) == ("Start search",)
+    scoreboard = game_over.read_text(encoding="utf-8")
+    assert recorded_control_labels(scoreboard, LobbyControl.START_GAME) == ("Ready",)
+    assert recorded_control_labels(scoreboard, LobbyControl.LEAVE_TABLE) == (
+        "Leave Table",
+    )
+    assert recorded_control_labels(
+        game_ended.read_text(encoding="utf-8"),
+        LobbyControl.DISMISS_GAME_ENDED,
+    ) == ("Ok",)
+    chat_attribute = GAME_CHAT_SELECTOR.removeprefix("input[").removesuffix("]")
+    assert chat_attribute in scoreboard
+    assert f"<{IN_GAME_SELECTOR}" not in scoreboard
+    assert f"<{IN_GAME_SELECTOR}" in in_game.read_text(encoding="utf-8")
+    assert f"<{IN_GAME_SELECTOR}" in later_in_game.read_text(encoding="utf-8")
