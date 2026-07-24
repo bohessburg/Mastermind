@@ -6,12 +6,13 @@ dominion.games. The account is disclosed as a bot and permission for the
 experiment has been granted; games are restricted to base set via the site's
 game-selector filter.
 
-Status: P0 (recording harness), P1 (feed decoder + event parser), and P2
-(public-info tracker) complete and tested (2026-07-24) — 100% decode coverage
-on game-relevant messages over a 3-game recording, and the tracker reconciles
-golden-style against every full-state in it. Next: P3 (StateBuilder +
-bindings). See "P1 protocol findings" below. Recordings land under
-`arena-recordings/` (gitignored).
+Status: P0–P4 complete and tested (2026-07-24): recording harness, feed
+decoder/parser (100% decode coverage over a 3-game recording), public-info
+tracker (golden-reconciled against every full-state), StateBuilder + bindings
++ bridge (930 recorded decision points build valid games; 529 taken actions
+confirmed legal), and the shared decision service. Next: P5 (actuator +
+supervised game loop). See "P1 protocol findings" below. Recordings land
+under `arena-recordings/` (gitignored).
 
 ## Design decisions (settled)
 

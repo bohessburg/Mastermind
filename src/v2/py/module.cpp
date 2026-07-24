@@ -9,6 +9,7 @@
 #include "v2/core/game.h"
 #include "v2/core/interp.h"
 #include "v2/core/score.h"
+#include "v2/core/state_builder.h"
 #include "v2/encode/encoder.h"
 #include "v2/mcts/eval_runner.h"
 #include "v2/mcts/selfplay.h"
@@ -226,6 +227,187 @@ private:
         throw std::invalid_argument("def id out of range");
     }
     return static_cast<DefId>(value);
+}
+
+[[nodiscard]] std::uint16_t parse_snapshot_count(
+    const py::handle object,
+    const std::string& context) {
+    const auto value = py::cast<std::int64_t>(object);
+    if (value < 0 || value > 65535) {
+        throw std::invalid_argument(context + " must be between 0 and 65535");
+    }
+    return static_cast<std::uint16_t>(value);
+}
+
+void parse_snapshot_counts(
+    const py::handle object,
+    SnapshotCardCounts& out,
+    const std::string& context,
+    std::uint8_t* present = nullptr) {
+    if (!py::isinstance<py::dict>(object)) {
+        throw std::invalid_argument(context + " must be a dict of def/name to count");
+    }
+    const py::dict counts = py::reinterpret_borrow<py::dict>(object);
+    for (const auto& item : counts) {
+        const DefId def = parse_def(item.first);
+        const std::uint16_t count =
+            parse_snapshot_count(item.second, context + " count");
+        out.by_def[def] = count;
+        if (present != nullptr) {
+            present[def] = 1U;
+        }
+    }
+}
+
+[[nodiscard]] SnapshotPhase parse_snapshot_phase(const py::handle object) {
+    const std::string phase = py::cast<std::string>(object);
+    if (phase == "action") {
+        return SnapshotPhase::Action;
+    }
+    if (phase == "buy") {
+        return SnapshotPhase::Buy;
+    }
+    if (phase == "cleanup") {
+        return SnapshotPhase::Cleanup;
+    }
+    throw std::invalid_argument("snapshot phase must be action, buy, or cleanup");
+}
+
+[[nodiscard]] SeededInterrupt parse_seeded_interrupt(const std::string& kind) {
+    if (kind == "none") {
+        return SeededInterrupt::None;
+    }
+    if (kind == "moat_reaction") {
+        return SeededInterrupt::MoatReaction;
+    }
+    if (kind == "militia_discard") {
+        return SeededInterrupt::MilitiaDiscard;
+    }
+    if (kind == "bureaucrat_topdeck") {
+        return SeededInterrupt::BureaucratTopdeck;
+    }
+    if (kind == "bandit_trash") {
+        return SeededInterrupt::BanditTrash;
+    }
+    throw std::invalid_argument("unknown seeded interrupt kind: " + kind);
+}
+
+[[nodiscard]] py::handle required_snapshot_field(
+    const py::dict& dict,
+    const char* key,
+    const std::string& context) {
+    if (!dict.contains(key)) {
+        throw std::invalid_argument(context + " is missing " + key);
+    }
+    return dict[key];
+}
+
+[[nodiscard]] Snapshot parse_snapshot(const py::dict& dict) {
+    Snapshot snapshot{};
+    snapshot.num_players = static_cast<PlayerId>(parse_snapshot_count(
+        required_snapshot_field(dict, "num_players", "snapshot"),
+        "snapshot num_players"));
+    snapshot.our_player = static_cast<PlayerId>(parse_snapshot_count(
+        required_snapshot_field(dict, "our_player", "snapshot"),
+        "snapshot our_player"));
+    parse_snapshot_counts(
+        required_snapshot_field(dict, "supply", "snapshot"),
+        snapshot.supply,
+        "snapshot supply",
+        snapshot.supply_present);
+    parse_snapshot_counts(
+        required_snapshot_field(dict, "trash", "snapshot"),
+        snapshot.trash,
+        "snapshot trash");
+    parse_snapshot_counts(
+        required_snapshot_field(dict, "card_totals", "snapshot"),
+        snapshot.card_totals,
+        "snapshot card_totals");
+
+    const py::sequence players = py::reinterpret_borrow<py::sequence>(
+        required_snapshot_field(dict, "players", "snapshot"));
+    if (py::len(players) != snapshot.num_players) {
+        throw std::invalid_argument(
+            "snapshot players length must equal num_players");
+    }
+    for (PlayerId player = 0; player < snapshot.num_players; ++player) {
+        if (!py::isinstance<py::dict>(players[player])) {
+            throw std::invalid_argument("snapshot player entries must be dicts");
+        }
+        const py::dict source = py::reinterpret_borrow<py::dict>(players[player]);
+        SnapshotPlayer& target = snapshot.players[player];
+        const std::string context = "snapshot player " + std::to_string(player);
+        parse_snapshot_counts(
+            required_snapshot_field(source, "hand", context),
+            target.hand,
+            context + " hand");
+        target.hand_count = parse_snapshot_count(
+            required_snapshot_field(source, "hand_count", context),
+            context + " hand_count");
+        parse_snapshot_counts(
+            required_snapshot_field(source, "hand_deck", context),
+            target.hand_deck,
+            context + " hand_deck");
+        target.deck_count = parse_snapshot_count(
+            required_snapshot_field(source, "deck_count", context),
+            context + " deck_count");
+        parse_snapshot_counts(
+            required_snapshot_field(source, "discard", context),
+            target.discard,
+            context + " discard");
+        parse_snapshot_counts(
+            required_snapshot_field(source, "in_play", context),
+            target.in_play,
+            context + " in_play");
+        parse_snapshot_counts(
+            required_snapshot_field(source, "set_aside", context),
+            target.set_aside,
+            context + " set_aside");
+        target.actions = parse_snapshot_count(
+            required_snapshot_field(source, "actions", context),
+            context + " actions");
+        target.buys = parse_snapshot_count(
+            required_snapshot_field(source, "buys", context),
+            context + " buys");
+        const auto coins = py::cast<std::int64_t>(
+            required_snapshot_field(source, "coins", context));
+        if (coins < -32768 || coins > 32767) {
+            throw std::invalid_argument(context + " coins are out of range");
+        }
+        target.coins = static_cast<std::int16_t>(coins);
+    }
+
+    snapshot.turn_number = parse_snapshot_count(
+        required_snapshot_field(dict, "turn_number", "snapshot"),
+        "snapshot turn_number");
+    snapshot.phase = parse_snapshot_phase(
+        required_snapshot_field(dict, "phase", "snapshot"));
+    snapshot.current_player = static_cast<PlayerId>(parse_snapshot_count(
+        required_snapshot_field(dict, "current_player", "snapshot"),
+        "snapshot current_player"));
+
+    if (dict.contains("interrupt") && !dict["interrupt"].is_none()) {
+        if (py::isinstance<py::str>(dict["interrupt"])) {
+            snapshot.interrupt =
+                parse_seeded_interrupt(py::cast<std::string>(dict["interrupt"]));
+        } else {
+            const py::dict interrupt =
+                py::reinterpret_borrow<py::dict>(dict["interrupt"]);
+            snapshot.interrupt = parse_seeded_interrupt(py::cast<std::string>(
+                required_snapshot_field(interrupt, "kind", "snapshot interrupt")));
+            if (snapshot.interrupt != SeededInterrupt::None) {
+                snapshot.attacker = static_cast<PlayerId>(parse_snapshot_count(
+                    required_snapshot_field(
+                        interrupt, "attacker", "snapshot interrupt"),
+                    "snapshot interrupt attacker"));
+                snapshot.defender = static_cast<PlayerId>(parse_snapshot_count(
+                    required_snapshot_field(
+                        interrupt, "defender", "snapshot interrupt"),
+                    "snapshot interrupt defender"));
+            }
+        }
+    }
+    return snapshot;
 }
 
 void set_selfplay_kingdom_pool(SelfPlayConfig& config, const py::object& kingdom_pool) {
@@ -1383,6 +1565,25 @@ PYBIND11_MODULE(dominion_v2_py, module) {
             py::gil_scoped_release release;
             determinize(self.state, player, seed);
         })
+        .def("set_deck_order", [](PyGame& self, int player, const py::sequence& order) {
+            if (!valid_player(self.state, player)) {
+                throw std::invalid_argument("invalid player");
+            }
+            std::vector<DefId> defs;
+            defs.reserve(static_cast<std::size_t>(py::len(order)));
+            for (const py::handle item : order) {
+                defs.push_back(parse_def(item));
+            }
+            set_deck_order(
+                self.state,
+                static_cast<PlayerId>(player),
+                std::span<const DefId>(defs.data(), defs.size()));
+        }, py::arg("player"), py::arg("defs"),
+           "Set the full deck in draw order (next card first).")
+        .def("validate", [](const PyGame& self) {
+            validate_game(self.state);
+            return true;
+        })
         .def("score", [](const PyGame& self, int player) {
             if (!valid_player(self.state, player)) {
                 throw std::invalid_argument("invalid player");
@@ -1869,6 +2070,15 @@ PYBIND11_MODULE(dominion_v2_py, module) {
         .def("finished_games", &eval_finished_games);
 
     module.def("new_game", &py_new_game, py::arg("setup"), py::arg("seed"));
+    module.def("game_from_snapshot", [](const py::dict& snapshot_dict) {
+        const Snapshot snapshot = parse_snapshot(snapshot_dict);
+        GameState state{};
+        {
+            py::gil_scoped_release release;
+            state = build_game_from_snapshot(snapshot);
+        }
+        return make_game(state);
+    }, py::arg("snapshot"));
     module.def("def_id", [](const std::string& name) {
         DefId def = 0;
         if (!def_from_name(name, def)) {

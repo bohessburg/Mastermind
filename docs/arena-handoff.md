@@ -26,7 +26,7 @@ and uses its connection to handle the lobby, we read the game feed the client
 already receives, and we play moves through the normal client UI. Describe and
 treat it as client integration using the site's own client, not security work.
 
-**Done and verified (P0, P1, P2):**
+**Done and verified (P0–P4):**
 - `src/v2/arena/recon/record.py` + `browser/ws_hook.js` — a Playwright
   recorder (persistent login profile) that saves the game feed as JSONL plus
   screenshots/DOM snapshots for offline fixtures.
@@ -48,30 +48,45 @@ treat it as client integration using the site's own client, not security work.
   hand/decision cross-checks. The parser now also emits `FullState` (per-zone
   contents + counters), zone-kind-annotated movements, `Topdeck`,
   `ZoneTransfer`, `PileUpdate`, and `PileReorder`.
-- Tests: `./.venv/bin/python -m pytest tests/v2/arena/` -> 18/18 pass. Inspect
-  a recording with
+- `src/v2/core/state_builder.{h,cpp}` + `module.cpp` bindings + `shadow/
+  bridge.py` — the P3 StateBuilder. `dz.game_from_snapshot(dict)` builds a
+  native `GameState` from a `TrackerSnapshot` (our hand exact, opponent
+  hand∪deck re-dealt for `determinize()`, seeded interrupt frames for Moat/
+  Militia/Bureaucrat/Bandit), `game.set_deck_order(player, defs)` rigs draws
+  (draw-order API; must be a permutation), `game.validate()` enforces
+  base-set card conservation. Golden over the recording: 930 our-turn
+  decision points build valid games; 529 actually-taken plays/buys confirmed
+  in the legal mask; mid-card questions (337) are explicitly excluded — they
+  need P5's rigged stepping.
+- `src/v2/arena/bot/policy.py` — the P4 shared serving path (checkpoint load
+  + NN / NN-MCTS decision loop), imported by the web server. Wall-clock cap
+  degrades to first-legal (binding limitation), so config it generously.
+- Tests: 144/144 CTest, 20/20 arena pytest, 29/29 server pytest, py smoke.
+  Server pytest needs `OMP_NUM_THREADS=1` on the Mac (pre-existing torch/OpenMP
+  import deadlock, see progress doc). Inspect a recording with
   `./.venv/bin/python -m src.v2.arena.protocol.dump arena-recordings/<run>/frames.jsonl`.
-- All arena work through P2 is **uncommitted** on branch `v2-phase1`.
+- Committed on `v2-phase1`: P0–P2 (`a2780de`), P4 (`a450bd3`), P3 next commit.
   Recordings/profile are gitignored under `arena-recordings/` and
   `arena-profile/`.
 
-**Next task — P3, StateBuilder + bindings** (see "New engine surface" in
-`docs/arena-plan.md`): the one piece of C++ work.
-`src/v2/core/state_builder.{h,cpp}` + `src/v2/py/module.cpp` bindings —
-`Snapshot` struct and `dz.game_from_snapshot(...)`,
-`game.set_deck_order(player, [defs])` for draw rigging, and `game.validate()`
-invariant checks, plus the seeded interrupt frames (Moat reveal, Militia
-discard, Bureaucrat topdeck, Bandit trash). Input is the P2 `TrackerSnapshot`.
-Accept: C++ tests mirroring organically reached states (identical legal
-masks) plus tracker/bridge golden tests over the recordings.
+**Next task — P5, actuator + supervised game loop** (`src/v2/arena/actuate/`
++ `src/v2/arena/fsm/game.py`; see the plan's module layout and shadow-state
+strategy): map engine action ids to clicks in the client UI (`clicks.py`,
+using `actions.h` regions), verify each action against the next decoded
+frames (`verify.py`), and the in-game loop — wait for decision → tracker
+snapshot → bridge → `DecisionSearcher` via `bot/policy.py` → click →
+verify, with turn-boundary resync, rigged stepping via `set_deck_order` for
+mid-card questions, and divergence abort (screenshot + frame log, never play
+on). Accept: one full supervised game end-to-end with zero divergence aborts
+(needs the operator present with the logged-in `arena-profile/`).
 
 **Workflow notes:**
-- Per the project's Codex delegation workflow, hand P3 implementation to Codex
-  (the plan marks it difficult — top tier, `--model gpt-5.6-sol --effort
-  high`), then review the diff and run the tests yourself before accepting.
+- Per the project's Codex delegation workflow, hand P5 implementation to
+  Codex, then review the diff and run the tests yourself before accepting.
+  The live supervised game itself needs the human operator.
 - **Codex sandbox gotcha:** the rescue plugin defaults to a *read-only*
-  sandbox — you must pass `--write` in the delegation or Codex silently can't
-  create files. Run it `--background` (P1 and P2 each ran ~30 min).
+  sandbox — pass `--write` in the delegation or Codex silently can't create
+  files. Run it `--background` (P1–P3 each ran ~20–30 min).
 - Build/test commands are in `CLAUDE.md`; engine bindings via `PYTHONPATH=build`.
 
-Start by reading the two docs, then scope and delegate P3.
+Start by reading the two docs, then scope and delegate P5.

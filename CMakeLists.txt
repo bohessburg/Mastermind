@@ -34,6 +34,7 @@ add_library(dominion_v2 STATIC
     src/v2/core/moves.cpp
     src/v2/core/score.cpp
     src/v2/core/setup.cpp
+    src/v2/core/state_builder.cpp
     src/v2/core/triggers.cpp
     src/v2/core/turns.cpp
 )
@@ -173,6 +174,7 @@ if(BUILD_TESTS)
         tests/v2/test_rng.cpp
         tests/v2/test_state.cpp
         tests/v2/test_setup.cpp
+        tests/v2/test_state_builder.cpp
         tests/v2/test_game_flow.cpp
         tests/v2/test_determinism.cpp
         tests/v2/test_conservation.cpp

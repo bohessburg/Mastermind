@@ -73,14 +73,37 @@ person would, using the site's own client the whole way through.
   reconnect, handled as a replacement resync); 300+ decisions cross-checked
   offered-cards ⊆ tracked hand. 18/18 tests pass (`tests/v2/arena/`).
 
+- **P3 — StateBuilder + bindings: complete (2026-07-24).**
+  `src/v2/core/state_builder.{h,cpp}` constructs a clean or single-interrupt
+  native `GameState` from tracker public state, with exact local hand,
+  re-dealt opponent hand∪deck composition, public zones/resources, supply,
+  trash, turn, and phase. The four base-set interrupt frames (Moat, Militia,
+  Bureaucrat, Bandit) seed the existing interpreter layouts directly.
+  `game.set_deck_order()` rigs full decks in next-draw-first order and rejects
+  non-permutations; `game.validate()` checks structural invariants and
+  base-set per-card conservation without changing the POD `GameState` layout
+  or byte hashes. `src/v2/arena/shadow/bridge.py` maps tracker display names
+  and phases to the native dict binding, including deterministic resolution
+  of reconnect-era anonymous public-zone slots from known ownership.
+  C++ tests cover 100+ sampled organic decision states, same-action behavior,
+  all interrupts, rigged draws, invalid snapshots, and deliberate corruption.
+  The real-recording golden builds 930 local-turn decision points and checks
+  305 action plays, 130 buys, and 94 treasure plays against native legal
+  masks, with 337 internal questions and 64 pass/unmapped phase answers
+  counted explicitly. The full 144-test CTest suite and the bridge golden pass.
+
+- **P4 — Decision service: complete (2026-07-24).**
+  `src/v2/arena/bot/policy.py`: the checkpoint loader and NN / parked-leaf
+  NN-MCTS decision functions factored out of the web server, parameterized by
+  sims, determinizations, device, and an optional per-decision wall-clock
+  cap. The server imports it, so there is one serving path. Note: a mid-search
+  wall-clock timeout falls back to the first legal action (the binding's
+  `best_action()` is only meaningful once the search completes), so the arena
+  config should treat the cap as a generous safety valve, with pacing done via
+  think-time delay. Server suite passes unchanged.
+
 ## Remaining phases (from the plan)
 
-- **P3 — StateBuilder (engine + bindings).** The one piece of C++ work:
-  construct an engine `GameState` from a P2 snapshot, plus deck-order patching
-  and an invariant check. This is what lets the trained model reason about a
-  live game.
-- **P4 — Decision service.** Factor the model-serving loop out of the web
-  server into a shared module reused by both the server and the arena runtime.
 - **P5 — Actuator + supervised game loop.** Map an engine action to the
   matching click in the normal client UI; play one full game with a person
   watching.
@@ -104,4 +127,9 @@ person would, using the site's own client the whole way through.
 - Card and pile identities in the feed are numeric; the mapping to names is
   generated from the client's published card table (documented in
   `cards.py`) and regenerated when the client version changes.
-- Work through P1 is currently uncommitted on branch `v2-phase1`.
+- Committed on branch `v2-phase1`: P0–P2 (`a2780de`), P4 (`a450bd3`), P3
+  follows.
+- The web-server pytest suite intermittently deadlocks on this Mac inside
+  torch's OpenMP threads at import (predates the arena stream; hung runs from
+  July 10/14 observed). Workaround: `OMP_NUM_THREADS=1` when running
+  `src/v2/web/server/test_server.py`.
