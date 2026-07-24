@@ -1,95 +1,132 @@
 # Session Handoff — Training Program State
 
-Snapshot: 2026-07-13. Read with `docs/training-log.md` (experiment history —
-the c14/c15 entries at the bottom are the current state), `IMPLEMENTATION_PLAN.md`
-(Phase T), `docs/web-ui-handoff.md` (web UI is a separate session's domain).
+Snapshot: 2026-07-24. Read with `docs/training-log.md` (experiment history —
+the c15/c16/c17 and phase-close entries at the bottom are the current state),
+`IMPLEMENTATION_PLAN.md` (Phase T), `docs/bot_strategies.md` (scripted bots,
+EngineBotV3), `docs/web-ui-handoff.md` (web UI is a separate session's domain).
 
 ## What is running RIGHT NOW
 
-**Nothing.** Campaign 14 was cut at gen 38 (2026-07-13, Jack's call — metrics
-plateaued, see training log). The box-3 vast.ai instance (ssh -p 10913
-root@198.2.214.6, RTX 5090) is IDLE with everything of value pulled home;
-all-clear to destroy. The prior box (port 10169, same IP) was also cleared for
-destruction. Jack manages the vast console himself; we have no VAST_API_KEY
-and cannot destroy instances — give explicit all-clears instead.
+**No training.** The program is PAUSED: box 3 (vast.ai RTX 5090) ran out of
+credit 2026-07-15 and is gone. Jack manages the vast console himself; we have
+no VAST_API_KEY and cannot provision or destroy instances — wait for a box.
 
-**Active work: c15 card-token transformer** (design approved by Jack; full
-spec in training-log "C15 DESIGN" entry). Model-side only — C++ encoder and
-obs v2 untouched. Gates before campaign launch: (1) offline fit on c14 replay
-beats the MLP on held-out loss; (2) eval throughput ≥70% of MLP.
+**Serving:** the flagship is deployed on a Hetzner VPS via the `deploy/`
+stack (single Docker image: built Vite client + FastAPI from one origin,
+optional Caddy TLS profile; see `deploy/README.md`). 400 sims. Local serving:
+`DOMINION_NN_CHECKPOINT=checkpoints/remote/campaign15/gen_0045.pt` + uvicorn
+(see `docs/play-the-net.md`).
+
+## Flagship of record: c15 gen_0045 (card-token transformer)
+
+Best engine3 read 62.8% (honest band ~56-57), and the first checkpoint ever
+to take a game off Jack (41-40; his overall record vs the program is
+otherwise unbeaten — human W-L is a tracked metric).
+
+**Operating point everywhere: 400 sims, fixed c_puct 1.25.** Deep search
+REGRESSES: the 2026-07-20 sims sweep (500 games/point vs engine3) shows a
+flat plateau 200-1000 sims (~52-56%) then monotonic decline — 1600 sims
+scores 39.7%. Do not raise sims to "play stronger." Policy-only (sims=1) is
+4.0% vs engine3 — nearly all strength lives in search; the distillation gap
+is a c18+ lever.
+
+## Campaign results this phase (details in training-log)
+
+- **c15** (card-token transformer, 1.5M params, mixed-arch league): the
+  architecture thesis PROVED — −44% offline value MSE vs MLP, from-scratch
+  engine3 curve 48.2% (g19) → 62.8% (g45) → 56-57 (g50/55, cut at 55). Every
+  MLP-lineage flagship reads 34-37% on the same sentinel.
+- **c16** (40% engine3 opponent mix, no league/curriculum, warm-start c15
+  g45): sentinel FLAT ~50-55 through 25 gens. Engine pressure alone does not
+  convert value accuracy into strength.
+- **c17** (margin_blend value targets α=0.6, warm-start c16 g30): the
+  score-snapshot bias is ELIMINATED (probe-verified: bot no longer panic-buys
+  Duchies when behind), but the STRENGTH VERDICT IS INCOMPLETE — sentinel
+  flat 48.5-51.5 through gen 15, interrupted ~gen 20 by the box lapse just
+  as the replay buffer converted to majority-new-target data.
+
+## Next moves (scoped at phase close)
+
+1. **On next provision:** finish c17's verdict. Resume from
+   `checkpoints/remote/campaign17/gen_0015.pt` (`configs/run_c17.json`;
+   `--config` + `--resume`, pop `init_weights`), run to gen 30-35, read the
+   engine3 sentinel. Cheap and decisive.
+2. **c18 levers if c17 stays flat:** obs-v3 backlog (trash composition —
+   currently unencoded anywhere, principled log1p pass, property-informed
+   embeddings), policy distillation (close the sims=1 gap), the
+   value-discrimination-at-depth research problem (deep-slice stays parked;
+   gate = 1600 ≥ 400), network scale-up (throughput has ~4-5x headroom from
+   compiled bucketed inference).
+3. **Anytime:** human-record games vs gen_0045 — the only benchmark that has
+   never saturated.
 
 ## Local artifacts (all verified via torch.load)
 
-- `checkpoints/remote/campaign13/` — 12 full checkpoints incl. flagship
-  gen_0065.pt (89.2% EngineBot / 71.0% BM, loaded in web UI); lean league
-  seed set in scratchpad/c13_lean (with `generation` key patched in).
-- `checkpoints/remote/campaign14/` — gen_0001/0020/0030/0035/0038.pt +
+- `checkpoints/remote/campaign13/` — 12 ckpts incl. gen_0065 (MLP-era
+  flagship; 85.6% was vs the weak chart bot — 34.5% vs engine3).
+- `checkpoints/remote/campaign14/` — 0001/0020/0025/0030/0035/0038 +
   metrics.csv + **replay_state.npz (1.26M obs-v2 positions — the offline
-  validation set for c15)**. Flagship candidates: gen_0020 (89.7% eval,
-  BM sentinel 72/100 best) and gen_0030 (89.7% post-migration recovery).
-- Configs: `configs/run_c14.json` is the recipe baseline for c15 (margin
-  targets, obs v2 + input_scale 16, 12-seed league, curriculum, tree reuse,
-  top-k 8 root-exempt+wildcard, eval sentinels).
+  validation set; c15 gate 1 ran on it)**.
+- `checkpoints/remote/campaign15/` — eval gens 0005-0055 (~18 MB each).
+- `checkpoints/remote/campaign16/` — 0025/0029/0030. `campaign17/` — 0015.
+- Configs: `configs/run_c15.json` (full recipe), `run_c16.json`,
+  `run_c17.json` (margin_blend). Exports of notable human games in
+  `exports/` (T004… = first bot win vs Jack).
 
-## Recipe facts that carry to c15
+## Code facts that carry forward (all merged on v2-phase1)
 
-- Margin value targets: v = sign(margin) × (0.5 + 0.5·min(|margin|,20)/20).
-- obs v2 (OBS_SIZE_V2=1717): perfect-memory opponent composition; layout in
-  `src/v2/encode/encoder.h` + `src/v2/encode/layout.md`.
-- input_scale=16 divisor in DominionNet — the hack the c15 tokenizer retires
-  (raw counts diverge training at any lr; log1p/embeddings are the fix).
-- Slot-manifest runner is mandatory for throughput (see training-log
-  "THROUGHPUT SAGA": batch fragmentation costs 10x; 10K games/hr healthy).
-- League loader rebuilds opponents from their own payload config → mixed
-  architectures OK; lean seeds MUST carry `generation`; obs-version guards
-  exist. league_opponents_per_gen=3 cap. Resume: `--config` + `--resume`
-  together, and pop `init_weights` from the config (mutual exclusion).
+- `build_model()` factory (`src/v2/train/model.py`): `model_config["arch"]`
+  absent/"mlp" → DominionNet, "card_transformer" → CardTokenNet
+  (`src/v2/train/card_transformer.py`). Checkpoints self-describe; mixed-arch
+  league works (worker payload carries model_config).
+- CardTokenNet: nn.Embedding(41,192) + 19 per-card scalars → 48 supply
+  tokens + global token, 3 pre-LN layers, pointer policy head, tanh value
+  off global. Zero C++ changes; tokenizer slices obs v2.
+- Inference server: `server_compile` (torch.compile reduce-overhead,
+  fullgraph), `server_autocast_bf16`, `server_batch_buckets` (static shapes).
+  Compiled+bf16 = 368-439K evals/s on the 5090 vs ~70K eager.
+- margin_blend value target (α=0.6, wins→[0.8,1.0]) — the c17 bias fix.
+- Visit-scaled PUCT: implemented, NEGATIVE result, default off ("fixed").
+- EngineBotV3 (`src/v2/bots/` — another session owns it; integrate, don't
+  modify): selfplay opponent kind "engine3", eval sentinel columns
+  sentinel_engine3_*, web seat "bot:engine3" ("Human vs EngineBot" mode).
 
-## Ops lessons (expensive to relearn)
+## Ops lessons (expensive to relearn — next box will likely be vast again)
 
-- NEVER pkill/pgrep a pattern present in your own ssh cmdline (6+ self-kill
-  incidents). Script files on the box only; verify with full `ps` listings
-  and `[.]`-escaped patterns. `pgrep | head` grabs stale PIDs — wrong etimes
-  readings misled status twice.
-- Stop runs ONLY via `/root/stop_train.sh` (kills parent AND spawn_main
-  workers; parent-only kills orphan ~10GB workers until invisible cgroup
-  OOM kills). ALWAYS stop before any launch (double-trainer incident wrote
-  garbage metrics rows).
-- Launch pattern: `setsid nohup env OMP_NUM_THREADS=1 PYTHONPATH=build
-  /venv/main/bin/python -m src.v2.train.train --config X.json >> console.log
-  2>&1 < /dev/null &`; verify via second ssh (ps + nvidia-smi + banner).
-- File transfer on vast links: rsync -az --partial with retry loop. scp
-  silently truncates (three corrupted checkpoints). md5sum both ends for
-  anything that matters.
-- Vast instances can spontaneously restart: container disk WIPED, ssh port
-  reassigned. Sync checkpoints home at milestones; keep a one-command
-  re-bootstrap script; abandon the host if it repeats. Replay buffers are
-  usually not worth migrating (cost ≈ 1-2 gens of freshness, see c14 gen 21).
-- Fresh-box build: tarball must include tests/ (v2_fuzz sources); cmake with
-  -DBUILD_TESTS=OFF (Catch2 fetch blocked); pip install pybind11 in
-  /venv/main; build target dominion_v2_py -j32.
-- Watcher pattern: local background loop ssh-polling metrics.csv for new
-  eval rows; campaign-specific state file (scratchpad/c14_last_eval);
-  exits after reporting → re-arm. REPORTS MUST BE THE FINAL MESSAGE OF A
-  TURN. Dead-trainer check needs 3 consecutive failures (connection flakes).
-  Jack wants eval reports in chat, never push notifications.
+- NEVER pkill/pgrep a pattern present in your own ssh cmdline. Stop runs
+  ONLY via `/root/stop_train.sh`; ALWAYS stop before any launch.
+- Launch detached: `setsid nohup … >> console.log 2>&1 < /dev/null &`;
+  verify via second ssh. Flaky links sever long sessions — poll with short
+  connections; rsync -az --partial with retries, never scp (silent
+  truncation); md5sum anything that matters.
+- Box "death" can be a proxy outage: check `uptime` + trainer `ps etimes`
+  before assuming a restart wipe. Real restarts wipe the container disk and
+  reassign the ssh port — sync checkpoints home at every eval milestone.
+- Fresh-box build: tarball includes tests/ (v2_fuzz sources), cmake
+  -DBUILD_TESTS=OFF, pip pybind11 into /venv/main, target dominion_v2_py.
+- Watcher pattern: local loop polling metrics.csv, campaign-specific state
+  file, 3-consecutive-failure dead check; it EXITS after each report — must
+  actually re-arm (verify the call, don't just claim it). Eval reports in
+  chat as the FINAL message of a turn; never push notifications.
 
 ## Eval discipline
 
-- EngineBot v2 win% saturates ~85-92%; read end_province/end_piles forensics
-  and the BM sentinel columns (sentinel_bigmoney_wins/games). Sentinel noise
-  at n=100 is ±10 for one sigma — don't overreact to single evals.
-- Behavioral probes beat metrics for repertoire questions: policy buy
-  distributions by coin level on an engine-forcing kingdom (see training-log
-  "C14 REPERTOIRE PROBE" and the probe script pattern — argmax-greedy self
-  vs scripted BM, softmax mass per card at each price point).
-- Human playtests are the ground truth for repertoire gaps (c13-gen65 lost
-  to Jack twice: money-only play, no attack response).
+- The honest strength read is the **engine3 sentinel** (or evaluate.py
+  --opponent engine3/engine2). The legacy "engine" chart bot is much weaker
+  than the drivers bots — pre-reframe "~89% vs EngineBot" rows mean "vs
+  chart money bot." Sentinel noise at n=200 is ~±3.5 for one sigma.
+- Counterfactual obs-editing probes (policy forward passes on edited
+  observations) beat metrics for behavior questions — established results:
+  tit-for-tat attack retaliation (formed by gen 5), Moat-discount, and the
+  score-snapshot bias before/after margin_blend.
+- Human playtests are ground truth for repertoire gaps (gen 30 loss: never
+  bought Sentry, panic-greened while behind — the probe-confirmed bias).
 
 ## Playable seats (web UI)
 
-bot:nn (policy only), bot:nnmcts (full search; NN_MCTS_SIMS env, default
-400). Any checkpoint via DOMINION_NN_CHECKPOINT or bot:nnmcts:<path>.
-Server loads hidden_sizes/input_scale/obs_version from checkpoint payload
-(v2-aware loader). DEFAULT_NN_CHECKPOINT = campaign13/gen_0065.pt.
-Finished games persist to exports/<session>.json in the server's cwd.
+bot:nn (policy only), bot:nnmcts (search; NN_MCTS_SIMS env, default 400),
+bot:engine3 / bot:engine2 / bot (scripted). Any checkpoint via
+DOMINION_NN_CHECKPOINT or bot:nnmcts:<path>; the loader is factory-aware
+(arch from checkpoint payload). DEFAULT_NN_CHECKPOINT currently
+campaign13/gen_0065 — override to the flagship when serving. Finished games
+persist to exports/<session>.json.

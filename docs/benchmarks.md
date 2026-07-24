@@ -28,6 +28,12 @@ and a benchmark-skewing kingdom-setup bug.
 
 ## Bot win rates (10,000 seat-swapped games, random kingdoms, July 2026)
 
+These rows are the drivers **EngineBot v2**. The current strongest scripted
+bot is **EngineBot v3** (2026-07) — full duel numbers, the chart-bot vs
+drivers-bot distinction, and CLI recipes are in `docs/bot_strategies.md`.
+For NN strength reads use `evaluate.py --opponent engine3`; the legacy
+"engine" eval opponent is a much weaker chart bot.
+
 | Matchup | Win / Loss / Tie |
 |---|---|
 | EngineBot vs BigMoney | 74.0 / 21.3 / 4.8 |

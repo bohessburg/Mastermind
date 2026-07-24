@@ -630,6 +630,14 @@ efficiency, not FLOPs.
 config + seed; a full run can execute on a rented GPU box end-to-end (provision
 → train → sync → teardown) driven from the local session.
 
+**Status (2026-07-24): exit criteria MET; program paused between phases.**
+T.1-T.4 shipped and battle-tested over campaigns 1-17 on rented vast.ai GPU
+boxes (T.5 is manual-console + scripts rather than CLI wrappers — accepted).
+Flagship: campaign 15 gen_0045, a card-token transformer that beats
+EngineBot v3 (~56-62% at 400 sims) and took the first game off a human.
+Full history in `docs/training-log.md`; resume state and next scoped moves
+in `docs/session-handoff.md`.
+
 ### Phase 7 — Durations & mats (Seaside/Adventures core mechanics)
 
 | # | Task | Size |
