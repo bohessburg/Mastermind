@@ -219,6 +219,28 @@ person would, using the site's own client the whole way through.
   logical stack, the exact Militia plan, Moat reveal/decline plans, and replay
   of the live-game-2 archive through question 55.
 
+- **Third supervised live-game follow-up (2026-07-24).**
+  The third run reached turn 9 and correctly resolved 22 decisions before the
+  Library per-drawn-Action mode prompt exposed a batching boundary error.
+  The native Library interpreter presents the same player/kind/source
+  signature for each successive card, but the client exposes each choice as a
+  separate `CHOOSE_MODE` question with exactly one answer. The provider now
+  treats `CHOOSE_MODE` and non-complex exact-one prompts as one-action client
+  questions before applying its engine-signature batching heuristic. The next
+  identical prompt is therefore resynced from its observed outcome and planned
+  independently.
+
+  The action mapper now rejects an action plan that produces the wrong fixed
+  answer arity, so an over-batched mode plan cannot reach the browser. Offline
+  regression coverage replays the archived third game through Library
+  questions 64 and 65 with the live provider on both prompts, verifies the
+  repeated-signature unit case, and rejects the formerly emitted two-answer
+  mapping. The tracker also normalizes Library's transient `zone-type-24` as
+  player set-aside state, which lets the replay continue from question 64 to
+  65. Provider regressions retain batching for Militia, Cellar, Chapel, and
+  Sentry trash/discard/topdeck; the existing reference and game-2 replay
+  goldens cover their client mappings.
+
 - **P6 — Lobby loop + supervisor + deploy.** Unattended base-set sessions
   with archiving and recovery.
 

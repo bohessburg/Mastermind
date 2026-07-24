@@ -19,6 +19,7 @@ from ..actuate.clicks import (
     ActuationError,
     ClientGesture,
     MockActuator,
+    expected_answer_count,
     offered_name,
     possible_answer_indices,
 )
@@ -437,6 +438,12 @@ class BotDecisionProvider:
             )
 
         planning = game.clone()
+        if expected_answer_count(decision) == 1:
+            action = await self._choose(planning, seat)
+            return DecisionPlan(
+                engine_actions=(action,),
+                gesture_actions=(action,),
+            )
         initial = _decision_signature(planning)
         actions: list[int] = []
         for _ in range(max(1, decision.maximum + 1)):

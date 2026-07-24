@@ -12,6 +12,7 @@ import dominion_v2_py as dz
 import pytest
 
 from src.v2.arena.actuate.clicks import (
+    ActionMappingError,
     ActuationError,
     DOMCardStack,
     DOMGameButton,
@@ -57,6 +58,9 @@ SELECTED_DISCARD_DOM = Path(
 )
 LIVE_GAME_2_ARCHIVE = Path(
     "exports/arena/20260724T204829.953926Z/frames.jsonl"
+)
+LIVE_GAME_3_ARCHIVE = Path(
+    "exports/arena/20260724T211613.397353Z/frames.jsonl"
 )
 REFERENCE_RECORDING = Path(
     "arena-recordings/20260724T142103.096991Z/frames.jsonl"
@@ -199,6 +203,263 @@ def test_buy_provider_handles_pass_and_already_collapsed_state() -> None:
     )
     assert direct.engine_actions == (silver,)
     assert direct.gesture_actions == (silver,)
+
+
+class _RepeatedModeDecisionGame:
+    """A clone whose second mode question keeps the same engine signature."""
+
+    def __init__(self, steps: int = 0) -> None:
+        self.steps = steps
+
+    def clone(self) -> _RepeatedModeDecisionGame:
+        return _RepeatedModeDecisionGame(self.steps)
+
+    def current_decision(self) -> dict[str, int]:
+        return {
+            "player": 1,
+            "kind": 7,
+            "source": 11 if self.steps < 2 else 12,
+        }
+
+    def legal_mask(self) -> list[bool]:
+        legal = [False] * int(dz.A_CALL_BASE)
+        legal[int(dz.A_OPTION_BASE + 1)] = True
+        return legal
+
+    def step(self, action: int) -> None:
+        assert action == int(dz.A_OPTION_BASE + 1)
+        self.steps += 1
+
+
+class _BatchedDecisionGame:
+    """Small engine stand-in with a stable decision until a chosen step."""
+
+    def __init__(
+        self,
+        legal_actions: tuple[int, ...],
+        changes_after: int,
+        steps: int = 0,
+    ) -> None:
+        self.legal_actions = legal_actions
+        self.changes_after = changes_after
+        self.steps = steps
+
+    def clone(self) -> _BatchedDecisionGame:
+        return _BatchedDecisionGame(
+            self.legal_actions,
+            self.changes_after,
+            self.steps,
+        )
+
+    def current_decision(self) -> dict[str, int]:
+        return {
+            "player": 1,
+            "kind": 7,
+            "source": 11 if self.steps < self.changes_after else 12,
+        }
+
+    def legal_mask(self) -> list[bool]:
+        legal = [False] * (max(self.legal_actions) + 1)
+        for action in self.legal_actions:
+            legal[action] = True
+        return legal
+
+    def step(self, action: int) -> None:
+        assert action in self.legal_actions
+        self.steps += 1
+
+
+class _ProviderSnapshot:
+    our_seat = 1
+
+
+def _library_mode_decision() -> PendingDecisionSnapshot:
+    return PendingDecisionSnapshot(
+        question_index=64,
+        decision_type="CHOOSE_MODE",
+        question_id="LIBRARY",
+        offered=("card-mode-74", "card-mode-75"),
+        minimum=1,
+        maximum=1,
+        association="Library",
+    )
+
+
+def test_choose_mode_provider_stops_before_an_identical_next_prompt() -> None:
+    snapshot = _ProviderSnapshot()
+    decision = _library_mode_decision()
+    game = _RepeatedModeDecisionGame()
+    planning = game.clone()
+    planning.step(int(dz.A_OPTION_BASE + 1))
+    assert planning.current_decision() == game.current_decision()
+    policy_calls = 0
+
+    def choose_mode(_game: Any, _seat: int) -> int:
+        nonlocal policy_calls
+        policy_calls += 1
+        return int(dz.A_OPTION_BASE + 1)
+
+    plan = asyncio.run(
+        BotDecisionProvider(choose_mode).plan(
+            frame_index=844,
+            game=game,
+            snapshot=snapshot,
+            decision=decision,
+        )
+    )
+
+    assert plan.engine_actions == (int(dz.A_OPTION_BASE + 1),)
+    assert plan.gesture_actions == plan.engine_actions
+    assert policy_calls == 1
+
+
+@pytest.mark.parametrize(
+    (
+        "question_id",
+        "decision_type",
+        "minimum",
+        "maximum",
+        "actions",
+    ),
+    (
+        (
+            "MILITIA",
+            "DISCARD",
+            2,
+            2,
+            (
+                int(dz.A_SELECT_BASE + dz.def_id("Copper")),
+                int(dz.A_SELECT_BASE + dz.def_id("Estate")),
+            ),
+        ),
+        (
+            "CELLAR",
+            "DISCARD",
+            0,
+            3,
+            (
+                int(dz.A_SELECT_BASE + dz.def_id("Copper")),
+                int(dz.A_SELECT_BASE + dz.def_id("Estate")),
+                int(dz.A_PASS),
+            ),
+        ),
+        (
+            "CHAPEL",
+            "TRASH",
+            0,
+            4,
+            (
+                int(dz.A_SELECT_BASE + dz.def_id("Copper")),
+                int(dz.A_SELECT_BASE + dz.def_id("Estate")),
+                int(dz.A_SELECT_BASE + dz.def_id("Silver")),
+                int(dz.A_SELECT_BASE + dz.def_id("Gold")),
+            ),
+        ),
+    ),
+)
+def test_provider_keeps_multi_answer_batches(
+    question_id: str,
+    decision_type: str,
+    minimum: int,
+    maximum: int,
+    actions: tuple[int, ...],
+) -> None:
+    snapshot = _ProviderSnapshot()
+    library = _library_mode_decision()
+    decision = replace(
+        library,
+        question_id=question_id,
+        decision_type=decision_type,
+        offered=("Copper", "Estate", "Silver", "Gold"),
+        minimum=minimum,
+        maximum=maximum,
+    )
+    choices = iter(actions)
+    plan = asyncio.run(
+        BotDecisionProvider(lambda game, seat: next(choices)).plan(
+            frame_index=decision.question_index,
+            game=_BatchedDecisionGame(actions, len(actions)),
+            snapshot=snapshot,
+            decision=decision,
+        )
+    )
+
+    assert plan.engine_actions == actions
+    assert plan.gesture_actions == actions
+
+
+def test_provider_keeps_sentry_stages_batched() -> None:
+    snapshot = _ProviderSnapshot()
+    library = _library_mode_decision()
+    keep = int(dz.A_OPTION_BASE + 2)
+    order = int(dz.A_OPTION_BASE)
+    choices = iter((keep, keep, order))
+    provider = BotDecisionProvider(lambda game, seat: next(choices))
+    game = _BatchedDecisionGame((keep, order), changes_after=3)
+    trash = replace(
+        library,
+        question_id="SENTRY_TRASH",
+        decision_type="TRASH",
+        offered=("Copper", "Estate"),
+        minimum=0,
+        maximum=2,
+    )
+    discard = replace(
+        trash,
+        question_id="SENTRY_DISCARD",
+        decision_type="DISCARD",
+    )
+    topdeck = replace(
+        trash,
+        question_id="SENTRY_TOPDECK",
+        decision_type="ORDER_CARDS",
+        minimum=2,
+        maximum=2,
+    )
+
+    trash_plan = asyncio.run(
+        provider.plan(
+            frame_index=trash.question_index,
+            game=game,
+            snapshot=snapshot,
+            decision=trash,
+        )
+    )
+    discard_plan = asyncio.run(
+        provider.plan(
+            frame_index=discard.question_index,
+            game=game,
+            snapshot=snapshot,
+            decision=discard,
+        )
+    )
+    topdeck_plan = asyncio.run(
+        provider.plan(
+            frame_index=topdeck.question_index,
+            game=game,
+            snapshot=snapshot,
+            decision=topdeck,
+        )
+    )
+
+    assert trash_plan.engine_actions == ()
+    assert trash_plan.gesture_actions == (keep, keep)
+    assert discard_plan.engine_actions == ()
+    assert discard_plan.gesture_actions == (keep, keep)
+    assert topdeck_plan.engine_actions == (keep, keep, order)
+    assert topdeck_plan.gesture_actions == (order,)
+
+
+def test_choose_mode_mapper_rejects_an_overlength_answer_plan() -> None:
+    decision = _library_mode_decision()
+    with pytest.raises(
+        ActionMappingError,
+        match=r"LIBRARY expects exactly 1 answer index, got 2",
+    ):
+        map_engine_actions(
+            (int(dz.A_OPTION_BASE + 1),) * 2,
+            decision,
+        )
 
 
 class _RecordedBadSubmission:
@@ -642,6 +903,74 @@ def test_live_game_2_replays_through_militia_question_55() -> None:
     assert actuator.gestures[-1].question_index == 55
     assert actuator.gestures[-1].answer_indices == (2, 0, 1)
     assert actuator.gestures[-1].click_button
+
+
+class _RecordedReplayWithLibraryBot:
+    """Use the live provider for the repeated Library mode prompts only."""
+
+    def __init__(self, events: tuple[object, ...]) -> None:
+        self.recorded = RecordedDecisionProvider(events)
+        self.library = BotDecisionProvider(
+            lambda game, seat: int(dz.A_OPTION_BASE + 1)
+        )
+        self.library_plans: dict[int, DecisionPlan] = {}
+
+    async def plan(
+        self,
+        *,
+        frame_index: int,
+        game: Any,
+        snapshot: TrackerSnapshot,
+        decision: PendingDecisionSnapshot,
+    ) -> DecisionPlan | None:
+        if decision.question_id == "LIBRARY":
+            plan = await self.library.plan(
+                frame_index=frame_index,
+                game=game,
+                snapshot=snapshot,
+                decision=decision,
+            )
+            self.library_plans[decision.question_index] = plan
+            return plan
+        return await self.recorded.plan(
+            frame_index=frame_index,
+            game=game,
+            snapshot=snapshot,
+            decision=decision,
+        )
+
+
+def test_live_game_3_replays_library_modes_as_separate_plans() -> None:
+    if not LIVE_GAME_3_ARCHIVE.is_file():
+        pytest.skip(f"missing live arena fixture: {LIVE_GAME_3_ARCHIVE}")
+    events = parse_recording(LIVE_GAME_3_ARCHIVE).events
+    provider = _RecordedReplayWithLibraryBot(events)
+    actuator = MockActuator(replay=True)
+
+    results = asyncio.run(
+        run_game_loop(
+            events,
+            actuator=actuator,
+            decision_provider=provider,
+        )
+    )
+
+    mode_action = int(dz.A_OPTION_BASE + 1)
+    assert len(results) == 1
+    assert results[0].completed
+    assert not results[0].divergence_aborted
+    assert {
+        question_index: plan.engine_actions
+        for question_index, plan in provider.library_plans.items()
+    } == {
+        64: (mode_action,),
+        65: (mode_action,),
+    }
+    assert [
+        gesture.answer_indices
+        for gesture in actuator.gestures
+        if gesture.question_index in {64, 65}
+    ] == [(1,), (1,)]
 
 
 class _EmptyLocator:

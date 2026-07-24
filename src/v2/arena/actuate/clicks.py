@@ -92,6 +92,33 @@ def offered_name(value: str) -> str:
     return value.rsplit(":", 1)[-1]
 
 
+_EXPLICIT_MULTI_ANSWER_TYPES = frozenset(
+    {
+        "COMPLEX_AND",
+        "COMPLEX_OR",
+        "ORDER_CARDS",
+    }
+)
+
+
+def expected_answer_count(
+    decision: PendingDecisionSnapshot,
+) -> int | None:
+    """Return the fixed client answer arity for simple questions.
+
+    Complex client prompts encode commands and selections in one answer tuple,
+    so their protocol arity is not their card-selection minimum/maximum.
+    """
+    if decision.decision_type == "CHOOSE_MODE":
+        return 1
+    if (
+        decision.minimum == decision.maximum == 1
+        and decision.decision_type not in _EXPLICIT_MULTI_ANSWER_TYPES
+    ):
+        return 1
+    return None
+
+
 def possible_answer_indices(
     actions: Iterable[int],
     decision: PendingDecisionSnapshot,
@@ -218,6 +245,12 @@ def map_engine_actions(
             f"question {decision.question_index} has no answer mapping"
         )
     answers = possibilities[0]
+    expected = expected_answer_count(decision)
+    if expected is not None and len(answers) != expected:
+        raise ActionMappingError(
+            f"{decision.question_id} expects exactly {expected} answer "
+            f"index, got {len(answers)}"
+        )
     selected = _selected_indices(decision, answers)
     click_button = _needs_button(decision, selected)
     return AnswerMapping(

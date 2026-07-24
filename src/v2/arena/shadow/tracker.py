@@ -34,6 +34,7 @@ CardMultiset = tuple[tuple[str, int], ...]
 TRACKED_ZONE_KINDS = frozenset(
     {"hand", "deck", "discard", "in-play", "set-aside"}
 )
+_SET_ASIDE_ZONE_KINDS = frozenset({"set-aside", "zone-type-24"})
 RESOURCE_NAMES = frozenset({"actions", "buys", "coins"})
 TREASURE_NAMES = frozenset({"Copper", "Silver", "Gold", "Potion"})
 
@@ -113,6 +114,12 @@ class _ZoneState:
 
 def _multiset(counter: Counter[str]) -> CardMultiset:
     return tuple(sorted((name, count) for name, count in counter.items() if count))
+
+
+def _tracked_zone_kind(kind: str) -> str:
+    if kind in _SET_ASIDE_ZONE_KINDS:
+        return "set-aside"
+    return kind
 
 
 def _subtract(
@@ -411,8 +418,9 @@ class Tracker:
         old_counts = self._zone_counts_by_owner_kind()
         new_counts: Counter[tuple[int | None, str]] = Counter()
         for zone in event.zones:
-            if zone.kind in TRACKED_ZONE_KINDS or zone.kind == "trash":
-                new_counts[(zone.owner, zone.kind)] += zones[zone.index].count
+            kind = _tracked_zone_kind(zone.kind)
+            if kind in TRACKED_ZONE_KINDS or kind == "trash":
+                new_counts[(zone.owner, kind)] += zones[zone.index].count
         relevant_old = Counter(
             {
                 key: value
@@ -541,7 +549,9 @@ class Tracker:
     def _install_zone_metadata(
         self, zones: tuple[FullStateZone, ...]
     ) -> None:
-        self._zone_kind = {zone.index: zone.kind for zone in zones}
+        self._zone_kind = {
+            zone.index: _tracked_zone_kind(zone.kind) for zone in zones
+        }
         self._zone_owner = {zone.index: zone.owner for zone in zones}
         self._supply_name = {
             zone.index: zone.display_name
@@ -613,13 +623,13 @@ class Tracker:
         inferred_owner = event.seat
         source = self._install_event_zone(
             event.from_zone_index,
-            event.from_zone,
+            _tracked_zone_kind(event.from_zone),
             owner=inferred_owner if source_owner is None else source_owner,
             destination=False,
         )
         destination = self._install_event_zone(
             event.to_zone_index,
-            event.to_zone,
+            _tracked_zone_kind(event.to_zone),
             owner=(
                 inferred_owner
                 if destination_owner is None and event.to_zone != "trash"
@@ -629,7 +639,8 @@ class Tracker:
         )
         allow_anonymize = (
             event.seat != self.our_seat
-            and event.from_zone in {"hand", "deck", "set-aside"}
+            and _tracked_zone_kind(event.from_zone)
+            in {"hand", "deck", "set-aside"}
         )
         moved_known, moved_anonymous = self._take_cards(
             source,
