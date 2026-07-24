@@ -16,6 +16,14 @@ from fastapi.staticfiles import StaticFiles
 
 import dominion_v2_py as dz
 
+from src.v2.arena.bot.policy import (
+    NNCheckpointError,
+    NNPolicy,
+    choose_nn_action,
+    choose_nnmcts_action,
+    load_policy,
+)
+
 from .defs import def_by_id, def_id, kingdom_def_ids, load_defs
 from .observer import (
     BanditLogState,
@@ -51,19 +59,6 @@ class Seat:
     token: str
 
 
-@dataclass
-class _NNPolicy:
-    """A CPU-only policy model and its lazily imported torch module."""
-
-    model: Any
-    torch: Any
-    obs_version: int
-
-
-class _NNCheckpointError(Exception):
-    """A safe, user-facing failure while preparing an NN bot."""
-
-
 @dataclass(frozen=True)
 class PendingUndo:
     requester: int
@@ -90,7 +85,7 @@ class Session:
     connections: dict[str, WebSocket] = field(default_factory=dict)
     bot_rngs: list[random.Random] = field(default_factory=list)
     scripted_bots: list[Any | None] = field(default_factory=list)
-    nn_policies: dict[int, _NNPolicy] = field(default_factory=dict)
+    nn_policies: dict[int, NNPolicy] = field(default_factory=dict)
     thinking_delay_ms: int = 60
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
@@ -167,76 +162,9 @@ def _nn_checkpoint_path(kind: str) -> Path:
     return Path(configured or os.environ.get("DOMINION_NN_CHECKPOINT", DEFAULT_NN_CHECKPOINT))
 
 
-def _load_nn_policy(checkpoint_path: Path) -> _NNPolicy:
-    """Load one local training checkpoint only when an NN seat is requested."""
-    if not checkpoint_path.is_file():
-        raise _NNCheckpointError("neural-network checkpoint is unavailable")
-
-    try:
-        import torch
-        from src.v2.train.model import build_model
-    except ImportError as error:
-        raise _NNCheckpointError("neural-network bot requires PyTorch") from error
-
-    try:
-        try:
-            checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
-        except TypeError:  # pragma: no cover - older supported Torch versions
-            checkpoint = torch.load(checkpoint_path, map_location="cpu")
-        config = checkpoint["config"]
-        if not isinstance(config, dict):
-            raise TypeError("checkpoint config must be a dict")
-        model_config = config["model"]
-        if not isinstance(model_config, dict):
-            raise TypeError("checkpoint model config must be a dict")
-        arch = model_config.get("arch", "mlp")
-
-        selfplay_config = config.get("selfplay")
-        if isinstance(selfplay_config, dict) and "obs_version" in selfplay_config:
-            obs_version = int(selfplay_config["obs_version"])
-            if obs_version not in (1, 2):
-                raise ValueError("checkpoint selfplay obs_version must be 1 or 2")
-        elif arch == "card_transformer":
-            # A CardTokenNet is structurally v2 even if a hand-written
-            # checkpoint omitted the self-play metadata.
-            obs_version = 2
-        else:
-            model_state = checkpoint["model"]
-            if not isinstance(model_state, dict):
-                raise TypeError("checkpoint model state must be a dict")
-            weight = model_state.get("trunk.0.weight")
-            if weight is None:
-                for name, candidate in model_state.items():
-                    if str(name).startswith("trunk.") and str(name).endswith(".weight"):
-                        weight = candidate
-                        break
-            if weight is None:
-                weight = model_state.get("policy_head.weight")
-            shape = getattr(weight, "shape", None)
-            if shape is None or len(shape) != 2:
-                raise ValueError("checkpoint model is missing its input linear layer")
-            input_width = int(shape[1])
-            if input_width == int(dz.OBS_SIZE_V1):
-                obs_version = 1
-            elif input_width == int(dz.OBS_SIZE_V2):
-                obs_version = 2
-            else:
-                raise ValueError("checkpoint model input size is not a supported observation layout")
-
-        obs_size = int(dz.OBS_SIZE_V1 if obs_version == 1 else dz.OBS_SIZE_V2)
-        model = build_model(model_config, obs_size, int(dz.ACTION_SPACE_SIZE))
-        model.load_state_dict(checkpoint["model"])
-        model.to("cpu")
-        model.eval()
-    except Exception as error:
-        raise _NNCheckpointError("neural-network checkpoint could not be loaded") from error
-
-    return _NNPolicy(model=model, torch=torch, obs_version=obs_version)
-
-
-def _load_nn_policies(seat_kinds: list[str]) -> dict[int, _NNPolicy]:
+def _load_nn_policies(seat_kinds: list[str]) -> dict[int, NNPolicy]:
     return {
-        index: _load_nn_policy(_nn_checkpoint_path(kind))
+        index: load_policy(_nn_checkpoint_path(kind))
         for index, kind in enumerate(seat_kinds)
         if _is_neural_kind(kind)
     }
@@ -524,17 +452,6 @@ def _choose_bigmoney_action(game: Any, legal: list[int]) -> int:
     return _first_legal(legal)
 
 
-def _choose_nn_action(session: Session, seat: int) -> int:
-    policy = session.nn_policies[seat]
-    torch = policy.torch
-    observation = torch.as_tensor(
-        session.game.encode(seat, policy.obs_version), dtype=torch.float32, device="cpu"
-    ).unsqueeze(0)
-    legal_mask = torch.as_tensor(session.game.legal_mask(), dtype=torch.bool, device="cpu").unsqueeze(0)
-    masked_logits, _ = policy.model.evaluate(observation, legal_mask)
-    return int(torch.argmax(masked_logits, dim=-1).item())
-
-
 def _nn_mcts_sims() -> int:
     """Read the interactive search budget without making a bad env fatal."""
     try:
@@ -544,46 +461,6 @@ def _nn_mcts_sims() -> int:
     return sims if sims > 0 else 400
 
 
-def _choose_nnmcts_action(session: Session, seat: int) -> int:
-    """Run one CPU NN-MCTS decision through the binding's parked leaves."""
-    policy = session.nn_policies[seat]
-    torch = policy.torch
-    searcher = dz.DecisionSearcher(
-        session.game,
-        seat,
-        {
-            "sims": _nn_mcts_sims(),
-            "c_puct": 1.25,
-            "determinizations": 2,
-            "obs_version": policy.obs_version,
-            # Collapse-trained checkpoints (c7+) never search treasure plays;
-            # searching them here puts the net off-distribution (see the
-            # 2026-07-11 eval-flag bug in docs/training-log.md).
-            "auto_play_treasures": True,
-            "prune_treasure_plays": True,
-            # State-derived seeding also makes replay/undo decisions stable.
-            "seed": (
-                int(session.game.state_hash()) ^ ((seat + 1) * 0x9E3779B97F4A7C15)
-            ) & 0xFFFFFFFFFFFFFFFF,
-        },
-    )
-    while not searcher.done():
-        obs, masks = searcher.collect_leaves()
-        if obs.shape[0] == 0:
-            continue
-        with torch.no_grad():
-            logits, values = policy.model.evaluate(
-                torch.as_tensor(obs, dtype=torch.float32, device="cpu"),
-                torch.as_tensor(masks, dtype=torch.bool, device="cpu"),
-            )
-        searcher.provide_evaluations(
-            values.detach().cpu().numpy().astype(np.float32, copy=False),
-            logits.detach().cpu().numpy().astype(np.float32, copy=False),
-        )
-    action = int(searcher.best_action())
-    return action if _is_legal(session.game, action) else _first_legal(_legal_actions(session.game))
-
-
 def _choose_bot_action(session: Session, seat: int) -> int:
     legal = _legal_actions(session.game)
     if not legal:
@@ -591,9 +468,15 @@ def _choose_bot_action(session: Session, seat: int) -> int:
 
     kind = session.seats[seat].kind
     if _is_nnmcts_kind(kind):
-        return _choose_nnmcts_action(session, seat)
+        return choose_nnmcts_action(
+            session.game,
+            seat,
+            session.nn_policies[seat],
+            sims=_nn_mcts_sims(),
+            determinizations=2,
+        )
     if _is_nn_kind(kind):
-        return _choose_nn_action(session, seat)
+        return choose_nn_action(session.game, seat, session.nn_policies[seat])
 
     if _is_scripted_kind(kind):
         bot = session.scripted_bots[seat]
@@ -794,7 +677,7 @@ async def create_session(payload: dict[str, Any]) -> dict[str, Any]:
 
     try:
         nn_policies = _load_nn_policies(seat_kinds)
-    except _NNCheckpointError as error:
+    except NNCheckpointError as error:
         raise HTTPException(status_code=400, detail=str(error)) from None
 
     seed = int(payload.get("seed", secrets.randbits(63)))

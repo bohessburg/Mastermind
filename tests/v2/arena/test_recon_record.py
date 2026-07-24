@@ -136,6 +136,8 @@ async def _require_chromium() -> None:
         except Error as error:
             if "Executable doesn't exist" in str(error):
                 pytest.skip(f"Playwright Chromium is not installed: {error}")
+            if "MachPortRendezvousServer" in str(error) and "Permission denied" in str(error):
+                pytest.skip(f"Playwright Chromium cannot launch in this sandbox: {error}")
             raise
         await browser.close()
 
