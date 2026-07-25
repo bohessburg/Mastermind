@@ -95,6 +95,8 @@ _HOMEPAGE_TRANSIENT_BLOCKER_SELECTORS = (
     LOADING_GAME_SELECTOR,
 )
 
+_RETURN_TO_HOMEPAGE = object()
+
 @dataclass(frozen=True, kw_only=True)
 class _ControlSpec:
     selector: str
@@ -102,6 +104,7 @@ class _ControlSpec:
     handler: str
     required_class: str
     ancestor_tag: str | None = None
+    requires_timeout_descendant: bool = False
 
 
 _CONTROL_SPECS = {
@@ -142,6 +145,7 @@ _CONTROL_SPECS = {
         handler="$ctrl.reconnect()",
         required_class="lobby-button",
         ancestor_tag="reconnecting-failed",
+        requires_timeout_descendant=True,
     ),
     LobbyControl.RECONNECT_LIMIT_RETURN_TO_LOBBY: _ControlSpec(
         selector=RECONNECT_LIMIT_RETURN_TO_LOBBY_SELECTOR,
@@ -149,6 +153,7 @@ _CONTROL_SPECS = {
         handler="$ctrl.decline()",
         required_class="lobby-button",
         ancestor_tag="reconnecting-failed",
+        requires_timeout_descendant=True,
     ),
 }
 
@@ -193,31 +198,52 @@ class LobbyFSM:
         return limit != 0 and completed_games >= limit
 
     async def queue_next_game(self) -> None:
-        """Search, then start a matched table if the recorded control appears."""
+        """Resume a retained board or search and start the next table."""
+        await self.start_or_resume_game()
+
+    async def start_or_resume_game(self) -> bool:
+        """Poll startup controls until automatch starts or a board resumes.
+
+        A reconnect-limit modal can render after the initial page load, so the
+        homepage, board, and modal signals deliberately share one deadline and
+        are all reconsidered after every poll.
+        """
         self._require_state(LobbyState.HOMEPAGE)
-        start_search = await self._wait_for_control(
-            LobbyControl.START_SEARCH,
-            state=LobbyState.HOMEPAGE,
-        )
-        await self._click(start_search, LobbyControl.START_SEARCH)
-        self._transition(LobbyState.SEARCHING)
+        while True:
+            start_search = await self._wait_for_homepage_start_search_or_game()
+            if start_search is None:
+                self._transition(LobbyState.IN_GAME)
+                return True
+            await self._click(start_search, LobbyControl.START_SEARCH)
+            self._transition(LobbyState.SEARCHING)
 
-        match = await self._wait_for_match()
-        if match == "in-game":
-            self._transition(LobbyState.IN_GAME)
-            return
+            match = await self._wait_for_match()
+            if match == "homepage":
+                self._transition(LobbyState.HOMEPAGE)
+                continue
+            if match == "in-game":
+                self._transition(LobbyState.IN_GAME)
+                return False
 
-        self._transition(LobbyState.TABLE_WAITING)
-        start_game = await self._wait_for_table_start_or_game()
-        if start_game is None:
+            self._transition(LobbyState.TABLE_WAITING)
+            start_game = await self._wait_for_table_start_or_game()
+            if start_game is _RETURN_TO_HOMEPAGE:
+                self._transition(LobbyState.HOMEPAGE)
+                continue
+            if start_game is None:
+                self._transition(LobbyState.IN_GAME)
+                return False
+            await self._click(start_game, LobbyControl.START_GAME)
             self._transition(LobbyState.IN_GAME)
-            return
-        await self._click(start_game, LobbyControl.START_GAME)
-        self._transition(LobbyState.IN_GAME)
+            return False
 
     async def resolve_startup_blocking_modal(self) -> bool:
         """Handle one known startup modal or report an unknown blocker."""
         self._require_state(LobbyState.HOMEPAGE)
+        return await self._resolve_blocking_modal_if_present()
+
+    async def _resolve_blocking_modal_if_present(self) -> bool:
+        """Handle a visible modal while any lobby state is polling."""
         if await self._visible_selector_has_content(RECONNECT_LIMIT_MODAL_SELECTOR):
             control = (
                 LobbyControl.RECONNECT_LIMIT_RETURN_TO_LOBBY
@@ -330,6 +356,10 @@ class LobbyFSM:
         await self._snapshot_waiting(LobbyState.SEARCHING)
         deadline = self.clock() + self._timeout_for(LobbyState.SEARCHING)
         while True:
+            if await self._resolve_blocking_modal_if_present():
+                if self.config.reconnect_limit_policy == "return_to_lobby":
+                    return "homepage"
+                continue
             # Automatch lands directly in the game. Prefer that authoritative
             # board signal over any stale score-table controls.
             if await self._in_game_board_is_present():
@@ -357,6 +387,10 @@ class LobbyFSM:
         await self._snapshot_waiting(LobbyState.TABLE_WAITING)
         deadline = self.clock() + self._timeout_for(LobbyState.TABLE_WAITING)
         while True:
+            if await self._resolve_blocking_modal_if_present():
+                if self.config.reconnect_limit_policy == "return_to_lobby":
+                    return _RETURN_TO_HOMEPAGE
+                continue
             if await self._in_game_board_is_present():
                 return None
             locator = await self._control_if_present(LobbyControl.START_GAME)
@@ -379,11 +413,11 @@ class LobbyFSM:
         *,
         state: LobbyState,
     ) -> Any:
-        if state is LobbyState.HOMEPAGE and control is LobbyControl.START_SEARCH:
-            return await self._wait_for_homepage_start_search()
         await self._snapshot_waiting(state)
         deadline = self.clock() + self._timeout_for(state)
         while True:
+            if await self._resolve_blocking_modal_if_present():
+                continue
             locator = await self._control_if_present(control)
             if locator is not None:
                 return locator
@@ -394,8 +428,8 @@ class LobbyFSM:
                 raise self._timeout_error(state, self._control_description(control))
             await self.sleep(self.poll_seconds)
 
-    async def _wait_for_homepage_start_search(self) -> Any:
-        """Wait for the cold-start homepage, with one safe recovery reload.
+    async def _wait_for_homepage_start_search_or_game(self) -> Any | None:
+        """Poll the startup modal, board, and homepage before one reload.
 
         The client retains empty ``reconnecting`` and ``loading-game`` custom
         elements in a healthy DOM.  Their presence alone must never suppress
@@ -408,6 +442,10 @@ class LobbyFSM:
         reloaded = False
 
         while True:
+            if await self._resolve_blocking_modal_if_present():
+                continue
+            if await self._in_game_board_is_present():
+                return None
             locator = await self._control_if_present(LobbyControl.START_SEARCH)
             if locator is not None:
                 return locator
@@ -634,6 +672,8 @@ class _RecordedControlParser(HTMLParser):
         self.labels: list[str] = []
         self._depth = 0
         self._tags: list[str] = []
+        self._reconnect_modal_depths: list[int] = []
+        self._timeout_modal_depths: set[int] = set()
 
     def handle_starttag(
         self,
@@ -642,6 +682,14 @@ class _RecordedControlParser(HTMLParser):
     ) -> None:
         attributes = dict(attrs)
         classes = attributes.get("class", "").split()
+        if tag == "modal-window" and "reconnecting-failed" in self._tags:
+            self._reconnect_modal_depths.append(self._depth)
+        if (
+            tag == "div"
+            and "timeout" in classes
+            and self._reconnect_modal_depths
+        ):
+            self._timeout_modal_depths.add(self._reconnect_modal_depths[-1])
         if (
             tag == "button"
             and attributes.get("ng-click") == self.spec.handler
@@ -649,6 +697,14 @@ class _RecordedControlParser(HTMLParser):
             and (
                 self.spec.ancestor_tag is None
                 or self.spec.ancestor_tag in self._tags
+            )
+            and (
+                not self.spec.requires_timeout_descendant
+                or (
+                    bool(self._reconnect_modal_depths)
+                    and self._reconnect_modal_depths[-1]
+                    in self._timeout_modal_depths
+                )
             )
         ):
             self._button_depth = self._depth
@@ -666,6 +722,13 @@ class _RecordedControlParser(HTMLParser):
             self.labels.append(" ".join("".join(self._text).split()))
             self._button_depth = None
             self._text = []
+        if (
+            tag == "modal-window"
+            and self._reconnect_modal_depths
+            and self._reconnect_modal_depths[-1] == self._depth
+        ):
+            modal_depth = self._reconnect_modal_depths.pop()
+            self._timeout_modal_depths.discard(modal_depth)
         if self._tags:
             self._tags.pop()
 

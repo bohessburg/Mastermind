@@ -540,9 +540,12 @@ question 50 as one message-37 send with no game-DOM interaction.
   The supervisor-restart failure in
   `exports/arena/20260725T032324.753710Z/` rendered its reconnect-count prompt
   inside `reconnecting-failed > modal-window`, with a `div.timeout` and the
-  observed handlers `$ctrl.reconnect()` and `$ctrl.decline()`. Startup now
-  resolves that prompt before looking for either `game-area` or **Start
-  search**. The default `lobby.reconnect_limit_policy` is
+  observed handlers `$ctrl.reconnect()` and `$ctrl.decline()`. The initial
+  implementation checked only once before the homepage wait; the later
+  `20260725T033239.293293Z` capture showed that the modal can render after the
+  loading page instead. Every homepage, search, table, and post-Leave-Table
+  poll now rechecks the modal, board, and actionable control before sleeping.
+  The default `lobby.reconnect_limit_policy` is
   `"return_to_lobby"`, which clicks the latter and resumes the ordinary
   homepage search; the documented alternative `"reconnect"` uses the former
   and then re-evaluates the retained-game path.
