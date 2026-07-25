@@ -274,6 +274,23 @@ class GameEnd(GameEvent):
     reason: str
 
 
+@dataclass(frozen=True, kw_only=True)
+class GameResult(GameEnd):
+    """Decoded final standings in seat order.
+
+    ``decoded`` is false when message 14 had an unfamiliar shape.  The end
+    marker is still emitted in that case so result bookkeeping can safely
+    record an unknown outcome without interrupting the lobby flow.
+    """
+
+    scores: tuple[int, ...]
+    placings: tuple[int, ...]
+    winner_seat: int | None
+    tie: bool
+    decoded: bool
+    error: str | None = None
+
+
 @dataclass(frozen=True)
 class Chat(GameEvent):
     sender: str

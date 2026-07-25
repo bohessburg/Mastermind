@@ -6,6 +6,7 @@ import asyncio
 import inspect
 import logging
 import random
+import time
 from collections import Counter
 from collections.abc import AsyncIterable, AsyncIterator, Iterable
 from dataclasses import dataclass, field, replace
@@ -37,13 +38,16 @@ from ..protocol.events import (
     DecisionResolved,
     Discard,
     Draw,
+    Chat,
     GameEnd,
     GameEvent,
+    GameResult,
     GameStart,
     PendingDecision,
     Play,
     Reconnect,
     Reveal,
+    SessionStart,
     Shuffle,
     Topdeck,
     UndoRequest,
@@ -100,6 +104,20 @@ class DivergenceReport:
 
 
 @dataclass(frozen=True, kw_only=True)
+class StallReport:
+    """Watchdog context emitted when the local client owes progress."""
+
+    frame_index: int
+    game_id: int | None
+    last_event_timestamp_ms: int | None
+    silent_seconds: float
+    tracker_summary: dict[str, object]
+    pending_question: dict[str, object] | None
+    screenshot_path: str | None
+    dom_snapshot_path: str | None
+
+
+@dataclass(frozen=True, kw_only=True)
 class GameRunResult:
     """Offline/live outcome for one observed game."""
 
@@ -113,11 +131,24 @@ class GameRunResult:
     undo_resyncs: int
     reason: str
     divergence_report: DivergenceReport | None = None
+    stall_aborted: bool = False
+    stall_report: StallReport | None = None
+    our_seat: int | None = None
+    opponent: str | None = None
+    outcome: str = "unknown"
+    scores: tuple[int, ...] = ()
+    placings: tuple[int, ...] = ()
+    winner_seat: int | None = None
+    tie: bool = False
+    archive_dir: str | None = None
 
 
 @dataclass
 class _ActiveGame:
     game_id: int | None
+    players: tuple[str, ...] = ()
+    our_seat: int | None = None
+    game_result: GameResult | None = None
     kingdom_rejected: bool = False
     decisions: int = 0
     validations: int = 0
@@ -151,6 +182,21 @@ class _DeferredBuy:
     turn_number: int
     seat: int
     action: int
+
+
+@dataclass(frozen=True, kw_only=True)
+class _WatchdogStall(GameEvent):
+    """Internal sentinel produced instead of waiting forever for an event."""
+
+    frame_index: int
+    last_event_timestamp_ms: int | None
+    silent_seconds: float
+
+
+class _StallWatchdogAbort(RuntimeError):
+    def __init__(self, stall: _WatchdogStall) -> None:
+        super().__init__("stall watchdog expired")
+        self.stall = stall
 
 
 class RecordedDecisionProvider:
@@ -535,6 +581,17 @@ async def run_game_loop(
     archive_factory: Callable[[int | None], GameArchive] | None = None,
     max_games: int | None = None,
     auto_deny_undo: bool = True,
+    stall_watchdog_seconds: float | None = None,
+    clock: Callable[[], float] = time.monotonic,
+    watchdog_poll_seconds: float = 0.25,
+    stall_screenshot_hook: Callable[
+        [int, TrackerSnapshot], str | Path | None | Awaitable[str | Path | None]
+    ]
+    | None = None,
+    stall_dom_hook: Callable[
+        [int, TrackerSnapshot], str | Path | None | Awaitable[str | Path | None]
+    ]
+    | None = None,
 ) -> tuple[GameRunResult, ...]:
     """Consume normalized events and play until every observed game ends.
 
@@ -547,6 +604,10 @@ async def run_game_loop(
         raise ValueError("maximum think time must be at least the minimum")
     if max_games is not None and max_games <= 0:
         raise ValueError("max_games must be positive or null")
+    if stall_watchdog_seconds is not None and stall_watchdog_seconds <= 0:
+        raise ValueError("stall watchdog must be positive or null")
+    if watchdog_poll_seconds <= 0:
+        raise ValueError("watchdog poll interval must be positive")
     if not auto_deny_undo:
         raise ValueError("undo auto-deny is the only supported arena behavior")
     rng = random_source or random.Random()
@@ -612,8 +673,17 @@ async def run_game_loop(
         active.pending_plan = None
         active.pending_events.clear()
 
-    async for frame_index, event in _indexed_events(events):
+    async for frame_index, event in _indexed_events(
+        events,
+        obligation=lambda: _has_outstanding_obligation(active, tracker),
+        stall_watchdog_seconds=stall_watchdog_seconds,
+        clock=clock,
+        sleep=sleep,
+        watchdog_poll_seconds=watchdog_poll_seconds,
+    ):
         try:
+            if isinstance(event, _WatchdogStall):
+                raise _StallWatchdogAbort(event)
             tracker.consume(event)
             undo_resync = tracker.last_undo_resync
             if active is not None:
@@ -676,6 +746,8 @@ async def run_game_loop(
                 if active is None or active.game_id != event.game_id:
                     active = _ActiveGame(
                         game_id=event.game_id,
+                        players=event.players,
+                        our_seat=event.our_seat,
                         archive=(
                             archive_factory(event.game_id)
                             if archive_factory is not None
@@ -692,6 +764,9 @@ async def run_game_loop(
 
             if active is None:
                 continue
+
+            if isinstance(event, GameResult):
+                active.game_result = event
 
             if isinstance(event, UndoRequest):
                 snapshot = tracker.snapshot()
@@ -768,6 +843,12 @@ async def run_game_loop(
                     rigged_steps=active.rigged_steps,
                     undo_resyncs=active.undo_resyncs,
                     reason=event.reason,
+                    **_result_fields(active),
+                    archive_dir=(
+                        str(active.archive.path)
+                        if active.archive is not None
+                        else None
+                    ),
                 )
                 _finish_archive(active, result)
                 results.append(result)
@@ -961,6 +1042,69 @@ async def run_game_loop(
                         offered=event.offered,
                     )
                 )
+        except _StallWatchdogAbort as error:
+            snapshot = tracker.snapshot()
+            screenshot = await _capture_artifact(
+                stall_screenshot_hook,
+                error.stall.frame_index,
+                snapshot,
+                label="stall screenshot",
+            )
+            dom_snapshot = await _capture_artifact(
+                stall_dom_hook,
+                error.stall.frame_index,
+                snapshot,
+                label="stall DOM snapshot",
+            )
+            report = StallReport(
+                frame_index=error.stall.frame_index,
+                game_id=snapshot.game_id,
+                last_event_timestamp_ms=error.stall.last_event_timestamp_ms,
+                silent_seconds=error.stall.silent_seconds,
+                tracker_summary=_snapshot_summary(snapshot),
+                pending_question=_pending_question_summary(snapshot),
+                screenshot_path=screenshot,
+                dom_snapshot_path=dom_snapshot,
+            )
+            LOGGER.critical(
+                "STALL WATCHDOG: game=%s frame=%d silent=%.1fs "
+                "last_event_timestamp_ms=%s pending=%s tracker=%s",
+                snapshot.game_id,
+                report.frame_index,
+                report.silent_seconds,
+                report.last_event_timestamp_ms,
+                report.pending_question,
+                report.tracker_summary,
+            )
+            if isinstance(actuator, MockActuator):
+                actuator.stop()
+            if active is None:
+                active = _ActiveGame(game_id=snapshot.game_id)
+            result = GameRunResult(
+                game_id=active.game_id,
+                completed=False,
+                divergence_aborted=False,
+                kingdom_rejected=active.kingdom_rejected,
+                decisions=active.decisions,
+                validations=active.validations,
+                rigged_steps=active.rigged_steps,
+                undo_resyncs=active.undo_resyncs,
+                reason=(
+                    "stall watchdog expired after "
+                    f"{report.silent_seconds:.1f}s"
+                ),
+                stall_aborted=True,
+                stall_report=report,
+                **_result_fields(active),
+                archive_dir=(
+                    str(active.archive.path)
+                    if active.archive is not None
+                    else None
+                ),
+            )
+            _finish_archive(active, result)
+            results.append(result)
+            return tuple(results)
         except (
             TrackerError,
             BridgeError,
@@ -1007,6 +1151,12 @@ async def run_game_loop(
                 undo_resyncs=active.undo_resyncs,
                 reason=str(error),
                 divergence_report=report,
+                **_result_fields(active),
+                archive_dir=(
+                    str(active.archive.path)
+                    if active.archive is not None
+                    else None
+                ),
             )
             _finish_archive(active, result)
             results.append(result)
@@ -1017,16 +1167,87 @@ async def run_game_loop(
 
 async def _indexed_events(
     events: Iterable[GameEvent] | AsyncIterable[GameEvent],
+    *,
+    obligation: Callable[[], bool] | None = None,
+    stall_watchdog_seconds: float | None = None,
+    clock: Callable[[], float] = time.monotonic,
+    sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+    watchdog_poll_seconds: float = 0.25,
 ) -> AsyncIterator[tuple[int, GameEvent]]:
     """Preserve the synchronous API while awaiting a live event source."""
     if isinstance(events, AsyncIterable):
+        iterator = events.__aiter__()
         index = 0
-        async for event in events:
+        last_relevant_at = clock()
+        last_event_timestamp_ms: int | None = None
+        while True:
+            next_event = asyncio.create_task(iterator.__anext__())
+            while (
+                stall_watchdog_seconds is not None
+                and obligation is not None
+                and obligation()
+            ):
+                silent_seconds = clock() - last_relevant_at
+                if silent_seconds >= stall_watchdog_seconds:
+                    next_event.cancel()
+                    await asyncio.gather(next_event, return_exceptions=True)
+                    yield index, _WatchdogStall(
+                        frame_index=index,
+                        last_event_timestamp_ms=last_event_timestamp_ms,
+                        silent_seconds=silent_seconds,
+                    )
+                    return
+                poll = min(
+                    watchdog_poll_seconds,
+                    stall_watchdog_seconds - silent_seconds,
+                )
+                poll_task = asyncio.create_task(sleep(poll))
+                done, _ = await asyncio.wait(
+                    {next_event, poll_task},
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+                if next_event in done:
+                    poll_task.cancel()
+                    await asyncio.gather(poll_task, return_exceptions=True)
+                    break
+                await poll_task
+            try:
+                event = await next_event
+            except StopAsyncIteration:
+                return
+            if _is_game_relevant_event(event):
+                last_relevant_at = clock()
+                last_event_timestamp_ms = event.timestamp_ms
             yield index, event
             index += 1
         return
     for index, event in enumerate(events):
         yield index, event
+
+
+def _is_game_relevant_event(event: GameEvent) -> bool:
+    if isinstance(event, (Chat, SessionStart)):
+        return False
+    if isinstance(event, UnknownFrame):
+        return event.direction == "in" and event.msg_type in {32, 33, 35, 37, 38}
+    return True
+
+
+def _has_outstanding_obligation(
+    active: _ActiveGame | None,
+    tracker: Tracker,
+) -> bool:
+    if active is None:
+        return False
+    snapshot = tracker.snapshot()
+    if snapshot.ended:
+        return False
+    if snapshot.pending_decision is not None:
+        return True
+    return (
+        snapshot.our_seat is not None
+        and snapshot.turn_owner == snapshot.our_seat
+    )
 
 
 def _recorded_plan(
@@ -1642,6 +1863,40 @@ async def _capture_screenshot(
     return None if value is None else str(value)
 
 
+async def _capture_artifact(
+    hook: Callable[
+        [int, TrackerSnapshot], str | Path | None | Awaitable[str | Path | None]
+    ]
+    | None,
+    frame_index: int,
+    snapshot: TrackerSnapshot,
+    *,
+    label: str,
+) -> str | None:
+    try:
+        return await _capture_screenshot(hook, frame_index, snapshot)
+    except Exception as error:
+        LOGGER.error("could not capture %s: %s", label, error)
+        return None
+
+
+def _pending_question_summary(
+    snapshot: TrackerSnapshot,
+) -> dict[str, object] | None:
+    pending = snapshot.pending_decision
+    if pending is None:
+        return None
+    return {
+        "question_index": pending.question_index,
+        "decision_type": pending.decision_type,
+        "question_id": pending.question_id,
+        "offered": pending.offered,
+        "minimum": pending.minimum,
+        "maximum": pending.maximum,
+        "association": pending.association,
+    }
+
+
 def _snapshot_summary(snapshot: TrackerSnapshot) -> dict[str, object]:
     return {
         "game_id": snapshot.game_id,
@@ -1668,6 +1923,40 @@ def _snapshot_summary(snapshot: TrackerSnapshot) -> dict[str, object]:
     }
 
 
+def _result_fields(active: _ActiveGame) -> dict[str, object]:
+    opponent = next(
+        (
+            player
+            for seat, player in enumerate(active.players)
+            if seat != active.our_seat
+        ),
+        None,
+    )
+    result = active.game_result
+    outcome = "unknown"
+    if (
+        result is not None
+        and result.decoded
+        and active.our_seat is not None
+        and active.our_seat < len(result.scores)
+    ):
+        if result.tie:
+            outcome = "tie"
+        elif result.winner_seat == active.our_seat:
+            outcome = "win"
+        else:
+            outcome = "loss"
+    return {
+        "our_seat": active.our_seat,
+        "opponent": opponent,
+        "outcome": outcome,
+        "scores": () if result is None else result.scores,
+        "placings": () if result is None else result.placings,
+        "winner_seat": None if result is None else result.winner_seat,
+        "tie": False if result is None else result.tie,
+    }
+
+
 def _finish_archive(active: _ActiveGame, result: GameRunResult) -> None:
     if active.archive is None:
         return
@@ -1678,6 +1967,14 @@ def _finish_archive(active: _ActiveGame, result: GameRunResult) -> None:
             divergence_aborted=result.divergence_aborted,
             decisions=result.decisions,
             reason=result.reason,
+            stall_aborted=result.stall_aborted,
+            our_seat=result.our_seat,
+            opponent=result.opponent,
+            outcome=result.outcome,
+            scores=result.scores,
+            placings=result.placings,
+            winner_seat=result.winner_seat,
+            tie=result.tie,
         ),
         divergence_report=(
             None
@@ -1688,6 +1985,22 @@ def _finish_archive(active: _ActiveGame, result: GameRunResult) -> None:
                 "message": result.divergence_report.message,
                 "tracker_summary": result.divergence_report.tracker_summary,
                 "screenshot_path": result.divergence_report.screenshot_path,
+            }
+        ),
+        stall_report=(
+            None
+            if result.stall_report is None
+            else {
+                "frame_index": result.stall_report.frame_index,
+                "game_id": result.stall_report.game_id,
+                "last_event_timestamp_ms": (
+                    result.stall_report.last_event_timestamp_ms
+                ),
+                "silent_seconds": result.stall_report.silent_seconds,
+                "tracker_summary": result.stall_report.tracker_summary,
+                "pending_question": result.stall_report.pending_question,
+                "screenshot_path": result.stall_report.screenshot_path,
+                "dom_snapshot_path": result.stall_report.dom_snapshot_path,
             }
         ),
     )

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 
@@ -19,6 +20,7 @@ from .events import (
     Gain,
     GameEnd,
     GameEvent,
+    GameResult,
     GameStart,
     PendingDecision,
     PileReorder,
@@ -38,6 +40,9 @@ from .events import (
     ZoneTransfer,
 )
 from .frames import DecodedFrame, Direction, ProtocolError, Reader
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 MOVEMENT_TYPES = (
@@ -349,13 +354,7 @@ class ArenaParser:
                 self._parse_table_details_prefix(frame.payload)
                 return []
             if frame.msg_type == 14:
-                return [
-                    GameEnd(
-                        game_id=self.game_id,
-                        reason="game-finished",
-                        timestamp_ms=frame.timestamp_ms,
-                    )
-                ]
+                return self._parse_game_finished(frame)
             if frame.msg_type == 32:
                 return self._parse_game_event(frame)
             if frame.msg_type == 33:
@@ -433,6 +432,128 @@ class ArenaParser:
         reader.s32()
         players = reader.array(lambda: (reader.s32(), reader.string()))
         self.player_names_by_id.update(players)
+
+    def _parse_game_finished(self, frame: DecodedFrame) -> list[GameEvent]:
+        """Decode client-2.2.8 ``GameFinished`` without risking the end marker.
+
+        The bundle shape is ``TableDetails``, ``GameResult``, two booleans.
+        Locating the repeated ``[tableId][gameId]`` boundary avoids duplicating
+        the large and independently evolving TableDetails rule parser.  From
+        that boundary onward the payload is consumed exactly.
+        """
+        try:
+            result = self._decode_game_result(frame)
+        except (ProtocolError, IndexError, UnicodeDecodeError, ValueError) as error:
+            LOGGER.error(
+                "could not decode game-finished message 14 for game %s: %s",
+                self.game_id,
+                error,
+            )
+            result = GameResult(
+                game_id=self.game_id,
+                reason="game-finished",
+                scores=(),
+                placings=(),
+                winner_seat=None,
+                tie=False,
+                decoded=False,
+                error=str(error),
+                timestamp_ms=frame.timestamp_ms,
+            )
+        return [result]
+
+    def _decode_game_result(self, frame: DecodedFrame) -> GameResult:
+        if self.game_id is None:
+            raise ProtocolError("game-finished arrived before a known game id")
+        if len(frame.payload) < 16:
+            raise ProtocolError("truncated GameFinished payload")
+
+        table_id = frame.payload[:8]
+        marker = table_id + self.game_id.to_bytes(8, "big")
+        offset = frame.payload.find(marker, 8)
+        if offset < 0:
+            raise ProtocolError(
+                "could not locate repeated table/game ids at GameResult boundary"
+            )
+        if frame.payload.find(marker, offset + 1) >= 0:
+            raise ProtocolError("ambiguous GameResult boundary")
+
+        reader = Reader(frame.payload[offset:])
+        parsed_table_id = reader.u64()
+        parsed_game_id = reader.u64()
+        if parsed_table_id != int.from_bytes(table_id, "big"):
+            raise ProtocolError("GameResult table id does not match TableDetails")
+        if parsed_game_id != self.game_id:
+            raise ProtocolError(
+                f"GameResult game id {parsed_game_id} does not match {self.game_id}"
+            )
+
+        reader.s32()  # readOptionalEnum(RatingTypes), -1 means absent
+        reader.u32_array()  # empty pile CardName ordinals
+
+        player_results: dict[int, tuple[int, int]] = {}
+        for _ in range(reader.u32()):
+            player_id = reader.s32()
+            placing = reader.s32()
+            score = reader.s32()
+            reader.s32()  # used turns
+            for _ in range(reader.u32()):  # ScorePart[]
+                reader.u32()  # CardName
+                reader.s32()  # points
+                reader.s32()  # frequency
+                reader.s32()  # client-only display field
+                reader.u32()  # LogEntry name
+                reader.s32()  # LogEntry depth
+                reader.array(lambda: self._read_log_argument(reader))
+            reader.array(lambda: (reader.u32(), reader.s32()))  # CardFrequency[]
+            reader.s32()  # resign index
+            reader.s32()  # readOptionalEnum(ResignationTypes), -1 means absent
+            if player_id in player_results:
+                raise ProtocolError(
+                    f"duplicate player {player_id} in GameResult"
+                )
+            player_results[player_id] = (placing, score)
+
+        reader.boolean()  # GameResult.autoContinue
+        reader.boolean()  # GameFinished.continueAllowed
+        reader.boolean()  # GameFinished.matchCompleted
+        reader.finish()
+
+        if not self.player_ids:
+            raise ProtocolError("GameResult has no known seat mapping")
+        missing = tuple(
+            player_id
+            for player_id in self.player_ids
+            if player_id not in player_results
+        )
+        extra = tuple(
+            player_id
+            for player_id in player_results
+            if player_id not in self.player_ids
+        )
+        if missing or extra:
+            raise ProtocolError(
+                f"GameResult player mismatch: missing={missing} extra={extra}"
+            )
+        placings = tuple(player_results[player_id][0] for player_id in self.player_ids)
+        scores = tuple(player_results[player_id][1] for player_id in self.player_ids)
+        if not placings or any(placing <= 0 for placing in placings):
+            raise ProtocolError(f"invalid GameResult placings {placings}")
+        best = min(placings)
+        winners = tuple(
+            seat for seat, placing in enumerate(placings) if placing == best
+        )
+        tie = len(winners) != 1
+        return GameResult(
+            game_id=self.game_id,
+            reason="game-finished",
+            scores=scores,
+            placings=placings,
+            winner_seat=None if tie else winners[0],
+            tie=tie,
+            decoded=True,
+            timestamp_ms=frame.timestamp_ms,
+        )
 
     def _parse_chat(self, frame: DecodedFrame, *, outbound: bool) -> Chat:
         reader = Reader(frame.payload)

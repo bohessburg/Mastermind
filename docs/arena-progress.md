@@ -431,6 +431,88 @@ person would, using the site's own client the whole way through.
   identical FullState with undo signals removed still trips the original
   zone-count mismatch.
 
+- **Overnight mode (2026-07-24).**
+  The live process is now restart-safe for an external supervisor. The game
+  loop runs a configurable stall watchdog (`stall_watchdog_seconds`, default
+  120). It is armed only while the local client owes progress: either the
+  current turn belongs to our seat, or a local `PendingDecision` remains
+  unresolved (including opponent-turn attacks and the pre-game start
+  handshake). Ordinary opponent-turn silence does not arm it. A timeout
+  captures a screenshot and DOM snapshot and writes `stall.json` in the game
+  archive with the frame index, last game-relevant event timestamp, elapsed
+  silence, tracker summary, and pending-question detail.
+
+  Server message 14 now emits a result-bearing `GameResult` end event instead
+  of a bare `GameEnd`. Client bundle 2.2.8 defines its layout as:
+
+  ```
+  GameFinished =
+    TableDetails
+    GameResult {
+      tableId: long
+      gameId: long
+      ratingType: optional enum
+      emptyPiles: CardName[]
+      playerResults: PlayerResult[]
+      autoContinue: boolean
+    }
+    continueAllowed: boolean
+    matchCompleted: boolean
+
+  PlayerResult =
+    playerId: int
+    rank: int
+    score: Score { totalPoints: int, usedTurns: int, parts: ScorePart[] }
+    cardNames: CardFrequency[]
+    resignIndex: int
+    resignationType: optional enum
+  ```
+
+  The parser consumes the result tail exactly, maps player IDs back to seat
+  order, and reports per-seat VP, placings, the unique winning seat, or a tie.
+  Rank is authoritative: archive
+  `exports/arena/20260724T220259.308785Z/` decodes games as:
+
+  - 181364095: seats 0–1 scored 33–44, ranks 2–1 (our win).
+  - 181364271: 25–39, ranks 2–1 (our loss).
+  - 181364518: 27–28, ranks 2–1 (our loss).
+  - 181364739: 3–3, ranks 2–1 (our win by the server result).
+  - 181364786: 3–3, ranks 1–2 (our loss by the server result).
+
+  All five VP tuples match the final per-seat `points` counters in the feed.
+  Archive `exports/arena/20260724T214053.394532Z/` additionally decodes
+  completed game 181363348 as 45–30, ranks 1–2 (our seat 1 lost); its following
+  game 181363699 was the documented actuation abort and is not added to the
+  completed-game ledger. If a future message-14 payload is unfamiliar, the
+  parser logs an error, emits an unknown result while preserving the end
+  marker, and never lets ledger bookkeeping crash the session.
+
+  Each completed game's `result.json` includes our seat, opponent, outcome
+  (`win`, `loss`, `tie`, or `unknown`), scores, placings, winning seat, and tie
+  flag. Completion also appends one compact JSON object to the cross-session
+  `exports/arena/record.jsonl`; the session prints its running W-L-T tally.
+
+  Process exit codes are a supervisor-facing contract:
+
+  | Code | Meaning |
+  | ---: | --- |
+  | 0 | Clean end: configured game cap reached, or Ctrl-C |
+  | 1 | Unexpected crash/startup failure |
+  | 3 | Stall-watchdog abort |
+  | 4 | Tracker, bridge, verification, mapping, or actuation divergence |
+  | 5 | Lobby FSM error/timeout |
+
+  Every non-zero live path first writes one-line `exit.json` in the run
+  directory (`exit_code`, `exit_reason`, `game_id`, and `archive_dir`) and then
+  reaches `ArenaSession.stop()`, which closes the persistent browser context
+  and Playwright before process exit. Divergence and lobby paths no longer
+  wait indefinitely with the profile locked.
+
+  `configs/arena.json` now sets `max_games_per_session` to `0`, retaining the
+  established meaning “unlimited until Ctrl-C.” `scripts/arena_overnight.sh`
+  launches the process under `caffeinate -is`; restart looping remains the
+  responsibility of the outer orchestrator.
+
 - **P6 — Lobby loop + supervisor + deploy.** Unattended base-set sessions
   with archiving and recovery.
 

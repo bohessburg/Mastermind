@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import shutil
 from dataclasses import asdict, dataclass, is_dataclass
 from datetime import datetime, timezone
@@ -10,6 +11,9 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping
 
 from .protocol.events import GameEvent
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -27,13 +31,21 @@ class DecisionRecord:
 
 @dataclass(frozen=True, kw_only=True)
 class ResultSummary:
-    """End-of-game status independent of the site's score payload."""
+    """End-of-game status, including the best-effort decoded standings."""
 
     game_id: int | None
     completed: bool
     divergence_aborted: bool
     decisions: int
     reason: str
+    stall_aborted: bool = False
+    our_seat: int | None = None
+    opponent: str | None = None
+    outcome: str = "unknown"
+    scores: tuple[int, ...] = ()
+    placings: tuple[int, ...] = ()
+    winner_seat: int | None = None
+    tie: bool = False
 
 
 class GameArchive:
@@ -45,6 +57,7 @@ class GameArchive:
         *,
         game_id: int | None,
         source_frames: Path | str | None = None,
+        ledger_path: Path | str | None = None,
     ) -> None:
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
         suffix = "unknown" if game_id is None else str(game_id)
@@ -55,6 +68,9 @@ class GameArchive:
             "w", encoding="utf-8"
         )
         self._source_frames = Path(source_frames) if source_frames is not None else None
+        self._ledger_path = (
+            Path(ledger_path) if ledger_path is not None else None
+        )
         if source_frames is not None:
             shutil.copyfile(source_frames, self.path / "frames.jsonl")
 
@@ -85,6 +101,7 @@ class GameArchive:
         summary: ResultSummary,
         *,
         divergence_report: Mapping[str, object] | None = None,
+        stall_report: Mapping[str, object] | None = None,
     ) -> None:
         self._snapshot_source_frames()
         (self.path / "result.json").write_text(
@@ -101,6 +118,18 @@ class GameArchive:
                 + "\n",
                 encoding="utf-8",
             )
+        if stall_report is not None:
+            (self.path / "stall.json").write_text(
+                json.dumps(
+                    _jsonable(dict(stall_report)),
+                    indent=2,
+                    sort_keys=True,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+        if summary.completed:
+            self._append_ledger(summary)
         self.close()
 
     def close(self) -> None:
@@ -112,6 +141,38 @@ class GameArchive:
         if self._source_frames is None or not self._source_frames.is_file():
             return
         shutil.copyfile(self._source_frames, self.path / "frames.jsonl")
+
+    def _append_ledger(self, summary: ResultSummary) -> None:
+        """Best-effort append; bookkeeping must never abort a played game."""
+        if self._ledger_path is None:
+            return
+        record = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "game_id": summary.game_id,
+            "opponent": summary.opponent,
+            "our_seat": summary.our_seat,
+            "result": summary.outcome,
+            "scores": summary.scores,
+            "run_dir": self.path.parent,
+        }
+        try:
+            self._ledger_path.parent.mkdir(parents=True, exist_ok=True)
+            with self._ledger_path.open("a", encoding="utf-8") as ledger:
+                ledger.write(
+                    json.dumps(
+                        _jsonable(record),
+                        separators=(",", ":"),
+                        sort_keys=True,
+                    )
+                    + "\n"
+                )
+        except Exception as error:
+            LOGGER.error(
+                "could not append arena win/loss ledger %s for game %s: %s",
+                self._ledger_path,
+                summary.game_id,
+                error,
+            )
 
     def __enter__(self) -> GameArchive:
         return self

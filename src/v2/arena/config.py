@@ -18,7 +18,7 @@ class LobbyConfig:
 
     card_pool: str = "base"
     rated: bool = False
-    max_games_per_session: int = 5
+    max_games_per_session: int = 0
     homepage_timeout_seconds: float = 30.0
     searching_timeout_seconds: float = 180.0
     table_waiting_timeout_seconds: float = 30.0
@@ -44,6 +44,7 @@ class ArenaConfig:
     sims: int = 400
     determinizations: int = 2
     wall_clock_cap_seconds: float | None = 30.0
+    stall_watchdog_seconds: float = 120.0
     think_time_min_seconds: float = 1.25
     think_time_max_seconds: float = 2.75
     lobby: LobbyConfig = LobbyConfig()
@@ -87,13 +88,16 @@ class ArenaConfig:
             sims=int(search.get("sims", 400)),
             determinizations=int(search.get("determinizations", 2)),
             wall_clock_cap_seconds=cap,
+            stall_watchdog_seconds=float(
+                raw.get("stall_watchdog_seconds", 120.0)
+            ),
             think_time_min_seconds=float(pacing.get("min_seconds", 1.25)),
             think_time_max_seconds=float(pacing.get("max_seconds", 2.75)),
             lobby=LobbyConfig(
                 card_pool=str(lobby_raw.get("card_pool", "base")),
                 rated=bool(lobby_raw.get("rated", False)),
                 max_games_per_session=int(
-                    lobby_raw.get("max_games_per_session", 5)
+                    lobby_raw.get("max_games_per_session", 0)
                 ),
                 homepage_timeout_seconds=float(
                     lobby_raw.get("homepage_timeout_seconds", 30.0)
@@ -139,6 +143,8 @@ class ArenaConfig:
             and self.wall_clock_cap_seconds <= 0
         ):
             raise ValueError("wall-clock cap must be positive or null")
+        if self.stall_watchdog_seconds <= 0:
+            raise ValueError("stall watchdog must be positive")
         if self.think_time_min_seconds < 0:
             raise ValueError("minimum think time cannot be negative")
         if self.think_time_max_seconds < self.think_time_min_seconds:
