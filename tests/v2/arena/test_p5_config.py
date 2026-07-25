@@ -22,6 +22,7 @@ def test_default_arena_config_loads_credentials_only_from_environment() -> None:
     assert config.arena_pass == "secret"
     assert config.lobby.max_games_per_session == 0
     assert config.stall_watchdog_seconds == 120.0
+    assert config.lobby.homepage_timeout_seconds == 90.0
     assert config.lobby.searching_timeout_seconds == 180.0
     assert config.undo.auto_deny is True
 

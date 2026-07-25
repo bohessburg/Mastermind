@@ -11,6 +11,10 @@ from src.v2.arena.fsm.lobby import (
     GAME_CHAT_SELECTOR,
     IN_GAME_SELECTOR,
     LEAVE_TABLE_SELECTOR,
+    LOADING_GAME_SELECTOR,
+    MODAL_WINDOW_SELECTOR,
+    RECONNECTING_FAILED_SELECTOR,
+    RECONNECTING_SELECTOR,
     START_GAME_SELECTOR,
     START_SEARCH_SELECTOR,
     TABLE_CONTAINER_SELECTOR,
@@ -73,6 +77,13 @@ class _FakePage:
         blank: bool = False,
         end_game_dialog: bool = True,
         unclickable_end_game_dialog: bool = False,
+        clock: _FakeClock | None = None,
+        start_search_at: float = 0.0,
+        start_search_after_reload: bool = False,
+        reconnecting_content: bool = False,
+        reconnecting_failed_content: bool = False,
+        loading_game_content: bool = False,
+        modal_content: bool = False,
     ) -> None:
         self.screen = "blank" if blank else "homepage"
         self.missing_table_start = missing_table_start
@@ -80,14 +91,35 @@ class _FakePage:
         self.game_chat_only = game_chat_only
         self.end_game_dialog = end_game_dialog
         self.unclickable_end_game_dialog = unclickable_end_game_dialog
+        self.clock = clock
+        self.start_search_at = start_search_at
+        self.start_search_after_reload = start_search_after_reload
+        self.reconnecting_content = reconnecting_content
+        self.reconnecting_failed_content = reconnecting_failed_content
+        self.loading_game_content = loading_game_content
+        self.modal_content = modal_content
+        self.reloaded = False
+        self.reloads = 0
         self.clicks: list[str] = []
 
     def locator(self, selector: str) -> _FakeLocator:
         return _FakeLocator(self, selector)
 
     def count(self, selector: str) -> int:
-        if self.screen == "homepage" and selector == START_SEARCH_SELECTOR:
+        if (
+            self.screen == "homepage"
+            and selector == START_SEARCH_SELECTOR
+            and self._start_search_is_rendered()
+        ):
             return 1
+        if selector == RECONNECTING_SELECTOR:
+            return int(self.reconnecting_content)
+        if selector == RECONNECTING_FAILED_SELECTOR:
+            return int(self.reconnecting_failed_content)
+        if selector == LOADING_GAME_SELECTOR:
+            return int(self.loading_game_content)
+        if selector == MODAL_WINDOW_SELECTOR:
+            return int(self.modal_content)
         if (
             self.screen == "table"
             and not self.missing_table_start
@@ -111,6 +143,30 @@ class _FakePage:
             if selector == LEAVE_TABLE_SELECTOR and not self.end_game_dialog:
                 return 1
         return 0
+
+    def text(self, selector: str) -> str:
+        if selector == RECONNECTING_SELECTOR and self.reconnecting_content:
+            return "Reconnecting to game server"
+        if (
+            selector == RECONNECTING_FAILED_SELECTOR
+            and self.reconnecting_failed_content
+        ):
+            return "Could not reconnect"
+        if selector == LOADING_GAME_SELECTOR and self.loading_game_content:
+            return "Loading game"
+        if selector == MODAL_WINDOW_SELECTOR and self.modal_content:
+            return "A lobby modal is open"
+        return ""
+
+    async def reload(self, *, wait_until: str) -> None:
+        assert wait_until == "domcontentloaded"
+        self.reloads += 1
+        self.reloaded = True
+
+    def _start_search_is_rendered(self) -> bool:
+        if self.start_search_after_reload and not self.reloaded:
+            return False
+        return self.clock is None or self.clock() >= self.start_search_at
 
     def click(self, selector: str) -> None:
         self.clicks.append(selector)
@@ -212,12 +268,102 @@ def test_lobby_fsm_rejects_an_unclickable_game_ended_dialog() -> None:
 def test_lobby_fsm_times_out_loudly_without_a_homepage_control() -> None:
     page = _FakePage(blank=True)
     clock = _FakeClock()
-    lobby = LobbyFSM(page, _config(), clock=clock, sleep=clock.sleep)
+    snapshots: list[str] = []
+
+    async def snapshot_dom(label: str) -> None:
+        snapshots.append(label)
+
+    lobby = LobbyFSM(
+        page,
+        _config(),
+        clock=clock,
+        sleep=clock.sleep,
+        snapshot_dom=snapshot_dom,
+    )
 
     with pytest.raises(LobbyError, match=r"\[homepage\].*Start search"):
         asyncio.run(lobby.queue_next_game())
 
     assert page.clicks == []
+    assert page.reloads == 1
+    assert clock.value == 1.0
+    assert snapshots == ["lobby-failure-homepage-start_search-not-found"]
+
+
+def test_lobby_fsm_waits_for_a_slow_cold_start_without_reloading() -> None:
+    clock = _FakeClock()
+    page = _FakePage(clock=clock, start_search_at=40.0)
+    lobby = LobbyFSM(
+        page,
+        _config(homepage_timeout_seconds=90.0),
+        clock=clock,
+        sleep=clock.sleep,
+    )
+
+    asyncio.run(lobby.queue_next_game())
+
+    assert lobby.state is LobbyState.IN_GAME
+    assert page.reloads == 0
+    assert clock.value == 40.0
+
+
+def test_lobby_fsm_reloads_once_when_homepage_renders_only_after_retry() -> None:
+    clock = _FakeClock()
+    page = _FakePage(clock=clock, start_search_after_reload=True)
+    lobby = LobbyFSM(
+        page,
+        _config(homepage_timeout_seconds=10.0),
+        clock=clock,
+        sleep=clock.sleep,
+    )
+
+    asyncio.run(lobby.queue_next_game())
+
+    assert lobby.state is LobbyState.IN_GAME
+    assert page.reloads == 1
+    assert clock.value == 5.0
+
+
+def test_lobby_fsm_does_not_reload_during_an_active_reconnect() -> None:
+    clock = _FakeClock()
+    page = _FakePage(
+        clock=clock,
+        start_search_at=6.0,
+        reconnecting_content=True,
+    )
+    lobby = LobbyFSM(
+        page,
+        _config(homepage_timeout_seconds=10.0),
+        clock=clock,
+        sleep=clock.sleep,
+    )
+
+    asyncio.run(lobby.queue_next_game())
+
+    assert lobby.state is LobbyState.IN_GAME
+    assert page.reloads == 0
+    assert clock.value == 6.0
+
+
+def test_lobby_fsm_reloads_immediately_after_reconnect_failure() -> None:
+    clock = _FakeClock()
+    page = _FakePage(
+        clock=clock,
+        start_search_after_reload=True,
+        reconnecting_failed_content=True,
+    )
+    lobby = LobbyFSM(
+        page,
+        _config(homepage_timeout_seconds=10.0),
+        clock=clock,
+        sleep=clock.sleep,
+    )
+
+    asyncio.run(lobby.queue_next_game())
+
+    assert lobby.state is LobbyState.IN_GAME
+    assert page.reloads == 1
+    assert clock.value == 0.0
 
 
 def test_lobby_fsm_rejects_a_missing_recorded_table_start_control() -> None:

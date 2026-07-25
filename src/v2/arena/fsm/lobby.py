@@ -64,6 +64,21 @@ GAME_CHAT_SELECTOR = 'input[placeholder="message"]'
 TABLE_CONTAINER_SELECTOR = (
     'score-table, score-table-buttons, input[placeholder="message"]'
 )
+# These main-window component tags are always present in the client DOM, even
+# when Angular has rendered only their empty comment shell.  A component is a
+# blocker only when it is visible and has rendered human-visible content.
+MODAL_WINDOW_SELECTOR = "modal-window"
+RECONNECTING_SELECTOR = "reconnecting"
+RECONNECTING_FAILED_SELECTOR = "reconnecting-failed"
+CONNECTING_TO_GAME_SELECTOR = "connecting-to-game"
+LOADING_GAME_SELECTOR = "loading-game"
+
+_HOMEPAGE_TRANSIENT_BLOCKER_SELECTORS = (
+    MODAL_WINDOW_SELECTOR,
+    RECONNECTING_SELECTOR,
+    CONNECTING_TO_GAME_SELECTOR,
+    LOADING_GAME_SELECTOR,
+)
 
 @dataclass(frozen=True, kw_only=True)
 class _ControlSpec:
@@ -274,6 +289,8 @@ class LobbyFSM:
         *,
         state: LobbyState,
     ) -> Any:
+        if state is LobbyState.HOMEPAGE and control is LobbyControl.START_SEARCH:
+            return await self._wait_for_homepage_start_search()
         await self._snapshot_waiting(state)
         deadline = self.clock() + self._timeout_for(state)
         while True:
@@ -286,6 +303,87 @@ class LobbyFSM:
                 )
                 raise self._timeout_error(state, self._control_description(control))
             await self.sleep(self.poll_seconds)
+
+    async def _wait_for_homepage_start_search(self) -> Any:
+        """Wait for the cold-start homepage, with one safe recovery reload.
+
+        The client retains empty ``reconnecting`` and ``loading-game`` custom
+        elements in a healthy DOM.  Their presence alone must never suppress
+        the bounded reload; only visible, rendered content is a blocker.
+        """
+        timeout_seconds = self._timeout_for(LobbyState.HOMEPAGE)
+        started_at = self.clock()
+        retry_at = started_at + timeout_seconds / 2
+        deadline = started_at + timeout_seconds
+        reloaded = False
+
+        while True:
+            locator = await self._control_if_present(LobbyControl.START_SEARCH)
+            if locator is not None:
+                return locator
+
+            reloaded_now = False
+            if (
+                not reloaded
+                and await self._visible_selector_has_content(
+                    RECONNECTING_FAILED_SELECTOR
+                )
+            ):
+                await self._reload_homepage("reconnecting failed")
+                reloaded = True
+                reloaded_now = True
+            elif (
+                not reloaded
+                and self.clock() >= retry_at
+                and not await self._homepage_has_active_blocker()
+            ):
+                await self._reload_homepage(
+                    f"Start search was absent after {timeout_seconds / 2:.1f}s"
+                )
+                reloaded = True
+                reloaded_now = True
+
+            if self.clock() >= deadline:
+                await self._snapshot_failure("homepage-start_search-not-found")
+                raise self._timeout_error(
+                    LobbyState.HOMEPAGE,
+                    self._control_description(LobbyControl.START_SEARCH),
+                )
+            if reloaded_now:
+                continue
+            await self.sleep(self.poll_seconds)
+
+    async def _homepage_has_active_blocker(self) -> bool:
+        """Whether a visible modal or main-window recovery state is active."""
+        for selector in _HOMEPAGE_TRANSIENT_BLOCKER_SELECTORS:
+            if await self._visible_selector_has_content(selector):
+                return True
+        return False
+
+    async def _visible_selector_has_content(self, selector: str) -> bool:
+        """Recognize rendered modal content while ignoring empty Angular shells."""
+        count = await self._selector_count(selector)
+        locator = self.page.locator(selector)
+        for index in range(count):
+            candidate = locator.nth(index)
+            try:
+                if not await candidate.is_visible():
+                    continue
+                if (await candidate.inner_text()).strip():
+                    return True
+            except Exception as error:
+                raise self._error(
+                    f"could not inspect visible content for {selector}: {error}"
+                ) from error
+        return False
+
+    async def _reload_homepage(self, reason: str) -> None:
+        """Reload once without resetting the homepage attempt's deadline."""
+        LOGGER.warning("reloading homepage once: %s", reason)
+        try:
+            await self.page.reload(wait_until="domcontentloaded")
+        except Exception as error:
+            raise self._error(f"could not reload homepage: {error}") from error
 
     async def _wait_for_optional_control(
         self,

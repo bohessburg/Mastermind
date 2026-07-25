@@ -300,6 +300,26 @@ person would, using the site's own client the whole way through.
   second labeled snapshot before raising its `LobbyError`; these use
   `page.content()` only and do not touch the WebSocket/event feed.
 
+- **Homepage cold-start hardening (2026-07-25).**
+  The 20260725T012508.958883Z lobby failure was a logged-in, connected client
+  whose automatch button had not yet rendered, rather than a wrong-page or
+  disconnected state. The HOMEPAGE timeout is now 90 seconds. At its halfway
+  point the FSM performs one reload only if there is no visible modal content
+  and no rendered reconnecting/connecting/loading component; their persistent
+  empty Angular shell tags do not count. A rendered reconnecting/loading state
+  is allowed to recover without a reload, while rendered `reconnecting-failed`
+  triggers that single reload immediately. The original terminal DOM capture
+  and loud `LobbyError` remain intact.
+
+  The reload retains WebSocket capture without a session change: the
+  `__arenaFrame` exposed function belongs to the persistent browser context,
+  and the context-level `add_init_script` reruns `ws_hook.js` in the new
+  document before its page scripts create sockets. Its callbacks therefore
+  continue to append to the same `frames.jsonl` mirror and frame queue. P0's
+  recorder uses that same context-level hook/binding arrangement and tracks
+  navigation on its existing page; the streaming parser treats the new socket
+  `open` as a reconnect/session reset while preserving parser state.
+
 - **Automatch start-handshake fix (2026-07-24).**
   The stalled game 181367084 archive shows `GameStart`, then local
   `question-411` (`CHOOSE_MODE`, exactly one `card-mode-*`, exactly one

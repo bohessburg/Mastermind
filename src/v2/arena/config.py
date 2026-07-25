@@ -19,7 +19,7 @@ class LobbyConfig:
     card_pool: str = "base"
     rated: bool = False
     max_games_per_session: int = 0
-    homepage_timeout_seconds: float = 30.0
+    homepage_timeout_seconds: float = 90.0
     searching_timeout_seconds: float = 180.0
     table_waiting_timeout_seconds: float = 30.0
     in_game_timeout_seconds: float = 3600.0
@@ -100,7 +100,7 @@ class ArenaConfig:
                     lobby_raw.get("max_games_per_session", 0)
                 ),
                 homepage_timeout_seconds=float(
-                    lobby_raw.get("homepage_timeout_seconds", 30.0)
+                    lobby_raw.get("homepage_timeout_seconds", 90.0)
                 ),
                 searching_timeout_seconds=float(
                     lobby_raw.get("searching_timeout_seconds", 180.0)
