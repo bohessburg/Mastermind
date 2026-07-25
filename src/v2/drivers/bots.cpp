@@ -34,10 +34,11 @@ struct BotController {
     HeuristicBot heuristic{};
     EngineBot engine{};
     EngineBotV3 engine_v3{};
+    ThinnerBot thinner{};
     std::optional<MctsBot> mcts{};
 
     explicit BotController(BotSpec spec) noexcept
-        : kind(spec.kind), random(spec.seed), big_money(), heuristic(), engine(), engine_v3(), mcts() {
+        : kind(spec.kind), random(spec.seed), big_money(), heuristic(), engine(), engine_v3(), thinner(), mcts() {
         if (kind == BotKind::Mcts) {
             MctsConfig config = spec.mcts_config;
             config.rollout_seed ^= (spec.seed * 0x9E37'79B9'7F4A'7C15ULL);
@@ -62,6 +63,8 @@ struct BotController {
             return engine.choose_action(state, legal, legal_count);
         case BotKind::EngineV3:
             return engine_v3.choose_action(state, legal, legal_count);
+        case BotKind::Thinner:
+            return thinner.choose_action(state, legal, legal_count);
         case BotKind::BigMoney:
         default:
             return big_money.choose_action(state, legal, legal_count);

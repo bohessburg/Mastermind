@@ -66,12 +66,15 @@ def load_policy(
         selfplay_config = config.get("selfplay")
         if isinstance(selfplay_config, dict) and "obs_version" in selfplay_config:
             checkpoint_obs_version = int(selfplay_config["obs_version"])
-            if checkpoint_obs_version not in (1, 2):
-                raise ValueError("checkpoint selfplay obs_version must be 1 or 2")
+            if checkpoint_obs_version not in (1, 2, 3):
+                raise ValueError("checkpoint selfplay obs_version must be 1, 2, or 3")
         elif arch == "card_transformer":
-            # A CardTokenNet is structurally v2 even if a hand-written
-            # checkpoint omitted the self-play metadata.
-            checkpoint_obs_version = 2
+            # Pre-v3 CardTokenNet checkpoints omitted layout metadata and are
+            # structurally v2. New checkpoints record their tokenizer layout.
+            configured_version = model_config.get("obs_version", 2)
+            checkpoint_obs_version = 2 if configured_version is None else int(configured_version)
+            if checkpoint_obs_version not in (2, 3):
+                raise ValueError("card_transformer model obs_version must be 2 or 3")
         else:
             model_state = checkpoint["model"]
             if not isinstance(model_state, dict):
@@ -92,18 +95,20 @@ def load_policy(
                 checkpoint_obs_version = 1
             elif input_width == int(dz.OBS_SIZE_V2):
                 checkpoint_obs_version = 2
+            elif input_width == int(dz.OBS_SIZE_V3):
+                checkpoint_obs_version = 3
             else:
                 raise ValueError("checkpoint model input size is not a supported observation layout")
 
         if obs_version is not None:
-            if obs_version not in (1, 2):
-                raise ValueError("obs_version must be 1 or 2")
+            if obs_version not in (1, 2, 3):
+                raise ValueError("obs_version must be 1, 2, or 3")
             if obs_version != checkpoint_obs_version:
                 raise ValueError("checkpoint observation layout does not match requested obs_version")
         else:
             obs_version = checkpoint_obs_version
 
-        obs_size = int(dz.OBS_SIZE_V1 if obs_version == 1 else dz.OBS_SIZE_V2)
+        obs_size = int(dz.obs_size_for(obs_version))
         model = build_model(model_config, obs_size, int(dz.ACTION_SPACE_SIZE))
         model.load_state_dict(checkpoint["model"])
         model.to(device)

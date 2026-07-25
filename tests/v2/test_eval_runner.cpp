@@ -138,6 +138,23 @@ TEST_CASE("v2 eval runner uses the selected observation-version stride", "[v2][e
     provide_zero_eval(runner, count);
 }
 
+TEST_CASE("v2 eval runner accepts the v3 observation stride", "[v2][eval_runner][encode]") {
+    EvalRunnerConfig config = fixed_eval_config(2U, 4U, 4U, 0xE0A1'0102ULL);
+    config.obs_version = ObsVersion::V3;
+    EvalRunner runner(config);
+
+    const std::uint32_t count = runner.collect_leaves(config.max_batch);
+    REQUIRE(count > 0U);
+    REQUIRE(runner.observation_size() == OBS_SIZE_V3);
+    const float* observations = runner.leaf_observations();
+    for (std::uint32_t index = 0; index < count; ++index) {
+        const float* observation = observations + (static_cast<std::size_t>(index) * OBS_SIZE_V3);
+        CHECK(observation[OBS_V2_META_OFFSET] == static_cast<float>(ObsVersion::V3));
+        CHECK(observation[OBS_V2_META_OFFSET + 1U] == static_cast<float>(OBS_SIZE_V3));
+    }
+    provide_zero_eval(runner, count);
+}
+
 TEST_CASE("v2 eval scripted BigMoney policy follows known phase choices", "[v2][eval_runner]") {
     GameState state = Game::new_game(Setup{}, 0xE0A1'0002ULL);
     Xoshiro256pp rng = Xoshiro256pp::seeded(0xE0A1'0002ULL);
@@ -210,6 +227,17 @@ TEST_CASE("v2 Scaffold MCTS config matches the rollout yardstick", "[v2][eval_ru
 TEST_CASE("v2 eval runner mock evaluator completes games", "[v2][eval_runner]") {
     EvalRunner runner(fixed_eval_config(2U, 8U, 8U, 0xE0A1'0003ULL));
     drive_until_games(runner, 8U, 2U);
+
+    const EvalRunnerResult result = runner.result();
+    REQUIRE(result.games >= 2U);
+    REQUIRE(result.games == result.nn_wins + result.scripted_wins + result.ties);
+}
+
+TEST_CASE("v2 eval runner completes games against Thinner", "[v2][eval_runner][thinner]") {
+    EvalRunnerConfig config = fixed_eval_config(2U, 8U, 8U, 0x7A1E'0001ULL);
+    config.opponent = EvalScriptedBotKind::Thinner;
+    EvalRunner runner(config);
+    drive_until_games(runner, config.max_batch, 2U);
 
     const EvalRunnerResult result = runner.result();
     REQUIRE(result.games >= 2U);

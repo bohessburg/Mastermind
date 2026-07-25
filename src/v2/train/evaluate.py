@@ -81,10 +81,13 @@ def load_model(checkpoint: str | Path, device: torch.device) -> tuple[torch.nn.M
     payload = load_full_checkpoint(checkpoint, device)
     cfg = _load_checkpoint_config(payload)
     # Legacy MLP checkpoints infer their layout from the first-layer width.
-    # CardTokenNet has no observation-wide first layer and is intrinsically v2.
+    # CardTokenNet records its v2/v3 tokenizer layout in model metadata; old
+    # transformer checkpoints omitted that field and are v2 by definition.
     if cfg.model.arch == "card_transformer":
-        if int(cfg.selfplay.obs_version) != 2:
-            raise ValueError("card_transformer checkpoints require selfplay.obs_version == 2")
+        model_obs_version = 2 if cfg.model.obs_version is None else int(cfg.model.obs_version)
+        if int(cfg.selfplay.obs_version) != model_obs_version or model_obs_version not in (2, 3):
+            raise ValueError("card_transformer checkpoint model.obs_version must match selfplay.obs_version (2 or 3)")
+        cfg.model.obs_version = model_obs_version
     else:
         cfg.selfplay.obs_version = obs_version_for_checkpoint(payload)
     model = build_model(
@@ -114,6 +117,8 @@ def _opponent_kind(name: str):
         return dz.EvalScriptedBotKind.EngineV2
     if normalized == "engine3":
         return dz.EvalScriptedBotKind.EngineV3
+    if normalized == "thinner":
+        return dz.EvalScriptedBotKind.Thinner
     if normalized == "bigmoney":
         return dz.EvalScriptedBotKind.BigMoney
     if normalized == "heuristic":
@@ -355,7 +360,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--opponent",
         default="engine",
-        choices=["engine", "engine2", "engine3", "bigmoney", "heuristic", "random", "mcts"],
+        choices=["engine", "engine2", "engine3", "thinner", "bigmoney", "heuristic", "random", "mcts"],
     )
     parser.add_argument("--games", type=int, default=200)
     parser.add_argument("--sims", type=int, default=400)

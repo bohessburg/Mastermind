@@ -341,6 +341,38 @@ void finish_active_op(GameState& state, EffectFrame& frame) noexcept {
     return lhs < rhs ? lhs : rhs;
 }
 
+[[nodiscard]] SelectSemantic select_semantic_for_then(Then then_kind) noexcept {
+    switch (then_kind) {
+    case Then::Keep:
+        return SelectSemantic::Keep;
+    case Then::Discard:
+        return SelectSemantic::Discard;
+    case Then::Trash:
+        return SelectSemantic::Trash;
+    case Then::Topdeck:
+        return SelectSemantic::Topdeck;
+    case Then::Exile:
+    case Then::Reveal:
+    case Then::SetAside:
+    case Then::PutInHand:
+    case Then::Play:
+        return SelectSemantic::Other;
+    }
+    return SelectSemantic::Other;
+}
+
+[[nodiscard]] SelectSemantic select_semantic_for_choice(
+    const Instr& instr,
+    DecisionKind kind) noexcept {
+    if (kind == DecisionKind::ChooseGain) {
+        return SelectSemantic::Gain;
+    }
+    if (kind == DecisionKind::Choose) {
+        return select_semantic_for_then(static_cast<Then>(instr.arg));
+    }
+    return SelectSemantic::Other;
+}
+
 [[nodiscard]] bool suspend_choice(GameState& state, EffectFrame& frame, const Instr& instr, DecisionKind kind) noexcept {
     (void)begin_active_op(frame);
     const Filter& filter = filter_def(instr.a);
@@ -358,6 +390,7 @@ void finish_active_op(GameState& state, EffectFrame& frame) noexcept {
         frame.source,
         min_left,
         max_left,
+        static_cast<std::uint8_t>(select_semantic_for_choice(instr, kind)),
     };
     return true;
 }
@@ -370,6 +403,7 @@ void suspend_option(GameState& state, EffectFrame& frame, const Instr& instr, De
         frame.source,
         1,
         instr.a,
+        static_cast<std::uint8_t>(SelectSemantic::None),
     };
 }
 
@@ -384,6 +418,7 @@ void suspend_order(GameState& state, EffectFrame& frame, const Instr& instr) noe
         frame.source,
         static_cast<std::uint8_t>(remaining == 0U ? 0U : 1U),
         remaining,
+        static_cast<std::uint8_t>(SelectSemantic::None),
     };
 }
 
@@ -590,6 +625,7 @@ void execute_multiplied_instr(GameState& state, EffectFrame& frame, const Instr&
                 frame.source,
                 0,
                 1,
+                static_cast<std::uint8_t>(SelectSemantic::None),
             };
             return true;
         }
@@ -639,6 +675,7 @@ void execute_multiplied_instr(GameState& state, EffectFrame& frame, const Instr&
         frame.source,
         keep_count,
         keep_count,
+        static_cast<std::uint8_t>(SelectSemantic::Keep),
     };
     return true;
 }
@@ -715,6 +752,7 @@ void gain_curse(GameState& state, EffectFrame& frame, const Instr& instr) noexce
         frame.source,
         picks,
         picks,
+        static_cast<std::uint8_t>(SelectSemantic::Discard),
     };
     return true;
 }
@@ -930,6 +968,7 @@ void resolve_bandit_revealed(GameState& state, EffectFrame& frame, Slot trash_sl
         frame.source,
         1,
         1,
+        static_cast<std::uint8_t>(SelectSemantic::Trash),
     };
     return true;
 }
@@ -1213,6 +1252,7 @@ RunResult interp_run(GameState& state) noexcept {
                 frame.source,
                 1,
                 count,
+                static_cast<std::uint8_t>(SelectSemantic::None),
             };
             return RunResult::NeedDecision;
         }

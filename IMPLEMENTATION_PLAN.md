@@ -638,6 +638,44 @@ EngineBot v3 (~56-62% at 400 sims) and took the first game off a human.
 Full history in `docs/training-log.md`; resume state and next scoped moves
 in `docs/session-handoff.md`.
 
+### Phase T2 — Campaign roadmap c18–c21 (decided 2026-07-25)
+
+Premise (from the human-games analysis, `docs/human-games-analysis.md`):
+gen_0045 is a big-money bot that loses to thin engines; the failure is
+plan-level exploration, not value accuracy. c17 is ABANDONED (its verdict no
+longer matters). Standing policy from here: **no scripted opponents in the
+training pool** — scripts are demoted to instruments (sentinels/eval probes)
+only; c16 proved scripted pressure is inert as curriculum, and any script
+caps the ecology at its author's understanding. Diversity is injected into
+self-play instead. One lever per campaign; levers accumulate.
+
+| Campaign | Lever | Notes |
+|---|---|---|
+| c18 | **Forced-opening / archetype-seeded self-play**, on obs-v3 | Both seats neural. Force/bias the first N turns' buys from diverse archetype templates (Chapel-thin, Village/Smithy/Lab, trasher-first, money control), then release the net; anneal forcing over the campaign. Rides on obs-v3, which requires from-scratch anyway. obs-v3 scope: (a) global trash section + tokenizer trash features; (b) **decision-semantics encoding** — select-semantic one-hot on the decision block (keep/discard/trash/topdeck/gain, from the DSL `Then::` payload + `DiscardDownTo`=keep) plus tokenizer-side embedding of the decision-source card, fixing the probe-confirmed Militia keep-inversion (policy points at junk on all `Choose` frames; see human-games-analysis). Pool: self-play + ancestor league of past *neural* checkpoints only. |
+| c19 | **Network scale-up ~4x**: d192/3L/4H (1.5M) → d320/5L/8H (~6M) | Matches the measured 3-5x compiled-inference headroom (368-439K evals/s vs pipeline demand). From-scratch (widths change). Launch gate = c15 gate-2 protocol on-box: compiled+bf16 bench, accept if self-play games/hr ≥ ~70% of c18's. Stretch d384/6L (~10.6M, ~7x) only if the gate clears with margin. |
+| c20 | **Extended high-temperature sampling window** | Dominion's "opening" is every buy decision all game; the early-move temperature cutoff is mis-transplanted from Go/chess. Keep τ=1 sampling on buy decisions much deeper (schedule TBD at launch). Warm-starts from c19. |
+| c21+ | **Neural exploiter league** (AlphaStar-style) | Exploiter agents trained specifically to beat the current main agent, seeded from diverse forced-opening starts, feeding the main agent's opponent pool. Removes the scripted ceiling permanently. Largest infra lift; hold until c18-c20 reads are in. |
+
+Instruments for every campaign: engine3 sentinel (money-mirror strength,
+near-saturated), the "thinner" scripted sentinel (EVAL ONLY; Chapel-engine
+exploiter profile), and the 113-competitive-human-game record set as a
+"does it punish money" regression probe. Calibration caveat (2026-07-25):
+c15 gen_0045 beats thinner 73-74% @400 sims across two builds (Chapel-money
+and Chapel-engine variants), and thinner scores WORSE on Chapel boards than
+its own average in scripted duels — script-quality piloting makes thinning
+a net liability, so the scripted sentinel is a weak lower bound on the
+thin-engine threat, not a faithful proxy for the humans who beat the bot
+83% with the same archetype. Treat its reads as directional only; the
+human-record probe and post-campaign arena runs are the true thin-engine
+instruments until the c21 neural exploiters exist (which are the principled
+fix for exactly this piloting gap). c18 mid-campaign health check: fraction of replay-buffer
+games containing ≥3 trashes, and unforced trasher/village buy rates —
+if these aren't moving by ~gen 15, the forcing schedule is wrong. Also
+re-run the Militia keep-probe (headless rebuilt hands, `militia_probe.py`
+pattern) against c18 checkpoints: the keep-inversion should disappear
+once select semantics are encoded; Militia/Bureaucrat kingdom win rates
+are the arena-side confirmation.
+
 ### Phase 7 — Durations & mats (Seaside/Adventures core mechanics)
 
 | # | Task | Size |

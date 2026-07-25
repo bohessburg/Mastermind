@@ -44,6 +44,12 @@ namespace {
     return out;
 }
 
+[[nodiscard]] std::array<float, OBS_SIZE_V3> encoded_v3(const GameState& state, PlayerId player) noexcept {
+    std::array<float, OBS_SIZE_V3> out{};
+    encode_v3(state, player, out.data());
+    return out;
+}
+
 void clear_player_cards(GameState& state, PlayerId player_id) {
     PlayerState& player = state.players[player_id];
     for (std::uint8_t slot = 0; slot < MAX_SLOTS; ++slot) {
@@ -133,10 +139,87 @@ TEST_CASE("v2 encoder exposes version and expected shape", "[v2][encode]") {
     CHECK(OBS_SIZE == OBS_SIZE_V1);
     CHECK(OBS_SIZE_V1 == 1141U);
     CHECK(OBS_SIZE_V2 == 1717U);
+    CHECK(OBS_SIZE_V3 == 1788U);
     CHECK(obs_size_for(ObsVersion::V1) == OBS_SIZE_V1);
     CHECK(obs_size_for(ObsVersion::V2) == OBS_SIZE_V2);
+    CHECK(obs_size_for(ObsVersion::V3) == OBS_SIZE_V3);
     CHECK(obs_v2[OBS_V2_META_OFFSET] == static_cast<float>(ObsVersion::V2));
     CHECK(obs_v2[OBS_V2_META_OFFSET + 1U] == static_cast<float>(OBS_SIZE_V2));
+}
+
+TEST_CASE("v3 encoder appends trash and select semantics without changing the v2 prefix", "[v2][encode]") {
+    Setup setup{};
+    setup.kingdom_count = 1U;
+    setup.kingdom[0] = DEF_CHAPEL;
+    GameState state = Game::new_game(setup, 0xE4C0'5001ULL);
+    advance_to_player_one_buy(state);
+    state.phase = static_cast<std::uint8_t>(Phase::Action);
+    state.actions = 1U;
+    state.buys = 1U;
+    state.coins = 0;
+    refresh_current_decision(state);
+    clear_player_cards(state, 1U);
+
+    const Slot gold = slot_of(state, DEF_GOLD);
+    const Slot chapel = slot_of(state, DEF_CHAPEL);
+    REQUIRE(gold != NONE);
+    REQUIRE(chapel != NONE);
+    state.players[1].hand[gold] = 1U;
+    state.players[1].hand[chapel] = 1U;
+
+    REQUIRE(Game::step(state, play_action(DEF_CHAPEL)) == false);
+    REQUIRE(state.decision.kind == static_cast<std::uint8_t>(DecisionKind::Choose));
+    REQUIRE(state.decision.select_semantic == static_cast<std::uint8_t>(SelectSemantic::Trash));
+
+    const auto v2 = encoded_v2(state, 0U);
+    const auto v3 = encoded_v3(state, 0U);
+    std::array<float, OBS_SIZE_V3> dispatched{};
+    encode(state, 0U, dispatched.data(), ObsVersion::V3);
+
+    CHECK(v3[OBS_V2_META_OFFSET] == static_cast<float>(ObsVersion::V3));
+    CHECK(v3[OBS_V2_META_OFFSET + 1U] == static_cast<float>(OBS_SIZE_V3));
+    CHECK(std::memcmp(v2.data() + 2U, v3.data() + 2U, (OBS_SIZE_V2 - 2U) * sizeof(float)) == 0);
+    CHECK(std::memcmp(v3.data(), dispatched.data(), sizeof(v3)) == 0);
+    for (std::uint8_t semantic = 0; semantic < OBS_SELECT_SEMANTIC_COUNT; ++semantic) {
+        CHECK(v3[OBS_V3_SELECT_SEMANTIC_OFFSET + semantic]
+              == (semantic == static_cast<std::uint8_t>(SelectSemantic::Trash) ? 1.0F : 0.0F));
+    }
+
+    REQUIRE(Game::step(state, select_action(DEF_GOLD)) == false);
+    REQUIRE(state.trash[gold] == 1U);
+    const auto after_trash = encoded_v3(state, 0U);
+    for (std::uint8_t slot = 0; slot < MAX_SLOTS; ++slot) {
+        CHECK(after_trash[OBS_V3_TRASH_OFFSET + slot] == static_cast<float>(state.trash[slot]));
+    }
+
+    Setup militia_setup{};
+    militia_setup.kingdom_count = 1U;
+    militia_setup.kingdom[0] = DEF_MILITIA;
+    GameState militia = Game::new_game(militia_setup, 0xE4C0'5002ULL);
+    advance_to_player_one_buy(militia);
+    militia.phase = static_cast<std::uint8_t>(Phase::Action);
+    militia.actions = 1U;
+    militia.buys = 1U;
+    militia.coins = 0;
+    refresh_current_decision(militia);
+    clear_player_cards(militia, 0U);
+    clear_player_cards(militia, 1U);
+
+    const Slot copper = slot_of(militia, DEF_COPPER);
+    const Slot militia_slot = slot_of(militia, DEF_MILITIA);
+    REQUIRE(copper != NONE);
+    REQUIRE(militia_slot != NONE);
+    militia.players[0].hand[copper] = 5U;
+    militia.players[1].hand[militia_slot] = 1U;
+
+    REQUIRE(Game::step(militia, play_action(DEF_MILITIA)) == false);
+    REQUIRE(militia.decision.kind == static_cast<std::uint8_t>(DecisionKind::Choose));
+    REQUIRE(militia.decision.select_semantic == static_cast<std::uint8_t>(SelectSemantic::Keep));
+    const auto militia_v3 = encoded_v3(militia, 0U);
+    for (std::uint8_t semantic = 0; semantic < OBS_SELECT_SEMANTIC_COUNT; ++semantic) {
+        CHECK(militia_v3[OBS_V3_SELECT_SEMANTIC_OFFSET + semantic]
+              == (semantic == static_cast<std::uint8_t>(SelectSemantic::Keep) ? 1.0F : 0.0F));
+    }
 }
 
 TEST_CASE("v2 encoder v1 dispatch is byte-identical to the retained v1 implementation", "[v2][encode]") {

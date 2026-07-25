@@ -178,6 +178,9 @@ void add_default_kingdom(Setup& setup) noexcept {
     if (name == "engine3") {
         return BotKind::EngineV3;
     }
+    if (name == "thinner") {
+        return BotKind::Thinner;
+    }
     return BotKind::BigMoney;
 }
 
@@ -188,6 +191,7 @@ void add_default_kingdom(Setup& setup) noexcept {
     HeuristicBot& heuristic,
     EngineBot& engine,
     EngineBotV3& engine_v3,
+    ThinnerBot& thinner,
     const GameState& state,
     const ActionMask& legal,
     int legal_count) noexcept {
@@ -200,6 +204,8 @@ void add_default_kingdom(Setup& setup) noexcept {
         return engine.choose_action(state, legal, legal_count);
     case BotKind::EngineV3:
         return engine_v3.choose_action(state, legal, legal_count);
+    case BotKind::Thinner:
+        return thinner.choose_action(state, legal, legal_count);
     case BotKind::BigMoney:
     default:
         return big_money.choose_action(state, legal, legal_count);
@@ -266,6 +272,7 @@ int main(int argc, char** argv) {
     HeuristicBot heuristic{};
     EngineBot engine{};
     EngineBotV3 engine_v3{};
+    ThinnerBot thinner{};
 
     constexpr PlayerId kHuman = 0;
     bool done = state.phase == static_cast<std::uint8_t>(Phase::Over);
@@ -286,6 +293,7 @@ int main(int argc, char** argv) {
                 heuristic,
                 engine,
                 engine_v3,
+                thinner,
                 state,
                 legal,
                 legal_count);

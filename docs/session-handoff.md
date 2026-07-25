@@ -45,20 +45,22 @@ is a c18+ lever.
   flat 48.5-51.5 through gen 15, interrupted ~gen 20 by the box lapse just
   as the replay buffer converted to majority-new-target data.
 
-## Next moves (scoped at phase close)
+## Next moves (re-scoped 2026-07-25 after the human-games analysis)
 
-1. **On next provision:** finish c17's verdict. Resume from
-   `checkpoints/remote/campaign17/gen_0015.pt` (`configs/run_c17.json`;
-   `--config` + `--resume`, pop `init_weights`), run to gen 30-35, read the
-   engine3 sentinel. Cheap and decisive.
-2. **c18 levers if c17 stays flat:** obs-v3 backlog (trash composition —
-   currently unencoded anywhere, principled log1p pass, property-informed
-   embeddings), policy distillation (close the sims=1 gap), the
-   value-discrimination-at-depth research problem (deep-slice stays parked;
-   gate = 1600 ≥ 400), network scale-up (throughput has ~4-5x headroom from
-   compiled bucketed inference).
-3. **Anytime:** human-record games vs gen_0045 — the only benchmark that has
-   never saturated.
+**c17 is ABANDONED** (Jack's call, 2026-07-25): the human-games analysis
+(`docs/human-games-analysis.md`) showed the binding constraint is plan-level
+exploration / archetype monoculture, not value calibration — do not resume it.
+
+The campaign roadmap c18–c21 is now specced in `IMPLEMENTATION_PLAN.md`
+(Phase T2): c18 = forced-opening self-play on obs-v3 (global trash encoding,
+in implementation via Codex as of 2026-07-25), c19 = ~4x network scale-up
+(d320/5L/8H), c20 = extended high-temperature sampling window, c21+ = neural
+exploiter league. Standing policy: no scripted opponents in the training
+pool ever again — scripts are sentinels/eval instruments only.
+
+Still true anytime: human-record games vs the flagship — the only benchmark
+that has never saturated. Arena harness Militia discard bug is the top
+pre-arena fix (25 of 64 arena losses; see human-games-analysis Finding 0).
 
 ## Local artifacts (all verified via torch.load)
 

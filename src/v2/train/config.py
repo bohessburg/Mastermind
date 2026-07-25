@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +25,9 @@ class ModelConfig:
     n_heads: int = 4
     ffn_multiplier: int = 4
     dropout: float = 0.0
+    # CardTokenNet v2 checkpoints omitted this because its layout was
+    # implicit. New transformer checkpoints record it so v3 is unambiguous.
+    obs_version: int | None = None
 
 
 @dataclass
@@ -76,6 +79,19 @@ class SelfPlayConfig:
     tree_reuse: bool = False
     min_new_sims: int = 64
     expand_top_k: int = 0
+    # c18 opening-template curriculum. The train loop turns the schedule
+    # fields below into the native per-generation lambda/weights values.
+    opening_templates_enabled: bool = False
+    opening_lambda: float = 0.6
+    opening_turn_window: int = 8
+    template_weights: list[float] = field(
+        default_factory=lambda: [0.3, *(0.7 / 6.0 for _ in range(6))]
+    )
+    opening_lambda_initial: float = 0.6
+    opening_lambda_final: float = 0.0
+    opening_anneal_gens: int = 100
+    opening_p_unconstrained_initial: float = 0.3
+    opening_p_unconstrained_final: float = 1.0
 
 
 @dataclass
@@ -249,6 +265,104 @@ def validate_c_puct_config(config: SelfPlayConfig) -> None:
             raise ValueError(f"{field_name} must be finite and positive")
 
 
+def _opening_unit_interval(value: object, name: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{name} must be a finite number between zero and one")
+    normalized = float(value)
+    if not math.isfinite(normalized) or not 0.0 <= normalized <= 1.0:
+        raise ValueError(f"{name} must be a finite number between zero and one")
+    return normalized
+
+
+def validate_opening_template_config(config: SelfPlayConfig) -> None:
+    """Validate native opening fields plus the c18 annealing schedule."""
+    if not isinstance(config.opening_templates_enabled, bool):
+        raise ValueError("opening_templates_enabled must be a boolean")
+    _opening_unit_interval(config.opening_lambda, "opening_lambda")
+    if (
+        not isinstance(config.opening_turn_window, int)
+        or isinstance(config.opening_turn_window, bool)
+        or config.opening_turn_window < 0
+    ):
+        raise ValueError("opening_turn_window must be a non-negative integer")
+    weights = config.template_weights
+    if not isinstance(weights, (list, tuple)) or len(weights) != 7:
+        raise ValueError("template_weights must contain seven non-negative entries")
+    total = 0.0
+    for weight in weights:
+        if isinstance(weight, bool) or not isinstance(weight, (int, float)):
+            raise ValueError("template_weights must contain seven non-negative entries")
+        normalized = float(weight)
+        if not math.isfinite(normalized) or normalized < 0.0:
+            raise ValueError("template_weights must contain seven non-negative entries")
+        total += normalized
+    if not math.isfinite(total) or total <= 0.0:
+        raise ValueError("template_weights must have positive sum")
+    for field_name in (
+        "opening_lambda_initial",
+        "opening_lambda_final",
+        "opening_p_unconstrained_initial",
+        "opening_p_unconstrained_final",
+    ):
+        _opening_unit_interval(getattr(config, field_name), field_name)
+    if (
+        not isinstance(config.opening_anneal_gens, int)
+        or isinstance(config.opening_anneal_gens, bool)
+        or config.opening_anneal_gens < 0
+    ):
+        raise ValueError("opening_anneal_gens must be a non-negative integer")
+
+
+def opening_template_schedule(config: SelfPlayConfig, generation: int) -> tuple[float, float]:
+    """Return (lambda, unconstrained probability) for a generation.
+
+    Generation zero is the initial point. At and after
+    ``opening_anneal_gens`` the result is clamped to the configured final
+    values; a zero-length schedule is immediately final.
+    """
+    validate_opening_template_config(config)
+    if not isinstance(generation, int) or isinstance(generation, bool):
+        raise ValueError("generation must be an integer")
+    duration = int(config.opening_anneal_gens)
+    if duration == 0:
+        progress = 1.0
+    else:
+        progress = min(1.0, max(0.0, float(generation) / float(duration)))
+    opening_lambda = float(config.opening_lambda_initial) + progress * (
+        float(config.opening_lambda_final) - float(config.opening_lambda_initial)
+    )
+    p_unconstrained = float(config.opening_p_unconstrained_initial) + progress * (
+        float(config.opening_p_unconstrained_final)
+        - float(config.opening_p_unconstrained_initial)
+    )
+    return opening_lambda, p_unconstrained
+
+
+def scheduled_opening_selfplay_config(config: SelfPlayConfig, generation: int) -> SelfPlayConfig:
+    """Copy a config with c18's generation-specific native settings applied."""
+    scheduled = replace(config)
+    if not scheduled.opening_templates_enabled:
+        return scheduled
+    opening_lambda, p_unconstrained = opening_template_schedule(scheduled, generation)
+    scheduled.opening_lambda = opening_lambda
+    archetype_weights = [float(weight) for weight in scheduled.template_weights[1:]]
+    archetype_total = sum(archetype_weights)
+    if archetype_total > 0.0:
+        archetype_scale = (1.0 - p_unconstrained) / archetype_total
+        scheduled.template_weights = [
+            p_unconstrained,
+            *(weight * archetype_scale for weight in archetype_weights),
+        ]
+    else:
+        # A zeroed archetype distribution cannot be rescaled. Keep the
+        # schedule usable by distributing its non-unconstrained mass evenly.
+        scheduled.template_weights = [
+            p_unconstrained,
+            *((1.0 - p_unconstrained) / 6.0 for _ in range(6)),
+        ]
+    return scheduled
+
+
 def _merge_dataclass(instance: Any, data: dict[str, Any]) -> Any:
     for key, value in data.items():
         if key.startswith("_comment"):
@@ -298,6 +412,7 @@ def load_config(path: str | Path | None) -> TrainConfig:
     validate_value_target_config(cfg.selfplay)
     validate_c_puct_config(cfg.selfplay)
     validate_deep_slice_config(cfg.selfplay)
+    validate_opening_template_config(cfg.selfplay)
     return cfg
 
 

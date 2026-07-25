@@ -4,6 +4,17 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
+import numpy as np
+import torch
+
+
+# Keep these literals local instead of importing the optional native binding:
+# model loading and the pure downgrade helper are also used by checkpoint-only
+# tools.  They mirror ``encode/encoder.h``.
+OBS_SIZE_V1 = 1141
+OBS_SIZE_V2 = 1717
+OBS_SIZE_V3 = 1788
+
 
 def _bindings() -> Any:
     # Keep this import lazy so persistence-only helpers remain usable without
@@ -20,6 +31,83 @@ def obs_size_for_version(version: int) -> int:
 
 def obs_size_for_config(config: Any) -> int:
     return obs_size_for_version(int(config.selfplay.obs_version))
+
+
+def obs_version_for_width(width: int) -> int:
+    """Return the protocol version represented by a fixed observation width."""
+    sizes = {
+        OBS_SIZE_V1: 1,
+        OBS_SIZE_V2: 2,
+        OBS_SIZE_V3: 3,
+    }
+    try:
+        return sizes[int(width)]
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError(f"unsupported observation width {width!r}") from exc
+
+
+def downgrade_v3_observations(observations: np.ndarray | torch.Tensor) -> np.ndarray | torch.Tensor:
+    """Return the exact v2 encoding represented by a batch of v3 observations.
+
+    The v3 encoder appends data after the byte-identical v2 prefix.  Its two
+    metadata scalars identify the enclosing layout, so the output needs one
+    output allocation for the sliced prefix and then only those scalars are
+    rewritten.  The source batch is never mutated.
+    """
+    if isinstance(observations, np.ndarray):
+        if not np.issubdtype(observations.dtype, np.floating):
+            raise TypeError("v3 observations must use a floating NumPy dtype")
+        if observations.ndim < 1 or observations.shape[-1] != OBS_SIZE_V3:
+            raise ValueError(f"v3 observations must end in width {OBS_SIZE_V3}")
+        downgraded = observations[..., :OBS_SIZE_V2].copy()
+        downgraded[..., 0] = 2.0
+        downgraded[..., 1] = float(OBS_SIZE_V2)
+        return downgraded
+    if isinstance(observations, torch.Tensor):
+        if not observations.is_floating_point():
+            raise TypeError("v3 observations must use a floating Torch dtype")
+        if observations.ndim < 1 or observations.shape[-1] != OBS_SIZE_V3:
+            raise ValueError(f"v3 observations must end in width {OBS_SIZE_V3}")
+        downgraded = observations[..., :OBS_SIZE_V2].clone()
+        downgraded[..., 0] = 2.0
+        downgraded[..., 1] = float(OBS_SIZE_V2)
+        return downgraded
+    raise TypeError("v3 observations must be a NumPy array or Torch tensor")
+
+
+def observations_for_model(
+    observations: np.ndarray | torch.Tensor,
+    source_version: int,
+    model_version: int,
+) -> np.ndarray | torch.Tensor:
+    """Adapt a runner batch for one model's known observation protocol.
+
+    There is intentionally one compatibility direction: a v3 runner can
+    serve a v2 league model by exact downgrade.  V1 is not a prefix of v2 and
+    no model receives an implicit upgrade.
+    """
+    source = int(source_version)
+    target = int(model_version)
+    if source == target:
+        return observations
+    if source == 3 and target == 2:
+        return downgrade_v3_observations(observations)
+    raise ValueError(
+        f"cannot serve obs-v{source} observations to an obs-v{target} model; "
+        "only the exact v3-to-v2 downgrade is supported"
+    )
+
+
+def model_observation_version(model: Any, fallback_version: int) -> int:
+    """Read a model's serialized protocol tag, with safe legacy fallbacks."""
+    config = getattr(model, "_dominion_model_config", None)
+    if isinstance(config, Mapping) and config.get("obs_version") is not None:
+        raw_version = config["obs_version"]
+    else:
+        raw_version = getattr(model, "obs_version", fallback_version)
+    if not isinstance(raw_version, int) or isinstance(raw_version, bool) or raw_version not in (1, 2, 3):
+        raise ValueError(f"model has an invalid obs_version {raw_version!r}")
+    return int(raw_version)
 
 
 def obs_version_for_checkpoint(payload: Mapping[str, Any]) -> int:
@@ -53,7 +141,9 @@ def obs_version_for_checkpoint(payload: Mapping[str, Any]) -> int:
         return 1
     if input_size == int(dz.OBS_SIZE_V2):
         return 2
+    if input_size == int(dz.OBS_SIZE_V3):
+        return 3
     raise ValueError(
         f"checkpoint model input size {input_size} is not a supported observation layout "
-        f"({int(dz.OBS_SIZE_V1)} or {int(dz.OBS_SIZE_V2)})"
+        f"({int(dz.OBS_SIZE_V1)}, {int(dz.OBS_SIZE_V2)}, or {int(dz.OBS_SIZE_V3)})"
     )

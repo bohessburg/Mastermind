@@ -8,18 +8,26 @@ import torch
 import dominion_v2_py as dz
 
 from . import evaluate
+from .config import load_config
 from .evaluate import classify_game_end, evaluate_checkpoint
 from .test_train_smoke import read_metrics, tiny_config
 from .train import build_objects, run_training, save_checkpoint, validated_eval_sentinels
 
 
-def test_eval_sentinel_validator_accepts_engine3_and_engine2() -> None:
+def test_eval_sentinel_validator_accepts_engine3_engine2_and_thinner() -> None:
     assert validated_eval_sentinels(
         [
             {"opponent": "engine3", "games": 2},
             {"opponent": "engine2", "games": 1},
+            {"opponent": "thinner", "games": 3},
         ]
-    ) == [("engine3", 2), ("engine2", 1)]
+    ) == [("engine3", 2), ("engine2", 1), ("thinner", 3)]
+
+
+def test_campaign18_config_accepts_the_thinner_sentinel() -> None:
+    config_path = Path(__file__).resolve().parents[3] / "configs" / "run_c18.json"
+    config = load_config(config_path)
+    assert ("thinner", 200) in validated_eval_sentinels(config.eval.eval_sentinels)
 
 
 def test_checkpoint_eval_vs_random_smoke_and_determinism(tmp_path: Path) -> None:
@@ -221,12 +229,13 @@ def test_periodic_eval_emits_sentinel_metric_columns(tmp_path: Path) -> None:
         {"opponent": "bigmoney", "games": 2},
         {"opponent": "engine", "games": 2},
         {"opponent": "engine3", "games": 2},
+        {"opponent": "thinner", "games": 2},
     ]
 
     result = run_training(cfg)
     row = result["metrics"][0]
     csv_row = read_metrics(Path(cfg.metrics_csv))[0]
-    for opponent in ("bigmoney", "engine", "engine3"):
+    for opponent in ("bigmoney", "engine", "engine3", "thinner"):
         assert row[f"sentinel_{opponent}_games"] == 2
         assert 0 <= row[f"sentinel_{opponent}_wins"] <= 2
         assert int(csv_row[f"sentinel_{opponent}_games"]) == 2

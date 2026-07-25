@@ -33,8 +33,19 @@ from .inference_server import (
     serialize_cpu_state_dict,
 )
 from .model import build_model, model_config_dict
-from .observation import obs_size_for_config, obs_size_for_version
-from .selfplay import SelfPlayStats, make_runner_config, route_leaf_evaluations
+from .observation import (
+    model_observation_version,
+    observations_for_model,
+    obs_size_for_config,
+    obs_size_for_version,
+    obs_version_for_width,
+)
+from .selfplay import (
+    SelfPlayStats,
+    make_runner_config,
+    record_opening_template_telemetry,
+    route_leaf_evaluations,
+)
 
 
 PackedGameRecords = tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]
@@ -485,6 +496,7 @@ def _generate_games(
         nonlocal sent
         if not records:
             return
+        record_opening_template_telemetry(stats, records)
         packed = _pack_records(records, obs_size)
         games, positions = int(packed[0].shape[0]), int(packed[0].sum())
         # NumPy buffers keep queue serialization to raw array payloads instead
@@ -598,6 +610,7 @@ def _generate_games_exact(
         if not finished:
             continue
         records = finished[: target_games - sent]
+        record_opening_template_telemetry(stats, records)
         _record_scripted_outcomes(stats, records, scripted_kind)
         packed = _pack_records(records, obs_size)
         games, positions = int(packed[0].shape[0]), int(packed[0].sum())
@@ -693,6 +706,7 @@ def _generate_routed_games(
         if not finished:
             continue
         records = finished[: target_games - sent]
+        record_opening_template_telemetry(stats, records)
         _record_scripted_outcomes(stats, records, scripted_kind)
         _record_league_outcomes(stats, records, league_opponent)
         packed = _pack_records(records, obs_size)
@@ -719,6 +733,7 @@ def _evaluate_manifest_model_groups(
         raise ValueError("leaf model attribution must have one entry per observation")
     logits_out = np.empty((obs.shape[0], dz.ACTION_SPACE_SIZE), dtype=np.float32)
     values_out = np.empty((obs.shape[0],), dtype=np.float32)
+    source_version = obs_version_for_width(int(obs.shape[-1]))
     with torch.no_grad():
         for model_id in np.unique(ids):
             index = int(model_id)
@@ -727,7 +742,12 @@ def _evaluate_manifest_model_groups(
             rows = np.flatnonzero(ids == model_id)
             model = model_table[index]
             model.eval()
-            obs_tensor = torch.as_tensor(obs[rows], dtype=torch.float32, device=device)
+            adapted_obs = observations_for_model(
+                obs[rows],
+                source_version,
+                model_observation_version(model, source_version),
+            )
+            obs_tensor = torch.as_tensor(adapted_obs, dtype=torch.float32, device=device)
             mask_tensor = torch.as_tensor(masks[rows], dtype=torch.bool, device=device)
             logits, values = model.evaluate(obs_tensor, mask_tensor)
             logits_out[rows] = logits.detach().cpu().numpy().astype(np.float32, copy=False)
@@ -740,6 +760,7 @@ def _record_manifest_outcomes(
     records: list[dict[str, Any]],
     slots_by_game_index: dict[int, SelfPlaySlotManifest],
 ) -> None:
+    record_opening_template_telemetry(stats, records)
     scripted: dict[str, list[dict[str, Any]]] = {}
     league: dict[str, list[dict[str, Any]]] = {}
     for record in records:
@@ -895,6 +916,17 @@ def _accumulate_stats(total: SelfPlayStats, update: SelfPlayStats) -> None:
     total.scripted_wins += update.scripted_wins
     total.deep_games += update.deep_games
     total.deep_positions += update.deep_positions
+    total.cards_trashed += update.cards_trashed
+    for index in range(7):
+        total.opening_template_games[index] += update.opening_template_games[index]
+        total.opening_template_vs_unconstrained_games[index] += (
+            update.opening_template_vs_unconstrained_games[index]
+        )
+        total.opening_template_vs_unconstrained_wins[index] += (
+            update.opening_template_vs_unconstrained_wins[index]
+        )
+    for index in range(4):
+        total.unconstrained_buy_counts[index] += update.unconstrained_buy_counts[index]
     for kind, (games, wins) in update.scripted_by_kind.items():
         previous_games, previous_wins = total.scripted_by_kind.get(kind, (0, 0))
         total.scripted_by_kind[kind] = (previous_games + games, previous_wins + wins)
@@ -949,7 +981,42 @@ def _worker_main(
             command = command_queue.get()
             if command[0] == "stop":
                 return
-            _, generation, target_games, state_payload, segments, model_state_payloads = command
+            (
+                _,
+                generation,
+                target_games,
+                state_payload,
+                segments,
+                model_state_payloads,
+                opening_settings,
+            ) = command
+            (
+                opening_enabled,
+                opening_lambda,
+                opening_turn_window,
+                opening_weights,
+            ) = opening_settings
+            normalized_opening_weights = list(opening_weights)
+            previous_opening_settings = (
+                bool(worker_selfplay.opening_templates_enabled),
+                float(worker_selfplay.opening_lambda),
+                int(worker_selfplay.opening_turn_window),
+                list(worker_selfplay.template_weights),
+            )
+            next_opening_settings = (
+                bool(opening_enabled),
+                float(opening_lambda),
+                int(opening_turn_window),
+                normalized_opening_weights,
+            )
+            if previous_opening_settings != next_opening_settings:
+                worker_selfplay.opening_templates_enabled = next_opening_settings[0]
+                worker_selfplay.opening_lambda = next_opening_settings[1]
+                worker_selfplay.opening_turn_window = next_opening_settings[2]
+                worker_selfplay.template_weights = next_opening_settings[3]
+                # A legacy stream owns the native config for its full life;
+                # rebuild only when a generation changes opening forcing.
+                runner = None
             model_table: list[torch.nn.Module] = []
             if model is not None:
                 primary_payload = model_state_payloads[0] if model_state_payloads else state_payload
@@ -961,7 +1028,15 @@ def _worker_main(
                 model_table.append(model)
                 for payload in model_state_payloads[1:]:
                     opponent_state, opponent_config = _unpack_model_state_payload(payload, config.model)
-                    opponent = build_model(opponent_config, obs_size, dz.ACTION_SPACE_SIZE).to(device)
+                    configured_version = opponent_config.get("obs_version")
+                    opponent_version = int(
+                        config.selfplay.obs_version if configured_version is None else configured_version
+                    )
+                    opponent = build_model(
+                        opponent_config,
+                        obs_size_for_version(opponent_version),
+                        dz.ACTION_SPACE_SIZE,
+                    ).to(device)
                     opponent.load_state_dict(deserialize_cpu_state_dict(opponent_state))
                     opponent.eval()
                     model_table.append(opponent)
@@ -1057,6 +1132,11 @@ def _worker_main(
                         league_games,
                         stats.league_by_opponent,
                         route_audit,
+                        stats.opening_template_games,
+                        stats.opening_template_vs_unconstrained_games,
+                        stats.opening_template_vs_unconstrained_wins,
+                        stats.cards_trashed,
+                        stats.unconstrained_buy_counts,
                     ),
                 )
             )
@@ -1102,7 +1182,9 @@ class ParallelSelfPlayPool:
         generation: int,
         segments: list[SelfPlaySegment] | None = None,
         model_state_payloads: list[ModelStatePayload] | None = None,
+        selfplay_config: Any | None = None,
     ) -> ParallelSelfPlayResult:
+        effective_selfplay = self.config.selfplay if selfplay_config is None else selfplay_config
         if self.inference_server is not None:
             self.inference_server.ensure_alive()
             state_payload = None
@@ -1132,8 +1214,22 @@ class ParallelSelfPlayPool:
             model_state_payloads = []
             per_worker_segments = [None] * len(self.quotas)
         for command_queue, quota, worker_segments in zip(self.command_queues, self.quotas, per_worker_segments):
+            opening_settings = (
+                bool(effective_selfplay.opening_templates_enabled),
+                float(effective_selfplay.opening_lambda),
+                int(effective_selfplay.opening_turn_window),
+                list(effective_selfplay.template_weights),
+            )
             command_queue.put(
-                ("generate", generation, quota, state_payload, worker_segments, model_state_payloads)
+                (
+                    "generate",
+                    generation,
+                    quota,
+                    state_payload,
+                    worker_segments,
+                    model_state_payloads,
+                    opening_settings,
+                )
             )
 
         stats = SelfPlayStats()
@@ -1186,6 +1282,11 @@ class ParallelSelfPlayPool:
                 worker_league_games,
                 worker_league_by_opponent,
                 worker_route_audit,
+                worker_opening_template_games,
+                worker_opening_template_vs_unconstrained_games,
+                worker_opening_template_vs_unconstrained_wins,
+                worker_cards_trashed,
+                worker_unconstrained_buy_counts,
             ) = payload
             if received_by_worker[worker_index] != self.quotas[worker_index]:
                 raise RuntimeError("self-play worker completed before delivering its full game quota")
@@ -1206,6 +1307,17 @@ class ParallelSelfPlayPool:
             stats.scripted_wins += worker_scripted_wins
             stats.deep_games += worker_deep_games
             stats.deep_positions += worker_deep_positions
+            stats.cards_trashed += worker_cards_trashed
+            for index in range(7):
+                stats.opening_template_games[index] += int(worker_opening_template_games[index])
+                stats.opening_template_vs_unconstrained_games[index] += int(
+                    worker_opening_template_vs_unconstrained_games[index]
+                )
+                stats.opening_template_vs_unconstrained_wins[index] += int(
+                    worker_opening_template_vs_unconstrained_wins[index]
+                )
+            for index in range(4):
+                stats.unconstrained_buy_counts[index] += int(worker_unconstrained_buy_counts[index])
             for kind, (games, wins) in worker_scripted_by_kind.items():
                 previous_games, previous_wins = stats.scripted_by_kind.get(kind, (0, 0))
                 stats.scripted_by_kind[kind] = (previous_games + games, previous_wins + wins)

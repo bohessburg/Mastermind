@@ -96,7 +96,14 @@ void start_turn(GameState& state, PlayerId player) noexcept {
     state.buys = 1;
     state.coins = 0;
     state.potion_coins = 0;
-    state.decision = PendingDecision{player, static_cast<std::uint8_t>(DecisionKind::PhaseAction), 0, 0, 0};
+    state.decision = PendingDecision{
+        player,
+        static_cast<std::uint8_t>(DecisionKind::PhaseAction),
+        0,
+        0,
+        0,
+        static_cast<std::uint8_t>(SelectSemantic::None),
+    };
 }
 
 void cleanup_current_turn(GameState& state) noexcept {

@@ -20,11 +20,11 @@ KINGDOM = [
 STEP_CAP = 10_000
 
 
-def _play(seed: int) -> list[int]:
+def _play(seed: int, kind: str, enum_kind) -> list[int]:
     game = dz.new_game(dz.Setup(players=2, kingdom=KINGDOM), seed)
     bots = [
-        dz.ScriptedBot("engine3"),
-        dz.ScriptedBot(dz.EvalScriptedBotKind.EngineV3),
+        dz.ScriptedBot(kind),
+        dz.ScriptedBot(enum_kind),
     ]
     actions: list[int] = []
 
@@ -43,14 +43,22 @@ def _play(seed: int) -> list[int]:
 
 
 def test_engine3_completes_deterministically_with_legal_actions() -> None:
-    first = _play(0xE3B07)
-    second = _play(0xE3B07)
+    first = _play(0xE3B07, "engine3", dz.EvalScriptedBotKind.EngineV3)
+    second = _play(0xE3B07, "engine3", dz.EvalScriptedBotKind.EngineV3)
+    assert first
+    assert first == second
+
+
+def test_thinner_completes_deterministically_with_legal_actions() -> None:
+    first = _play(0x7A1E7, "thinner", dz.EvalScriptedBotKind.Thinner)
+    second = _play(0x7A1E7, "thinner", dz.EvalScriptedBotKind.Thinner)
     assert first
     assert first == second
 
 
 def main() -> None:
     test_engine3_completes_deterministically_with_legal_actions()
+    test_thinner_completes_deterministically_with_legal_actions()
     print("test_scripted_bot_binding: PASS")
 
 

@@ -2447,6 +2447,384 @@ struct V3ActionCounts {
     return A_PASS;
 }
 
+[[nodiscard]] bool thinner_kingdom_has(const GameState& state, DefId def) noexcept {
+    for (std::uint8_t i = 0; i < state.num_piles; ++i) {
+        if (pile_top_def(state, state.piles[i]) == def) {
+            return true;
+        }
+    }
+    return false;
+}
+
+[[nodiscard]] bool thinner_supply_near_empty(const GameState& state) noexcept {
+    for (std::uint8_t i = 0; i < state.num_piles; ++i) {
+        if (pile_count(state.piles[i]) <= 2) {
+            return true;
+        }
+    }
+    return false;
+}
+
+[[nodiscard]] bool thinner_has_attack_card(const GameState& state) noexcept {
+    for (std::uint8_t i = 0; i < state.num_piles; ++i) {
+        const DefId def = pile_top_def(state, state.piles[i]);
+        if (def < card_def_count() && (card_def(def).types & TYPE_ATTACK) != 0U) {
+            return true;
+        }
+    }
+    return false;
+}
+
+[[nodiscard]] bool thinner_hand_contains(
+    const GameState& state,
+    PlayerId player,
+    DefId def) noexcept {
+    if (player >= state.num_players) {
+        return false;
+    }
+    for (Slot slot = 0; slot < state.num_slots; ++slot) {
+        if (def_for_slot(state, slot) == def && state.players[player].hand[slot] > 0U) {
+            return true;
+        }
+    }
+    return false;
+}
+
+[[nodiscard]] int thinner_total_treasures(const DeckProfile& profile) noexcept {
+    int total = 0;
+    for (DefId def = 0; def < BASIC_CARD_COUNT; ++def) {
+        if (is_treasure_def(def)) {
+            total += static_cast<int>(profile.counts[def]);
+        }
+    }
+    return total;
+}
+
+[[nodiscard]] bool thinner_trash_eligible(
+    const GameState& state,
+    const DeckProfile& profile,
+    DefId def) noexcept {
+    if (def == DEF_CURSE) {
+        return true;
+    }
+    if (def == DEF_ESTATE) {
+        return supply_count(state, DEF_PROVINCE) > 4;
+    }
+    if (def == DEF_COPPER) {
+        const int silver_and_gold = static_cast<int>(profile.counts[DEF_SILVER])
+            + static_cast<int>(profile.counts[DEF_GOLD]);
+        return thinner_total_treasures(profile) > 3 && silver_and_gold >= 2;
+    }
+    return false;
+}
+
+[[nodiscard]] bool thinner_has_eligible_junk_in_hand(
+    const GameState& state,
+    const DeckProfile& profile,
+    PlayerId player) noexcept {
+    constexpr DefId kJunk[] = {DEF_CURSE, DEF_ESTATE, DEF_COPPER};
+    for (const DefId def : kJunk) {
+        if (thinner_hand_contains(state, player, def)
+            && thinner_trash_eligible(state, profile, def)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+[[nodiscard]] Action thinner_chapel_trash(
+    const GameState& state,
+    const ActionMask& legal,
+    PlayerId player) noexcept {
+    const DeckProfile profile = analyze_deck(state, player);
+    constexpr DefId kJunk[] = {DEF_CURSE, DEF_ESTATE, DEF_COPPER};
+    for (const DefId def : kJunk) {
+        const Action action = select_action(def);
+        if (legal.test(action) && thinner_trash_eligible(state, profile, def)) {
+            return action;
+        }
+    }
+    return legal.test(A_PASS) && state.decision.min_left == 0U
+        ? A_PASS : first_legal(legal);
+}
+
+[[nodiscard]] Action thinner_sentry_option(
+    const GameState& state,
+    const ActionMask& legal) noexcept {
+    const DeckProfile profile = analyze_deck(state, state.decision.player);
+    const DefId def = current_sentry_def(state);
+    const Action desired = thinner_trash_eligible(state, profile, def)
+        ? option_action(0U) : option_action(2U);
+    return legal.test(desired) ? desired : first_legal_option(legal);
+}
+
+[[nodiscard]] bool thinner_has_trasher_buyable(
+    const ActionMask& legal) noexcept {
+    return legal.test(buy_action(DEF_CHAPEL))
+        || legal.test(buy_action(DEF_SENTRY))
+        || legal.test(buy_action(DEF_MONEYLENDER));
+}
+
+[[nodiscard]] bool thinner_engine_viable(
+    const GameState& state,
+    const EngineV3Kingdom& kingdom) noexcept {
+    const bool cantrip_economy = kingdom.market_ok || kingdom.festival_ok
+        || thinner_kingdom_has(state, DEF_MERCHANT);
+    return (kingdom.lab_ok && (kingdom.village_ok || kingdom.witch_ok || cantrip_economy))
+        || (kingdom.village_ok && kingdom.draw_terminal);
+}
+
+[[nodiscard]] bool thinner_engine_online(const DeckProfile& profile) noexcept {
+    const V3ActionCounts action_counts = v3_action_counts(profile);
+    return profile.counts[DEF_LABORATORY] >= 2U
+        || (action_counts.actions >= 3
+            && (profile.villages > 0U || profile.counts[DEF_LABORATORY] > 0U)
+            && profile.total_plus_cards >= 2);
+}
+
+[[nodiscard]] Action thinner_engine_component_buy(
+    const GameState& state,
+    const ActionMask& legal,
+    const EngineV3Kingdom& kingdom,
+    const DeckProfile& profile) noexcept {
+    if (!thinner_engine_viable(state, kingdom)) {
+        return A_PASS;
+    }
+
+    const int coins = state.coins;
+    const int terminals = v3_engine_terminal_count(profile);
+    const int labs = static_cast<int>(profile.counts[DEF_LABORATORY]);
+
+    const bool economy_bootstrapped = profile.counts[DEF_SILVER] >= 2U;
+
+    // A genuinely thin deck can profitably chain several Laboratories.  Keep
+    // adding non-terminal draw before its first payload Gold; this is the
+    // capability the sentinel is meant to probe rather than a Chapel-money
+    // splash with one draw card.
+    if (kingdom.lab_ok && labs < 4 && coins >= 5) {
+        const Action laboratory = v3_legal_buy(state, legal, DEF_LABORATORY);
+        if (laboratory != A_PASS) {
+            return laboratory;
+        }
+    }
+
+    // After a real draw core is in place, turn the next $6-$7 hand into
+    // payload instead of endlessly cycling cards that cannot buy Provinces.
+    if (profile.counts[DEF_GOLD] == 0U && (labs >= 3 || terminals >= 2) && coins >= 6) {
+        return A_PASS;
+    }
+
+    if (!economy_bootstrapped) {
+        // A Village/terminal build can take its first terminal at $4, but do
+        // not spend the early $3-$4 hands on Merchant or extra villages.
+        if (!kingdom.lab_ok && terminals == 0 && coins >= 4) {
+            return v3_best_terminal_draw_buy(state, legal);
+        }
+        return A_PASS;
+    }
+
+    // Reuse EngineV3's balanced Village/terminal rules after the thin deck
+    // has opening money. Witch remains governed by Thinner's two-copy splash
+    // above, so this helper's one-copy Witch branch is intentionally skipped.
+    const Action balanced = v3_engine_component_buy(
+        state, legal, kingdom, profile, EngineV3Strategy::Engine);
+    if (balanced != A_PASS && action_def(balanced, A_BUY_BASE) != DEF_WITCH) {
+        return balanced;
+    }
+
+    // +action cantrips add economy without making the deck terminal-heavy.
+    if (coins >= 5 && profile.counts[DEF_MARKET] < 1U) {
+        const Action market = v3_legal_buy(state, legal, DEF_MARKET);
+        if (market != A_PASS) {
+            return market;
+        }
+    }
+    if (coins >= 5 && profile.counts[DEF_FESTIVAL] < 1U) {
+        const Action festival = v3_legal_buy(state, legal, DEF_FESTIVAL);
+        if (festival != A_PASS) {
+            return festival;
+        }
+    }
+    if (coins >= 3 && profile.counts[DEF_MERCHANT] < 2U) {
+        const Action merchant = v3_legal_buy(state, legal, DEF_MERCHANT);
+        if (merchant != A_PASS) {
+            return merchant;
+        }
+    }
+
+    return A_PASS;
+}
+
+[[nodiscard]] Action thinner_buy(
+    const GameState& state,
+    const ActionMask& legal,
+    EngineBotV3& engine_buy_policy) noexcept {
+    const PlayerId player = state.decision.player;
+    const DeckProfile profile = analyze_deck(state, player);
+    const int coins = state.coins;
+    const int provinces_left = supply_count(state, DEF_PROVINCE);
+    const EngineV3Kingdom kingdom = analyze_v3_kingdom(state);
+    const bool chapel_in_kingdom = thinner_kingdom_has(state, DEF_CHAPEL);
+    const bool fallback_trasher = profile.counts[DEF_SENTRY] > 0U
+        || profile.counts[DEF_MONEYLENDER] > 0U;
+    const int my_turns = state.num_players == 0U
+        ? 0 : static_cast<int>(state.turn_counter / state.num_players);
+    const bool engine_viable = thinner_engine_viable(state, kingdom);
+    const bool engine_building = engine_viable
+        && (profile.counts[DEF_CHAPEL] > 0U || fallback_trasher);
+
+    if (coins >= 8) {
+        // A Chapel engine gets a short, bounded chance to establish a real
+        // action core instead of immediately reverting to money green.
+        if (engine_building && profile.total_actions < 3U && my_turns < 10) {
+            const Action component = thinner_engine_component_buy(state, legal, kingdom, profile);
+            if (component != A_PASS) {
+                return component;
+            }
+        }
+        const Action province = legal_buy(legal, DEF_PROVINCE);
+        if (province != A_PASS) {
+            return province;
+        }
+    }
+
+    if (my_turns < 4 && chapel_in_kingdom && profile.counts[DEF_CHAPEL] == 0U
+        && coins >= 2 && coins <= 4) {
+        const Action chapel = legal_buy(legal, DEF_CHAPEL);
+        if (chapel != A_PASS) {
+            return chapel;
+        }
+    }
+
+    if (!chapel_in_kingdom && !fallback_trasher) {
+        if (coins >= 5) {
+            const Action sentry = legal_buy(legal, DEF_SENTRY);
+            if (sentry != A_PASS) {
+                return sentry;
+            }
+        }
+        if (coins == 4) {
+            const Action moneylender = legal_buy(legal, DEF_MONEYLENDER);
+            if (moneylender != A_PASS) {
+                return moneylender;
+            }
+        }
+    }
+
+    if (coins >= 5 && (provinces_left <= 4 || thinner_supply_near_empty(state))) {
+        const Action duchy = legal_buy(legal, DEF_DUCHY);
+        if (duchy != A_PASS) {
+            return duchy;
+        }
+    }
+    if (coins >= 2 && provinces_left <= 2) {
+        const Action estate = legal_buy(legal, DEF_ESTATE);
+        if (estate != A_PASS) {
+            return estate;
+        }
+    }
+
+    if (coins == 5 && thinner_kingdom_has(state, DEF_WITCH)
+        && profile.counts[DEF_WITCH] < 2U) {
+        const Action witch = legal_buy(legal, DEF_WITCH);
+        if (witch != A_PASS) {
+            return witch;
+        }
+    }
+
+    // Keep the specialised Chapel opening, trashing, and greening overlays,
+    // then let EngineV3 select a balanced draw/action core.  Its kingdom
+    // selection avoids constructing an engine from weak pieces, while the
+    // filters retain Thinner's smaller Silver and Witch caps.
+    if (engine_viable) {
+        const Action engine_choice = engine_buy_policy.choose_action(
+            state, legal, 1);
+        if (engine_choice != A_PASS
+            && engine_choice >= A_BUY_BASE && engine_choice < A_EVENT_BASE) {
+            const DefId def = action_def(engine_choice, A_BUY_BASE);
+            const bool capped_witch = def == DEF_WITCH && profile.counts[DEF_WITCH] >= 2U;
+            const bool excess_silver = def == DEF_SILVER
+                && (profile.counts[DEF_SILVER] >= 3U || thinner_engine_online(profile));
+            const bool early_estate = def == DEF_ESTATE && provinces_left > 2;
+            const bool early_duchy = def == DEF_DUCHY
+                && !(provinces_left <= 4 || thinner_supply_near_empty(state));
+            if (!capped_witch && !excess_silver && !early_estate && !early_duchy) {
+                return engine_choice;
+            }
+        }
+    }
+
+    // Silver is only opening fuel for an engine build.  In dead kingdoms the
+    // old money fallback retains its reliable Silver/Gold behavior.
+    if (engine_building && coins >= 3 && coins <= 4 && profile.counts[DEF_SILVER] < 2U) {
+        const Action silver = legal_buy(legal, DEF_SILVER);
+        if (silver != A_PASS) {
+            return silver;
+        }
+    }
+    if (engine_viable) {
+        const Action component = thinner_engine_component_buy(state, legal, kingdom, profile);
+        if (component != A_PASS) {
+            return component;
+        }
+    }
+    if (coins >= 6 && coins <= 7) {
+        const Action gold = legal_buy(legal, DEF_GOLD);
+        if (gold != A_PASS) {
+            return gold;
+        }
+    }
+    if (coins >= 3 && coins <= 5) {
+        if (!engine_viable || (profile.counts[DEF_SILVER] < 3U && !thinner_engine_online(profile))) {
+            const Action silver = legal_buy(legal, DEF_SILVER);
+            if (silver != A_PASS) {
+                return silver;
+            }
+        }
+    }
+    if (coins == 2 && !thinner_has_trasher_buyable(legal)
+        && thinner_has_attack_card(state)) {
+        const Action moat = legal_buy(legal, DEF_MOAT);
+        if (moat != A_PASS) {
+            return moat;
+        }
+    }
+    return legal.test(A_PASS) ? A_PASS : first_legal(legal);
+}
+
+[[nodiscard]] Action thinner_engine_play_action(
+    const GameState& state,
+    const ActionMask& legal,
+    const DeckProfile& profile,
+    PlayerId player) noexcept {
+    const bool chapel_useful = legal.test(play_action(DEF_CHAPEL))
+        && thinner_has_eligible_junk_in_hand(state, profile, player);
+    const Action best = v3_best_play_without_chapel(legal);
+    if (best != A_PASS) {
+        const DefId def = action_def(best, A_PLAY_BASE);
+        const bool moneylender_ready = def != DEF_MONEYLENDER
+            || (!thinner_kingdom_has(state, DEF_CHAPEL)
+                && thinner_hand_contains(state, player, DEF_COPPER)
+                && thinner_trash_eligible(state, profile, DEF_COPPER));
+        if (moneylender_ready && v3_action_priority(def) < v3_action_priority(DEF_CHAPEL)) {
+            return best;
+        }
+    }
+    if (chapel_useful) {
+        return play_action(DEF_CHAPEL);
+    }
+    if (best != A_PASS) {
+        const DefId def = action_def(best, A_PLAY_BASE);
+        if (def != DEF_MONEYLENDER
+            || (!thinner_kingdom_has(state, DEF_CHAPEL)
+                && thinner_hand_contains(state, player, DEF_COPPER)
+                && thinner_trash_eligible(state, profile, DEF_COPPER))) {
+            return best;
+        }
+    }
+    return legal.test(A_PASS) ? A_PASS : first_legal(legal);
+}
+
 [[nodiscard]] Action choose_generic_subdecision(
     const GameState& state,
     const ActionMask& legal,
@@ -2722,6 +3100,51 @@ Action EngineBotV3::choose_action(
     if (decision == DecisionKind::ChooseGain && state.decision.source == DEF_WORKSHOP
         && pick_v3_strategy(analyze_v3_kingdom(state)) == EngineV3Strategy::Rush) {
         return v3_rush_gain(legal);
+    }
+    return choose_generic_subdecision(state, legal, true);
+}
+
+Action ThinnerBot::choose_action(
+    const GameState& state,
+    const ActionMask& legal,
+    int legal_count) const noexcept {
+    if (legal_count <= 0) {
+        return A_PASS;
+    }
+
+    const DecisionKind decision = static_cast<DecisionKind>(state.decision.kind);
+    const PlayerId player = state.decision.player;
+    if (decision == DecisionKind::PhaseAction) {
+        const DeckProfile profile = analyze_deck(state, player);
+        return thinner_engine_play_action(state, legal, profile, player);
+    }
+    if (decision == DecisionKind::PhaseBuy) {
+        const Action treasure = first_legal_play_treasure(legal);
+        if (treasure != A_PASS) {
+            return treasure;
+        }
+        return thinner_buy(state, legal, engine_buy_policy);
+    }
+    if (decision == DecisionKind::PhaseNight) {
+        return legal.test(A_PASS) ? A_PASS : first_legal(legal);
+    }
+    if (decision == DecisionKind::ReactWindow) {
+        const Action moat = select_action(DEF_MOAT);
+        return legal.test(moat) ? moat : (legal.test(A_PASS) ? A_PASS : first_legal(legal));
+    }
+    if (decision == DecisionKind::Choose && state.decision.source == DEF_CHAPEL) {
+        return thinner_chapel_trash(state, legal, player);
+    }
+    if (decision == DecisionKind::Choose && state.decision.source == DEF_MONEYLENDER) {
+        const DeckProfile profile = analyze_deck(state, player);
+        const Action copper = select_action(DEF_COPPER);
+        if (legal.test(copper) && thinner_trash_eligible(state, profile, DEF_COPPER)) {
+            return copper;
+        }
+        return legal.test(A_PASS) ? A_PASS : first_legal(legal);
+    }
+    if (decision == DecisionKind::ChooseOption && state.decision.source == DEF_SENTRY) {
+        return thinner_sentry_option(state, legal);
     }
     return choose_generic_subdecision(state, legal, true);
 }

@@ -73,6 +73,7 @@ struct PyScriptedBot {
     BigMoneyBot big_money{};
     EngineBot engine_v2{};
     EngineBotV3 engine_v3{};
+    ThinnerBot thinner{};
 
     explicit PyScriptedBot(const std::string& kind_name)
         : PyScriptedBot(parse_kind(kind_name)) {}
@@ -80,9 +81,10 @@ struct PyScriptedBot {
     explicit PyScriptedBot(EvalScriptedBotKind kind_value) : kind(kind_value) {
         if (kind != EvalScriptedBotKind::BigMoney
             && kind != EvalScriptedBotKind::EngineV2
-            && kind != EvalScriptedBotKind::EngineV3) {
+            && kind != EvalScriptedBotKind::EngineV3
+            && kind != EvalScriptedBotKind::Thinner) {
             throw std::invalid_argument(
-                "ScriptedBot kind must be BigMoney, EngineV2, or EngineV3");
+                "ScriptedBot kind must be BigMoney, EngineV2, EngineV3, or Thinner");
         }
     }
 
@@ -104,6 +106,8 @@ struct PyScriptedBot {
             return engine_v2.choose_action(game.state, legal, legal_count);
         case EvalScriptedBotKind::EngineV3:
             return engine_v3.choose_action(game.state, legal, legal_count);
+        case EvalScriptedBotKind::Thinner:
+            return thinner.choose_action(game.state, legal, legal_count);
         default:
             throw std::logic_error("unsupported ScriptedBot kind");
         }
@@ -120,6 +124,9 @@ private:
         if (kind_name == "engine3") {
             return EvalScriptedBotKind::EngineV3;
         }
+        if (kind_name == "thinner") {
+            return EvalScriptedBotKind::Thinner;
+        }
         throw std::invalid_argument("unknown ScriptedBot kind: " + kind_name);
     }
 };
@@ -135,7 +142,10 @@ private:
     if (version == static_cast<int>(ObsVersion::V2)) {
         return ObsVersion::V2;
     }
-    throw std::invalid_argument("obs_version must be 1 or 2");
+    if (version == static_cast<int>(ObsVersion::V3)) {
+        return ObsVersion::V3;
+    }
+    throw std::invalid_argument("obs_version must be 1, 2, or 3");
 }
 
 [[nodiscard]] int obs_version_value(ObsVersion version) noexcept {
@@ -453,6 +463,27 @@ void set_selfplay_kingdom_pool(SelfPlayConfig& config, const py::object& kingdom
     py::list result;
     for (std::uint8_t i = 0; i < config.kingdom_pool_count; ++i) {
         result.append(config.kingdom_pool[i]);
+    }
+    return result;
+}
+
+void set_selfplay_template_weights(SelfPlayConfig& config, const py::object& weights) {
+    if (weights.is_none() || py::isinstance<py::str>(weights)) {
+        throw std::invalid_argument("template_weights must be a sequence of seven floats");
+    }
+    const py::sequence sequence = py::reinterpret_borrow<py::sequence>(weights);
+    if (py::len(sequence) != SELFPLAY_OPENING_TEMPLATE_COUNT) {
+        throw std::invalid_argument("template_weights must contain seven entries");
+    }
+    for (std::uint8_t index = 0U; index < SELFPLAY_OPENING_TEMPLATE_COUNT; ++index) {
+        config.template_weights[index] = py::cast<float>(sequence[index]);
+    }
+}
+
+[[nodiscard]] py::list selfplay_template_weights(const SelfPlayConfig& config) {
+    py::list result;
+    for (std::uint8_t index = 0U; index < SELFPLAY_OPENING_TEMPLATE_COUNT; ++index) {
+        result.append(config.template_weights[index]);
     }
     return result;
 }
@@ -1409,6 +1440,25 @@ void selfplay_provide(
         dict["seat1_model_id"] = py::int_(record.seat1_model_id);
         dict["scripted_bot"] = py::int_(static_cast<std::uint8_t>(record.scripted_bot));
         dict["sims_override"] = py::int_(record.sims_override);
+        py::array_t<std::uint8_t> template_ids(MAX_PLAYERS);
+        std::memcpy(
+            template_ids.mutable_data(),
+            record.seat_template_ids,
+            static_cast<std::size_t>(MAX_PLAYERS) * sizeof(std::uint8_t));
+        py::array_t<std::uint16_t> opening_buys(ACTION_DEF_COUNT);
+        std::memcpy(
+            opening_buys.mutable_data(),
+            record.opening_buy_counts,
+            static_cast<std::size_t>(ACTION_DEF_COUNT) * sizeof(std::uint16_t));
+        py::array_t<std::uint16_t> unconstrained_buys(SELFPLAY_OPENING_TELEMETRY_CARD_COUNT);
+        std::memcpy(
+            unconstrained_buys.mutable_data(),
+            record.unconstrained_buy_counts,
+            static_cast<std::size_t>(SELFPLAY_OPENING_TELEMETRY_CARD_COUNT) * sizeof(std::uint16_t));
+        dict["seat_template_ids"] = template_ids;
+        dict["cards_trashed"] = py::int_(record.cards_trashed);
+        dict["opening_buy_counts"] = opening_buys;
+        dict["unconstrained_buy_counts"] = unconstrained_buys;
         out.append(dict);
     }
     return out;
@@ -1761,7 +1811,8 @@ PYBIND11_MODULE(dominion_v2_py, module) {
 
     py::enum_<ObsVersion>(module, "ObsVersion")
         .value("V1", ObsVersion::V1)
-        .value("V2", ObsVersion::V2);
+        .value("V2", ObsVersion::V2)
+        .value("V3", ObsVersion::V3);
 
     py::enum_<SelfPlayKingdomMode>(module, "SelfPlayKingdomMode")
         .value("Fixed", SelfPlayKingdomMode::Fixed)
@@ -1777,6 +1828,7 @@ PYBIND11_MODULE(dominion_v2_py, module) {
         .value("BigMoney", SelfPlayScriptedBotKind::BigMoney)
         .value("Engine", SelfPlayScriptedBotKind::Engine)
         .value("EngineV3", SelfPlayScriptedBotKind::EngineV3)
+        .value("Thinner", SelfPlayScriptedBotKind::Thinner)
         .value("Random", SelfPlayScriptedBotKind::Random)
         .value("Scaffold", SelfPlayScriptedBotKind::Scaffold);
 
@@ -1827,7 +1879,11 @@ PYBIND11_MODULE(dominion_v2_py, module) {
             float margin_blend_alpha,
             const std::string& c_puct_schedule,
             float c_puct_init,
-            float c_puct_base) {
+            float c_puct_base,
+            bool opening_templates_enabled,
+            float opening_lambda,
+            std::int32_t opening_turn_window,
+            py::object template_weights) {
             SelfPlayConfig config{};
             config.n_games = n_games;
             config.sims_per_move = sims_per_move;
@@ -1858,6 +1914,12 @@ PYBIND11_MODULE(dominion_v2_py, module) {
             config.tree_reuse = tree_reuse;
             config.expand_top_k = expand_top_k;
             config.min_new_sims = min_new_sims;
+            config.opening_templates_enabled = opening_templates_enabled;
+            config.opening_lambda = opening_lambda;
+            config.opening_turn_window = opening_turn_window;
+            if (!template_weights.is_none()) {
+                set_selfplay_template_weights(config, template_weights);
+            }
             if (!kingdom.is_none()) {
                 PySetup setup(2, kingdom, false);
                 config.fixed_setup = setup.setup;
@@ -1899,7 +1961,11 @@ PYBIND11_MODULE(dominion_v2_py, module) {
             py::arg("margin_blend_alpha") = 0.6F,
             py::arg("c_puct_schedule") = "fixed",
             py::arg("c_puct_init") = 1.25F,
-            py::arg("c_puct_base") = 19652.0F)
+            py::arg("c_puct_base") = 19652.0F,
+            py::arg("opening_templates_enabled") = false,
+            py::arg("opening_lambda") = 0.6F,
+            py::arg("opening_turn_window") = 8,
+            py::arg("template_weights") = py::none())
         .def_readwrite("n_games", &SelfPlayConfig::n_games)
         .def_readwrite("sims_per_move", &SelfPlayConfig::sims_per_move)
         .def_readwrite("c_puct", &SelfPlayConfig::c_puct)
@@ -1940,6 +2006,10 @@ PYBIND11_MODULE(dominion_v2_py, module) {
         .def_readwrite("tree_reuse", &SelfPlayConfig::tree_reuse)
         .def_readwrite("min_new_sims", &SelfPlayConfig::min_new_sims)
         .def_readwrite("expand_top_k", &SelfPlayConfig::expand_top_k)
+        .def_readwrite("opening_templates_enabled", &SelfPlayConfig::opening_templates_enabled)
+        .def_readwrite("opening_lambda", &SelfPlayConfig::opening_lambda)
+        .def_readwrite("opening_turn_window", &SelfPlayConfig::opening_turn_window)
+        .def_property("template_weights", &selfplay_template_weights, &set_selfplay_template_weights)
         .def_readwrite("slot_manifest", &SelfPlayConfig::slot_manifest);
 
     py::class_<SelfPlayRunner>(module, "SelfPlayRunner")
@@ -1961,7 +2031,8 @@ PYBIND11_MODULE(dominion_v2_py, module) {
         .value("Random", EvalScriptedBotKind::Random)
         .value("Mcts", EvalScriptedBotKind::Mcts)
         .value("EngineV2", EvalScriptedBotKind::EngineV2)
-        .value("EngineV3", EvalScriptedBotKind::EngineV3);
+        .value("EngineV3", EvalScriptedBotKind::EngineV3)
+        .value("Thinner", EvalScriptedBotKind::Thinner);
 
     py::class_<PyScriptedBot>(module, "ScriptedBot")
         .def(py::init<const std::string&>(), py::arg("kind"))
@@ -2091,6 +2162,7 @@ PYBIND11_MODULE(dominion_v2_py, module) {
     module.attr("OBS_SIZE") = py::int_(OBS_SIZE);
     module.attr("OBS_SIZE_V1") = py::int_(OBS_SIZE_V1);
     module.attr("OBS_SIZE_V2") = py::int_(OBS_SIZE_V2);
+    module.attr("OBS_SIZE_V3") = py::int_(OBS_SIZE_V3);
     module.def("obs_size_for", [](int version) {
         return py::int_(obs_size_for(parse_obs_version(version)));
     }, py::arg("version"));

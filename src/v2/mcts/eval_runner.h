@@ -20,6 +20,7 @@ enum class EvalScriptedBotKind : std::uint8_t {
     Mcts = 4,
     EngineV2 = 5,
     EngineV3 = 6,
+    Thinner = 7,
 };
 
 struct EvalRunnerConfig {

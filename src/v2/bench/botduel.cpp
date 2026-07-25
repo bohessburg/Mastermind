@@ -104,6 +104,8 @@ struct CardRow {
         return "engine";
     case BotKind::EngineV3:
         return "engine3";
+    case BotKind::Thinner:
+        return "thinner";
     case BotKind::Mcts:
     default:
         return "mcts";
@@ -131,6 +133,10 @@ struct CardRow {
         out = BotKind::EngineV3;
         return true;
     }
+    if (name == "thinner") {
+        out = BotKind::Thinner;
+        return true;
+    }
     return false;
 }
 
@@ -156,8 +162,8 @@ struct CardRow {
 
 void print_usage(const char* program) {
     std::cout << "Usage: " << program
-              << " [--a random|bm|heuristic|engine|engine3]"
-              << " [--b random|bm|heuristic|engine|engine3]"
+              << " [--a random|bm|heuristic|engine|engine3|thinner]"
+              << " [--b random|bm|heuristic|engine|engine3|thinner]"
               << " [--games even-count] [--threads 0|count] [--seed value]"
               << " [--kingdom random|fixed] [--cards Name,Name,...] [--json]\n";
 }
@@ -310,6 +316,7 @@ void trace_game(const Options& options) {
     HeuristicBot heur{};
     EngineBot eng_a{}, eng_b{};
     EngineBotV3 v3_a{}, v3_b{};
+    ThinnerBot thinner_a{}, thinner_b{};
 
     const auto choose = [&](BotKind kind, bool is_a, const ActionMask& legal, int n) -> Action {
         switch (kind) {
@@ -317,7 +324,9 @@ void trace_game(const Options& options) {
         case BotKind::BigMoney: return bm.choose_action(state, legal, n);
         case BotKind::Heuristic: return heur.choose_action(state, legal, n);
         case BotKind::Engine: return (is_a ? eng_a : eng_b).choose_action(state, legal, n);
-        case BotKind::EngineV3: default: return (is_a ? v3_a : v3_b).choose_action(state, legal, n);
+        case BotKind::EngineV3: return (is_a ? v3_a : v3_b).choose_action(state, legal, n);
+        case BotKind::Thinner: return (is_a ? thinner_a : thinner_b).choose_action(state, legal, n);
+        default: return (is_a ? v3_a : v3_b).choose_action(state, legal, n);
         }
     };
 

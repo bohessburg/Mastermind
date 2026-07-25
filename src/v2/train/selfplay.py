@@ -15,8 +15,10 @@ from .config import (
     SelfPlayConfig,
     validate_c_puct_config,
     validate_deep_slice_config,
+    validate_opening_template_config,
     validate_value_target_config,
 )
+from .observation import model_observation_version, observations_for_model, obs_version_for_width
 from .replay import ReplayBuffer
 
 
@@ -43,6 +45,14 @@ class SelfPlayStats:
     scripted_by_kind: dict[str, tuple[int, int]] = field(default_factory=dict)
     # Maps league checkpoint basename to (games, current-seat-zero wins).
     league_by_opponent: dict[str, tuple[int, int]] = field(default_factory=dict)
+    # c18 opening-template telemetry. Template game counts are seat counts:
+    # each completed game contributes one observation for each assigned seat.
+    opening_template_games: list[int] = field(default_factory=lambda: [0] * 7)
+    opening_template_vs_unconstrained_games: list[int] = field(default_factory=lambda: [0] * 7)
+    opening_template_vs_unconstrained_wins: list[int] = field(default_factory=lambda: [0] * 7)
+    cards_trashed: int = 0
+    # Chapel, Sentry, Moneylender, Village in native record order.
+    unconstrained_buy_counts: list[int] = field(default_factory=lambda: [0] * 4)
 
     @property
     def games_per_hour(self) -> float:
@@ -211,6 +221,7 @@ def make_runner_config(
     validate_deep_slice_config(config)
     validate_value_target_config(config)
     validate_c_puct_config(config)
+    validate_opening_template_config(config)
     if not math.isfinite(config.margin_scale) or config.margin_scale <= 0.0:
         raise ValueError("margin_scale must be finite and positive")
     if not isinstance(sims_override, int) or isinstance(sims_override, bool) or sims_override < 0:
@@ -258,6 +269,10 @@ def make_runner_config(
         value_target=_value_target(config.value_target),
         margin_scale=config.margin_scale,
         margin_blend_alpha=config.margin_blend_alpha,
+        opening_templates_enabled=config.opening_templates_enabled,
+        opening_lambda=config.opening_lambda,
+        opening_turn_window=config.opening_turn_window,
+        template_weights=list(config.template_weights),
     )
     if native_slots:
         runner_config.n_games = len(native_slots)
@@ -279,6 +294,40 @@ def _records_to_replay(records: list[dict], replay: ReplayBuffer) -> tuple[int, 
         games += 1
         positions += obs.shape[0]
     return games, positions
+
+
+def record_opening_template_telemetry(stats: SelfPlayStats, records: list[dict]) -> None:
+    """Accumulate c18 record metadata without retaining per-game objects.
+
+    Template counts are per assigned seat. The matchup counters intentionally
+    include only template-vs-unconstrained games, which makes their win rate a
+    direct answer to whether a forced archetype can beat the unforced policy.
+    """
+    for record in records:
+        raw_ids = np.asarray(record.get("seat_template_ids", [0, 0]), dtype=np.int64).reshape(-1)
+        if raw_ids.size < 2:
+            raise ValueError("self-play record is missing both seat template ids")
+        template_ids = [int(raw_ids[0]), int(raw_ids[1])]
+        if any(template_id < 0 or template_id >= 7 for template_id in template_ids):
+            raise ValueError("self-play record has an invalid template id")
+        for template_id in template_ids:
+            stats.opening_template_games[template_id] += 1
+
+        winner = record.get("winner")
+        for seat, template_id in enumerate(template_ids):
+            opponent_template = template_ids[1 - seat]
+            if template_id == 0 or opponent_template != 0:
+                continue
+            stats.opening_template_vs_unconstrained_games[template_id] += 1
+            if winner is not None and int(winner) == seat:
+                stats.opening_template_vs_unconstrained_wins[template_id] += 1
+
+        stats.cards_trashed += int(record.get("cards_trashed", 0))
+        raw_buys = np.asarray(record.get("unconstrained_buy_counts", [0, 0, 0, 0]), dtype=np.int64).reshape(-1)
+        if raw_buys.size < 4:
+            raise ValueError("self-play record is missing unconstrained buy telemetry")
+        for index in range(4):
+            stats.unconstrained_buy_counts[index] += int(raw_buys[index])
 
 
 def _record_scripted_outcomes(
@@ -350,7 +399,9 @@ def run_self_play_generation(
 
             plumbing_start = time.perf_counter()
             runner.provide_evaluations(values_np, logits_np)
-            games, positions = _records_to_replay(runner.finished_games(), replay)
+            finished = runner.finished_games()
+            record_opening_template_telemetry(stats, finished)
+            games, positions = _records_to_replay(finished, replay)
             stats.games += games
             stats.positions += positions
             stats.plumbing_time += time.perf_counter() - plumbing_start
@@ -380,6 +431,18 @@ def route_leaf_evaluations(
     """
     if len(seat_models) != 2:
         raise ValueError("two seat models are required")
+    source_version = obs_version_for_width(int(obs.shape[-1]))
+
+    def evaluate_model(model: torch.nn.Module, model_obs: np.ndarray) -> tuple[torch.Tensor, torch.Tensor]:
+        adapted_obs = observations_for_model(
+            model_obs,
+            source_version,
+            model_observation_version(model, source_version),
+        )
+        obs_tensor = torch.as_tensor(adapted_obs, dtype=torch.float32, device=device)
+        mask_tensor = torch.as_tensor(masks, dtype=torch.bool, device=device)
+        return model.evaluate(obs_tensor, mask_tensor)
+
     models_are_identical = seat_models[0] is seat_models[1]
     if same_model_fast_path is True and not models_are_identical:
         raise ValueError("same-model fast path requires both seat models to be the same object")
@@ -388,9 +451,7 @@ def route_leaf_evaluations(
         model = seat_models[0]
         model.eval()
         with torch.no_grad():
-            obs_tensor = torch.as_tensor(obs, dtype=torch.float32, device=device)
-            mask_tensor = torch.as_tensor(masks, dtype=torch.bool, device=device)
-            logits, values = model.evaluate(obs_tensor, mask_tensor)
+            logits, values = evaluate_model(model, obs)
         return (
             logits.detach().cpu().numpy().astype(np.float32, copy=False),
             values.detach().cpu().numpy().astype(np.float32, copy=False),
@@ -411,9 +472,7 @@ def route_leaf_evaluations(
         model = seat_models[0]
         model.eval()
         with torch.no_grad():
-            obs_tensor = torch.as_tensor(obs, dtype=torch.float32, device=device)
-            mask_tensor = torch.as_tensor(masks, dtype=torch.bool, device=device)
-            logits, values = model.evaluate(obs_tensor, mask_tensor)
+            logits, values = evaluate_model(model, obs)
         full_logits = logits.detach().cpu().numpy().astype(np.float32, copy=False)
         full_values = values.detach().cpu().numpy().astype(np.float32, copy=False)
         logits_out = np.empty_like(full_logits)
@@ -437,7 +496,12 @@ def route_leaf_evaluations(
             indices = np.flatnonzero(players == player)
             model = seat_models[player_index]
             model.eval()
-            obs_tensor = torch.as_tensor(obs[indices], dtype=torch.float32, device=device)
+            adapted_obs = observations_for_model(
+                obs[indices],
+                source_version,
+                model_observation_version(model, source_version),
+            )
+            obs_tensor = torch.as_tensor(adapted_obs, dtype=torch.float32, device=device)
             mask_tensor = torch.as_tensor(masks[indices], dtype=torch.bool, device=device)
             logits, values = model.evaluate(obs_tensor, mask_tensor)
             logits_out[indices] = logits.detach().cpu().numpy().astype(np.float32, copy=False)
@@ -520,6 +584,7 @@ def play_routed_games(
         remaining = target_games - len(records)
         records.extend(finished[:remaining])
     stats.games, stats.positions = _records_to_replay(records, _DiscardReplay())
+    record_opening_template_telemetry(stats, records)
     _record_scripted_outcomes(stats, records, scripted_kind)
     _record_league_outcomes(stats, records, league_opponent)
     stats.wall_time = time.perf_counter() - start

@@ -25,6 +25,7 @@ enum class BotKind : std::uint8_t {
     Heuristic,
     Engine,
     EngineV3,
+    Thinner,
     Mcts,
 };
 

@@ -9,6 +9,7 @@
 enum class ObsVersion : std::uint16_t {
     V1 = 1,
     V2 = 2,
+    V3 = 3,
 };
 
 // Compatibility aliases for callers and checkpoints built before observation
@@ -57,6 +58,14 @@ inline constexpr std::size_t OBS_V2_TURN_OFFSET = OBS_V2_RESOURCE_OFFSET + OBS_R
 inline constexpr std::size_t OBS_V2_DECISION_OFFSET = OBS_V2_TURN_OFFSET + OBS_TURN_SIZE;
 inline constexpr std::size_t OBS_SIZE_V2 = OBS_V2_DECISION_OFFSET + OBS_DECISION_SIZE;
 
+// v3 retains the entire v2 layout, then appends the global trash-pile
+// composition indexed by Slot and decision selection semantics.
+inline constexpr std::size_t OBS_V3_TRASH_OFFSET = OBS_SIZE_V2;
+inline constexpr std::size_t OBS_TRASH_SIZE = MAX_SLOTS;
+inline constexpr std::size_t OBS_SELECT_SEMANTIC_COUNT = 7;
+inline constexpr std::size_t OBS_V3_SELECT_SEMANTIC_OFFSET = OBS_V3_TRASH_OFFSET + OBS_TRASH_SIZE;
+inline constexpr std::size_t OBS_SIZE_V3 = OBS_V3_SELECT_SEMANTIC_OFFSET + OBS_SELECT_SEMANTIC_COUNT;
+
 // Legacy source aliases. Keep these fixed to v1 so existing integrations that
 // allocate OBS_SIZE retain their byte-identical default behavior.
 inline constexpr std::size_t OBS_OPPONENT_BLOCK_SIZE = OBS_OPPONENT_BLOCK_SIZE_V1;
@@ -64,17 +73,20 @@ inline constexpr std::size_t OBS_OPPONENT_SIZE = OBS_OPPONENT_SIZE_V1;
 inline constexpr std::size_t OBS_SIZE = OBS_SIZE_V1;
 
 [[nodiscard]] constexpr bool is_valid_obs_version(ObsVersion version) noexcept {
-    return version == ObsVersion::V1 || version == ObsVersion::V2;
+    return version == ObsVersion::V1 || version == ObsVersion::V2 || version == ObsVersion::V3;
 }
 
 [[nodiscard]] constexpr std::size_t obs_size_for(ObsVersion version) noexcept {
-    return version == ObsVersion::V2 ? OBS_SIZE_V2 : OBS_SIZE_V1;
+    return version == ObsVersion::V3
+        ? OBS_SIZE_V3
+        : (version == ObsVersion::V2 ? OBS_SIZE_V2 : OBS_SIZE_V1);
 }
 
 // The v1 implementation intentionally retains the original encoder's exact
 // logic and is kept indefinitely for existing checkpoints.
 void encode_v1(const GameState& state, PlayerId perspective, float* out) noexcept;
 void encode_v2(const GameState& state, PlayerId perspective, float* out) noexcept;
+void encode_v3(const GameState& state, PlayerId perspective, float* out) noexcept;
 void encode(
     const GameState& state,
     PlayerId perspective,

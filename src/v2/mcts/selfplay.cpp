@@ -3,6 +3,7 @@
 #include "v2/bots/scripted.h"
 #include "v2/core/actions.h"
 #include "v2/core/game.h"
+#include "v2/core/interp.h"
 #include "v2/core/score.h"
 #include "v2/core/turns.h"
 #include "v2/mcts/eval_runner.h"
@@ -110,9 +111,407 @@ enum class ScriptedSlotStatus : std::uint8_t {
     return scripted_mode(config.scripted_bot);
 }
 
+enum class OpeningPreferenceCondition : std::uint8_t {
+    Always,
+    VillageToTerminals,
+    VillageToSmithies,
+};
+
+struct OpeningPreference {
+    DefId def = DEF_COPPER;
+    std::uint8_t cap = 0U; // Zero means unlimited.
+    OpeningPreferenceCondition condition = OpeningPreferenceCondition::Always;
+};
+
+struct OpeningPriceBand {
+    std::int16_t min_coins = 0;
+    std::int16_t max_coins = 0;
+    const OpeningPreference* preferences = nullptr;
+    std::uint8_t preference_count = 0U;
+};
+
+struct OpeningTemplateBands {
+    const OpeningPriceBand* bands = nullptr;
+    std::uint8_t band_count = 0U;
+};
+
+constexpr DefId OPENING_TERMINALS[] = {
+    DEF_SMITHY,
+    DEF_MILITIA,
+    DEF_WITCH,
+    DEF_BANDIT,
+    DEF_COUNCIL_ROOM,
+    DEF_LIBRARY,
+    DEF_MONEYLENDER,
+};
+
+constexpr DefId OPENING_TELEMETRY_DEFS[SELFPLAY_OPENING_TELEMETRY_CARD_COUNT] = {
+    DEF_CHAPEL,
+    DEF_SENTRY,
+    DEF_MONEYLENDER,
+    DEF_VILLAGE,
+};
+
+constexpr OpeningPreference T1_2_TO_3[] = {
+    {DEF_CHAPEL, 1U, OpeningPreferenceCondition::Always},
+    {DEF_SILVER, 0U, OpeningPreferenceCondition::Always},
+};
+constexpr OpeningPreference T1_4_TO_5[] = {
+    {DEF_SILVER, 0U, OpeningPreferenceCondition::Always},
+};
+constexpr OpeningPreference T1_6_TO_7[] = {
+    {DEF_GOLD, 0U, OpeningPreferenceCondition::Always},
+};
+constexpr OpeningPriceBand T1_BANDS[] = {
+    {2, 3, T1_2_TO_3, static_cast<std::uint8_t>(std::size(T1_2_TO_3))},
+    {4, 5, T1_4_TO_5, static_cast<std::uint8_t>(std::size(T1_4_TO_5))},
+    {6, 7, T1_6_TO_7, static_cast<std::uint8_t>(std::size(T1_6_TO_7))},
+};
+
+constexpr OpeningPreference T2_3[] = {
+    {DEF_VILLAGE, 4U, OpeningPreferenceCondition::VillageToTerminals},
+    {DEF_SILVER, 0U, OpeningPreferenceCondition::Always},
+};
+constexpr OpeningPreference T2_4[] = {
+    {DEF_SMITHY, 3U, OpeningPreferenceCondition::VillageToSmithies},
+    {DEF_SILVER, 0U, OpeningPreferenceCondition::Always},
+};
+constexpr OpeningPreference T2_5_TO_6[] = {
+    {DEF_MARKET, 0U, OpeningPreferenceCondition::Always},
+    {DEF_FESTIVAL, 0U, OpeningPreferenceCondition::Always},
+    {DEF_SILVER, 0U, OpeningPreferenceCondition::Always},
+};
+constexpr OpeningPreference T2_7[] = {
+    {DEF_GOLD, 0U, OpeningPreferenceCondition::Always},
+};
+constexpr OpeningPriceBand T2_BANDS[] = {
+    {3, 3, T2_3, static_cast<std::uint8_t>(std::size(T2_3))},
+    {4, 4, T2_4, static_cast<std::uint8_t>(std::size(T2_4))},
+    {5, 6, T2_5_TO_6, static_cast<std::uint8_t>(std::size(T2_5_TO_6))},
+    {7, 7, T2_7, static_cast<std::uint8_t>(std::size(T2_7))},
+};
+
+constexpr OpeningPreference T3_3[] = {
+    {DEF_MERCHANT, 2U, OpeningPreferenceCondition::Always},
+    {DEF_SILVER, 0U, OpeningPreferenceCondition::Always},
+};
+constexpr OpeningPreference T3_4[] = {
+    {DEF_SILVER, 0U, OpeningPreferenceCondition::Always},
+};
+constexpr OpeningPreference T3_5_TO_6[] = {
+    {DEF_LABORATORY, 5U, OpeningPreferenceCondition::Always},
+    {DEF_MARKET, 0U, OpeningPreferenceCondition::Always},
+    {DEF_SILVER, 0U, OpeningPreferenceCondition::Always},
+};
+constexpr OpeningPreference T3_7[] = {
+    {DEF_GOLD, 0U, OpeningPreferenceCondition::Always},
+};
+constexpr OpeningPriceBand T3_BANDS[] = {
+    {3, 3, T3_3, static_cast<std::uint8_t>(std::size(T3_3))},
+    {4, 4, T3_4, static_cast<std::uint8_t>(std::size(T3_4))},
+    {5, 6, T3_5_TO_6, static_cast<std::uint8_t>(std::size(T3_5_TO_6))},
+    {7, 7, T3_7, static_cast<std::uint8_t>(std::size(T3_7))},
+};
+
+constexpr OpeningPreference T4_3[] = {
+    {DEF_SILVER, 0U, OpeningPreferenceCondition::Always},
+};
+constexpr OpeningPreference T4_4[] = {
+    {DEF_MONEYLENDER, 1U, OpeningPreferenceCondition::Always},
+    {DEF_SILVER, 0U, OpeningPreferenceCondition::Always},
+};
+constexpr OpeningPreference T4_5_TO_6[] = {
+    {DEF_SENTRY, 2U, OpeningPreferenceCondition::Always},
+    {DEF_LABORATORY, 0U, OpeningPreferenceCondition::Always},
+    {DEF_SILVER, 0U, OpeningPreferenceCondition::Always},
+};
+constexpr OpeningPreference T4_7[] = {
+    {DEF_GOLD, 0U, OpeningPreferenceCondition::Always},
+};
+constexpr OpeningPriceBand T4_BANDS[] = {
+    {3, 3, T4_3, static_cast<std::uint8_t>(std::size(T4_3))},
+    {4, 4, T4_4, static_cast<std::uint8_t>(std::size(T4_4))},
+    {5, 6, T4_5_TO_6, static_cast<std::uint8_t>(std::size(T4_5_TO_6))},
+    {7, 7, T4_7, static_cast<std::uint8_t>(std::size(T4_7))},
+};
+
+constexpr OpeningPreference T5_3[] = {
+    {DEF_SILVER, 0U, OpeningPreferenceCondition::Always},
+};
+constexpr OpeningPreference T5_4[] = {
+    {DEF_MILITIA, 1U, OpeningPreferenceCondition::Always},
+    {DEF_SILVER, 0U, OpeningPreferenceCondition::Always},
+};
+constexpr OpeningPreference T5_5_TO_6[] = {
+    {DEF_WITCH, 2U, OpeningPreferenceCondition::Always},
+    {DEF_SILVER, 0U, OpeningPreferenceCondition::Always},
+};
+constexpr OpeningPreference T5_7[] = {
+    {DEF_GOLD, 0U, OpeningPreferenceCondition::Always},
+};
+constexpr OpeningPriceBand T5_BANDS[] = {
+    {3, 3, T5_3, static_cast<std::uint8_t>(std::size(T5_3))},
+    {4, 4, T5_4, static_cast<std::uint8_t>(std::size(T5_4))},
+    {5, 6, T5_5_TO_6, static_cast<std::uint8_t>(std::size(T5_5_TO_6))},
+    {7, 7, T5_7, static_cast<std::uint8_t>(std::size(T5_7))},
+};
+
+constexpr OpeningPreference T6_3[] = {
+    {DEF_WORKSHOP, 3U, OpeningPreferenceCondition::Always},
+    {DEF_SILVER, 0U, OpeningPreferenceCondition::Always},
+};
+constexpr OpeningPreference T6_4[] = {
+    {DEF_GARDENS, 0U, OpeningPreferenceCondition::Always},
+    {DEF_WORKSHOP, 3U, OpeningPreferenceCondition::Always},
+    {DEF_SILVER, 0U, OpeningPreferenceCondition::Always},
+};
+constexpr OpeningPreference T6_5_TO_6[] = {
+    {DEF_GARDENS, 0U, OpeningPreferenceCondition::Always},
+    {DEF_SILVER, 0U, OpeningPreferenceCondition::Always},
+};
+constexpr OpeningPreference T6_7[] = {
+    {DEF_GOLD, 0U, OpeningPreferenceCondition::Always},
+};
+constexpr OpeningPriceBand T6_BANDS[] = {
+    {3, 3, T6_3, static_cast<std::uint8_t>(std::size(T6_3))},
+    {4, 4, T6_4, static_cast<std::uint8_t>(std::size(T6_4))},
+    {5, 6, T6_5_TO_6, static_cast<std::uint8_t>(std::size(T6_5_TO_6))},
+    {7, 7, T6_7, static_cast<std::uint8_t>(std::size(T6_7))},
+};
+
+constexpr OpeningTemplateBands OPENING_TEMPLATE_BANDS[SELFPLAY_OPENING_TEMPLATE_COUNT] = {
+    {},
+    {T1_BANDS, static_cast<std::uint8_t>(std::size(T1_BANDS))},
+    {T2_BANDS, static_cast<std::uint8_t>(std::size(T2_BANDS))},
+    {T3_BANDS, static_cast<std::uint8_t>(std::size(T3_BANDS))},
+    {T4_BANDS, static_cast<std::uint8_t>(std::size(T4_BANDS))},
+    {T5_BANDS, static_cast<std::uint8_t>(std::size(T5_BANDS))},
+    {T6_BANDS, static_cast<std::uint8_t>(std::size(T6_BANDS))},
+};
+
+[[nodiscard]] std::uint16_t count_owned_def(
+    const GameState& state,
+    PlayerId player_id,
+    DefId wanted) noexcept {
+    if (player_id >= state.num_players) {
+        return 0U;
+    }
+    const PlayerState& player = state.players[player_id];
+    std::uint16_t total = 0U;
+    const auto count_slot = [&state, wanted, &total](Slot slot, std::uint8_t count) noexcept {
+        if (slot < state.num_slots && state.slot_to_def[slot] == wanted) {
+            total = static_cast<std::uint16_t>(total + count);
+        }
+    };
+    for (Slot slot = 0U; slot < state.num_slots; ++slot) {
+        count_slot(slot, player.hand[slot]);
+        count_slot(slot, player.exile[slot]);
+        count_slot(slot, player.tavern[slot]);
+        count_slot(slot, player.island_mat[slot]);
+    }
+    const auto count_ordered = [&count_slot](const OrderedZone& zone) noexcept {
+        for (std::uint8_t index = 0U; index < zone.size; ++index) {
+            count_slot(zone.cards[index], 1U);
+        }
+    };
+    count_ordered(player.deck);
+    count_ordered(player.discard);
+    count_ordered(player.set_aside);
+    for (std::uint8_t index = 0U; index < player.in_play_size; ++index) {
+        count_slot(player.in_play[index].slot, 1U);
+    }
+    return total;
+}
+
+[[nodiscard]] std::uint16_t count_owned_treasures(
+    const GameState& state,
+    PlayerId player_id) noexcept {
+    if (player_id >= state.num_players) {
+        return 0U;
+    }
+    const PlayerState& player = state.players[player_id];
+    std::uint16_t total = 0U;
+    const auto count_slot = [&state, &total](Slot slot, std::uint8_t count) noexcept {
+        if (slot < state.num_slots
+            && (card_def(state.slot_to_def[slot]).types & TYPE_TREASURE) != 0U) {
+            total = static_cast<std::uint16_t>(total + count);
+        }
+    };
+    for (Slot slot = 0U; slot < state.num_slots; ++slot) {
+        count_slot(slot, player.hand[slot]);
+        count_slot(slot, player.exile[slot]);
+        count_slot(slot, player.tavern[slot]);
+        count_slot(slot, player.island_mat[slot]);
+    }
+    const auto count_ordered = [&count_slot](const OrderedZone& zone) noexcept {
+        for (std::uint8_t index = 0U; index < zone.size; ++index) {
+            count_slot(zone.cards[index], 1U);
+        }
+    };
+    count_ordered(player.deck);
+    count_ordered(player.discard);
+    count_ordered(player.set_aside);
+    for (std::uint8_t index = 0U; index < player.in_play_size; ++index) {
+        count_slot(player.in_play[index].slot, 1U);
+    }
+    return total;
+}
+
+[[nodiscard]] std::uint16_t terminal_actions_owned(
+    const GameState& state,
+    PlayerId player_id) noexcept {
+    std::uint16_t total = 0U;
+    for (const DefId def : OPENING_TERMINALS) {
+        total = static_cast<std::uint16_t>(total + count_owned_def(state, player_id, def));
+    }
+    return total;
+}
+
+[[nodiscard]] bool opening_condition_matches(
+    const GameState& state,
+    PlayerId player,
+    OpeningPreferenceCondition condition) noexcept {
+    const std::uint16_t villages = count_owned_def(state, player, DEF_VILLAGE);
+    switch (condition) {
+    case OpeningPreferenceCondition::Always:
+        return true;
+    case OpeningPreferenceCondition::VillageToTerminals:
+        return villages <= terminal_actions_owned(state, player);
+    case OpeningPreferenceCondition::VillageToSmithies:
+        return villages > count_owned_def(state, player, DEF_SMITHY);
+    }
+    return false;
+}
+
+[[nodiscard]] bool source_is_own_played_card(
+    const GameState& state,
+    PlayerId player) noexcept {
+    if (player >= state.num_players
+        || state.decision.source >= card_def_count()
+        || state.effect_depth == 0U) {
+        return false;
+    }
+    const EffectFrame& active_frame = state.effect_stack[state.effect_depth - 1U];
+    if (active_frame.source != state.decision.source
+        || active_frame.player != player
+        || (active_frame.flags & FRAME_ATTACK) != 0U) {
+        return false;
+    }
+    const PlayerState& owner = state.players[player];
+    for (std::uint8_t index = 0U; index < owner.in_play_size; ++index) {
+        const Slot slot = owner.in_play[index].slot;
+        if (slot < state.num_slots && state.slot_to_def[slot] == state.decision.source) {
+            return true;
+        }
+    }
+    return false;
+}
+
+[[nodiscard]] Action opening_buy_preference(
+    const GameState& state,
+    PlayerId player,
+    std::uint8_t template_id,
+    const ActionMask& legal) noexcept {
+    if (template_id == SELFPLAY_UNCONSTRAINED_TEMPLATE
+        || template_id >= SELFPLAY_OPENING_TEMPLATE_COUNT) {
+        return A_END;
+    }
+    if (state.coins >= 8) {
+        const Action province = buy_action(DEF_PROVINCE);
+        return legal.test(province) ? province : A_END;
+    }
+
+    const OpeningTemplateBands& template_bands = OPENING_TEMPLATE_BANDS[template_id];
+    for (std::uint8_t band_index = 0U; band_index < template_bands.band_count; ++band_index) {
+        const OpeningPriceBand& band = template_bands.bands[band_index];
+        if (state.coins < band.min_coins || state.coins > band.max_coins) {
+            continue;
+        }
+        for (std::uint8_t preference_index = 0U;
+             preference_index < band.preference_count;
+             ++preference_index) {
+            const OpeningPreference& preference = band.preferences[preference_index];
+            if (preference.cap != 0U
+                && count_owned_def(state, player, preference.def) >= preference.cap) {
+                continue;
+            }
+            if (!opening_condition_matches(state, player, preference.condition)) {
+                continue;
+            }
+            const Action action = buy_action(preference.def);
+            if (legal.test(action)) {
+                return action;
+            }
+        }
+        return A_END;
+    }
+    return A_END;
+}
+
+[[nodiscard]] Action opening_trash_preference(
+    const GameState& state,
+    PlayerId player,
+    const ActionMask& legal) noexcept {
+    if (state.decision.select_semantic != static_cast<std::uint8_t>(SelectSemantic::Trash)
+        || !source_is_own_played_card(state, player)) {
+        return A_END;
+    }
+    constexpr DefId JUNK[] = {DEF_CURSE, DEF_ESTATE};
+    for (const DefId def : JUNK) {
+        const Action action = select_action(def);
+        if (legal.test(action)) {
+            return action;
+        }
+    }
+    const Action copper = select_action(DEF_COPPER);
+    if (count_owned_treasures(state, player) > 3U && legal.test(copper)) {
+        return copper;
+    }
+    // Optional selections should end rather than touching Silver, Gold, or
+    // actions. This also protects the Copper floor when Copper is the only
+    // remaining selectable card.
+    if (state.decision.min_left == 0U && legal.test(A_PASS)) {
+        return A_PASS;
+    }
+    return A_END;
+}
+
+[[nodiscard]] std::uint8_t draw_opening_template(
+    const SelfPlayConfig& config,
+    Xoshiro256pp& rng) noexcept {
+    double total = 0.0;
+    for (const float weight : config.template_weights) {
+        total += static_cast<double>(weight);
+    }
+    const double unit = static_cast<double>(rng.next() >> 11U)
+        * (1.0 / 9007199254740992.0);
+    const double target = unit * total;
+    double cumulative = 0.0;
+    for (std::uint8_t template_id = 0U;
+         template_id < SELFPLAY_OPENING_TEMPLATE_COUNT;
+         ++template_id) {
+        cumulative += static_cast<double>(config.template_weights[template_id]);
+        if (target < cumulative) {
+            return template_id;
+        }
+    }
+    return SELFPLAY_OPENING_TEMPLATE_COUNT - 1U;
+}
+
+[[nodiscard]] int opening_telemetry_index(DefId def) noexcept {
+    for (std::uint8_t index = 0U;
+         index < SELFPLAY_OPENING_TELEMETRY_CARD_COUNT;
+         ++index) {
+        if (OPENING_TELEMETRY_DEFS[index] == def) {
+            return static_cast<int>(index);
+        }
+    }
+    return -1;
+}
+
 [[nodiscard]] std::size_t checked_obs_size(ObsVersion version) {
     if (!is_valid_obs_version(version)) {
-        throw std::invalid_argument("SelfPlayConfig.obs_version must be V1 or V2");
+        throw std::invalid_argument("SelfPlayConfig.obs_version must be V1, V2, or V3");
     }
     return obs_size_for(version);
 }
@@ -125,6 +524,8 @@ enum class ScriptedSlotStatus : std::uint8_t {
         return EvalScriptedBotKind::Engine;
     case SelfPlayScriptedBotKind::EngineV3:
         return EvalScriptedBotKind::EngineV3;
+    case SelfPlayScriptedBotKind::Thinner:
+        return EvalScriptedBotKind::Thinner;
     case SelfPlayScriptedBotKind::Random:
         return EvalScriptedBotKind::Random;
     case SelfPlayScriptedBotKind::Scaffold:
@@ -197,6 +598,9 @@ struct SelfPlayRunner::GameSlot {
     std::uint32_t sims_completed = 0;
     std::uint32_t pending = 0;
     std::uint16_t move_index = 0;
+    std::uint8_t seat_template_ids[MAX_PLAYERS]{};
+    std::uint16_t opening_buy_counts[ACTION_DEF_COUNT]{};
+    std::uint16_t unconstrained_buy_counts[SELFPLAY_OPENING_TELEMETRY_CARD_COUNT]{};
     PlayerId nn_player = NONE;
     bool search_active = false;
     // Manifest slots represent one prescribed game for a generation.  Once
@@ -223,6 +627,7 @@ struct SelfPlayRunner::ScriptedPool {
         // per game slot prevents state from crossing game boundaries without
         // allocating on the decision path.
         EngineBotV3 engine_v3{};
+        ThinnerBot thinner{};
     };
 
     ScriptedPool(
@@ -284,6 +689,16 @@ struct SelfPlayRunner::ScriptedPool {
             : A_PASS;
     }
 
+    [[nodiscard]] Action choose_thinner(
+        std::uint32_t slot,
+        const GameState& state,
+        const ActionMask& legal,
+        int legal_count) noexcept {
+        return slot < queue_capacity_
+            ? bots_[slot].thinner.choose_action(state, legal, legal_count)
+            : A_PASS;
+    }
+
     [[nodiscard]] bool has_workers() const noexcept {
         return !workers_.empty();
     }
@@ -335,6 +750,67 @@ private:
 
 bool is_selfplay_implemented_kingdom(DefId def) noexcept {
     return implemented_kingdom(def);
+}
+
+Action selfplay_opening_preferred_action(
+    const GameState& state,
+    PlayerId player,
+    std::uint8_t template_id,
+    std::int32_t opening_turn_window,
+    const ActionMask& legal) noexcept {
+    if (template_id == SELFPLAY_UNCONSTRAINED_TEMPLATE
+        || template_id >= SELFPLAY_OPENING_TEMPLATE_COUNT
+        || opening_turn_window < 0
+        || static_cast<std::int32_t>(state.turn_counter) > opening_turn_window
+        || player >= state.num_players) {
+        return A_END;
+    }
+    if (state.phase == static_cast<std::uint8_t>(Phase::Buy)
+        && state.decision.kind == static_cast<std::uint8_t>(DecisionKind::PhaseBuy)) {
+        return opening_buy_preference(state, player, template_id, legal);
+    }
+    return opening_trash_preference(state, player, legal);
+}
+
+void selfplay_mix_opening_prior(
+    float* priors,
+    const ActionMask& legal,
+    int legal_count,
+    Action preferred_action,
+    float lambda) noexcept {
+    if (priors == nullptr
+        || legal_count <= 0
+        || preferred_action >= ACTION_SPACE_SIZE
+        || !legal.test(preferred_action)
+        || !(lambda > 0.0F)
+        || !std::isfinite(lambda)) {
+        return;
+    }
+    const float clamped_lambda = std::min(lambda, 1.0F);
+    const float retained = 1.0F - clamped_lambda;
+    double sum = 0.0;
+    for (Action action = 0U; action < ACTION_SPACE_SIZE; ++action) {
+        if (!legal.test(action)) {
+            priors[action] = 0.0F;
+            continue;
+        }
+        const float prior = priors[action] > 0.0F && std::isfinite(priors[action])
+            ? priors[action]
+            : 0.0F;
+        const float mixed = retained * prior
+            + (action == preferred_action ? clamped_lambda : 0.0F);
+        priors[action] = mixed;
+        sum += static_cast<double>(mixed);
+    }
+    if (sum <= 0.0) {
+        return;
+    }
+    const float inv_sum = static_cast<float>(1.0 / sum);
+    for (Action action = 0U; action < ACTION_SPACE_SIZE; ++action) {
+        if (legal.test(action)) {
+            priors[action] *= inv_sum;
+        }
+    }
 }
 
 SelfPlayRunner::SelfPlayRunner(const SelfPlayConfig& config)
@@ -399,6 +875,27 @@ SelfPlayRunner::SelfPlayRunner(const SelfPlayConfig& config)
     if (!(config_.margin_blend_alpha >= 0.0F && config_.margin_blend_alpha <= 1.0F)
         || !std::isfinite(config_.margin_blend_alpha)) {
         throw std::invalid_argument("SelfPlayConfig.margin_blend_alpha must be finite and between zero and one");
+    }
+    if (config_.opening_templates_enabled) {
+        if (!(config_.opening_lambda >= 0.0F && config_.opening_lambda <= 1.0F)
+            || !std::isfinite(config_.opening_lambda)) {
+            throw std::invalid_argument(
+                "SelfPlayConfig.opening_lambda must be finite and between zero and one");
+        }
+        if (config_.opening_turn_window < 0) {
+            throw std::invalid_argument("SelfPlayConfig.opening_turn_window must be non-negative");
+        }
+        double template_weight_sum = 0.0;
+        for (const float weight : config_.template_weights) {
+            if (!(weight >= 0.0F) || !std::isfinite(weight)) {
+                throw std::invalid_argument(
+                    "SelfPlayConfig.template_weights must be finite and non-negative");
+            }
+            template_weight_sum += static_cast<double>(weight);
+        }
+        if (!(template_weight_sum > 0.0) || !std::isfinite(template_weight_sum)) {
+            throw std::invalid_argument("SelfPlayConfig.template_weights must have positive sum");
+        }
     }
     if (config_.scripted_bot == SelfPlayScriptedBotKind::Scaffold && config_.scaffold_sims == 0U) {
         throw std::invalid_argument("SelfPlayConfig.scaffold_sims must be positive for Scaffold");
@@ -471,6 +968,9 @@ SelfPlayRunner::SelfPlayRunner(const SelfPlayConfig& config)
     const bool uses_engine_v3 = manifest_mode_
         ? manifest_uses(SelfPlayScriptedBotKind::EngineV3)
         : config_.scripted_bot == SelfPlayScriptedBotKind::EngineV3;
+    const bool uses_thinner = manifest_mode_
+        ? manifest_uses(SelfPlayScriptedBotKind::Thinner)
+        : config_.scripted_bot == SelfPlayScriptedBotKind::Thinner;
     if (uses_scaffold && config_.scaffold_sims == 0U) {
         throw std::invalid_argument("SelfPlayConfig.scaffold_sims must be positive for Scaffold");
     }
@@ -500,7 +1000,7 @@ SelfPlayRunner::SelfPlayRunner(const SelfPlayConfig& config)
     // EngineV3 needs the pool's fixed per-slot bot storage even when no
     // Scaffold worker is enabled. Passing zero workers keeps that state-only
     // pool allocation-free during moves and avoids spawning idle threads.
-    if ((uses_scaffold && config_.scripted_threads != 0U) || uses_engine_v3) {
+    if ((uses_scaffold && config_.scripted_threads != 0U) || uses_engine_v3 || uses_thinner) {
         scripted_pool_ = std::make_unique<ScriptedPool>(
             *this,
             slot_count_,
@@ -681,11 +1181,23 @@ void SelfPlayRunner::provide_evaluations(const float* values, const float* polic
         PendingLeaf& pending = pending_[i];
         GameSlot& game = games_[pending.game];
         float* normalized = normalized_policy_.get() + (i * ACTION_SPACE_SIZE);
+        Action opening_preference = A_END;
+        if (config_.opening_templates_enabled && pending.root
+            && pending.leaf.player < MAX_PLAYERS) {
+            const GameState& root_state = game.mcts.state_for(pending.leaf.state_index);
+            opening_preference = selfplay_opening_preferred_action(
+                root_state,
+                pending.leaf.player,
+                game.seat_template_ids[pending.leaf.player],
+                config_.opening_turn_window,
+                pending.leaf.legal);
+        }
         normalize_policy(
             policies == nullptr ? nullptr : policies + (i * ACTION_SPACE_SIZE),
             pending.leaf.legal,
             pending.leaf.legal_count,
             pending.root,
+            opening_preference,
             normalized,
             game.rng);
         const float value = values == nullptr ? 0.0F : values[i];
@@ -776,6 +1288,19 @@ void SelfPlayRunner::reset_game(std::uint32_t index) noexcept {
     game.seed = game_seed(config_, game.slot.game_index, game.generation);
     game.state = Game::new_game(game.setup, game.seed);
     game.rng = Xoshiro256pp::seeded(game.seed ^ 0x53E1'F019'0000'0001ULL);
+    std::memset(game.seat_template_ids, 0, sizeof(game.seat_template_ids));
+    std::memset(game.opening_buy_counts, 0, sizeof(game.opening_buy_counts));
+    std::memset(game.unconstrained_buy_counts, 0, sizeof(game.unconstrained_buy_counts));
+    if (config_.opening_templates_enabled) {
+        // Keep template sampling independent of the MCTS/noise RNG stream:
+        // templates alter priors by design, but their assignment should not
+        // also shift unrelated random samples.
+        Xoshiro256pp template_rng = Xoshiro256pp::seeded(
+            game.seed ^ 0x4F50'454E'494E'4731ULL);
+        for (PlayerId player = 0U; player < game.state.num_players; ++player) {
+            game.seat_template_ids[player] = draw_opening_template(config_, template_rng);
+        }
+    }
     game.observations.clear();
     game.policy_targets.clear();
     game.players.clear();
@@ -818,7 +1343,13 @@ void SelfPlayRunner::start_search(GameSlot& game) noexcept {
 }
 
 void SelfPlayRunner::reapply_root_noise(GameSlot& game) noexcept {
-    if (config_.dirichlet_frac <= 0.0F || game.mcts.node_count() == 0U) {
+    if (game.mcts.node_count() == 0U) {
+        return;
+    }
+    const bool apply_noise = config_.dirichlet_frac > 0.0F;
+    const PlayerId player = decision_player(game.state);
+    const bool apply_template = config_.opening_templates_enabled && player < MAX_PLAYERS;
+    if (!apply_noise && !apply_template) {
         return;
     }
 
@@ -861,13 +1392,29 @@ void SelfPlayRunner::reapply_root_noise(GameSlot& game) noexcept {
             }
         }
     }
-    mcts_add_dirichlet_noise(
-        priors,
-        retained,
-        count,
-        config_.dirichlet_alpha,
-        config_.dirichlet_frac,
-        game.rng);
+    if (apply_template) {
+        const Action preference = selfplay_opening_preferred_action(
+            game.state,
+            player,
+            game.seat_template_ids[player],
+            config_.opening_turn_window,
+            retained);
+        selfplay_mix_opening_prior(
+            priors,
+            retained,
+            count,
+            preference,
+            config_.opening_lambda);
+    }
+    if (apply_noise) {
+        mcts_add_dirichlet_noise(
+            priors,
+            retained,
+            count,
+            config_.dirichlet_alpha,
+            config_.dirichlet_frac,
+            game.rng);
+    }
     game.mcts.set_root_priors(priors);
 }
 
@@ -953,6 +1500,14 @@ Action SelfPlayRunner::choose_scripted_action(
         }
         const auto slot = static_cast<std::uint32_t>(&game - games_.get());
         return scripted_pool_->choose_engine_v3(slot, state, legal, legal_count);
+    }
+    if (game.slot.scripted_bot == SelfPlayScriptedBotKind::Thinner) {
+        assert(scripted_pool_);
+        if (!scripted_pool_) {
+            return A_PASS;
+        }
+        const auto slot = static_cast<std::uint32_t>(&game - games_.get());
+        return scripted_pool_->choose_thinner(slot, state, legal, legal_count);
     }
     return eval_scripted_action(
         state,
@@ -1092,6 +1647,24 @@ void SelfPlayRunner::maybe_finish_move(GameSlot& game) noexcept {
         action = legal_count > 0 ? legal.nth_set(0U) : A_PASS;
     }
 
+    const PlayerId player = decision_player(game.state);
+    if (action_is_buy(action)) {
+        const DefId def = action_def(action, A_BUY_BASE);
+        if (config_.opening_templates_enabled
+            && static_cast<std::int32_t>(game.state.turn_counter) <= config_.opening_turn_window
+            && def < ACTION_DEF_COUNT) {
+            ++game.opening_buy_counts[def];
+        }
+        if (config_.opening_templates_enabled
+            && player < MAX_PLAYERS
+            && game.seat_template_ids[player] == SELFPLAY_UNCONSTRAINED_TEMPLATE) {
+            const int telemetry_index = opening_telemetry_index(def);
+            if (telemetry_index >= 0) {
+                ++game.unconstrained_buy_counts[static_cast<std::size_t>(telemetry_index)];
+            }
+        }
+    }
+
     const bool done = Game::step(game.state, action);
     if (config_.tree_reuse && !done
         && game.state.phase != static_cast<std::uint8_t>(Phase::Over)) {
@@ -1155,6 +1728,22 @@ void SelfPlayRunner::finish_game(GameSlot& game) noexcept {
     record.seat1_model_id = game.slot.seat1_model_id;
     record.scripted_bot = game.slot.scripted_bot;
     record.sims_override = game.slot.sims_override;
+    std::memcpy(
+        record.seat_template_ids,
+        game.seat_template_ids,
+        sizeof(record.seat_template_ids));
+    std::memcpy(
+        record.opening_buy_counts,
+        game.opening_buy_counts,
+        sizeof(record.opening_buy_counts));
+    std::memcpy(
+        record.unconstrained_buy_counts,
+        game.unconstrained_buy_counts,
+        sizeof(record.unconstrained_buy_counts));
+    for (Slot slot = 0U; slot < game.state.num_slots; ++slot) {
+        record.cards_trashed = static_cast<std::uint16_t>(
+            record.cards_trashed + game.state.trash[slot]);
+    }
     record.kingdom_count = game.setup.kingdom_count;
     for (std::uint8_t i = 0; i < game.setup.kingdom_count; ++i) {
         record.kingdom[i] = game.setup.kingdom[i];
@@ -1304,6 +1893,7 @@ void SelfPlayRunner::normalize_policy(
     const ActionMask& legal,
     int legal_count,
     bool add_root_noise,
+    Action opening_preference,
     float* out,
     Xoshiro256pp& rng) noexcept {
     for (Action action = 0; action < ACTION_SPACE_SIZE; ++action) {
@@ -1345,6 +1935,16 @@ void SelfPlayRunner::normalize_policy(
             out[action] *= inv_sum;
         }
     }
+
+    // Template mixing occurs only for the root leaf supplied above, after
+    // NN softmax and before root Dirichlet exploration. Interior leaves pass
+    // A_END and therefore retain the historical policy path exactly.
+    selfplay_mix_opening_prior(
+        out,
+        legal,
+        legal_count,
+        opening_preference,
+        config_.opening_lambda);
 
     if (!add_root_noise || config_.dirichlet_frac <= 0.0F || legal_count <= 1) {
         return;

@@ -163,14 +163,15 @@ def _validate_league_checkpoint_observation(
     config: TrainConfig,
     payload: dict,
     path: str | Path,
-) -> None:
-    """Reject league weights whose stored observation protocol differs.
+) -> int:
+    """Validate a league checkpoint and return its model observation version.
 
     The config's saved ``obs_version`` and the model's own layout are
     independent checks. MLPs expose that layout through their first-layer
-    width; CardTokenNet is structurally v2. Treating either mismatch as a
-    hard configuration error avoids silently pairing a v1 opponent with a v2
-    runner.
+    width; CardTokenNet records its v2/v3 layout in model metadata.  The one
+    intentional cross-version pairing is a v2 model in a v3 runner: v3's
+    byte-identical v2 prefix is sliced and its metadata is rewritten before
+    that model evaluates it.  V1 remains incompatible with both v2 and v3.
     """
     checkpoint_config = payload.get("config")
     if not isinstance(checkpoint_config, dict):
@@ -189,7 +190,8 @@ def _validate_league_checkpoint_observation(
         model_config = _checkpoint_model_config(payload, path)
         arch = model_config.get("arch", "mlp")
         if arch == "card_transformer":
-            model_version = 2
+            configured_model_version = model_config.get("obs_version")
+            model_version = 2 if configured_model_version is None else int(configured_model_version)
         elif arch == "mlp":
             model_version = obs_version_for_checkpoint(payload)
         else:
@@ -201,16 +203,20 @@ def _validate_league_checkpoint_observation(
     required_version = int(config.selfplay.obs_version)
     required_width = obs_size_for_config(config)
     if (
-        stored_version != required_version
-        or stored_width != required_width
-        or model_version != required_version
-        or model_width != required_width
+        stored_version != model_version
+        or stored_width != model_width
+        or not (
+            stored_version == required_version
+            or (required_version == 3 and stored_version == 2)
+        )
     ):
         raise ValueError(
             f"league checkpoint {path} has stored obs_version {stored_version} and input width {model_width} "
             f"(model layout v{model_version}); current run requires obs_version {required_version} "
-            f"and input width {required_width}"
+            f"and input width {required_width}. A v3 run may use only an obs-v2 opponent via the exact "
+            "v3-to-v2 downgrade; no observation upgrade path exists and obs-v1 remains incompatible."
         )
+    return model_version
 
 
 def save_best_checkpoint(config: TrainConfig, generation: int, model: torch.nn.Module, path: str | Path) -> Path:
@@ -230,7 +236,7 @@ def save_best_checkpoint(config: TrainConfig, generation: int, model: torch.nn.M
 
 def load_best_checkpoint(config: TrainConfig, device: torch.device, path: str | Path) -> tuple[torch.nn.Module, int]:
     payload = _load_checkpoint_payload(path, device)
-    _validate_league_checkpoint_observation(config, payload, path)
+    model_version = _validate_league_checkpoint_observation(config, payload, path)
     # Action-space dimensions come from the native protocol; import lazily to
     # keep this module usable by its pure persistence/sampling tests without
     # pybind. Observation width follows the selected training config.
@@ -238,7 +244,7 @@ def load_best_checkpoint(config: TrainConfig, device: torch.device, path: str | 
 
     model = build_model(
         _checkpoint_model_config(payload, path),
-        obs_size_for_config(config),
+        obs_size_for_version(model_version),
         dz.ACTION_SPACE_SIZE,
     ).to(device)
     model.load_state_dict(payload["model"])
@@ -284,7 +290,7 @@ def _load_league_seed_checkpoint(config: TrainConfig, device: torch.device, path
                 f"but the current run requires {expected_hidden_sizes}; refusing to truncate or pad weights"
             )
 
-    _validate_league_checkpoint_observation(config, payload, path)
+    model_version = _validate_league_checkpoint_observation(config, payload, path)
 
     # Action-space dimensions come from the native protocol; import lazily to
     # keep this module usable by its pure persistence/sampling tests without
@@ -293,7 +299,7 @@ def _load_league_seed_checkpoint(config: TrainConfig, device: torch.device, path
 
     model = build_model(
         checkpoint_model,
-        obs_size_for_config(config),
+        obs_size_for_version(model_version),
         dz.ACTION_SPACE_SIZE,
     ).to(device)
     try:

@@ -12,11 +12,11 @@ import torch
 
 if __package__ in (None, ""):
     sys.path.append(str(Path(__file__).resolve().parents[3]))
-    from src.v2.train.card_transformer import ACTION_SPACE_SIZE, OBS_SIZE_V2
+    from src.v2.train.card_transformer import ACTION_SPACE_SIZE, OBS_SIZE_V2, OBS_SIZE_V3
     from src.v2.train.inference_server import compile_server_evaluator
     from src.v2.train.model import build_model, count_parameters
 else:
-    from .card_transformer import ACTION_SPACE_SIZE, OBS_SIZE_V2
+    from .card_transformer import ACTION_SPACE_SIZE, OBS_SIZE_V2, OBS_SIZE_V3
     from .inference_server import compile_server_evaluator
     from .model import build_model, count_parameters
 
@@ -71,6 +71,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--n-heads", type=int, default=4)
     parser.add_argument("--ffn-multiplier", type=int, default=4)
     parser.add_argument("--dropout", type=float, default=0.0)
+    parser.add_argument("--obs-version", type=int, choices=(2, 3), default=2)
     parser.add_argument(
         "--compile",
         action="store_true",
@@ -100,7 +101,8 @@ def main(argv: list[str] | None = None) -> int:
         "ffn_multiplier": args.ffn_multiplier,
         "dropout": args.dropout,
     }
-    model = build_model(model_config, OBS_SIZE_V2, ACTION_SPACE_SIZE).to(device)
+    obs_size = OBS_SIZE_V3 if args.obs_version == 3 else OBS_SIZE_V2
+    model = build_model(model_config, obs_size, ACTION_SPACE_SIZE).to(device)
     model.eval()
     evaluator = compile_server_evaluator(model) if args.compile else None
 
@@ -115,7 +117,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     with torch.inference_mode(), autocast_context:
         for batch_size in args.batch_sizes:
-            obs = torch.empty((batch_size, OBS_SIZE_V2), dtype=torch.float32, device=device).uniform_(0.0, 40.0)
+            obs = torch.empty((batch_size, obs_size), dtype=torch.float32, device=device).uniform_(0.0, 40.0)
             legal_mask = torch.ones((batch_size, ACTION_SPACE_SIZE), dtype=torch.bool, device=device)
             for _ in range(args.warmup):
                 if evaluator is None:

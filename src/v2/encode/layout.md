@@ -292,3 +292,52 @@ Block offset: `1125 + pile_index * 11`.
 | 12 | 1 | Source def id + 1, or 0 for no decision |
 | 13 | 1 | `min_left` |
 | 14 | 1 | `max_left` |
+
+## v3
+
+`OBS_VERSION = 3`
+
+`OBS_SIZE_V3 = 1788` float32 values. V3 is byte-identical to the complete v2
+layout through the Decision section, except Meta values 0 and 1 carry the v3
+version and shape. It appends the public global trash-pile composition indexed
+by `Slot`, followed by the current selection semantic.
+
+### Global offsets
+
+| Section | Offset | Size | Contents |
+|---|---:|---:|---|
+| Meta through Decision | 0 | 1717 | Unchanged v2 sections (with v3 Meta version/shape) |
+| Trash composition | 1717 | 64 | Global trash counts indexed by `Slot` |
+| Select semantic | 1781 | 7 | Current selection's semantic one-hot |
+
+### Meta, offset 0
+
+| Relative | Size | Field |
+|---:|---:|---|
+| 0 | 1 | `OBS_VERSION` (`3`) |
+| 1 | 1 | `OBS_SIZE_V3` (`1788`) |
+| 2 | 1 | Perspective player id |
+| 3 | 1 | `state.num_slots` |
+
+### Trash composition, offset 1717
+
+There are `MAX_SLOTS = 64` raw count values. Relative index `slot` is the
+number of cards for that exact `Slot` in the global trash pile. Counts are
+global and independent of perspective; unused slots are zero.
+
+### Select semantic, offset 1781
+
+`SelectSemantic` is a seven-way one-hot vector. It describes what happens to
+the card selected by the current decision, independent of the source card id.
+The vector is all-zero only for an invalid internal enum value; ordinary
+non-selection decisions use the `None` entry.
+
+| Relative | Field |
+|---:|---|
+| 0 | None |
+| 1 | Keep (for example Militia's discard-down-to choice) |
+| 2 | Discard |
+| 3 | Trash |
+| 4 | Topdeck |
+| 5 | Gain |
+| 6 | Other |

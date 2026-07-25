@@ -628,6 +628,105 @@ def test_league_seed_observation_version_mismatch_raises_hard_error(tmp_path: Pa
         seed_league_checkpoints(target_cfg, torch.device("cpu"))
 
 
+def _card_transformer_config(tmp_path: Path, *, obs_version: int) -> TrainConfig:
+    config = _small_gated_config(tmp_path, generations=1)
+    config.model.arch = "card_transformer"
+    config.model.obs_version = obs_version
+    config.model.d_model = 16
+    config.model.n_layers = 1
+    config.model.n_heads = 4
+    config.model.ffn_multiplier = 1
+    config.model.dropout = 0.0
+    config.selfplay.obs_version = obs_version
+    return config
+
+
+def test_league_observation_validation_allows_only_v3_to_v2_downgrade(tmp_path: Path) -> None:
+    """A v2 CardTokenNet is a v3 league opponent, never an upgraded model."""
+    v2_config = _card_transformer_config(tmp_path / "v2", obs_version=2)
+    v2_model, v2_optimizer, v2_replay = build_objects(v2_config, torch.device("cpu"))
+    v2_checkpoint = save_checkpoint(v2_config, 1, v2_model, v2_optimizer, v2_replay)
+
+    v3_target = _card_transformer_config(tmp_path / "v3-target", obs_version=3)
+    v3_target.league_seed_checkpoints = [str(v2_checkpoint)]
+    copied = seed_league_checkpoints(v3_target, torch.device("cpu"))
+    loaded_v2, _ = load_best_checkpoint(v3_target, torch.device("cpu"), copied[0])
+    assert loaded_v2.obs_version == 2
+    assert loaded_v2._dominion_model_config["obs_version"] == 2
+
+    v1_config = _small_gated_config(tmp_path / "v1", generations=1)
+    v1_config.selfplay.obs_version = 1
+    v1_model, v1_optimizer, v1_replay = build_objects(v1_config, torch.device("cpu"))
+    v1_checkpoint = save_checkpoint(v1_config, 1, v1_model, v1_optimizer, v1_replay)
+    v3_target.league_seed_checkpoints = [str(v1_checkpoint)]
+    with pytest.raises(ValueError, match=r"obs-v1 remains incompatible"):
+        seed_league_checkpoints(v3_target, torch.device("cpu"))
+
+    v3_source = _card_transformer_config(tmp_path / "v3-source", obs_version=3)
+    v3_model, v3_optimizer, v3_replay = build_objects(v3_source, torch.device("cpu"))
+    v3_checkpoint = save_checkpoint(v3_source, 1, v3_model, v3_optimizer, v3_replay)
+    v2_target = _card_transformer_config(tmp_path / "v2-target", obs_version=2)
+    v2_target.league_seed_checkpoints = [str(v3_checkpoint)]
+    with pytest.raises(ValueError, match=r"no observation upgrade path exists"):
+        seed_league_checkpoints(v2_target, torch.device("cpu"))
+
+
+def test_v3_selfplay_serves_real_v2_league_checkpoint_with_downgraded_inputs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Run a real v3 game against campaign15 and observe the v2 model input."""
+    checkpoint = Path(__file__).resolve().parents[3] / "checkpoints/remote/campaign15/gen_0045.pt"
+    assert checkpoint.is_file(), f"required real league checkpoint is missing: {checkpoint}"
+
+    config = _card_transformer_config(tmp_path / "campaign18-smoke", obs_version=3)
+    config.selfplay.n_games = 1
+    config.selfplay.sims_per_move = 1
+    config.selfplay.max_batch = 4
+    config.selfplay.max_recorded_moves = 64
+    config.selfplay.max_tree_nodes = 256
+    config.league_seed_checkpoints = [str(checkpoint)]
+    seeded = seed_league_checkpoints(config, torch.device("cpu"))
+
+    active, _, _ = build_objects(config, torch.device("cpu"))
+    opponent, _ = load_best_checkpoint(config, torch.device("cpu"), seeded[0])
+    active_widths: list[int] = []
+    observed_widths: list[int] = []
+    active_evaluate = active.evaluate
+    original_evaluate = opponent.evaluate
+
+    def spy_active(observations: torch.Tensor, masks: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        active_widths.append(int(observations.shape[1]))
+        return active_evaluate(observations, masks)
+
+    def spy_evaluate(observations: torch.Tensor, masks: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        observed_widths.append(int(observations.shape[1]))
+        return original_evaluate(observations, masks)
+
+    monkeypatch.setattr(active, "evaluate", spy_active)
+    monkeypatch.setattr(opponent, "evaluate", spy_evaluate)
+    stats, records = play_routed_games(
+        (active, opponent),
+        config.selfplay,
+        seed=config.seed,
+        device=torch.device("cpu"),
+        target_games=1,
+        league_opponent=seeded[0].name,
+    )
+
+    assert stats.games == 1
+    assert stats.league_by_opponent[seeded[0].name][0] == 1
+    assert active_widths
+    assert set(active_widths) == {dz.OBS_SIZE_V3}
+    assert observed_widths
+    assert set(observed_widths) == {dz.OBS_SIZE_V2}
+    assert len(records) == 1
+    record = records[0]
+    assert np.asarray(record["observations"]).shape[1] == dz.OBS_SIZE_V3
+    assert np.asarray(record["policy_targets"]).shape[0] == np.asarray(record["observations"]).shape[0]
+    assert np.asarray(record["values"]).shape[0] == np.asarray(record["observations"]).shape[0]
+
+
 def test_ungated_league_schedule_uses_exact_per_generation_counts(tmp_path: Path) -> None:
     source_cfg = _small_gated_config(tmp_path / "source", generations=1)
     source_model, source_optimizer, source_replay = build_objects(source_cfg, torch.device("cpu"))

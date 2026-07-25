@@ -66,6 +66,18 @@ def build_model(model_config: Mapping[str, Any] | Any, obs_size: int, action_siz
     if not isinstance(arch, str):
         raise ValueError("model.arch must be a string")
     config["arch"] = arch
+    # Payloads sent to self-play workers must describe the model's actual
+    # input ABI.  Old checkpoints omitted this transformer field, but the
+    # input width remains authoritative and lets v3 runners downgrade only
+    # those historical v2 opponents.
+    observed_version = {1141: 1, 1717: 2, 1788: 3}.get(int(obs_size))
+    if observed_version is not None:
+        configured_version = config.get("obs_version")
+        if arch == "card_transformer" and configured_version is not None and configured_version != observed_version:
+            raise ValueError(
+                f"model.obs_version {configured_version} does not match observation size {obs_size}"
+            )
+        config["obs_version"] = observed_version
 
     if arch == "mlp":
         model: nn.Module = DominionNet(
@@ -85,6 +97,7 @@ def build_model(model_config: Mapping[str, Any] | Any, obs_size: int, action_siz
             n_heads=config.get("n_heads", 4),
             ffn_multiplier=config.get("ffn_multiplier", 4),
             dropout=config.get("dropout", 0.0),
+            obs_version=config.get("obs_version"),
         )
     else:
         raise ValueError(f"unknown model.arch {arch!r}; expected 'mlp' or 'card_transformer'")

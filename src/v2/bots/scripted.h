@@ -51,3 +51,15 @@ struct EngineBotV3 {
         const ActionMask& legal,
         int legal_count) noexcept;
 };
+
+// Chapel-first engine bot used as an evaluation sentinel for deck-thinning
+// pressure. The EngineV3 buy policy supplies the balanced engine core while
+// this bot retains its own thinning and late-green rules.
+struct ThinnerBot {
+    mutable EngineBotV3 engine_buy_policy{};
+
+    [[nodiscard]] Action choose_action(
+        const GameState& state,
+        const ActionMask& legal,
+        int legal_count) const noexcept;
+};

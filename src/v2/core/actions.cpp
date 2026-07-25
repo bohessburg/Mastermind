@@ -524,5 +524,6 @@ void refresh_current_decision(GameState& state) noexcept {
         0,
         0,
         0,
+        static_cast<std::uint8_t>(SelectSemantic::None),
     };
 }

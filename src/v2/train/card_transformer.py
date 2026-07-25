@@ -1,10 +1,10 @@
-"""Card-token policy/value network for v2 Dominion observations.
+"""Card-token policy/value network for v2/v3 Dominion observations.
 
-The v2 encoder deliberately remains a fixed-width C++ ABI.  This module turns
-that flat observation back into a set of per-supply-card tokens in PyTorch,
-using the invariant that a base-set pile's index is also its Slot.  The base
-DefId stored in each supply block is therefore the per-sample Slot -> DefId
-mapping; it must not be assumed to be a fixed Slot -> DefId table.
+The versioned encoder deliberately remains a fixed-width C++ ABI. This module
+turns a flat observation back into per-supply-card tokens in PyTorch, using
+the invariant that a base-set pile's index is also its Slot. The base DefId
+stored in each supply block is therefore the per-sample Slot -> DefId mapping;
+it must not be assumed to be a fixed Slot -> DefId table.
 """
 
 from __future__ import annotations
@@ -15,10 +15,11 @@ import torch
 from torch import nn
 
 
-# These mirror the current v2 C++ ABI in encode/{encoder.h,layout.md} and
+# These mirror the current C++ ABI in encode/{encoder.h,layout.md} and
 # core/actions.h.  Keeping them here avoids making model-only code depend on
 # the optional native Python bindings at import time.
 OBS_SIZE_V2 = 1717
+OBS_SIZE_V3 = 1788
 MAX_SLOTS = 64
 MAX_PILES = 48
 MAX_OPPONENTS = 3
@@ -37,6 +38,9 @@ OBS_LANDSCAPE_OFFSET = 1653
 OBS_RESOURCE_OFFSET = 1680
 OBS_TURN_OFFSET = 1692
 OBS_DECISION_OFFSET = 1702
+OBS_V3_TRASH_OFFSET = OBS_SIZE_V2
+OBS_V3_SELECT_SEMANTIC_OFFSET = OBS_V3_TRASH_OFFSET + MAX_SLOTS
+SELECT_SEMANTIC_COUNT = 7
 
 A_PASS = 0
 A_PLAY_BASE = 1
@@ -55,8 +59,9 @@ class TokenizedCards:
     """Intermediate tokenizer output, kept public for model-side inspection.
 
     ``card_features`` contains the values actually sent through the card
-    feature projection: count fields are log1p transformed and the final
-    top-is-base field is binary.  ``def_ids`` contains native zero-based IDs;
+    feature projection: count fields are log1p transformed and the
+    top-is-base field is binary. In v3, the appended final scalar is the
+    log1p trash count. ``def_ids`` contains native zero-based IDs;
     inactive supply blocks have ``-1`` and are masked from attention.
     """
 
@@ -87,8 +92,17 @@ class CardTokenNet(nn.Module):
     OPPONENT_FEATURE_OFFSET = 5
     SUPPLY_REMAINING = OWN_SET_ASIDE + 1 + (MAX_OPPONENTS * 4)
     TOP_IS_BASE = SUPPLY_REMAINING + 1
-    CARD_FEATURE_SIZE = TOP_IS_BASE + 1
-    GLOBAL_FEATURE_SIZE = 4 + 12 + 10 + 15 + 27
+    # Keep all v2 feature indices and widths fixed so v2 state dicts retain
+    # their exact projection shapes. v3 appends its trash scalar after them.
+    CARD_FEATURE_SIZE_V2 = TOP_IS_BASE + 1
+    TRASH_COUNT = CARD_FEATURE_SIZE_V2
+    CARD_FEATURE_SIZE_V3 = TRASH_COUNT + 1
+    CARD_FEATURE_SIZE = CARD_FEATURE_SIZE_V2
+    GLOBAL_FEATURE_SIZE_V2 = 4 + 12 + 10 + 15 + 27
+    GLOBAL_TRASH_TOTAL = GLOBAL_FEATURE_SIZE_V2
+    GLOBAL_SELECT_SEMANTIC_OFFSET = GLOBAL_TRASH_TOTAL + 1
+    GLOBAL_FEATURE_SIZE_V3 = GLOBAL_SELECT_SEMANTIC_OFFSET + SELECT_SEMANTIC_COUNT
+    GLOBAL_FEATURE_SIZE = GLOBAL_FEATURE_SIZE_V2
     POINTER_FILL = -1.0e9
 
     def __init__(
@@ -103,10 +117,21 @@ class CardTokenNet(nn.Module):
         dropout: float = 0.0,
         num_card_defs: int = ACTION_DEF_COUNT,
         action_def_count: int = ACTION_DEF_COUNT,
+        obs_version: int | None = None,
     ):
         super().__init__()
-        if int(obs_size) != OBS_SIZE_V2:
-            raise ValueError(f"CardTokenNet requires v2 observations ({OBS_SIZE_V2}), got {obs_size}")
+        if int(obs_size) == OBS_SIZE_V2:
+            inferred_obs_version = 2
+        elif int(obs_size) == OBS_SIZE_V3:
+            inferred_obs_version = 3
+        else:
+            raise ValueError(
+                f"CardTokenNet requires v2 ({OBS_SIZE_V2}) or v3 ({OBS_SIZE_V3}) observations, got {obs_size}"
+            )
+        if obs_version is not None and int(obs_version) != inferred_obs_version:
+            raise ValueError(
+                f"CardTokenNet obs_version {obs_version} does not match observation size {obs_size}"
+            )
         if d_model <= 0 or n_layers <= 0 or n_heads <= 0 or d_model % n_heads != 0:
             raise ValueError("d_model must be positive and divisible by n_heads; n_layers/n_heads must be positive")
         if ffn_multiplier <= 0:
@@ -121,14 +146,22 @@ class CardTokenNet(nn.Module):
             raise ValueError(f"CardTokenNet requires action size {ACTION_SPACE_SIZE}, got {action_size}")
 
         self.obs_size = int(obs_size)
+        self.obs_version = inferred_obs_version
         self.action_size = int(action_size)
         self.d_model = int(d_model)
         self.num_card_defs = int(num_card_defs)
         self.action_def_count = int(action_def_count)
 
+        self.card_feature_size = (
+            self.CARD_FEATURE_SIZE_V3 if self.obs_version == 3 else self.CARD_FEATURE_SIZE_V2
+        )
+        self.global_feature_size = (
+            self.GLOBAL_FEATURE_SIZE_V3 if self.obs_version == 3 else self.GLOBAL_FEATURE_SIZE_V2
+        )
+
         self.def_embedding = nn.Embedding(self.num_card_defs, self.d_model)
-        self.card_projection = nn.Linear(self.CARD_FEATURE_SIZE, self.d_model)
-        self.global_projection = nn.Linear(self.GLOBAL_FEATURE_SIZE, self.d_model)
+        self.card_projection = nn.Linear(self.card_feature_size, self.d_model)
+        self.global_projection = nn.Linear(self.global_feature_size, self.d_model)
 
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=self.d_model,
@@ -204,10 +237,34 @@ class CardTokenNet(nn.Module):
         # IDs and bought flags stay as encoded; only sun tokens are a count.
         landscapes[:, 21] = self._signed_log1p(landscapes[:, 21])
 
-        return torch.cat((meta, resources, turn, decision, landscapes), dim=-1)
+        features = torch.cat((meta, resources, turn, decision, landscapes), dim=-1)
+        if self.obs_version == 2:
+            return features
+
+        trash = obs[:, OBS_V3_TRASH_OFFSET : OBS_V3_TRASH_OFFSET + MAX_SLOTS]
+        trash_total = self._signed_log1p(trash.sum(dim=-1, keepdim=True))
+        semantic = obs[
+            :, OBS_V3_SELECT_SEMANTIC_OFFSET : OBS_V3_SELECT_SEMANTIC_OFFSET + SELECT_SEMANTIC_COUNT
+        ]
+        return torch.cat((features, trash_total, semantic), dim=-1)
+
+    def _v3_decision_source_embedding(self, obs: torch.Tensor) -> torch.Tensor:
+        """Embed the v3 decision source, with no-card represented by zero."""
+
+        source_plus_one = obs[:, OBS_DECISION_OFFSET + 12].round().to(torch.long)
+        source_present = source_plus_one != 0
+        # The frozen v2 prefix predates source-less phase decisions and
+        # serializes their default source value (0) as ``def + 1 == 1``.
+        # Phase decisions intrinsically have no source card, so mask them
+        # explicitly without altering any v2 feature values.
+        phase_decision = obs[:, OBS_DECISION_OFFSET + 1 : OBS_DECISION_OFFSET + 4].bool().any(dim=-1)
+        source_present = source_present & ~phase_decision
+        source_ids = (source_plus_one - 1).clamp(min=0, max=self.num_card_defs - 1)
+        embedded = self.def_embedding(source_ids)
+        return embedded * source_present.unsqueeze(-1).to(dtype=embedded.dtype)
 
     def tokenize(self, obs: torch.Tensor) -> TokenizedCards:
-        """Recover active card tokens directly from a batched v2 observation.
+        """Recover active card tokens directly from a batched v2/v3 observation.
 
         Supply block ``k`` provides the base DefId for Slot ``k``.  We gather
         all Slot-indexed own/opponent composition fields by that pile index,
@@ -253,11 +310,23 @@ class CardTokenNet(nn.Module):
 
         raw_count_features = torch.cat((own, opponent_slots, supply_remaining), dim=-1)
         count_features = torch.log1p(raw_count_features.clamp_min(0))
-        card_features = torch.cat((count_features, top_is_base), dim=-1)
+        if self.obs_version == 2:
+            # Retain the exact v2 tokenizer path and feature order for
+            # existing checkpoints.
+            card_features = torch.cat((count_features, top_is_base), dim=-1)
+        else:
+            # The trash composition is Slot-indexed like own-zone counts, so
+            # supply token k gathers trash count for Slot k.
+            trash = obs[:, OBS_V3_TRASH_OFFSET : OBS_V3_TRASH_OFFSET + MAX_SLOTS]
+            trash = torch.log1p(trash[:, :MAX_PILES].clamp_min(0)).unsqueeze(-1)
+            card_features = torch.cat((count_features, top_is_base, trash), dim=-1)
 
         card_tokens = self.def_embedding(embedding_ids) + self.card_projection(card_features)
         global_features = self._global_features(obs)
-        global_token = self.global_projection(global_features).unsqueeze(1)
+        global_token = self.global_projection(global_features)
+        if self.obs_version == 3:
+            global_token = global_token + self._v3_decision_source_embedding(obs)
+        global_token = global_token.unsqueeze(1)
         return TokenizedCards(
             card_tokens=card_tokens,
             global_token=global_token,

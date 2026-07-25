@@ -25,7 +25,16 @@ except ModuleNotFoundError as exc:  # pragma: no cover - gives a clearer CLI err
 
 if __package__ in (None, ""):
     sys.path.append(str(Path(__file__).resolve().parents[3]))
-    from src.v2.train.config import TrainConfig, add_config_args, load_config, save_config, validate_deep_slice_config
+    from src.v2.train.config import (
+        TrainConfig,
+        add_config_args,
+        load_config,
+        opening_template_schedule,
+        save_config,
+        scheduled_opening_selfplay_config,
+        validate_deep_slice_config,
+        validate_opening_template_config,
+    )
     from src.v2.train.gating import (
         GateStats,
         archive_previous_best,
@@ -53,7 +62,16 @@ if __package__ in (None, ""):
     from src.v2.train.selfplay import SelfPlayStats, run_routed_self_play_generation, run_self_play_generation
     from src.v2.train.workers import ParallelSelfPlayPool
 else:
-    from .config import TrainConfig, add_config_args, load_config, save_config, validate_deep_slice_config
+    from .config import (
+        TrainConfig,
+        add_config_args,
+        load_config,
+        opening_template_schedule,
+        save_config,
+        scheduled_opening_selfplay_config,
+        validate_deep_slice_config,
+        validate_opening_template_config,
+    )
     from .gating import (
         GateStats,
         archive_previous_best,
@@ -108,6 +126,9 @@ def seed_everything(seed: int, deterministic: bool = True) -> None:
 
 
 def build_objects(config: TrainConfig, device: torch.device):
+    # Keep direct callers on the same self-describing transformer-config path
+    # as run_training()/checkpoint loading.
+    validate_model_config(config)
     obs_size = obs_size_for_config(config)
     model = build_model(config.model, obs_size, dz.ACTION_SPACE_SIZE).to(device)
     optimizer = torch.optim.Adam(
@@ -127,8 +148,23 @@ def validate_model_config(config: TrainConfig) -> None:
         raise ValueError("model.arch must be a string")
     if arch not in {"mlp", "card_transformer"}:
         raise ValueError(f"unknown model.arch {arch!r}; expected 'mlp' or 'card_transformer'")
-    if arch == "card_transformer" and int(config.selfplay.obs_version) != 2:
-        raise ValueError("model.arch='card_transformer' requires selfplay.obs_version == 2")
+    if arch == "card_transformer":
+        obs_version = int(config.selfplay.obs_version)
+        if obs_version not in (2, 3):
+            raise ValueError("model.arch='card_transformer' requires selfplay.obs_version == 2 or 3")
+        configured_version = model_config.get("obs_version")
+        if configured_version is None:
+            # v2 remains implicit for byte-compatible historical metadata.
+            # V3 must record its tokenizer layout because it is no longer the
+            # only transformer observation ABI.
+            if obs_version == 3:
+                config.model.obs_version = obs_version
+        elif (
+            not isinstance(configured_version, int)
+            or isinstance(configured_version, bool)
+            or configured_version != obs_version
+        ):
+            raise ValueError("model.obs_version must match selfplay.obs_version for card_transformer")
 
 
 def train_step(
@@ -331,7 +367,11 @@ def load_initial_weights(
     required_obs_version = int(config.selfplay.obs_version)
     try:
         stored_obs_width = obs_size_for_version(stored_obs_version)
-        model_obs_version = 2 if checkpoint_arch == "card_transformer" else obs_version_for_checkpoint(payload)
+        if checkpoint_arch == "card_transformer":
+            configured_model_version = checkpoint_model.get("obs_version")
+            model_obs_version = 2 if configured_model_version is None else int(configured_model_version)
+        else:
+            model_obs_version = obs_version_for_checkpoint(payload)
         model_obs_width = obs_size_for_version(model_obs_version)
         required_obs_width = obs_size_for_config(config)
     except (TypeError, ValueError) as exc:
@@ -434,6 +474,33 @@ METRICS_FIELDNAMES = [
         "scripted_wins",
         "routed_fast_path_batches",
         "routed_split_batches",
+        "opening_templates_enabled",
+        "opening_lambda",
+        "opening_p_unconstrained",
+        "mean_cards_trashed_per_game",
+        "opening_template_games_t0",
+        "opening_template_games_t1",
+        "opening_template_games_t2",
+        "opening_template_games_t3",
+        "opening_template_games_t4",
+        "opening_template_games_t5",
+        "opening_template_games_t6",
+        "opening_template_vs_unconstrained_games_t1",
+        "opening_template_vs_unconstrained_games_t2",
+        "opening_template_vs_unconstrained_games_t3",
+        "opening_template_vs_unconstrained_games_t4",
+        "opening_template_vs_unconstrained_games_t5",
+        "opening_template_vs_unconstrained_games_t6",
+        "opening_template_win_rate_vs_unconstrained_t1",
+        "opening_template_win_rate_vs_unconstrained_t2",
+        "opening_template_win_rate_vs_unconstrained_t3",
+        "opening_template_win_rate_vs_unconstrained_t4",
+        "opening_template_win_rate_vs_unconstrained_t5",
+        "opening_template_win_rate_vs_unconstrained_t6",
+        "unconstrained_buys_chapel",
+        "unconstrained_buys_sentry",
+        "unconstrained_buys_moneylender",
+        "unconstrained_buys_village",
 ]
 
 
@@ -502,6 +569,17 @@ def _add_stats(total: SelfPlayStats, update: SelfPlayStats) -> None:
     total.scripted_wins += update.scripted_wins
     total.deep_games += update.deep_games
     total.deep_positions += update.deep_positions
+    total.cards_trashed += update.cards_trashed
+    for index in range(7):
+        total.opening_template_games[index] += update.opening_template_games[index]
+        total.opening_template_vs_unconstrained_games[index] += (
+            update.opening_template_vs_unconstrained_games[index]
+        )
+        total.opening_template_vs_unconstrained_wins[index] += (
+            update.opening_template_vs_unconstrained_wins[index]
+        )
+    for index in range(4):
+        total.unconstrained_buy_counts[index] += update.unconstrained_buy_counts[index]
     for kind, (games, wins) in update.scripted_by_kind.items():
         previous_games, previous_wins = total.scripted_by_kind.get(kind, (0, 0))
         total.scripted_by_kind[kind] = (previous_games + games, previous_wins + wins)
@@ -517,16 +595,18 @@ def _run_segmented_single_pipeline(
     config: TrainConfig,
     generation: int,
     device: torch.device,
+    selfplay_config: Any | None = None,
 ) -> SelfPlayStats:
     """Exact segment fallback for one-worker gated test and CPU runs."""
     total = SelfPlayStats()
+    effective_selfplay = config.selfplay if selfplay_config is None else selfplay_config
     base_seed = int(config.seed) + (int(generation) * 0x9E37)
     for task_index, segment in enumerate(segments):
         seat_models = (model_table[segment.seat0_model_id], model_table[segment.seat1_model_id])
         stats = run_routed_self_play_generation(
             seat_models,
             replay,
-            config.selfplay,
+            effective_selfplay,
             seed=base_seed ^ (task_index * 0x10001),
             device=device,
             target_games=segment.n_games,
@@ -548,7 +628,7 @@ def validated_eval_sentinels(raw_sentinels: object) -> list[tuple[str, int]]:
     """Validate the compact eval-ladder sentinel configuration."""
     if not isinstance(raw_sentinels, list):
         raise ValueError("eval_sentinels must be a list of {opponent, games} objects")
-    allowed = {"bigmoney", "engine", "engine2", "engine3", "mcts"}
+    allowed = {"bigmoney", "engine", "engine2", "engine3", "thinner", "mcts"}
     sentinels: list[tuple[str, int]] = []
     seen: set[str] = set()
     for index, raw_sentinel in enumerate(raw_sentinels):
@@ -621,6 +701,7 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
         start_generation = 0
 
     validate_deep_slice_config(config.selfplay)
+    validate_opening_template_config(config.selfplay)
 
     metrics: list[dict[str, Any]] = []
     generations = 1 if profile else max(0, config.generations - start_generation)
@@ -697,6 +778,14 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
             gen_start = time.perf_counter()
             lr = learning_rate_for_generation(config, generation)
             set_optimizer_lr(optimizer, lr)
+            generation_selfplay = scheduled_opening_selfplay_config(config.selfplay, generation)
+            if config.selfplay.opening_templates_enabled:
+                opening_lambda, opening_p_unconstrained = opening_template_schedule(
+                    config.selfplay,
+                    generation,
+                )
+            else:
+                opening_lambda, opening_p_unconstrained = 0.0, 1.0
             planned_league_games = 0
             effective_league = effective_league_fraction(
                 config.league_schedule,
@@ -725,14 +814,25 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
                 # Keep the legacy default path and its seed derivation intact.
                 if pool is None:
                     gen_seed = config.seed + (generation * 0x9E37)
-                    sp_stats = run_self_play_generation(model, replay, config.selfplay, gen_seed, device)
+                    sp_stats = run_self_play_generation(
+                        model,
+                        replay,
+                        generation_selfplay,
+                        gen_seed,
+                        device,
+                    )
                     aggregate_games_per_hour = sp_stats.games_per_hour
                 else:
                     if inference_server is not None:
                         # The acknowledgement is a generation barrier: workers do
                         # not submit work until the server owns this complete state.
                         inference_server.sync_weights(model, generation)
-                    parallel_result = pool.generate(model, replay, generation)
+                    parallel_result = pool.generate(
+                        model,
+                        replay,
+                        generation,
+                        selfplay_config=generation_selfplay,
+                    )
                     sp_stats = parallel_result.stats
                     aggregate_games_per_hour = parallel_result.aggregate_games_per_hour
             else:
@@ -776,6 +876,7 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
                         config,
                         generation,
                         device,
+                        selfplay_config=generation_selfplay,
                     )
                     aggregate_games_per_hour = sp_stats.games_per_hour
                 else:
@@ -804,6 +905,7 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
                         generation,
                         segments=segments,
                         model_state_payloads=payloads,
+                        selfplay_config=generation_selfplay,
                     )
                     sp_stats = parallel_result.stats
                     aggregate_games_per_hour = parallel_result.aggregate_games_per_hour
@@ -958,7 +1060,28 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
                 "scripted_wins": sp_stats.scripted_wins,
                 "routed_fast_path_batches": sp_stats.routed_fast_path_batches,
                 "routed_split_batches": sp_stats.routed_split_batches,
+                "opening_templates_enabled": config.selfplay.opening_templates_enabled,
+                "opening_lambda": opening_lambda,
+                "opening_p_unconstrained": opening_p_unconstrained,
+                "mean_cards_trashed_per_game": (
+                    float(sp_stats.cards_trashed) / float(sp_stats.games)
+                    if sp_stats.games > 0
+                    else 0.0
+                ),
+                "unconstrained_buys_chapel": sp_stats.unconstrained_buy_counts[0],
+                "unconstrained_buys_sentry": sp_stats.unconstrained_buy_counts[1],
+                "unconstrained_buys_moneylender": sp_stats.unconstrained_buy_counts[2],
+                "unconstrained_buys_village": sp_stats.unconstrained_buy_counts[3],
             }
+            for template_id in range(7):
+                row[f"opening_template_games_t{template_id}"] = sp_stats.opening_template_games[template_id]
+            for template_id in range(1, 7):
+                matchup_games = sp_stats.opening_template_vs_unconstrained_games[template_id]
+                matchup_wins = sp_stats.opening_template_vs_unconstrained_wins[template_id]
+                row[f"opening_template_vs_unconstrained_games_t{template_id}"] = matchup_games
+                row[f"opening_template_win_rate_vs_unconstrained_t{template_id}"] = (
+                    float(matchup_wins) / float(matchup_games) if matchup_games > 0 else 0.0
+                )
             for kind in configured_scripted_kinds:
                 games, wins = sp_stats.scripted_by_kind.get(kind, (0, 0))
                 row[f"scripted_games_{kind}"] = games

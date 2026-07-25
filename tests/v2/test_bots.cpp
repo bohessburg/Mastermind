@@ -3,6 +3,8 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <initializer_list>
+
 namespace {
 
 [[nodiscard]] Setup all_kingdom_setup() noexcept {
@@ -49,24 +51,87 @@ void require_bot_picks_legal(const GameState& state, const ActionMask& legal, in
     HeuristicBot heuristic{};
     EngineBot engine{};
     EngineBotV3 engine_v3{};
+    ThinnerBot thinner{};
 
     const Action random_action = random.choose_action(state, legal, legal_count);
     const Action big_money_action = big_money.choose_action(state, legal, legal_count);
     const Action heuristic_action = heuristic.choose_action(state, legal, legal_count);
     const Action engine_action = engine.choose_action(state, legal, legal_count);
     const Action engine_v3_action = engine_v3.choose_action(state, legal, legal_count);
+    const Action thinner_action = thinner.choose_action(state, legal, legal_count);
 
     REQUIRE(legal.test(random_action));
     REQUIRE(legal.test(big_money_action));
     REQUIRE(legal.test(heuristic_action));
     REQUIRE(legal.test(engine_action));
     REQUIRE(legal.test(engine_v3_action));
+    REQUIRE(legal.test(thinner_action));
 }
 
 void add_options(ActionMask& mask, std::uint8_t count) noexcept {
     for (std::uint8_t option = 0; option < count; ++option) {
         mask.set(option_action(option));
     }
+}
+
+[[nodiscard]] Setup bot_setup(std::initializer_list<DefId> kingdom) noexcept {
+    Setup setup{};
+    setup.num_players = 2U;
+    setup.kingdom_count = static_cast<std::uint8_t>(kingdom.size());
+    std::uint8_t index = 0U;
+    for (const DefId def : kingdom) {
+        setup.kingdom[index] = def;
+        ++index;
+    }
+    return setup;
+}
+
+void clear_player_cards(GameState& state, PlayerId player_id) noexcept {
+    PlayerState& player = state.players[player_id];
+    for (Slot slot = 0; slot < MAX_SLOTS; ++slot) {
+        player.hand[slot] = 0U;
+        player.exile[slot] = 0U;
+        player.tavern[slot] = 0U;
+        player.island_mat[slot] = 0U;
+    }
+    player.deck.size = 0U;
+    player.discard.size = 0U;
+    player.set_aside.size = 0U;
+    player.in_play_size = 0U;
+    player.pending_size = 0U;
+}
+
+void add_to_discard(GameState& state, PlayerId player_id, DefId def, std::uint8_t count) noexcept {
+    PlayerState& player = state.players[player_id];
+    const Slot slot = slot_of(state, def);
+    for (std::uint8_t index = 0U; index < count; ++index) {
+        player.discard.cards[player.discard.size] = slot;
+        ++player.discard.size;
+    }
+}
+
+[[nodiscard]] Pile* find_pile(GameState& state, DefId def) noexcept {
+    for (std::uint8_t index = 0U; index < state.num_piles; ++index) {
+        Pile& pile = state.piles[index];
+        if (state.slot_to_def[pile.base] == def) {
+            return &pile;
+        }
+    }
+    return nullptr;
+}
+
+void set_buy_phase(GameState& state, std::int16_t coins) noexcept {
+    state.phase = static_cast<std::uint8_t>(Phase::Buy);
+    state.actions = 0U;
+    state.buys = 1U;
+    state.coins = coins;
+    state.decision = PendingDecision{
+        0U,
+        static_cast<std::uint8_t>(DecisionKind::PhaseBuy),
+        0U,
+        0U,
+        0U,
+    };
 }
 
 [[nodiscard]] MatchupResult random_kingdom_matchup(
@@ -188,6 +253,165 @@ TEST_CASE("v2 EngineBotV3 beats BigMoney on random kingdoms", "[v2][bots]") {
     REQUIRE(result.win_rate_a() > 0.70);
 }
 
+TEST_CASE("v2 ThinnerBot opens Chapel on a Chapel kingdom", "[v2][bots][thinner]") {
+    GameState state = Game::new_game(bot_setup({DEF_CHAPEL, DEF_VILLAGE}), 0x7A1E'0001ULL);
+    set_buy_phase(state, 3);
+    ActionMask legal{};
+    legal.set(A_PASS);
+    legal.set(buy_action(DEF_CHAPEL));
+    legal.set(buy_action(DEF_SILVER));
+
+    const ThinnerBot thinner{};
+    REQUIRE(thinner.choose_action(state, legal, 3) == buy_action(DEF_CHAPEL));
+}
+
+TEST_CASE("v2 ThinnerBot follows its Chapel junk-trashing rules", "[v2][bots][thinner]") {
+    GameState state = Game::new_game(bot_setup({DEF_CHAPEL}), 0x7A1E'0002ULL);
+    clear_player_cards(state, 0U);
+    state.decision = PendingDecision{
+        0U,
+        static_cast<std::uint8_t>(DecisionKind::Choose),
+        DEF_CHAPEL,
+        0U,
+        4U,
+    };
+    const ThinnerBot thinner{};
+    ActionMask legal{};
+
+    Pile* province = find_pile(state, DEF_PROVINCE);
+    REQUIRE(province != nullptr);
+    province->count = 4U;
+    legal.set(A_PASS);
+    legal.set(select_action(DEF_CURSE));
+    legal.set(select_action(DEF_ESTATE));
+    legal.set(select_action(DEF_COPPER));
+    REQUIRE(thinner.choose_action(state, legal, 4) == select_action(DEF_CURSE));
+
+    legal.reset();
+    legal.set(A_PASS);
+    legal.set(select_action(DEF_ESTATE));
+    REQUIRE(thinner.choose_action(state, legal, 2) == A_PASS);
+
+    province->count = 8U;
+    add_to_discard(state, 0U, DEF_COPPER, 2U);
+    add_to_discard(state, 0U, DEF_SILVER, 1U);
+    add_to_discard(state, 0U, DEF_GOLD, 1U);
+    legal.reset();
+    legal.set(A_PASS);
+    legal.set(select_action(DEF_COPPER));
+    REQUIRE(thinner.choose_action(state, legal, 2) == select_action(DEF_COPPER));
+
+    clear_player_cards(state, 0U);
+    add_to_discard(state, 0U, DEF_COPPER, 2U);
+    add_to_discard(state, 0U, DEF_SILVER, 1U);
+    REQUIRE(thinner.choose_action(state, legal, 2) == A_PASS);
+}
+
+TEST_CASE("v2 ThinnerBot greens only late", "[v2][bots][thinner]") {
+    GameState state = Game::new_game(bot_setup({DEF_VILLAGE}), 0x7A1E'0003ULL);
+    set_buy_phase(state, 5);
+    ActionMask legal{};
+    legal.set(A_PASS);
+    legal.set(buy_action(DEF_DUCHY));
+    legal.set(buy_action(DEF_SILVER));
+    const ThinnerBot thinner{};
+
+    REQUIRE(thinner.choose_action(state, legal, 3) == buy_action(DEF_SILVER));
+    Pile* province = find_pile(state, DEF_PROVINCE);
+    REQUIRE(province != nullptr);
+    province->count = 4U;
+    REQUIRE(thinner.choose_action(state, legal, 3) == buy_action(DEF_DUCHY));
+}
+
+TEST_CASE("v2 ThinnerBot builds engine pieces before more Silver", "[v2][bots][thinner]") {
+    GameState state = Game::new_game(
+        bot_setup({DEF_CHAPEL, DEF_LABORATORY, DEF_MARKET, DEF_MERCHANT}),
+        0x7A1E'0005ULL);
+    clear_player_cards(state, 0U);
+    add_to_discard(state, 0U, DEF_CHAPEL, 1U);
+    add_to_discard(state, 0U, DEF_SILVER, 2U);
+    set_buy_phase(state, 5);
+    ActionMask legal{};
+    legal.set(A_PASS);
+    legal.set(buy_action(DEF_LABORATORY));
+    legal.set(buy_action(DEF_MARKET));
+    legal.set(buy_action(DEF_SILVER));
+    const ThinnerBot thinner{};
+
+    REQUIRE(thinner.choose_action(state, legal, 4) == buy_action(DEF_LABORATORY));
+
+    add_to_discard(state, 0U, DEF_LABORATORY, 2U);
+    add_to_discard(state, 0U, DEF_SILVER, 1U);
+    set_buy_phase(state, 3);
+    legal.reset();
+    legal.set(A_PASS);
+    legal.set(buy_action(DEF_MERCHANT));
+    legal.set(buy_action(DEF_SILVER));
+    REQUIRE(thinner.choose_action(state, legal, 3) == buy_action(DEF_MERCHANT));
+}
+
+TEST_CASE("v2 ThinnerBot takes Provinces after its bounded engine opening", "[v2][bots][thinner]") {
+    GameState state = Game::new_game(
+        bot_setup({DEF_CHAPEL, DEF_LABORATORY, DEF_MERCHANT}),
+        0x7A1E'0006ULL);
+    clear_player_cards(state, 0U);
+    add_to_discard(state, 0U, DEF_CHAPEL, 1U);
+    state.turn_counter = 8U;
+    set_buy_phase(state, 8);
+    ActionMask legal{};
+    legal.set(A_PASS);
+    legal.set(buy_action(DEF_LABORATORY));
+    legal.set(buy_action(DEF_PROVINCE));
+    const ThinnerBot thinner{};
+
+    REQUIRE(thinner.choose_action(state, legal, 3) == buy_action(DEF_LABORATORY));
+    add_to_discard(state, 0U, DEF_LABORATORY, 2U);
+    REQUIRE(thinner.choose_action(state, legal, 3) == buy_action(DEF_PROVINCE));
+}
+
+TEST_CASE("v2 ThinnerBot falls back to money in trasherless poor kingdoms", "[v2][bots][thinner]") {
+    GameState state = Game::new_game(bot_setup({DEF_CELLAR}), 0x7A1E'0007ULL);
+    set_buy_phase(state, 6);
+    ActionMask legal{};
+    legal.set(A_PASS);
+    legal.set(buy_action(DEF_GOLD));
+    legal.set(buy_action(DEF_SILVER));
+
+    const ThinnerBot thinner{};
+    REQUIRE(thinner.choose_action(state, legal, 3) == buy_action(DEF_GOLD));
+}
+
+TEST_CASE("v2 ThinnerBot caps its Witch splash at two", "[v2][bots][thinner]") {
+    GameState state = Game::new_game(bot_setup({DEF_WITCH}), 0x7A1E'0004ULL);
+    clear_player_cards(state, 0U);
+    set_buy_phase(state, 5);
+    ActionMask legal{};
+    legal.set(A_PASS);
+    legal.set(buy_action(DEF_WITCH));
+    legal.set(buy_action(DEF_SILVER));
+    const ThinnerBot thinner{};
+
+    add_to_discard(state, 0U, DEF_WITCH, 1U);
+    REQUIRE(thinner.choose_action(state, legal, 3) == buy_action(DEF_WITCH));
+    add_to_discard(state, 0U, DEF_WITCH, 1U);
+    REQUIRE(thinner.choose_action(state, legal, 3) == buy_action(DEF_SILVER));
+}
+
+TEST_CASE("v2 ThinnerBot is deterministic for a fixed seed", "[v2][bots][thinner]") {
+    const BotSpec thinner{BotKind::Thinner, 0x7A1E'1000ULL};
+    const BotSpec engine_v3{BotKind::EngineV3, 0xE3B0'1000ULL};
+    const MatchupResult first = eval_matchup(
+        all_kingdom_setup(), thinner, engine_v3, 40U, 0x7A1E'2000ULL);
+    const MatchupResult second = eval_matchup(
+        all_kingdom_setup(), thinner, engine_v3, 40U, 0x7A1E'2000ULL);
+
+    REQUIRE(first.games == second.games);
+    REQUIRE(first.wins_a == second.wins_a);
+    REQUIRE(first.wins_b == second.wins_b);
+    REQUIRE(first.ties == second.ties);
+    REQUIRE(first.truncated == second.truncated);
+}
+
 TEST_CASE("v2 bot policies return legal actions for every decision kind", "[v2][bots]") {
     GameState state = Game::new_game(all_kingdom_setup(), 0x5151'0003U);
     ActionMask legal{};
@@ -265,6 +489,7 @@ TEST_CASE("v2 bots complete all-card kingdom games without stalls", "[v2][bots]"
         BotKind::Heuristic,
         BotKind::Engine,
         BotKind::EngineV3,
+        BotKind::Thinner,
     };
 
     for (const BotKind kind : kBots) {

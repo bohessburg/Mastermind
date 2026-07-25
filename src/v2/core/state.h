@@ -102,12 +102,23 @@ enum class DecisionKind : std::uint8_t {
     OrderTriggers,
 };
 
+enum class SelectSemantic : std::uint8_t {
+    None = 0,
+    Keep,
+    Discard,
+    Trash,
+    Topdeck,
+    Gain,
+    Other,
+};
+
 struct PendingDecision {
     PlayerId player = 0;
     std::uint8_t kind = 0;
     std::uint16_t source = 0;
     std::uint8_t min_left = 0;
     std::uint8_t max_left = 0;
+    std::uint8_t select_semantic = static_cast<std::uint8_t>(SelectSemantic::None);
 };
 
 struct Subscription {

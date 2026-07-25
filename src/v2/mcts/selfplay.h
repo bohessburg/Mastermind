@@ -16,6 +16,9 @@
 // pool. Keep this fixed-size so individual slot descriptors remain cheap to
 // copy across the runner/pybind boundary.
 constexpr std::uint8_t MAX_SELFPLAY_KINGDOM_POOL = 32U;
+constexpr std::uint8_t SELFPLAY_OPENING_TEMPLATE_COUNT = 7U;
+constexpr std::uint8_t SELFPLAY_UNCONSTRAINED_TEMPLATE = 0U;
+constexpr std::uint8_t SELFPLAY_OPENING_TELEMETRY_CARD_COUNT = 4U;
 
 enum class SelfPlayKingdomMode : std::uint8_t {
     Fixed,
@@ -39,6 +42,7 @@ enum class SelfPlayScriptedBotKind : std::uint8_t {
     Random,
     Scaffold,
     EngineV3,
+    Thinner,
 };
 
 // Per-game attributes for a heterogeneous self-play runner.  A non-empty
@@ -107,6 +111,23 @@ struct SelfPlayConfig {
     bool tree_reuse = false;
     std::uint16_t min_new_sims = 64U;
     std::uint8_t expand_top_k = 0;
+    // Opening templates are a self-play-runner concern, deliberately kept
+    // out of GameState so search/state frames remain POD.  The Python train
+    // loop supplies opening_lambda and weights anew for every generation.
+    bool opening_templates_enabled = false;
+    float opening_lambda = 0.6F;
+    std::int32_t opening_turn_window = 8;
+    // Index zero is Unconstrained; one through six are the static opening
+    // archetypes implemented in selfplay.cpp.
+    float template_weights[SELFPLAY_OPENING_TEMPLATE_COUNT] = {
+        0.3F,
+        0.11666667F,
+        0.11666667F,
+        0.11666667F,
+        0.11666667F,
+        0.11666667F,
+        0.11666667F,
+    };
     // Empty preserves the historical homogeneous, continuously-reset runner
     // behavior.  A populated manifest makes every GameSlot independently
     // configured and lets a worker keep all segment games live together.
@@ -122,6 +143,26 @@ struct SelfPlayConfig {
     float margin,
     float margin_scale,
     float margin_blend_alpha) noexcept;
+
+// Resolve an opening-template preference for the current root decision. A_END
+// means that the template has no legal preference (including after its window
+// expires). This narrow, allocation-free helper is public for focused runner
+// tests; normal callers should leave action choice to MCTS.
+[[nodiscard]] Action selfplay_opening_preferred_action(
+    const GameState& state,
+    PlayerId player,
+    std::uint8_t template_id,
+    std::int32_t opening_turn_window,
+    const ActionMask& legal) noexcept;
+
+// Mix an already-normalized root prior with a one-hot preferred action. The
+// operation is a strict no-op for lambda == 0 or an unavailable preference.
+void selfplay_mix_opening_prior(
+    float* priors,
+    const ActionMask& legal,
+    int legal_count,
+    Action preferred_action,
+    float lambda) noexcept;
 
 struct SelfPlayRecord {
     std::vector<float> observations;
@@ -150,6 +191,17 @@ struct SelfPlayRecord {
     std::uint32_t seat1_model_id = 0;
     SelfPlayScriptedBotKind scripted_bot = SelfPlayScriptedBotKind::None;
     std::uint32_t sims_override = 0;
+    // Opening-template telemetry. Both seats are assigned independently;
+    // zero denotes an unconstrained seat.
+    std::uint8_t seat_template_ids[MAX_PLAYERS]{};
+    std::uint16_t cards_trashed = 0U;
+    // Counts actual buy actions while the opening window is active. Keeping
+    // this fixed-size makes the integration smoke inspectable without adding
+    // a per-move allocation path.
+    std::uint16_t opening_buy_counts[ACTION_DEF_COUNT]{};
+    // Chapel, Sentry, Moneylender, Village in that order. Only buys made by
+    // seats assigned the unconstrained template contribute.
+    std::uint16_t unconstrained_buy_counts[SELFPLAY_OPENING_TELEMETRY_CARD_COUNT]{};
 };
 
 // Read-only per-slot search counters, primarily useful when profiling batched
@@ -224,6 +276,7 @@ private:
         const ActionMask& legal,
         int legal_count,
         bool add_root_noise,
+        Action opening_preference,
         float* out,
         Xoshiro256pp& rng) noexcept;
     void reapply_root_noise(GameSlot& game) noexcept;

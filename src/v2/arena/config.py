@@ -170,8 +170,8 @@ class ArenaConfig:
 
     def validate(self) -> None:
         """Reject unsafe or internally inconsistent runtime settings."""
-        if self.obs_version not in (None, 1, 2):
-            raise ValueError("obs_version must be 1, 2, or null")
+        if self.obs_version not in (None, 1, 2, 3):
+            raise ValueError("obs_version must be 1, 2, 3, or null")
         if self.sims <= 0:
             raise ValueError("sims must be greater than zero")
         if self.determinizations <= 0:

@@ -116,7 +116,7 @@ struct DeckProfile {
 
 [[nodiscard]] std::size_t checked_obs_size(ObsVersion version) {
     if (!is_valid_obs_version(version)) {
-        throw std::invalid_argument("EvalRunnerConfig.obs_version must be V1 or V2");
+        throw std::invalid_argument("EvalRunnerConfig.obs_version must be V1, V2, or V3");
     }
     return obs_size_for(version);
 }
@@ -651,6 +651,7 @@ struct EvalRunner::GameSlot {
     Xoshiro256pp rng{};
     EngineBot engine_v2{};
     EngineBotV3 engine_v3{};
+    ThinnerBot thinner{};
     std::uint64_t seed = 0;
     std::uint64_t sequence = 0;
     std::uint32_t sims_started = 0;
@@ -1035,6 +1036,7 @@ void EvalRunner::reset_game(std::uint32_t index) noexcept {
     GameSlot& game = games_[index];
     game.engine_v2 = EngineBot{};
     game.engine_v3 = EngineBotV3{};
+    game.thinner = ThinnerBot{};
     if (config_.target_games != 0U && next_sequence_ >= config_.target_games) {
         game.state = GameState{};
         game.setup = Setup{};
@@ -1117,6 +1119,8 @@ void EvalRunner::drive_scripted(GameSlot& game) noexcept {
             action = game.engine_v2.choose_action(game.state, legal, legal_count);
         } else if (config_.opponent == EvalScriptedBotKind::EngineV3) {
             action = game.engine_v3.choose_action(game.state, legal, legal_count);
+        } else if (config_.opponent == EvalScriptedBotKind::Thinner) {
+            action = game.thinner.choose_action(game.state, legal, legal_count);
         } else {
             action = eval_scripted_action(game.state, legal, legal_count, config_.opponent, game.rng);
         }
@@ -1251,6 +1255,8 @@ bool EvalRunner::resolve_scripted_tree_leaf(GameSlot& game, const MctsPendingLea
         action = game.engine_v2.choose_action(leaf_state, leaf.legal, leaf.legal_count);
     } else if (config_.opponent == EvalScriptedBotKind::EngineV3) {
         action = game.engine_v3.choose_action(leaf_state, leaf.legal, leaf.legal_count);
+    } else if (config_.opponent == EvalScriptedBotKind::Thinner) {
+        action = game.thinner.choose_action(leaf_state, leaf.legal, leaf.legal_count);
     } else {
         action = eval_scripted_action(leaf_state, leaf.legal, leaf.legal_count, config_.opponent, game.rng);
     }

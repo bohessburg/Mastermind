@@ -2,6 +2,7 @@
 
 #include "v2/core/defs.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 
@@ -460,7 +461,35 @@ void encode_v2(const GameState& state, PlayerId perspective, float* out) noexcep
     encode_decision_v2(state, perspective, out);
 }
 
+void encode_v3(const GameState& state, PlayerId perspective, float* out) noexcept {
+    if (out == nullptr) {
+        return;
+    }
+
+    // v3 deliberately reuses the v2 encoder so every v2 field stays
+    // byte-identical, apart from its two version/shape metadata scalars.
+    encode_v2(state, perspective, out);
+    out[OBS_V2_META_OFFSET + 0U] = static_cast<float>(ObsVersion::V3);
+    out[OBS_V2_META_OFFSET + 1U] = static_cast<float>(OBS_SIZE_V3);
+    float* trash = out + OBS_V3_TRASH_OFFSET;
+    for (std::uint8_t slot = 0; slot < MAX_SLOTS; ++slot) {
+        trash[slot] = static_cast<float>(state.trash[slot]);
+    }
+    std::fill_n(
+        out + OBS_V3_SELECT_SEMANTIC_OFFSET,
+        OBS_SELECT_SEMANTIC_COUNT,
+        0.0F);
+    const std::uint8_t semantic = state.decision.select_semantic;
+    if (semantic < OBS_SELECT_SEMANTIC_COUNT) {
+        out[OBS_V3_SELECT_SEMANTIC_OFFSET + semantic] = 1.0F;
+    }
+}
+
 void encode(const GameState& state, PlayerId perspective, float* out, ObsVersion version) noexcept {
+    if (version == ObsVersion::V3) {
+        encode_v3(state, perspective, out);
+        return;
+    }
     if (version == ObsVersion::V2) {
         encode_v2(state, perspective, out);
         return;

@@ -282,6 +282,7 @@ void seed_interrupt(GameState& state, const Snapshot& snapshot) {
     DecisionKind kind = DecisionKind::Choose;
     std::uint8_t minimum = 1U;
     std::uint8_t maximum = 1U;
+    SelectSemantic semantic = SelectSemantic::None;
     if (snapshot.interrupt == SeededInterrupt::MoatReaction) {
         kind = DecisionKind::ReactWindow;
         minimum = 0U;
@@ -294,6 +295,7 @@ void seed_interrupt(GameState& state, const Snapshot& snapshot) {
     }
 
     if (snapshot.interrupt == SeededInterrupt::MilitiaDiscard) {
+        semantic = SelectSemantic::Keep;
         std::uint16_t hand = 0;
         for (std::uint8_t slot = 0; slot < state.num_slots; ++slot) {
             hand = static_cast<std::uint16_t>(
@@ -305,6 +307,7 @@ void seed_interrupt(GameState& state, const Snapshot& snapshot) {
         minimum = 3U;
         maximum = 3U;
     } else if (snapshot.interrupt == SeededInterrupt::BureaucratTopdeck) {
+        semantic = SelectSemantic::Topdeck;
         bool victory = false;
         for (std::uint8_t slot = 0; slot < state.num_slots; ++slot) {
             if (state.players[snapshot.defender].hand[slot] != 0U
@@ -316,6 +319,7 @@ void seed_interrupt(GameState& state, const Snapshot& snapshot) {
             invalid("bureaucrat topdeck requires a Victory card in the defender's hand");
         }
     } else if (snapshot.interrupt == SeededInterrupt::BanditTrash) {
+        semantic = SelectSemantic::Trash;
         PlayerState& defender = state.players[snapshot.defender];
         if (defender.set_aside.size != 2U) {
             invalid("bandit trash requires exactly two revealed set-aside cards");
@@ -347,6 +351,7 @@ void seed_interrupt(GameState& state, const Snapshot& snapshot) {
         source,
         minimum,
         maximum,
+        static_cast<std::uint8_t>(semantic),
     };
 }
 

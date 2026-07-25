@@ -92,7 +92,7 @@ class Session:
 
 app = FastAPI(title="DominionZero v2 Web Server")
 sessions: dict[str, Session] = {}
-SEAT_KINDS = {"human", "bot", "bot:engine3", "bot:bigmoney", "bot:random"}
+SEAT_KINDS = {"human", "bot", "bot:engine3", "bot:thinner", "bot:bigmoney", "bot:random"}
 
 
 def _make_setup(players: int, kingdom: list[int]) -> dz.Setup:
@@ -125,7 +125,7 @@ def _is_bot_kind(kind: str) -> bool:
 
 
 def _is_scripted_kind(kind: str) -> bool:
-    return kind == "bot" or kind == "bot:engine3"
+    return kind in {"bot", "bot:engine3", "bot:thinner"}
 
 
 def _is_nn_kind(kind: str) -> bool:
@@ -670,7 +670,7 @@ async def create_session(payload: dict[str, Any]) -> dict[str, Any]:
             raise HTTPException(
                 status_code=400,
                 detail=(
-                    "seat kind must be human, bot, bot:engine3, bot:bigmoney, bot:random, bot:nn, bot:nn:<path>, "
+                    "seat kind must be human, bot, bot:engine3, bot:thinner, bot:bigmoney, bot:random, bot:nn, bot:nn:<path>, "
                     "bot:nnmcts, or bot:nnmcts:<path>"
                 ),
             )
@@ -699,7 +699,7 @@ async def create_session(payload: dict[str, Any]) -> dict[str, Any]:
             random.Random(seed ^ 0xB07 ^ ((index + 1) * 0x9E3779B97F4A7C15))
             for index in range(len(seats))
         ],
-        scripted_bots=[dz.ScriptedBot("engine3") if _is_scripted_kind(seat.kind) else None for seat in seats],
+        scripted_bots=[dz.ScriptedBot(_bot_policy(seat.kind)) if _is_scripted_kind(seat.kind) else None for seat in seats],
         nn_policies=nn_policies,
         thinking_delay_ms=thinking_delay_ms,
     )
