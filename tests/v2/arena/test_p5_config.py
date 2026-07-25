@@ -23,6 +23,7 @@ def test_default_arena_config_loads_credentials_only_from_environment() -> None:
     assert config.lobby.max_games_per_session == 0
     assert config.stall_watchdog_seconds == 120.0
     assert config.lobby.homepage_timeout_seconds == 90.0
+    assert config.lobby.reconnect_limit_policy == "return_to_lobby"
     assert config.lobby.resume_full_state_timeout_seconds == 30.0
     assert config.lobby.searching_timeout_seconds == 180.0
     assert config.undo.auto_deny is True
@@ -125,4 +126,17 @@ def test_arena_config_rejects_zero_resume_full_state_timeout(
     )
 
     with pytest.raises(ValueError, match="resume_full_state timeout"):
+        ArenaConfig.load(invalid, environ={})
+
+
+def test_arena_config_rejects_unknown_reconnect_limit_policy(
+    tmp_path: Path,
+) -> None:
+    invalid = tmp_path / "invalid-reconnect-limit-policy.json"
+    invalid.write_text(
+        json.dumps({"lobby": {"reconnect_limit_policy": "wait"}}),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="reconnect_limit_policy"):
         ArenaConfig.load(invalid, environ={})

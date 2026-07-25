@@ -23,6 +23,7 @@
     "rated": false,
     "max_games_per_session": 0,
     "homepage_timeout_seconds": 90,
+    "reconnect_limit_policy": "return_to_lobby",
     "resume_full_state_timeout_seconds": 30,
     "searching_timeout_seconds": 180,
     "table_waiting_timeout_seconds": 30,

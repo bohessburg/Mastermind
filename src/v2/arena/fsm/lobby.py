@@ -38,6 +38,8 @@ class LobbyControl(str, Enum):
     START_GAME = "start_game"
     DISMISS_GAME_ENDED = "dismiss_game_ended"
     LEAVE_TABLE = "leave_table"
+    RECONNECT_LIMIT_RECONNECT = "reconnect_limit_reconnect"
+    RECONNECT_LIMIT_RETURN_TO_LOBBY = "reconnect_limit_return_to_lobby"
 
 
 # Evidence: dom-34066.html/4341034.html have the first selector and its
@@ -54,6 +56,19 @@ LEAVE_TABLE_SELECTOR = (
 DISMISS_GAME_ENDED_SELECTOR = (
     'game-ended-notification modal-window '
     'button.lobby-button[ng-click="$ctrl.ok()"]'
+)
+# The reconnect-limit prompt is in the main-window ``reconnecting-failed``
+# component.  ``:has(div.timeout)`` identifies its reconnect-count content,
+# keeping its ``$ctrl.decline()`` separate from the in-game undo modal's
+# identically named handler.
+RECONNECT_LIMIT_MODAL_SELECTOR = "reconnecting-failed modal-window:has(div.timeout)"
+RECONNECT_LIMIT_RECONNECT_SELECTOR = (
+    f'{RECONNECT_LIMIT_MODAL_SELECTOR} '
+    'button.lobby-button[ng-click="$ctrl.reconnect()"]'
+)
+RECONNECT_LIMIT_RETURN_TO_LOBBY_SELECTOR = (
+    f'{RECONNECT_LIMIT_MODAL_SELECTOR} '
+    'button.lobby-button[ng-click="$ctrl.decline()"]'
 )
 # dom-3978828.html and dom-2848087.html both contain the in-play board,
 # ``game-area``.  dom-530325.html is a table-waiting snapshot with a
@@ -121,6 +136,20 @@ _CONTROL_SPECS = {
         required_class="lobby-button",
         ancestor_tag="score-table-buttons",
     ),
+    LobbyControl.RECONNECT_LIMIT_RECONNECT: _ControlSpec(
+        selector=RECONNECT_LIMIT_RECONNECT_SELECTOR,
+        label="Reconnect again",
+        handler="$ctrl.reconnect()",
+        required_class="lobby-button",
+        ancestor_tag="reconnecting-failed",
+    ),
+    LobbyControl.RECONNECT_LIMIT_RETURN_TO_LOBBY: _ControlSpec(
+        selector=RECONNECT_LIMIT_RETURN_TO_LOBBY_SELECTOR,
+        label="Return to lobby",
+        handler="$ctrl.decline()",
+        required_class="lobby-button",
+        ancestor_tag="reconnecting-failed",
+    ),
 }
 
 
@@ -185,6 +214,41 @@ class LobbyFSM:
             return
         await self._click(start_game, LobbyControl.START_GAME)
         self._transition(LobbyState.IN_GAME)
+
+    async def resolve_startup_blocking_modal(self) -> bool:
+        """Handle one known startup modal or report an unknown blocker."""
+        self._require_state(LobbyState.HOMEPAGE)
+        if await self._visible_selector_has_content(RECONNECT_LIMIT_MODAL_SELECTOR):
+            control = (
+                LobbyControl.RECONNECT_LIMIT_RETURN_TO_LOBBY
+                if self.config.reconnect_limit_policy == "return_to_lobby"
+                else LobbyControl.RECONNECT_LIMIT_RECONNECT
+            )
+            locator = await self._control_if_present(control)
+            if locator is None:
+                raise self._error(
+                    "reconnect-limit modal was visible but its recorded "
+                    f"{self._control_description(control)} was not actionable"
+                )
+            LOGGER.warning(
+                "startup reconnect-limit modal: selecting %s",
+                _CONTROL_SPECS[control].label,
+            )
+            await self._click(locator, control)
+            await self._wait_for_control_to_be_gone(
+                control,
+                timeout_seconds=self.config.game_ended_dialog_timeout_seconds,
+            )
+            return True
+
+        modal_texts = await self._visible_selector_texts(MODAL_WINDOW_SELECTOR)
+        if modal_texts:
+            await self._snapshot_failure("startup-unknown-modal")
+            quoted = ", ".join(repr(text) for text in modal_texts)
+            raise self._error(
+                f"unrecognized blocking startup modal with visible text {quoted}"
+            )
+        return False
 
     async def resume_running_game_if_present(self) -> bool:
         """Enter the game loop when a reconnect retained an in-play board."""
@@ -388,20 +452,26 @@ class LobbyFSM:
 
     async def _visible_selector_has_content(self, selector: str) -> bool:
         """Recognize rendered modal content while ignoring empty Angular shells."""
+        return bool(await self._visible_selector_texts(selector))
+
+    async def _visible_selector_texts(self, selector: str) -> tuple[str, ...]:
+        """Return normalized text from visible rendered selector matches."""
         count = await self._selector_count(selector)
         locator = self.page.locator(selector)
+        texts: list[str] = []
         for index in range(count):
             candidate = locator.nth(index)
             try:
                 if not await candidate.is_visible():
                     continue
-                if (await candidate.inner_text()).strip():
-                    return True
+                text = " ".join((await candidate.inner_text()).split())
+                if text:
+                    texts.append(text)
             except Exception as error:
                 raise self._error(
                     f"could not inspect visible content for {selector}: {error}"
                 ) from error
-        return False
+        return tuple(texts)
 
     async def _reload_homepage(self, reason: str) -> None:
         """Reload once without resetting the homepage attempt's deadline."""

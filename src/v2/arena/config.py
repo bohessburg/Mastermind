@@ -20,6 +20,7 @@ class LobbyConfig:
     rated: bool = False
     max_games_per_session: int = 0
     homepage_timeout_seconds: float = 90.0
+    reconnect_limit_policy: str = "return_to_lobby"
     resume_full_state_timeout_seconds: float = 30.0
     searching_timeout_seconds: float = 180.0
     table_waiting_timeout_seconds: float = 30.0
@@ -114,6 +115,9 @@ class ArenaConfig:
                 homepage_timeout_seconds=float(
                     lobby_raw.get("homepage_timeout_seconds", 90.0)
                 ),
+                reconnect_limit_policy=str(
+                    lobby_raw.get("reconnect_limit_policy", "return_to_lobby")
+                ),
                 resume_full_state_timeout_seconds=float(
                     lobby_raw.get("resume_full_state_timeout_seconds", 30.0)
                 ),
@@ -173,6 +177,14 @@ class ArenaConfig:
             raise ValueError("actuation_mode must be 'protocol' or 'clicks'")
         if self.lobby.max_games_per_session < 0:
             raise ValueError("lobby max_games_per_session cannot be negative")
+        if self.lobby.reconnect_limit_policy not in {
+            "return_to_lobby",
+            "reconnect",
+        }:
+            raise ValueError(
+                "lobby reconnect_limit_policy must be 'return_to_lobby' or "
+                "'reconnect'"
+            )
         if not self.undo.auto_deny:
             raise ValueError(
                 "undo.auto_deny must be true; granting undo is unsupported"

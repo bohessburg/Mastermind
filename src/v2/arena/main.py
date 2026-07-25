@@ -472,6 +472,8 @@ async def _start_or_resume_game(
     resume_full_state_timeout_seconds: float,
 ) -> tuple[bool, AsyncIterable[GameEvent] | None]:
     """Choose the retained game board or the normal homepage search path."""
+    while await lobby.resolve_startup_blocking_modal():
+        pass
     if not await lobby.resume_running_game_if_present():
         await lobby.queue_next_game()
         return False, None

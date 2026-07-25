@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from src.v2.arena.actuate.clicks import UNDO_DECLINE_SELECTOR
 from src.v2.arena.config import LobbyConfig
 from src.v2.arena.fsm.lobby import (
     DISMISS_GAME_ENDED_SELECTOR,
@@ -13,6 +14,9 @@ from src.v2.arena.fsm.lobby import (
     LEAVE_TABLE_SELECTOR,
     LOADING_GAME_SELECTOR,
     MODAL_WINDOW_SELECTOR,
+    RECONNECT_LIMIT_MODAL_SELECTOR,
+    RECONNECT_LIMIT_RECONNECT_SELECTOR,
+    RECONNECT_LIMIT_RETURN_TO_LOBBY_SELECTOR,
     RECONNECTING_FAILED_SELECTOR,
     RECONNECTING_SELECTOR,
     START_GAME_SELECTOR,
@@ -30,6 +34,10 @@ RECORDING = Path("arena-recordings/20260724T142103.096991Z")
 RESUME_FAILURE_DOM = Path(
     "exports/arena/20260725T025231.042167Z/"
     "dom-20260725T025402.631104Z-lobby-failure-homepage-start-search-not-found.html"
+)
+RECONNECT_LIMIT_DOM = Path(
+    "exports/arena/20260725T032324.753710Z/"
+    "dom-20260725T032456.384944Z-lobby-failure-homepage-start-search-not-found.html"
 )
 
 
@@ -88,8 +96,18 @@ class _FakePage:
         reconnecting_failed_content: bool = False,
         loading_game_content: bool = False,
         modal_content: bool = False,
+        reconnect_limit_modal: bool = False,
+        unknown_modal_text: str | None = None,
     ) -> None:
-        self.screen = "blank" if blank else "homepage"
+        self.screen = (
+            "reconnect_limit"
+            if reconnect_limit_modal
+            else "unknown_modal"
+            if unknown_modal_text is not None
+            else "blank"
+            if blank
+            else "homepage"
+        )
         self.missing_table_start = missing_table_start
         self.direct_automatch = direct_automatch
         self.game_chat_only = game_chat_only
@@ -102,6 +120,7 @@ class _FakePage:
         self.reconnecting_failed_content = reconnecting_failed_content
         self.loading_game_content = loading_game_content
         self.modal_content = modal_content
+        self.unknown_modal_text = unknown_modal_text
         self.reloaded = False
         self.reloads = 0
         self.clicks: list[str] = []
@@ -110,6 +129,16 @@ class _FakePage:
         return _FakeLocator(self, selector)
 
     def count(self, selector: str) -> int:
+        if self.screen == "reconnect_limit":
+            if selector in {
+                MODAL_WINDOW_SELECTOR,
+                RECONNECT_LIMIT_MODAL_SELECTOR,
+                RECONNECT_LIMIT_RECONNECT_SELECTOR,
+                RECONNECT_LIMIT_RETURN_TO_LOBBY_SELECTOR,
+            }:
+                return 1
+        if self.screen == "unknown_modal" and selector == MODAL_WINDOW_SELECTOR:
+            return 1
         if (
             self.screen == "homepage"
             and selector == START_SEARCH_SELECTOR
@@ -149,6 +178,17 @@ class _FakePage:
         return 0
 
     def text(self, selector: str) -> str:
+        if self.screen == "reconnect_limit" and selector in {
+            MODAL_WINDOW_SELECTOR,
+            RECONNECT_LIMIT_MODAL_SELECTOR,
+        }:
+            return (
+                "You've reconnected to this game 2 times. Reconnect again "
+                "Return to lobby"
+            )
+        if self.screen == "unknown_modal" and selector == MODAL_WINDOW_SELECTOR:
+            assert self.unknown_modal_text is not None
+            return self.unknown_modal_text
         if selector == RECONNECTING_SELECTOR and self.reconnecting_content:
             return "Reconnecting to game server"
         if (
@@ -174,7 +214,17 @@ class _FakePage:
 
     def click(self, selector: str) -> None:
         self.clicks.append(selector)
-        if self.screen == "homepage" and selector == START_SEARCH_SELECTOR:
+        if (
+            self.screen == "reconnect_limit"
+            and selector == RECONNECT_LIMIT_RETURN_TO_LOBBY_SELECTOR
+        ):
+            self.screen = "homepage"
+        elif (
+            self.screen == "reconnect_limit"
+            and selector == RECONNECT_LIMIT_RECONNECT_SELECTOR
+        ):
+            self.screen = "game"
+        elif self.screen == "homepage" and selector == START_SEARCH_SELECTOR:
             self.screen = "game" if self.direct_automatch else "table"
         elif self.screen == "table" and selector == START_GAME_SELECTOR:
             self.screen = "game"
@@ -392,6 +442,62 @@ def test_lobby_fsm_hands_direct_automatch_game_to_game_loop() -> None:
     assert page.clicks == [START_SEARCH_SELECTOR]
 
 
+def test_lobby_fsm_returns_to_lobby_from_reconnect_limit_then_searches() -> None:
+    page = _FakePage(reconnect_limit_modal=True)
+    clock = _FakeClock()
+    lobby = LobbyFSM(page, _config(), clock=clock, sleep=clock.sleep)
+
+    assert asyncio.run(lobby.resolve_startup_blocking_modal())
+    asyncio.run(lobby.queue_next_game())
+
+    assert lobby.state is LobbyState.IN_GAME
+    assert page.clicks == [
+        RECONNECT_LIMIT_RETURN_TO_LOBBY_SELECTOR,
+        START_SEARCH_SELECTOR,
+        START_GAME_SELECTOR,
+    ]
+
+
+def test_lobby_fsm_reconnect_limit_policy_can_reconnect() -> None:
+    page = _FakePage(reconnect_limit_modal=True)
+    clock = _FakeClock()
+    lobby = LobbyFSM(
+        page,
+        _config(reconnect_limit_policy="reconnect"),
+        clock=clock,
+        sleep=clock.sleep,
+    )
+
+    assert asyncio.run(lobby.resolve_startup_blocking_modal())
+    assert asyncio.run(lobby.resume_running_game_if_present())
+
+    assert lobby.state is LobbyState.IN_GAME
+    assert page.clicks == [RECONNECT_LIMIT_RECONNECT_SELECTOR]
+
+
+def test_lobby_fsm_reports_an_unknown_blocking_startup_modal() -> None:
+    page = _FakePage(unknown_modal_text="Maintenance is in progress")
+    clock = _FakeClock()
+    snapshots: list[str] = []
+
+    async def snapshot_dom(label: str) -> None:
+        snapshots.append(label)
+
+    lobby = LobbyFSM(
+        page,
+        _config(),
+        clock=clock,
+        sleep=clock.sleep,
+        snapshot_dom=snapshot_dom,
+    )
+
+    with pytest.raises(LobbyError, match=r"'Maintenance is in progress'"):
+        asyncio.run(lobby.resolve_startup_blocking_modal())
+
+    assert page.clicks == []
+    assert snapshots == ["lobby-failure-startup-unknown-modal"]
+
+
 def test_lobby_fsm_resumes_a_running_game_before_homepage_search() -> None:
     page = _FakePage()
     page.screen = "game"
@@ -533,3 +639,25 @@ def test_restart_failure_dom_is_recognized_as_an_in_progress_game() -> None:
 
     assert f"<{IN_GAME_SELECTOR}" in html
     assert START_SEARCH_SELECTOR not in html
+
+
+def test_reconnect_limit_evidence_uses_a_distinct_decline_scope() -> None:
+    assert RECONNECT_LIMIT_DOM.is_file(), "missing reconnect-limit DOM evidence"
+
+    html = RECONNECT_LIMIT_DOM.read_text(encoding="utf-8")
+
+    assert "<reconnecting-failed>" in html
+    assert '<div class="timeout">You\'ve reconnected to this game 2 times.</div>' in html
+    assert recorded_control_labels(
+        html,
+        LobbyControl.RECONNECT_LIMIT_RECONNECT,
+    ) == ("Reconnect again",)
+    assert recorded_control_labels(
+        html,
+        LobbyControl.RECONNECT_LIMIT_RETURN_TO_LOBBY,
+    ) == ("Return to lobby",)
+    assert "reconnecting-failed modal-window:has(div.timeout)" in (
+        RECONNECT_LIMIT_RETURN_TO_LOBBY_SELECTOR
+    )
+    assert "undo-request" in UNDO_DECLINE_SELECTOR
+    assert RECONNECT_LIMIT_RETURN_TO_LOBBY_SELECTOR != UNDO_DECLINE_SELECTOR

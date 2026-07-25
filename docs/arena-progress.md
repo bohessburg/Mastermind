@@ -536,6 +536,28 @@ question 50 as one message-37 send with no game-DOM interaction.
   Table** path runs, and the normal search cycle resumes. A plain homepage
   keeps the independent 90-second, one-reload hardening unchanged.
 
+- **Reconnect-limit startup modal (2026-07-25).**
+  The supervisor-restart failure in
+  `exports/arena/20260725T032324.753710Z/` rendered its reconnect-count prompt
+  inside `reconnecting-failed > modal-window`, with a `div.timeout` and the
+  observed handlers `$ctrl.reconnect()` and `$ctrl.decline()`. Startup now
+  resolves that prompt before looking for either `game-area` or **Start
+  search**. The default `lobby.reconnect_limit_policy` is
+  `"return_to_lobby"`, which clicks the latter and resumes the ordinary
+  homepage search; the documented alternative `"reconnect"` uses the former
+  and then re-evaluates the retained-game path.
+
+  The reconnect-limit decline selector is
+  `reconnecting-failed modal-window:has(div.timeout)
+  button.lobby-button[ng-click="$ctrl.decline()"]`, deliberately distinct
+  from the undo selector `undo-request modal-window
+  button.lobby-button[ng-click="$ctrl.decline()"]`. The evidence test locks
+  both reconnect-limit button labels to the captured DOM; the undo evidence
+  remains the separately scoped `undo-request` component documented above.
+  Any other visible text-bearing `modal-window` during startup is archived as
+  `lobby-failure-startup-unknown-modal` and raises a `LobbyError` containing
+  its quoted visible text instead of waiting opaquely for the homepage timeout.
+
 - **Overnight mode (2026-07-24).**
   The live process is now restart-safe for an external supervisor. The game
   loop runs a configurable stall watchdog (`stall_watchdog_seconds`, default

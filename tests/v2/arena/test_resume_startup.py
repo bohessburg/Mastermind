@@ -17,10 +17,21 @@ class _UnusedProvider:
 
 
 class _StartupLobby:
-    def __init__(self, *, has_running_game: bool) -> None:
+    def __init__(
+        self,
+        *,
+        has_running_game: bool,
+        modal_results: tuple[bool, ...] = (),
+    ) -> None:
         self.has_running_game = has_running_game
+        self.modal_results = list(modal_results)
         self.queue_calls = 0
         self.recovery_calls = 0
+        self.startup_modal_checks = 0
+
+    async def resolve_startup_blocking_modal(self) -> bool:
+        self.startup_modal_checks += 1
+        return self.modal_results.pop(0) if self.modal_results else False
 
     async def resume_running_game_if_present(self) -> bool:
         return self.has_running_game
@@ -80,6 +91,33 @@ def test_startup_running_game_buffers_full_state_then_invokes_game_loop() -> Non
         assert results[0].completed
         assert lobby.queue_calls == 0
         assert lobby.recovery_calls == 0
+        assert lobby.startup_modal_checks == 1
+
+    asyncio.run(run())
+
+
+def test_startup_rechecks_for_a_running_game_after_a_blocking_modal() -> None:
+    async def run() -> None:
+        lobby = _StartupLobby(
+            has_running_game=True,
+            modal_results=(True,),
+        )
+        events = asyncio.Queue()
+        start = _game_start()
+        await events.put(start)
+        await events.put(_full_state())
+        await events.put(GameEnd(game_id=start.game_id, reason="completed"))
+
+        resumed, game_events = await _start_or_resume_game(
+            lobby,
+            events,
+            resume_full_state_timeout_seconds=1.0,
+        )
+
+        assert resumed
+        assert game_events is not None
+        assert lobby.queue_calls == 0
+        assert lobby.startup_modal_checks == 2
 
     asyncio.run(run())
 
@@ -99,6 +137,7 @@ def test_resume_without_full_state_recovers_to_the_search_cycle() -> None:
         assert game_events is None
         assert lobby.queue_calls == 0
         assert lobby.recovery_calls == 1
+        assert lobby.startup_modal_checks == 1
 
     asyncio.run(run())
 
@@ -139,5 +178,6 @@ def test_startup_homepage_keeps_the_existing_search_path() -> None:
         assert game_events is None
         assert lobby.queue_calls == 1
         assert lobby.recovery_calls == 0
+        assert lobby.startup_modal_checks == 1
 
     asyncio.run(run())
