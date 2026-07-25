@@ -60,8 +60,11 @@ DISMISS_GAME_ENDED_SELECTOR = (
 # The reconnect-limit prompt is in the main-window ``reconnecting-failed``
 # component.  ``:has(div.timeout)`` identifies its reconnect-count content,
 # keeping its ``$ctrl.decline()`` separate from the in-game undo modal's
-# identically named handler.
-RECONNECT_LIMIT_MODAL_SELECTOR = "reconnecting-failed modal-window:has(div.timeout)"
+# identically named handler.  Target the inner ``div.modal-window`` rather
+# than the ``<modal-window>`` custom element: the custom element defaults to
+# ``display: inline`` around fixed-position children, so it has an empty box
+# and never reports visible, which hid this modal from the poll loop live.
+RECONNECT_LIMIT_MODAL_SELECTOR = "reconnecting-failed div.modal-window:has(div.timeout)"
 RECONNECT_LIMIT_RECONNECT_SELECTOR = (
     f'{RECONNECT_LIMIT_MODAL_SELECTOR} '
     'button.lobby-button[ng-click="$ctrl.reconnect()"]'

@@ -731,7 +731,10 @@ def test_reconnect_limit_evidence_uses_a_distinct_decline_scope() -> None:
         html,
         LobbyControl.RECONNECT_LIMIT_RETURN_TO_LOBBY,
     ) == ("Return to lobby",)
-    assert "reconnecting-failed modal-window:has(div.timeout)" in (
+    # Scope on the inner rendered ``div.modal-window``: the ``<modal-window>``
+    # custom element wraps fixed-position children, so it reports no box and
+    # never counts as visible.
+    assert "reconnecting-failed div.modal-window:has(div.timeout)" in (
         RECONNECT_LIMIT_RETURN_TO_LOBBY_SELECTOR
     )
     assert "undo-request" in UNDO_DECLINE_SELECTOR
