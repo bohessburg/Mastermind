@@ -327,6 +327,36 @@ person would, using the site's own client the whole way through.
   the 932/932 paired recorded-answer mappings remain reconciled (the one
   terminal unanswered Sentry prompt is still not actuated).
 
+- **Multi-step gesture re-render fix (2026-07-24).**
+  Two later live games reached Militia's discard prompt with the correct
+  Estate/Gold + Copper + Copper + Confirm plan, but stopped on the second
+  Copper. After each selection the client re-renders `div.card-stacks`; the
+  remaining unselected Copper stack is briefly non-clickable and may be a new
+  DOM node. The actuator now retains the ordered logical target plan for error
+  reporting while resolving each physical card/button immediately before its
+  click. Every resolution polls for up to three seconds by default for the
+  live predicate: an unselected, clickable region-qualified card stack, or a
+  present, enabled button canvas.
+
+  Selection clicks in confirmable multi-card prompts are additionally checked
+  one at a time. The actuator requires the selected-copy count for that
+  identity to equal the number of preceding logical clicks, clicks the current
+  unselected sibling, then waits for the count to advance by exactly one. A
+  no-effect click is retried once with a fresh DOM resolution; a second
+  no-effect or an over-selection aborts with the original structured
+  question/plan/step diagnostics. The exact duplicate accounting comes from
+  recorded `dom-4326014.html`: selected cards are separate direct stack
+  siblings carrying `<selection-cross>`, and one selected Silver sibling's
+  visible numeric counter encodes all three selected Silvers while the
+  remaining unselected Silver is another sibling. The existing exact
+  selected-multiset check remains the final gate before Confirm.
+
+  Offline fake-page regressions cover the one-poll non-clickable animation,
+  Estate + Copper + Copper + Confirm completion, a one-retry no-effect
+  failure, and replacement of the Copper node between clicks. Both archived
+  Militia aborts still replay to their original correct four-step logical
+  plans.
+
 - **P6 — Lobby loop + supervisor + deploy.** Unattended base-set sessions
   with archiving and recovery.
 

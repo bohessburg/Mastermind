@@ -1077,6 +1077,7 @@ def test_start_confirmation_failure_snapshots_dom_and_names_search() -> None:
             PlaywrightActuator(
                 page,
                 snapshot_dom=snapshot_dom,
+                actuation_timeout_seconds=0,
             ).act(
                 int(dz.A_OPTION_BASE),
                 _start_confirmation_decision(),
@@ -1101,7 +1102,10 @@ def test_actuation_error_reports_offered_targets_and_failed_step() -> None:
 
     with pytest.raises(ActuationError) as caught:
         asyncio.run(
-            PlaywrightActuator(_EmptyPage()).act(
+            PlaywrightActuator(
+                _EmptyPage(),
+                actuation_timeout_seconds=0,
+            ).act(
                 copper,
                 decision,
                 decision.offered,

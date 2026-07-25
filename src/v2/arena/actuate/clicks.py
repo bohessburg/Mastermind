@@ -8,6 +8,7 @@ of truth for both the browser actuator and offline replay.
 
 from __future__ import annotations
 
+import asyncio
 from abc import ABC, abstractmethod
 from collections import Counter
 from dataclasses import dataclass
@@ -85,6 +86,7 @@ class DOMGameButton:
     x: float
     width: float
     height: float
+    enabled: bool = True
 
 
 def offered_name(value: str) -> str:
@@ -375,9 +377,17 @@ class PlaywrightActuator(Actuator):
         page: Any | None,
         *,
         snapshot_dom: Callable[[str], Awaitable[Any]] | None = None,
+        actuation_timeout_seconds: float = 3.0,
+        poll_interval_seconds: float = 0.05,
     ) -> None:
+        if actuation_timeout_seconds < 0:
+            raise ValueError("actuation timeout cannot be negative")
+        if poll_interval_seconds <= 0:
+            raise ValueError("actuation poll interval must be positive")
         self.page = page
         self.snapshot_dom = snapshot_dom
+        self.actuation_timeout_seconds = actuation_timeout_seconds
+        self.poll_interval_seconds = poll_interval_seconds
 
     async def act(
         self,
@@ -408,26 +418,45 @@ class PlaywrightActuator(Actuator):
                 f"detail={error}"
             ) from error
 
+        planned_selected: Counter[str] = Counter()
+        verify_card_effects = _verify_selection_before_submit(decision)
         for step, target in enumerate(targets, start=1):
             try:
                 if target.region == "autoplay-button":
-                    await self._click_autoplay_button()
+                    await self._wait_for_actionable_click(
+                        self._click_autoplay_button
+                    )
                 elif target.region == "mode-button":
-                    await self._click_mode_button(
-                        target.offered_index,
-                        len(offered_elements),
-                        start_confirmation=is_start_confirmation_prompt(
-                            decision
-                        ),
+                    await self._wait_for_actionable_click(
+                        lambda: self._click_mode_button(
+                            target.offered_index,
+                            len(offered_elements),
+                            start_confirmation=is_start_confirmation_prompt(
+                                decision
+                            ),
+                        )
                     )
                 elif target.region == "submit-button":
                     if _verify_selection_before_submit(decision):
                         await self._verify_selected_cards(gesture.labels)
-                    await self._click_submit_button(decision)
+                    await self._wait_for_actionable_click(
+                        lambda: self._click_submit_button(decision)
+                    )
                 elif target.region == "decline-button":
-                    await self._click_reaction_decline()
+                    await self._wait_for_actionable_click(
+                        self._click_reaction_decline
+                    )
                 else:
-                    await self._click_card(target)
+                    if verify_card_effects:
+                        await self._click_card_with_verification(
+                            target,
+                            expected_selected=planned_selected[
+                                target.identity
+                            ],
+                        )
+                        planned_selected[target.identity] += 1
+                    else:
+                        await self._click_card(target)
             except _GestureStepError as error:
                 start_confirmation_context = (
                     await self._start_confirmation_failure_context(decision)
@@ -457,75 +486,178 @@ class PlaywrightActuator(Actuator):
         return gesture
 
     async def _click_card(self, target: DOMClickTarget) -> None:
+        candidate, stack = await self._wait_for_card_target(
+            target,
+            expected_selected=None,
+        )
+        await self._click_resolved_card(candidate, stack)
+
+    async def _click_card_with_verification(
+        self,
+        target: DOMClickTarget,
+        *,
+        expected_selected: int,
+    ) -> None:
+        expected_after = expected_selected + 1
+        last_error: _GestureStepError | None = None
+        for attempt in range(2):
+            candidate, stack = await self._wait_for_card_target(
+                target,
+                expected_selected=expected_selected,
+            )
+            await self._click_resolved_card(candidate, stack)
+            try:
+                await self._wait_for_selection_count(
+                    target.identity,
+                    expected_after,
+                )
+                return
+            except _GestureStepError as error:
+                if error.status != "no-effect":
+                    raise
+                last_error = error
+                if attempt == 0:
+                    continue
+        assert last_error is not None
+        raise _GestureStepError(
+            "no-effect",
+            "card click had no observable selection effect after one retry; "
+            f"{last_error.detail}",
+        )
+
+    async def _wait_for_card_target(
+        self,
+        target: DOMClickTarget,
+        *,
+        expected_selected: int | None,
+    ) -> tuple[Any, DOMCardStack]:
+        deadline = self._deadline()
+        last_error: _GestureStepError | None = None
+        while True:
+            try:
+                return await self._resolve_card_target(
+                    target,
+                    expected_selected=expected_selected,
+                )
+            except _GestureStepError as error:
+                if error.status != "not-found":
+                    raise
+                last_error = error
+            if not await self._wait_for_next_poll(deadline):
+                assert last_error is not None
+                raise last_error
+
+    async def _resolve_card_target(
+        self,
+        target: DOMClickTarget,
+        *,
+        expected_selected: int | None,
+    ) -> tuple[Any, DOMCardStack]:
         cards = self.page.locator("div.card-stacks > div")
         candidates: list[Any] = []
         facts: list[DOMCardStack] = []
-        for index in range(await cards.count()):
-            candidate = cards.nth(index)
-            if not await candidate.is_visible():
-                continue
-            observed = await candidate.evaluate(
-                """element => {
-                    const name = Array.from(
-                        element.querySelectorAll(".name-layer:not(.invisible)")
-                    ).map(layer => layer.textContent.trim()).filter(Boolean);
-                    const counters = Array.from(
-                        element.querySelectorAll(".counter-layer:not(.invisible)")
-                    ).filter(layer => getComputedStyle(layer).display !== "none");
-                    const selected = element.querySelector("selection-cross") !== null;
-                    const selectedCount = selected
-                        ? Number.parseInt(
-                            counters.map(layer => layer.textContent.trim())
-                                .find(text => /^\\d+$/.test(text)) || "1",
-                            10
-                        )
-                        : 0;
-                    const all = Array.from(
-                        element.querySelectorAll(".all-button:not(.invisible)")
-                    ).find(layer => getComputedStyle(layer).display !== "none");
-                    const rect = element.getBoundingClientRect();
-                    const style = getComputedStyle(element);
-                    let allCoversCenter = false;
-                    if (all) {
-                        const allRect = all.getBoundingClientRect();
-                        const centerX = rect.left + rect.width / 2;
-                        const centerY = rect.top + rect.height / 2;
-                        allCoversCenter = (
-                            allRect.left <= centerX && centerX <= allRect.right
-                            && allRect.top <= centerY && centerY <= allRect.bottom
+        try:
+            for index in range(await cards.count()):
+                candidate = cards.nth(index)
+                if not await candidate.is_visible():
+                    continue
+                observed = await candidate.evaluate(
+                    """element => {
+                        const name = Array.from(
+                            element.querySelectorAll(
+                                ".name-layer:not(.invisible)"
+                            )
+                        ).map(layer => layer.textContent.trim())
+                            .filter(Boolean);
+                        const counters = Array.from(
+                            element.querySelectorAll(
+                                ".counter-layer:not(.invisible)"
+                            )
+                        ).filter(
+                            layer => getComputedStyle(layer).display !== "none"
                         );
-                    }
-                    return {
-                        name: name.length === 1 ? name[0] : null,
-                        width: rect.width,
-                        height: rect.height,
-                        zIndex: Number.parseInt(style.zIndex, 10) || 0,
-                        hasVisibleCounter: counters.length > 0,
-                        selectedCount,
-                        clickable: (
-                            style.cursor === "pointer"
-                            && style.pointerEvents !== "none"
-                        ),
-                        hasVisibleAll: Boolean(all),
-                        allCoversCenter,
-                    };
-                }"""
-            )
-            if observed["name"] is None:
-                continue
-            candidates.append(candidate)
-            facts.append(
-                DOMCardStack(
-                    identity=str(observed["name"]),
-                    width=float(observed["width"]),
-                    height=float(observed["height"]),
-                    z_index=int(observed["zIndex"]),
-                    has_visible_counter=bool(observed["hasVisibleCounter"]),
-                    selected_count=int(observed["selectedCount"]),
-                    clickable=bool(observed["clickable"]),
-                    has_visible_all=bool(observed["hasVisibleAll"]),
-                    all_covers_center=bool(observed["allCoversCenter"]),
+                        const selected = (
+                            element.querySelector("selection-cross") !== null
+                        );
+                        const selectedCount = selected
+                            ? Number.parseInt(
+                                counters.map(
+                                    layer => layer.textContent.trim()
+                                ).find(text => /^\\d+$/.test(text)) || "1",
+                                10
+                            )
+                            : 0;
+                        const all = Array.from(
+                            element.querySelectorAll(
+                                ".all-button:not(.invisible)"
+                            )
+                        ).find(
+                            layer => getComputedStyle(layer).display !== "none"
+                        );
+                        const rect = element.getBoundingClientRect();
+                        const style = getComputedStyle(element);
+                        let allCoversCenter = false;
+                        if (all) {
+                            const allRect = all.getBoundingClientRect();
+                            const centerX = rect.left + rect.width / 2;
+                            const centerY = rect.top + rect.height / 2;
+                            allCoversCenter = (
+                                allRect.left <= centerX
+                                && centerX <= allRect.right
+                                && allRect.top <= centerY
+                                && centerY <= allRect.bottom
+                            );
+                        }
+                        return {
+                            name: name.length === 1 ? name[0] : null,
+                            width: rect.width,
+                            height: rect.height,
+                            zIndex: Number.parseInt(style.zIndex, 10) || 0,
+                            hasVisibleCounter: counters.length > 0,
+                            selectedCount,
+                            clickable: (
+                                style.cursor === "pointer"
+                                && style.pointerEvents !== "none"
+                            ),
+                            hasVisibleAll: Boolean(all),
+                            allCoversCenter,
+                        };
+                    }"""
                 )
+                if observed["name"] is None:
+                    continue
+                candidates.append(candidate)
+                facts.append(
+                    DOMCardStack(
+                        identity=str(observed["name"]),
+                        width=float(observed["width"]),
+                        height=float(observed["height"]),
+                        z_index=int(observed["zIndex"]),
+                        has_visible_counter=bool(
+                            observed["hasVisibleCounter"]
+                        ),
+                        selected_count=int(observed["selectedCount"]),
+                        clickable=bool(observed["clickable"]),
+                        has_visible_all=bool(observed["hasVisibleAll"]),
+                        all_covers_center=bool(observed["allCoversCenter"]),
+                    )
+                )
+        except Exception as error:
+            raise _GestureStepError(
+                "not-found",
+                f"card DOM changed during live resolution: {error}",
+            ) from error
+        observed_selected = selected_card_counts(facts)
+        if (
+            expected_selected is not None
+            and observed_selected[target.identity] != expected_selected
+        ):
+            raise _GestureStepError(
+                "not-found",
+                "duplicate-selection accounting expected "
+                f"{expected_selected} selected {target.identity!r}, "
+                f"observed={observed_selected[target.identity]}; "
+                f"selected={dict(observed_selected)!r}; stacks={tuple(facts)!r}",
             )
         try:
             match = resolve_card_stack_index(target, facts)
@@ -543,8 +675,15 @@ class PlaywrightActuator(Actuator):
                 "found=1 but the distinct All control covers the stack "
                 f"center: {stack!r}",
             )
+        return candidates[match], stack
+
+    async def _click_resolved_card(
+        self,
+        candidate: Any,
+        stack: DOMCardStack,
+    ) -> None:
         try:
-            await candidates[match].click(
+            await candidate.click(
                 position={
                     "x": stack.width / 2,
                     "y": stack.height / 2,
@@ -555,6 +694,69 @@ class PlaywrightActuator(Actuator):
                 "click-error",
                 f"found=1 stack={stack!r}; click={error}",
             ) from error
+
+    async def _wait_for_selection_count(
+        self,
+        identity: str,
+        expected: int,
+    ) -> None:
+        deadline = self._deadline()
+        observed: Counter[str] = Counter()
+        detail = "selection DOM was not readable"
+        while True:
+            try:
+                observed = await self._selected_card_counts()
+                actual = observed[identity]
+                detail = (
+                    f"selection-effect expected {identity!r} count={expected}, "
+                    f"observed={actual}; selected={dict(observed)!r}"
+                )
+                if actual == expected:
+                    return
+                if actual > expected:
+                    raise _GestureStepError("selection-mismatch", detail)
+            except _GestureStepError:
+                raise
+            except Exception as error:
+                detail = f"selection DOM changed during verification: {error}"
+            if not await self._wait_for_next_poll(deadline):
+                raise _GestureStepError("no-effect", detail)
+
+    async def _wait_for_actionable_click(
+        self,
+        click: Callable[[], Awaitable[None]],
+    ) -> None:
+        deadline = self._deadline()
+        last_error: _GestureStepError | None = None
+        while True:
+            try:
+                await click()
+                return
+            except _GestureStepError as error:
+                if error.status != "not-found":
+                    raise
+                last_error = error
+            if not await self._wait_for_next_poll(deadline):
+                assert last_error is not None
+                raise last_error
+
+    def _deadline(self) -> float:
+        return (
+            asyncio.get_running_loop().time()
+            + self.actuation_timeout_seconds
+        )
+
+    async def _wait_for_next_poll(self, deadline: float) -> bool:
+        remaining = deadline - asyncio.get_running_loop().time()
+        if remaining <= 0:
+            return False
+        delay = min(self.poll_interval_seconds, remaining)
+        wait_for_timeout = getattr(self.page, "wait_for_timeout", None)
+        if wait_for_timeout is None:
+            await asyncio.sleep(delay)
+        else:
+            await wait_for_timeout(delay * 1000)
+        return True
 
     async def _visible_button_boxes(
         self,
@@ -575,9 +777,33 @@ class PlaywrightActuator(Actuator):
                     x=float(box["x"]),
                     width=float(box["width"]),
                     height=float(box["height"]),
+                    enabled=await self._button_is_enabled(candidate),
                 )
             )
         return locators, facts
+
+    async def _button_is_enabled(self, candidate: Any) -> bool:
+        is_enabled = getattr(candidate, "is_enabled", None)
+        try:
+            if is_enabled is not None and not await is_enabled():
+                return False
+            evaluate = getattr(candidate, "evaluate", None)
+            if evaluate is None:
+                return True
+            return bool(
+                await evaluate(
+                    """element => {
+                        const style = getComputedStyle(element);
+                        return (
+                            style.pointerEvents !== "none"
+                            && !element.hasAttribute("disabled")
+                            && element.getAttribute("aria-disabled") !== "true"
+                        );
+                    }"""
+                )
+            )
+        except Exception:
+            return False
 
     async def _click_autoplay_button(self) -> None:
         locators, buttons = await self._visible_button_boxes()
@@ -589,6 +815,7 @@ class PlaywrightActuator(Actuator):
                 height=button.height,
             )
             == "primary"
+            and button.enabled
         ]
         if len(matches) != 1:
             raise _GestureStepError(
@@ -634,6 +861,7 @@ class PlaywrightActuator(Actuator):
                 height=button.height,
             )
             == "primary"
+            and button.enabled
         ]
         if len(matches) != 1:
             raise _GestureStepError(
@@ -664,12 +892,19 @@ class PlaywrightActuator(Actuator):
         )
         if len(buttons) == offered_count:
             match = index
+            if not buttons[match][1].enabled:
+                raise _GestureStepError(
+                    "not-found",
+                    f"mode canvas index={match} is present but disabled; "
+                    f"buttons={facts!r}",
+                )
         elif start_confirmation and offered_count == 1 and index == 0:
             primary = [
                 button_index
                 for button_index, (_, fact) in enumerate(buttons)
                 if game_button_role(width=fact.width, height=fact.height)
                 == "primary"
+                and fact.enabled
             ]
             if len(primary) != 1:
                 raise _GestureStepError(
@@ -717,16 +952,24 @@ class PlaywrightActuator(Actuator):
     async def _verify_selected_cards(self, labels: tuple[str, ...]) -> None:
         wanted = Counter(labels)
         observed: Counter[str] = Counter()
-        for attempt in range(21):
-            observed = await self._selected_card_counts()
-            if observed == wanted:
-                return
-            if attempt < 20:
-                await self.page.wait_for_timeout(50)
+        detail = "selection DOM was not readable"
+        deadline = self._deadline()
+        while True:
+            try:
+                observed = await self._selected_card_counts()
+                detail = (
+                    f"selection-check expected={dict(wanted)!r} "
+                    f"observed={dict(observed)!r}"
+                )
+                if observed == wanted:
+                    return
+            except Exception as error:
+                detail = f"selection-check DOM changed: {error}"
+            if not await self._wait_for_next_poll(deadline):
+                break
         raise _GestureStepError(
             "not-found",
-            f"selection-check expected={dict(wanted)!r} "
-            f"observed={dict(observed)!r}",
+            detail,
         )
 
     async def _selected_card_counts(self) -> Counter[str]:
@@ -893,13 +1136,18 @@ def resolve_submit_button_index(
         "GAME_ACTION_PHASE",
         "GAME_BUY_PHASE",
     }:
-        if not buttons:
+        enabled = [
+            (index, button)
+            for index, button in enumerate(buttons)
+            if button.enabled
+        ]
+        if not enabled:
             matches: list[int] = []
         else:
-            rightmost_x = max(button.x for button in buttons)
+            rightmost_x = max(button.x for _, button in enabled)
             matches = [
                 index
-                for index, button in enumerate(buttons)
+                for index, button in enabled
                 if button.x == rightmost_x
             ]
     else:
@@ -911,6 +1159,7 @@ def resolve_submit_button_index(
                 height=button.height,
             )
             == "primary"
+            and button.enabled
         ]
     if len(matches) != 1:
         raise ActuationError(
