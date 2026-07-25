@@ -992,3 +992,29 @@ policy-only (sims=1) scored 4.0% vs engine3 — nearly all playing
 strength lives in search; policy distillation gap is a c18+ lever.
 Pile-ending rate stable ~22% across the whole sweep. Context: this is
 the deployed web checkpoint (Hetzner box, 400 sims).
+
+C15 GEN-45 vs REAL HUMANS ON DOMINION.GAMES (2026-07-24/25, first live
+test): **44W-64L-4T over 112 completed games** — 39.3% raw win rate,
+41.1% counting ties as half. Base-set only, unrated automatch, 400
+sims / 2 determinizations (the deployed operating point), 86 distinct
+opponents, ~14 hours of unattended play. This is the first read of any
+checkpoint against live human opposition rather than engine3 or Jack.
+
+READ: the flagship checkpoint is competitive but below average against
+the site's unrated automatch pool. Two caveats before treating 39% as
+the number: (a) opponent strength is unmeasured — no ratings were
+collected, and the unrated pool is not a fixed reference like engine3;
+(b) 61 of 112 games (54%) were decided by 6 VP or less, so the true
+gap is narrower than the win column suggests. 20 opponents played us
+more than once.
+
+Bot losses are NOT driver artifacts: every game in the record ran to a
+server-reported result, and the ~10 live failures found during the run
+were all integration bugs (click/protocol/lobby), fixed and pinned with
+regression tests before the long clean stretches. See
+`docs/arena-progress.md` for the failure classes and `docs/arena-usage.md`
+to reproduce. Full per-game archives (raw feed, every decision, VP
+scores) are under `exports/arena/`, plus unified analysis records via
+`python -m src.v2.records.convert` — enough to rebuild any decision and
+re-search it at higher sims, which is the obvious next diagnostic for
+where the 400-sim policy actually goes wrong against humans.
