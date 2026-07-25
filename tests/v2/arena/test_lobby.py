@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from pathlib import Path
 
 import pytest
@@ -8,6 +9,7 @@ import pytest
 from src.v2.arena.actuate.clicks import UNDO_DECLINE_SELECTOR
 from src.v2.arena.config import LobbyConfig
 from src.v2.arena.fsm.lobby import (
+    CANCEL_SEARCH_SELECTOR,
     DISMISS_GAME_ENDED_SELECTOR,
     GAME_CHAT_SELECTOR,
     IN_GAME_SELECTOR,
@@ -42,6 +44,10 @@ RECONNECT_LIMIT_DOM = Path(
 LATE_RECONNECT_LIMIT_DOM = Path(
     "exports/arena/20260725T033239.293293Z/"
     "dom-20260725T033411.018769Z-lobby-failure-homepage-start-search-not-found.html"
+)
+SEARCHING_DOM = Path(
+    "exports/arena/20260724T234015.530752Z/"
+    "dom-20260724T234502.180252Z-lobby-searching-wait.html"
 )
 
 
@@ -103,6 +109,8 @@ class _FakePage:
         reconnect_limit_modal: bool = False,
         reconnect_limit_at: float | None = None,
         unknown_modal_text: str | None = None,
+        search_engages: bool = True,
+        fruitless_search_seconds: float | None = None,
     ) -> None:
         self.screen = (
             "reconnect_limit"
@@ -128,6 +136,9 @@ class _FakePage:
         self.reconnect_limit_at = reconnect_limit_at
         self.reconnect_limit_resolved = False
         self.unknown_modal_text = unknown_modal_text
+        self.search_engages = search_engages
+        self.fruitless_search_seconds = fruitless_search_seconds
+        self.search_started_at: float | None = None
         self.reloaded = False
         self.reloads = 0
         self.clicks: list[str] = []
@@ -136,6 +147,7 @@ class _FakePage:
         return _FakeLocator(self, selector)
 
     def count(self, selector: str) -> int:
+        self._finish_fruitless_search_if_due()
         if self._reconnect_limit_is_visible():
             if selector in {
                 MODAL_WINDOW_SELECTOR,
@@ -151,6 +163,8 @@ class _FakePage:
             and selector == START_SEARCH_SELECTOR
             and self._start_search_is_rendered()
         ):
+            return 1
+        if self.screen == "searching" and selector == CANCEL_SEARCH_SELECTOR:
             return 1
         if selector == RECONNECTING_SELECTOR:
             return int(self.reconnecting_content)
@@ -228,6 +242,16 @@ class _FakePage:
             and self.clock() >= self.reconnect_limit_at
         )
 
+    def _finish_fruitless_search_if_due(self) -> None:
+        if (
+            self.screen == "searching"
+            and self.fruitless_search_seconds is not None
+            and self.search_started_at is not None
+            and self.clock is not None
+            and self.clock() >= self.search_started_at + self.fruitless_search_seconds
+        ):
+            self.screen = "homepage"
+
     def click(self, selector: str) -> None:
         self.clicks.append(selector)
         if (
@@ -243,7 +267,14 @@ class _FakePage:
             self.reconnect_limit_resolved = True
             self.screen = "game"
         elif self.screen == "homepage" and selector == START_SEARCH_SELECTOR:
-            self.screen = "game" if self.direct_automatch else "table"
+            if self.search_engages:
+                self.search_started_at = None if self.clock is None else self.clock()
+                if self.fruitless_search_seconds is not None:
+                    self.screen = "searching"
+                else:
+                    self.screen = "game" if self.direct_automatch else "table"
+        elif self.screen == "searching" and selector == CANCEL_SEARCH_SELECTOR:
+            self.screen = "homepage"
         elif self.screen == "table" and selector == START_GAME_SELECTOR:
             self.screen = "game"
         elif self.screen == "game_over" and selector == DISMISS_GAME_ENDED_SELECTOR:
@@ -265,6 +296,9 @@ def _config(**changes: object) -> LobbyConfig:
         "max_games_per_session": 5,
         "homepage_timeout_seconds": 1.0,
         "searching_timeout_seconds": 1.0,
+        "search_engagement_timeout_seconds": 0.25,
+        "max_fruitless_search_attempts": 3,
+        "search_without_match_budget_seconds": 10.0,
         "table_waiting_timeout_seconds": 1.0,
         "in_game_timeout_seconds": 1.0,
         "game_over_timeout_seconds": 1.0,
@@ -298,6 +332,131 @@ def test_lobby_fsm_drives_the_full_recorded_happy_cycle() -> None:
         START_SEARCH_SELECTOR,
         START_GAME_SELECTOR,
     ]
+
+
+def test_lobby_logs_state_transitions_and_recorded_control_clicks(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.INFO, logger="src.v2.arena.fsm.lobby")
+    page = _FakePage()
+    clock = _FakeClock()
+    lobby = LobbyFSM(page, _config(), clock=clock, sleep=clock.sleep)
+
+    asyncio.run(lobby.queue_next_game())
+    page.screen = "game_over"
+    lobby.game_ended()
+    asyncio.run(lobby.leave_after_game(requeue=True))
+
+    messages = tuple(record.getMessage() for record in caplog.records)
+    for expected in (
+        "lobby requeue requested",
+        "lobby click Start search",
+        "lobby match found: table waiting",
+        "lobby click Ready",
+        "lobby state transition in_game -> game_over",
+        "lobby click Ok",
+        "lobby click Leave Table",
+    ):
+        assert any(expected in message for message in messages)
+    assert sum("lobby click Start search" in message for message in messages) == 2
+
+
+def test_lobby_escalates_after_bounded_fruitless_searches(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.WARNING, logger="src.v2.arena.fsm.lobby")
+    clock = _FakeClock()
+    page = _FakePage(clock=clock, fruitless_search_seconds=100.0)
+    snapshots: list[str] = []
+
+    async def snapshot_dom(label: str) -> None:
+        snapshots.append(label)
+
+    lobby = LobbyFSM(
+        page,
+        _config(max_fruitless_search_attempts=2),
+        clock=clock,
+        sleep=clock.sleep,
+        snapshot_dom=snapshot_dom,
+    )
+
+    with pytest.raises(LobbyError, match=r"\[searching\].*2 fruitless attempts"):
+        asyncio.run(lobby.queue_next_game())
+
+    assert page.clicks == [
+        START_SEARCH_SELECTOR,
+        CANCEL_SEARCH_SELECTOR,
+        START_SEARCH_SELECTOR,
+        CANCEL_SEARCH_SELECTOR,
+    ]
+    assert snapshots == [
+        "lobby-searching-wait",
+        "lobby-searching-wait",
+        "lobby-failure-searching-fruitless-escalation",
+    ]
+    assert sum(
+        "lobby fruitless search attempt" in record.getMessage()
+        for record in caplog.records
+    ) == 2
+    assert any(
+        "lobby search escalation" in record.getMessage()
+        for record in caplog.records
+    )
+
+
+def test_lobby_retries_an_unengaged_search_click_then_escalates(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.WARNING, logger="src.v2.arena.fsm.lobby")
+    clock = _FakeClock()
+    page = _FakePage(clock=clock, search_engages=False)
+    snapshots: list[str] = []
+
+    async def snapshot_dom(label: str) -> None:
+        snapshots.append(label)
+
+    lobby = LobbyFSM(
+        page,
+        _config(max_fruitless_search_attempts=2),
+        clock=clock,
+        sleep=clock.sleep,
+        snapshot_dom=snapshot_dom,
+    )
+
+    with pytest.raises(LobbyError, match=r"2 fruitless attempts"):
+        asyncio.run(lobby.queue_next_game())
+
+    assert page.clicks == [START_SEARCH_SELECTOR, START_SEARCH_SELECTOR]
+    assert snapshots == [
+        "lobby-failure-searching-not-engaged",
+        "lobby-failure-searching-not-engaged",
+        "lobby-failure-searching-fruitless-escalation",
+    ]
+    assert sum(
+        "retrying Start search once" in record.getMessage()
+        for record in caplog.records
+    ) == 1
+    assert sum(
+        "lobby Start search did not engage after" in record.getMessage()
+        for record in caplog.records
+    ) == 2
+
+
+def test_lobby_wait_is_promptly_cancellable() -> None:
+    async def exercise() -> None:
+        page = _FakePage(fruitless_search_seconds=1_000_000.0)
+        lobby = LobbyFSM(
+            page,
+            _config(searching_timeout_seconds=1_000_000.0),
+            poll_seconds=0.01,
+        )
+        task = asyncio.create_task(lobby.queue_next_game())
+        await asyncio.sleep(0.02)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(task, timeout=0.2)
+
+    asyncio.run(exercise())
 
 
 def test_lobby_fsm_proceeds_when_the_game_ended_dialog_is_absent() -> None:
@@ -705,6 +864,19 @@ def test_recorded_lobby_control_selectors_resolve_saved_dom_snapshots() -> None:
     assert f"<{IN_GAME_SELECTOR}" not in scoreboard
     assert f"<{IN_GAME_SELECTOR}" in in_game.read_text(encoding="utf-8")
     assert f"<{IN_GAME_SELECTOR}" in later_in_game.read_text(encoding="utf-8")
+
+
+def test_recorded_searching_dom_confirms_cancel_search_signal() -> None:
+    assert SEARCHING_DOM.is_file(), "missing searching DOM evidence"
+
+    html = SEARCHING_DOM.read_text(encoding="utf-8")
+
+    assert recorded_control_labels(html, LobbyControl.CANCEL_SEARCH) == (
+        "Cancel search",
+    )
+    assert 'ng-click="$ctrl.automatch.cancel()"' in html
+    assert START_SEARCH_SELECTOR not in html
+    assert 'automatch-page automatch-table unselectable searching' in html
 
 
 def test_restart_failure_dom_is_recognized_as_an_in_progress_game() -> None:

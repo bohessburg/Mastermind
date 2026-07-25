@@ -22,10 +22,14 @@ def test_default_arena_config_loads_credentials_only_from_environment() -> None:
     assert config.arena_pass == "secret"
     assert config.lobby.max_games_per_session == 0
     assert config.stall_watchdog_seconds == 120.0
+    assert config.idle_watchdog_seconds == 600.0
     assert config.lobby.homepage_timeout_seconds == 90.0
     assert config.lobby.reconnect_limit_policy == "return_to_lobby"
     assert config.lobby.resume_full_state_timeout_seconds == 30.0
     assert config.lobby.searching_timeout_seconds == 180.0
+    assert config.lobby.search_engagement_timeout_seconds == 5.0
+    assert config.lobby.max_fruitless_search_attempts == 3
+    assert config.lobby.search_without_match_budget_seconds == 600.0
     assert config.undo.auto_deny is True
     assert config.timeout.claim_grace_seconds == 30.0
     assert config.actuation_mode == "protocol"
@@ -126,6 +130,32 @@ def test_arena_config_rejects_zero_resume_full_state_timeout(
     )
 
     with pytest.raises(ValueError, match="resume_full_state timeout"):
+        ArenaConfig.load(invalid, environ={})
+
+
+@pytest.mark.parametrize(
+    ("payload", "message"),
+    [
+        ({"idle_watchdog_seconds": 0}, "idle watchdog"),
+        (
+            {"lobby": {"max_fruitless_search_attempts": 0}},
+            "max_fruitless_search_attempts",
+        ),
+        (
+            {"lobby": {"search_engagement_timeout_seconds": 0}},
+            "search_engagement timeout",
+        ),
+    ],
+)
+def test_arena_config_rejects_invalid_idle_and_search_bounds(
+    tmp_path: Path,
+    payload: dict[str, object],
+    message: str,
+) -> None:
+    invalid = tmp_path / "invalid-watchdog.json"
+    invalid.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ValueError, match=message):
         ArenaConfig.load(invalid, environ={})
 
 

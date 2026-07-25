@@ -35,6 +35,7 @@ class LobbyControl(str, Enum):
     """Controls whose selectors were observed in the reference DOMs."""
 
     START_SEARCH = "start_search"
+    CANCEL_SEARCH = "cancel_search"
     START_GAME = "start_game"
     DISMISS_GAME_ENDED = "dismiss_game_ended"
     LEAVE_TABLE = "leave_table"
@@ -46,6 +47,12 @@ class LobbyControl(str, Enum):
 # searchNow() handler.  dom-530325.html has the recorded table controls.
 START_SEARCH_SELECTOR = (
     'button.automatch-button[ng-click="$ctrl.automatch.searchNow()"]'
+)
+# Evidence: the recorded search snapshot
+# ``20260724T234502.180252Z-lobby-searching-wait.html`` replaces Start search
+# with this control and gives the automatch root its ``searching`` class.
+CANCEL_SEARCH_SELECTOR = (
+    'button.automatch-button[ng-click="$ctrl.automatch.cancel()"]'
 )
 START_GAME_SELECTOR = (
     'score-table-buttons button.lobby-button[ng-click="$ctrl.readyClick()"]'
@@ -115,6 +122,12 @@ _CONTROL_SPECS = {
         selector=START_SEARCH_SELECTOR,
         label="Start search",
         handler="$ctrl.automatch.searchNow()",
+        required_class="automatch-button",
+    ),
+    LobbyControl.CANCEL_SEARCH: _ControlSpec(
+        selector=CANCEL_SEARCH_SELECTOR,
+        label="Cancel search",
+        handler="$ctrl.automatch.cancel()",
         required_class="automatch-button",
     ),
     # The client labels this button "Ready".  It is the only recorded
@@ -202,6 +215,7 @@ class LobbyFSM:
 
     async def queue_next_game(self) -> None:
         """Resume a retained board or search and start the next table."""
+        LOGGER.info("lobby requeue requested at %.3f", self.clock())
         await self.start_or_resume_game()
 
     async def start_or_resume_game(self) -> bool:
@@ -212,33 +226,206 @@ class LobbyFSM:
         are all reconsidered after every poll.
         """
         self._require_state(LobbyState.HOMEPAGE)
+        fruitless_attempts = 0
+        total_search_without_match_seconds = 0.0
+        engagement_retry_available = True
         while True:
             start_search = await self._wait_for_homepage_start_search_or_game()
             if start_search is None:
+                LOGGER.info(
+                    "lobby match found: retained in-play board at %.3f",
+                    self.clock(),
+                )
                 self._transition(LobbyState.IN_GAME)
                 return True
+            attempt_started_at = self.clock()
+            LOGGER.info(
+                "lobby start-search attempt %s at %.3f",
+                fruitless_attempts + 1,
+                attempt_started_at,
+            )
             await self._click(start_search, LobbyControl.START_SEARCH)
             self._transition(LobbyState.SEARCHING)
+
+            if not await self._wait_for_search_engagement():
+                elapsed_seconds = self.clock() - attempt_started_at
+                LOGGER.critical(
+                    "lobby Start search did not engage after %.1fs; the "
+                    "recorded Cancel search control and Start search "
+                    "disappearance were both absent",
+                    elapsed_seconds,
+                )
+                await self._snapshot_failure("searching-not-engaged")
+                (
+                    fruitless_attempts,
+                    total_search_without_match_seconds,
+                ) = await self._record_fruitless_search_attempt(
+                    fruitless_attempts=fruitless_attempts,
+                    total_search_without_match_seconds=(
+                        total_search_without_match_seconds
+                    ),
+                    elapsed_seconds=elapsed_seconds,
+                    reason="Start search did not engage",
+                )
+                self._transition(LobbyState.HOMEPAGE)
+                if engagement_retry_available:
+                    LOGGER.warning(
+                        "retrying Start search once after the unengaged click"
+                    )
+                    engagement_retry_available = False
+                continue
+
+            engagement_retry_available = True
 
             match = await self._wait_for_match()
             if match == "homepage":
                 self._transition(LobbyState.HOMEPAGE)
                 continue
+            if match == "no-match":
+                elapsed_seconds = self.clock() - attempt_started_at
+                await self._cancel_search_before_retry()
+                (
+                    fruitless_attempts,
+                    total_search_without_match_seconds,
+                ) = await self._record_fruitless_search_attempt(
+                    fruitless_attempts=fruitless_attempts,
+                    total_search_without_match_seconds=(
+                        total_search_without_match_seconds
+                    ),
+                    elapsed_seconds=elapsed_seconds,
+                    reason="no match appeared",
+                )
+                self._transition(LobbyState.HOMEPAGE)
+                continue
             if match == "in-game":
+                LOGGER.info(
+                    "lobby match found: in-play board at %.3f",
+                    self.clock(),
+                )
                 self._transition(LobbyState.IN_GAME)
                 return False
 
+            LOGGER.info(
+                "lobby match found: table waiting at %.3f",
+                self.clock(),
+            )
             self._transition(LobbyState.TABLE_WAITING)
             start_game = await self._wait_for_table_start_or_game()
             if start_game is _RETURN_TO_HOMEPAGE:
                 self._transition(LobbyState.HOMEPAGE)
                 continue
             if start_game is None:
+                LOGGER.info(
+                    "lobby match found: table entered play at %.3f",
+                    self.clock(),
+                )
                 self._transition(LobbyState.IN_GAME)
                 return False
             await self._click(start_game, LobbyControl.START_GAME)
             self._transition(LobbyState.IN_GAME)
             return False
+
+    async def _record_fruitless_search_attempt(
+        self,
+        *,
+        fruitless_attempts: int,
+        total_search_without_match_seconds: float,
+        elapsed_seconds: float,
+        reason: str,
+    ) -> tuple[int, float]:
+        """Log one failed search and fail closed at the configured session bound."""
+        attempts = fruitless_attempts + 1
+        total_seconds = total_search_without_match_seconds + max(
+            0.0,
+            elapsed_seconds,
+        )
+        LOGGER.warning(
+            "lobby fruitless search attempt %s: %s after %.1fs "
+            "(cumulative search-without-match %.1fs)",
+            attempts,
+            reason,
+            elapsed_seconds,
+            total_seconds,
+        )
+        attempt_limit = self.config.max_fruitless_search_attempts
+        time_limit = self.config.search_without_match_budget_seconds
+        if attempts < attempt_limit and total_seconds < time_limit:
+            return attempts, total_seconds
+
+        await self._snapshot_failure("searching-fruitless-escalation")
+        reasons: list[str] = []
+        if attempts >= attempt_limit:
+            reasons.append(f"{attempts} fruitless attempts (limit {attempt_limit})")
+        if total_seconds >= time_limit:
+            reasons.append(
+                "%.1fs searching without a match (budget %.1fs)"
+                % (total_seconds, time_limit)
+            )
+        detail = " and ".join(reasons)
+        LOGGER.critical(
+            "lobby search escalation after %s; requesting a fresh browser",
+            detail,
+        )
+        error_detail = (
+            "search produced no match after "
+            + detail
+            + "; last failure: "
+            + reason
+        )
+        raise self._error(error_detail)
+
+    async def _wait_for_search_engagement(self) -> bool:
+        """Confirm the recorded client-side state change after Start search.
+
+        The client swaps Start search for Cancel search while its automatch
+        root gets the ``searching`` class.  The latter has no stable click
+        target, so the recorded Cancel search control is preferred; Start
+        search disappearing is the corroborating fallback seen in the saved
+        snapshots when the match/table has rendered immediately.
+        """
+        deadline = self.clock() + self.config.search_engagement_timeout_seconds
+        while True:
+            if await self._control_if_present(LobbyControl.CANCEL_SEARCH) is not None:
+                LOGGER.info(
+                    "lobby search engagement confirmed by Cancel search at %.3f",
+                    self.clock(),
+                )
+                return True
+            if await self._control_if_present(LobbyControl.START_SEARCH) is None:
+                LOGGER.info(
+                    "lobby search engagement confirmed by Start search "
+                    "disappearing at %.3f",
+                    self.clock(),
+                )
+                return True
+            if self.clock() >= deadline:
+                return False
+            await self._sleep_poll()
+
+    async def _cancel_search_before_retry(self) -> None:
+        """Return a timed-out real search to the observed Start search state."""
+        cancel_search = await self._control_if_present(LobbyControl.CANCEL_SEARCH)
+        if cancel_search is None:
+            return
+        LOGGER.warning(
+            "lobby search attempt timed out; cancelling the recorded search "
+            "before requeueing"
+        )
+        await self._click(cancel_search, LobbyControl.CANCEL_SEARCH)
+        timeout_seconds = self.config.search_engagement_timeout_seconds
+        deadline = self.clock() + timeout_seconds
+        while True:
+            if await self._in_game_board_is_present():
+                return
+            if await self._control_if_present(LobbyControl.START_SEARCH) is not None:
+                return
+            if self.clock() >= deadline:
+                await self._snapshot_failure("searching-cancel-not-confirmed")
+                raise self._error(
+                    "Cancel search did not restore the recorded Start search "
+                    f"control after {timeout_seconds:.1f}s"
+                )
+            await self._sleep_poll()
 
     async def resolve_startup_blocking_modal(self) -> bool:
         """Handle one known startup modal or report an unknown blocker."""
@@ -376,14 +563,8 @@ class LobbyFSM:
                 # game-area. Apply the table-specific timeout to both signals.
                 return "table"
             if self.clock() >= deadline:
-                await self._snapshot_failure("searching-no-match-control")
-                raise self._timeout_error(
-                    LobbyState.SEARCHING,
-                    "a hosted table's Ready control "
-                    f"({START_GAME_SELECTOR}) or an in-play board "
-                    f"({IN_GAME_SELECTOR})",
-                )
-            await self.sleep(self.poll_seconds)
+                return "no-match"
+            await self._sleep_poll()
 
     async def _wait_for_table_start_or_game(self) -> Any | None:
         """Return hosted-table Ready, or ``None`` when automatch enters play."""
@@ -408,7 +589,7 @@ class LobbyFSM:
                     self._control_description(LobbyControl.START_GAME)
                     + f" or an in-play board ({IN_GAME_SELECTOR})",
                 )
-            await self.sleep(self.poll_seconds)
+            await self._sleep_poll()
 
     async def _wait_for_control(
         self,
@@ -429,7 +610,7 @@ class LobbyFSM:
                     f"{state.value}-{control.value}-not-found"
                 )
                 raise self._timeout_error(state, self._control_description(control))
-            await self.sleep(self.poll_seconds)
+            await self._sleep_poll()
 
     async def _wait_for_homepage_start_search_or_game(self) -> Any | None:
         """Poll the startup modal, board, and homepage before one reload.
@@ -482,7 +663,7 @@ class LobbyFSM:
                 )
             if reloaded_now:
                 continue
-            await self.sleep(self.poll_seconds)
+            await self._sleep_poll()
 
     async def _homepage_has_active_blocker(self) -> bool:
         """Whether a visible modal or main-window recovery state is active."""
@@ -535,7 +716,7 @@ class LobbyFSM:
                 return locator
             if self.clock() >= deadline:
                 return None
-            await self.sleep(self.poll_seconds)
+            await self._sleep_poll()
 
     async def _wait_for_control_to_be_gone(
         self,
@@ -553,7 +734,7 @@ class LobbyFSM:
                     f"{spec.label!r} ({spec.selector}) did not disappear after "
                     f"{timeout_seconds:.1f}s"
                 )
-            await self.sleep(self.poll_seconds)
+            await self._sleep_poll()
 
     async def _control_if_present(self, control: LobbyControl) -> Any | None:
         spec = _CONTROL_SPECS[control]
@@ -595,6 +776,7 @@ class LobbyFSM:
 
     async def _click(self, locator: Any, control: LobbyControl) -> None:
         spec = _CONTROL_SPECS[control]
+        LOGGER.info("lobby click %s at %.3f", spec.label, self.clock())
         try:
             await locator.click()
         except Exception as error:
@@ -632,6 +814,10 @@ class LobbyFSM:
         else:
             LOGGER.debug("archived lobby DOM snapshot %s at %s", label, destination)
 
+    async def _sleep_poll(self) -> None:
+        """Yield through a short cancellation point between lobby observations."""
+        await self.sleep(min(self.poll_seconds, 0.25))
+
     def _timeout_for(self, state: LobbyState) -> float:
         return {
             LobbyState.HOMEPAGE: self.config.homepage_timeout_seconds,
@@ -649,6 +835,12 @@ class LobbyFSM:
             )
 
     def _transition(self, target: LobbyState) -> None:
+        LOGGER.info(
+            "lobby state transition %s -> %s at %.3f",
+            self.state.value,
+            target.value,
+            self.clock(),
+        )
         self.state = target
 
     def _timeout_error(self, state: LobbyState, target: str) -> LobbyError:
@@ -659,8 +851,8 @@ class LobbyFSM:
 
     def _error(self, detail: str) -> LobbyError:
         return LobbyError(
-            f"LOBBY ERROR [{self.state.value}]: {detail}. Browser left open; "
-            "operator: inspect the visible lobby and either correct it or press Ctrl-C."
+            f"LOBBY ERROR [{self.state.value}]: {detail}. Browser will close "
+            "for a supervisor restart."
         )
 
 

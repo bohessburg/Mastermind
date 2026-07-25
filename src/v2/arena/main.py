@@ -6,9 +6,12 @@ import argparse
 import asyncio
 import json
 import logging
+import signal
 import tempfile
 import sys
-from collections.abc import AsyncIterable, AsyncIterator
+import time
+from dataclasses import dataclass
+from collections.abc import AsyncIterable, AsyncIterator, Awaitable, Callable
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -24,7 +27,7 @@ from .fsm.game import (
     run_game_loop,
 )
 from .fsm.lobby import LobbyError, LobbyFSM
-from .protocol.events import FullState, GameEvent
+from .protocol.events import FullState, GameEvent, GameStart
 from .protocol.live import RawFrameQueue, events_from_queue
 from .protocol.recording import events_from_recording
 
@@ -39,6 +42,67 @@ EXIT_LOBBY = 5
 EXIT_UNEXPECTED = 1
 
 LOGGER = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class IdleStallReport:
+    """Diagnostic context for a non-playing session that stopped progressing."""
+
+    silent_seconds: float
+    last_game_relevant_event_at: float
+
+
+class NonPlayingIdleWatchdog:
+    """Watch every lobby phase until the next game has actually started."""
+
+    def __init__(
+        self,
+        *,
+        timeout_seconds: float,
+        clock: Callable[[], float] = time.monotonic,
+        sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+        poll_seconds: float = 0.25,
+    ) -> None:
+        if timeout_seconds <= 0:
+            raise ValueError("idle watchdog timeout must be positive")
+        if poll_seconds <= 0:
+            raise ValueError("idle watchdog poll interval must be positive")
+        self.timeout_seconds = timeout_seconds
+        self.clock = clock
+        self.sleep = sleep
+        self.poll_seconds = poll_seconds
+        self.last_game_relevant_event_at = clock()
+        self.game_is_active = False
+        self.report: IdleStallReport | None = None
+
+    def observe_event(self, event: GameEvent) -> None:
+        """Record a normalized game-feed event; keepalives never reach here."""
+        self.last_game_relevant_event_at = self.clock()
+        if isinstance(event, GameStart):
+            self.game_started()
+
+    def game_started(self) -> None:
+        """Disarm the non-playing watchdog while the game loop owns progress."""
+        self.game_is_active = True
+
+    def game_finished(self) -> None:
+        """Rearm after GameEnd so post-game, leaving, and search are covered."""
+        self.game_is_active = False
+
+    async def wait_for_stall(self) -> IdleStallReport:
+        """Return only after a whole non-playing interval has been silent."""
+        while True:
+            silent_seconds = self.clock() - self.last_game_relevant_event_at
+            if not self.game_is_active and silent_seconds >= self.timeout_seconds:
+                self.report = IdleStallReport(
+                    silent_seconds=silent_seconds,
+                    last_game_relevant_event_at=(
+                        self.last_game_relevant_event_at
+                    ),
+                )
+                return self.report
+            remaining_seconds = max(0.0, self.timeout_seconds - silent_seconds)
+            await self.sleep(min(self.poll_seconds, remaining_seconds))
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -180,6 +244,8 @@ async def _run_live(
     session = ArenaSession()
     event_pump: asyncio.Task[None] | None = None
     modal_monitor: asyncio.Task[None] | None = None
+    idle_monitor: asyncio.Task[None] | None = None
+    idle_watchdog: NonPlayingIdleWatchdog | None = None
     current_game_id: int | None = None
     current_archive_dir: Path | None = None
     try:
@@ -250,9 +316,22 @@ async def _run_live(
             return archive
 
         events: asyncio.Queue[GameEvent | None] = asyncio.Queue()
+        idle_watchdog = NonPlayingIdleWatchdog(
+            timeout_seconds=config.idle_watchdog_seconds,
+        )
+        owner_task = asyncio.current_task()
+        assert owner_task is not None
         event_pump = asyncio.create_task(
-            _pump_session_events(session.events(), events),
+            _pump_session_events(
+                session.events(),
+                events,
+                on_event=idle_watchdog.observe_event,
+            ),
             name="arena-live-event-pump",
+        )
+        idle_monitor = asyncio.create_task(
+            _cancel_on_nonplaying_idle(idle_watchdog, owner_task),
+            name="arena-nonplaying-idle-watchdog",
         )
         lobby = LobbyFSM(
             session.page,
@@ -282,6 +361,10 @@ async def _run_live(
                 config.lobby.resume_full_state_timeout_seconds
             ),
         )
+        if resumed_game:
+            # A retained board may seed from FullState rather than emit a new
+            # GameStart after this process attached to its existing socket.
+            idle_watchdog.game_started()
 
         completed_games = 0
         wins = losses = ties = unknown = 0
@@ -314,8 +397,7 @@ async def _run_live(
                 raise LobbyError(
                     "LOBBY ERROR [in_game]: timed out after "
                     f"{config.lobby.in_game_timeout_seconds:.1f}s waiting for "
-                    "GameEnd. Browser left open; operator: inspect the visible "
-                    "game and either correct it or press Ctrl-C."
+                    "GameEnd. Browser will close for a supervisor restart."
                 ) from error
 
             if len(results) != 1:
@@ -324,6 +406,7 @@ async def _run_live(
                         "RESUME RECOVERY: reconnect ended before the resumed "
                         "game produced GameEnd"
                     )
+                    idle_watchdog.game_finished()
                     await lobby.recover_resumed_game_and_queue_next()
                     resumed_game = False
                     continue
@@ -331,10 +414,9 @@ async def _run_live(
                     "live event feed ended before the next game produced GameEnd"
                 )
             result = results[0]
-            if resumed_game and await _recover_rejected_resumed_game(
-                lobby,
-                result,
-            ):
+            if resumed_game and _resumed_tracker_was_rejected(result):
+                idle_watchdog.game_finished()
+                assert await _recover_rejected_resumed_game(lobby, result)
                 resumed_game = False
                 continue
             abort_exit_code = _exit_code_for_game_result(result)
@@ -370,6 +452,7 @@ async def _run_live(
                 return EXIT_DIVERGENCE
 
             resumed_game = False
+            idle_watchdog.game_finished()
             completed_games += 1
             if result.outcome == "win":
                 wins += 1
@@ -398,6 +481,16 @@ async def _run_live(
                     flush=True,
                 )
                 return EXIT_CLEAN
+    except asyncio.CancelledError:
+        if idle_watchdog is None or idle_watchdog.report is None:
+            raise
+        await _exit_for_nonplaying_idle_stall(
+            session,
+            idle_watchdog.report,
+            game_id=current_game_id,
+            archive_dir=current_archive_dir,
+        )
+        return EXIT_STALL
     except LobbyError as error:
         print(str(error), file=sys.stderr, flush=True)
         if session.run_dir is not None:
@@ -422,6 +515,9 @@ async def _run_live(
             )
         return EXIT_UNEXPECTED
     finally:
+        if idle_monitor is not None:
+            idle_monitor.cancel()
+            await asyncio.gather(idle_monitor, return_exceptions=True)
         if modal_monitor is not None:
             modal_monitor.cancel()
             await asyncio.gather(modal_monitor, return_exceptions=True)
@@ -442,13 +538,68 @@ async def _monitor_modals(
         await asyncio.sleep(poll_seconds)
 
 
+async def _cancel_on_nonplaying_idle(
+    watchdog: NonPlayingIdleWatchdog,
+    owner_task: asyncio.Task[Any],
+) -> None:
+    """Cancel the live coordinator when its non-playing watchdog expires."""
+    report = await watchdog.wait_for_stall()
+    LOGGER.critical(
+        "GLOBAL IDLE WATCHDOG: no game-feed progress for %.1fs while no "
+        "game was active; cancelling the live coordinator",
+        report.silent_seconds,
+    )
+    owner_task.cancel()
+
+
+async def _exit_for_nonplaying_idle_stall(
+    session: Any,
+    report: IdleStallReport,
+    *,
+    game_id: int | None,
+    archive_dir: Path | None,
+) -> None:
+    """Archive non-playing idle diagnostics and leave a restartable exit code."""
+    assert session.run_dir is not None
+    LOGGER.critical(
+        "GLOBAL IDLE WATCHDOG ABORT: %.1fs without a game-relevant event; "
+        "capturing diagnostics before browser shutdown",
+        report.silent_seconds,
+    )
+    print(
+        "GLOBAL IDLE WATCHDOG ABORT: diagnostics archived; closing the "
+        "browser for a supervisor restart.",
+        file=sys.stderr,
+        flush=True,
+    )
+    try:
+        await session.screenshot(session.run_dir / "idle-stall.png")
+    except Exception as error:
+        LOGGER.error("could not capture global idle screenshot: %s", error)
+    try:
+        await session.snapshot_dom("idle-stall")
+    except Exception as error:
+        LOGGER.error("could not capture global idle DOM snapshot: %s", error)
+    write_exit_summary(
+        session.run_dir,
+        exit_code=EXIT_STALL,
+        exit_reason="non-playing-idle-watchdog",
+        game_id=game_id,
+        archive_dir=archive_dir or session.run_dir,
+    )
+
+
 async def _pump_session_events(
     source: AsyncIterable[GameEvent],
     destination: asyncio.Queue[GameEvent | None],
+    *,
+    on_event: Callable[[GameEvent], None] | None = None,
 ) -> None:
     """Keep one stateful protocol parser alive across all lobby/game cycles."""
     try:
         async for event in source:
+            if on_event is not None:
+                on_event(event)
             await destination.put(event)
     finally:
         await destination.put(None)
@@ -577,10 +728,47 @@ async def _request_resign(page: Any) -> None:
         print(f"ERROR: resign was not requested: {error}", file=sys.stderr, flush=True)
 
 
+async def _run_with_graceful_shutdown(args: argparse.Namespace) -> int:
+    """Translate SIGINT/SIGTERM into task cancellation so browser cleanup runs."""
+    loop = asyncio.get_running_loop()
+    shutdown_requested = asyncio.Event()
+    installed_signals: list[signal.Signals] = []
+    for signum in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(signum, shutdown_requested.set)
+        except (NotImplementedError, RuntimeError):
+            # ``asyncio.run`` still supplies the normal KeyboardInterrupt
+            # fallback on platforms without loop-level signal handlers.
+            continue
+        installed_signals.append(signum)
+
+    runner = asyncio.create_task(_run(args), name="arena-runner")
+    shutdown_waiter = asyncio.create_task(
+        shutdown_requested.wait(),
+        name="arena-shutdown-signal-waiter",
+    )
+    try:
+        done, _pending = await asyncio.wait(
+            {runner, shutdown_waiter},
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        if shutdown_waiter in done:
+            LOGGER.warning("shutdown signal received; cancelling arena tasks")
+            runner.cancel()
+            await asyncio.gather(runner, return_exceptions=True)
+            return EXIT_CLEAN
+        return runner.result()
+    finally:
+        shutdown_waiter.cancel()
+        await asyncio.gather(shutdown_waiter, return_exceptions=True)
+        for signum in installed_signals:
+            loop.remove_signal_handler(signum)
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
     try:
-        return asyncio.run(_run(args))
+        return asyncio.run(_run_with_graceful_shutdown(args))
     except KeyboardInterrupt:
         return EXIT_CLEAN
     except Exception as error:

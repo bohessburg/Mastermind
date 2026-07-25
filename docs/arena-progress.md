@@ -58,6 +58,33 @@ fake protocol session (807 mapper-first frames byte-identical to the human
 frame; 125 valid duplicate-card/order alternatives), and replay Militia
 question 50 as one message-37 send with no game-DOM interaction.
 
+## Lobby and supervisor hardening (2026-07-25)
+
+The arena now fails closed instead of silently re-clicking a stuck automatch
+lobby forever. `LobbyFSM` records every state transition and lobby control
+click, confirms each `Start search` click within five seconds, and emits a
+warning with elapsed/cumulative time for every fruitless search. The search is
+escalated with a DOM capture and `LobbyError` after either three fruitless
+attempts or 600 seconds total search-without-match, so the supervisor starts a
+fresh browser/profile session.
+
+The engagement signal is recorded rather than inferred: in
+`exports/arena/20260724T234015.530752Z/dom-20260724T234502.180252Z-lobby-searching-wait.html`,
+the normal `Start search` button is absent and the client exposes the
+`$ctrl.automatch.cancel()` **Cancel search** button (while the automatch root
+also has its `searching` class). The FSM uses the Cancel search control first,
+with disappearance of Start search as the immediate-table fallback.
+
+The new knobs are `idle_watchdog_seconds` (600) at the top level and, under
+`lobby`, `search_engagement_timeout_seconds` (5),
+`max_fruitless_search_attempts` (3), and
+`search_without_match_budget_seconds` (600). The global idle watchdog remains
+armed through all non-playing phases; after 600 seconds with no normalized
+game-feed event and no active game, it saves `idle-stall.png` and a DOM
+snapshot, writes `exit.json` with exit code 3, and closes the browser for the
+supervisor. SIGINT and SIGTERM now cancel the bounded lobby waits and let the
+session close its persistent browser context before process exit.
+
 ## Status by phase
 
 - **P0 — Recording harness: complete (2026-07-24).**

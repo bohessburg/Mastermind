@@ -23,6 +23,9 @@ class LobbyConfig:
     reconnect_limit_policy: str = "return_to_lobby"
     resume_full_state_timeout_seconds: float = 30.0
     searching_timeout_seconds: float = 180.0
+    search_engagement_timeout_seconds: float = 5.0
+    max_fruitless_search_attempts: int = 3
+    search_without_match_budget_seconds: float = 600.0
     table_waiting_timeout_seconds: float = 30.0
     in_game_timeout_seconds: float = 3600.0
     game_over_timeout_seconds: float = 30.0
@@ -54,6 +57,7 @@ class ArenaConfig:
     determinizations: int = 2
     wall_clock_cap_seconds: float | None = 30.0
     stall_watchdog_seconds: float = 120.0
+    idle_watchdog_seconds: float = 600.0
     think_time_min_seconds: float = 1.25
     think_time_max_seconds: float = 2.75
     actuation_mode: str = "protocol"
@@ -103,6 +107,7 @@ class ArenaConfig:
             stall_watchdog_seconds=float(
                 raw.get("stall_watchdog_seconds", 120.0)
             ),
+            idle_watchdog_seconds=float(raw.get("idle_watchdog_seconds", 600.0)),
             think_time_min_seconds=float(pacing.get("min_seconds", 1.25)),
             think_time_max_seconds=float(pacing.get("max_seconds", 2.75)),
             actuation_mode=str(raw.get("actuation_mode", "protocol")),
@@ -123,6 +128,15 @@ class ArenaConfig:
                 ),
                 searching_timeout_seconds=float(
                     lobby_raw.get("searching_timeout_seconds", 180.0)
+                ),
+                search_engagement_timeout_seconds=float(
+                    lobby_raw.get("search_engagement_timeout_seconds", 5.0)
+                ),
+                max_fruitless_search_attempts=int(
+                    lobby_raw.get("max_fruitless_search_attempts", 3)
+                ),
+                search_without_match_budget_seconds=float(
+                    lobby_raw.get("search_without_match_budget_seconds", 600.0)
                 ),
                 table_waiting_timeout_seconds=float(
                     lobby_raw.get("table_waiting_timeout_seconds", 30.0)
@@ -169,6 +183,8 @@ class ArenaConfig:
             raise ValueError("wall-clock cap must be positive or null")
         if self.stall_watchdog_seconds <= 0:
             raise ValueError("stall watchdog must be positive")
+        if self.idle_watchdog_seconds <= 0:
+            raise ValueError("idle watchdog must be positive")
         if self.think_time_min_seconds < 0:
             raise ValueError("minimum think time cannot be negative")
         if self.think_time_max_seconds < self.think_time_min_seconds:
@@ -177,6 +193,8 @@ class ArenaConfig:
             raise ValueError("actuation_mode must be 'protocol' or 'clicks'")
         if self.lobby.max_games_per_session < 0:
             raise ValueError("lobby max_games_per_session cannot be negative")
+        if self.lobby.max_fruitless_search_attempts <= 0:
+            raise ValueError("lobby max_fruitless_search_attempts must be positive")
         if self.lobby.reconnect_limit_policy not in {
             "return_to_lobby",
             "reconnect",
@@ -195,6 +213,11 @@ class ArenaConfig:
             ("homepage", self.lobby.homepage_timeout_seconds),
             ("resume_full_state", self.lobby.resume_full_state_timeout_seconds),
             ("searching", self.lobby.searching_timeout_seconds),
+            ("search_engagement", self.lobby.search_engagement_timeout_seconds),
+            (
+                "search_without_match_budget",
+                self.lobby.search_without_match_budget_seconds,
+            ),
             ("table_waiting", self.lobby.table_waiting_timeout_seconds),
             ("in_game", self.lobby.in_game_timeout_seconds),
             ("game_over", self.lobby.game_over_timeout_seconds),

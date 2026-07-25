@@ -1,6 +1,7 @@
 {
   "checkpoint_path": "checkpoints/remote/campaign15/gen_0045.pt",
   "stall_watchdog_seconds": 120,
+  "idle_watchdog_seconds": 600,
   "actuation_mode": "protocol",
   "search": {
     "obs_version": 2,
@@ -26,6 +27,9 @@
     "reconnect_limit_policy": "return_to_lobby",
     "resume_full_state_timeout_seconds": 30,
     "searching_timeout_seconds": 180,
+    "search_engagement_timeout_seconds": 5,
+    "max_fruitless_search_attempts": 3,
+    "search_without_match_budget_seconds": 600,
     "table_waiting_timeout_seconds": 30,
     "in_game_timeout_seconds": 3600,
     "game_over_timeout_seconds": 30,

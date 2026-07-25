@@ -15,6 +15,8 @@ from src.v2.arena.main import (
     EXIT_LOBBY,
     EXIT_STALL,
     EXIT_UNEXPECTED,
+    NonPlayingIdleWatchdog,
+    _exit_for_nonplaying_idle_stall,
     _exit_code_for_game_result,
     write_exit_summary,
 )
@@ -60,6 +62,24 @@ class _FakeClock:
     async def sleep(self, seconds: float) -> None:
         self.now += seconds
         await asyncio.sleep(0)
+
+
+class _FakeIdleSession:
+    def __init__(self, run_dir: Path) -> None:
+        self.run_dir = run_dir
+        self.screenshots: list[Path] = []
+        self.dom_labels: list[str] = []
+
+    async def screenshot(self, destination: Path) -> Path:
+        destination.write_bytes(b"png")
+        self.screenshots.append(destination)
+        return destination
+
+    async def snapshot_dom(self, label: str) -> Path:
+        destination = self.run_dir / f"{label}.html"
+        destination.write_text("<html>idle</html>", encoding="utf-8")
+        self.dom_labels.append(label)
+        return destination
 
 
 def _start(*, our_seat: int = 0) -> GameStart:
@@ -137,6 +157,39 @@ def test_our_turn_watchdog_archives_stall_and_maps_to_exit_3(
     assert stall["silent_seconds"] >= 2.0
     assert Path(stall["screenshot_path"]).is_file()
     assert Path(stall["dom_snapshot_path"]).is_file()
+
+
+def test_nonplaying_idle_watchdog_archives_and_exits_3(tmp_path: Path) -> None:
+    clock = _FakeClock()
+    watchdog = NonPlayingIdleWatchdog(
+        timeout_seconds=2.0,
+        clock=clock,
+        sleep=clock.sleep,
+        poll_seconds=0.5,
+    )
+
+    report = asyncio.run(watchdog.wait_for_stall())
+    session = _FakeIdleSession(tmp_path)
+    asyncio.run(
+        _exit_for_nonplaying_idle_stall(
+            session,
+            report,
+            game_id=None,
+            archive_dir=None,
+        )
+    )
+
+    assert report.silent_seconds >= 2.0
+    assert session.screenshots == [tmp_path / "idle-stall.png"]
+    assert (tmp_path / "idle-stall.png").is_file()
+    assert session.dom_labels == ["idle-stall"]
+    assert (tmp_path / "idle-stall.html").is_file()
+    assert json.loads((tmp_path / "exit.json").read_text(encoding="utf-8")) == {
+        "archive_dir": str(tmp_path),
+        "exit_code": EXIT_STALL,
+        "exit_reason": "non-playing-idle-watchdog",
+        "game_id": None,
+    }
 
 
 async def _opponent_turn_then_end(clock: _FakeClock) -> AsyncIterator[object]:
