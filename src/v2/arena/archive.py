@@ -130,6 +130,7 @@ class GameArchive:
             )
         if summary.completed:
             self._append_ledger(summary)
+        self._emit_game_record()
         self.close()
 
     def close(self) -> None:
@@ -171,6 +172,19 @@ class GameArchive:
                 "could not append arena win/loss ledger %s for game %s: %s",
                 self._ledger_path,
                 summary.game_id,
+                error,
+            )
+
+    def _emit_game_record(self) -> None:
+        """Best-effort analysis record; source archive files remain canonical."""
+        try:
+            from src.v2.records.convert import emit_arena_record
+
+            emit_arena_record(self.path)
+        except Exception as error:
+            LOGGER.error(
+                "could not emit unified game record for %s: %s",
+                self.path,
                 error,
             )
 
