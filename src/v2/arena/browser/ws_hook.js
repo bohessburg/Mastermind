@@ -13,6 +13,8 @@
 
   let nextSocketId = 1;
   const socketStates = new WeakMap();
+  const liveSockets = new Set();
+  let activeSocket = null;
 
   function epochMilliseconds() {
     return Date.now();
@@ -134,9 +136,27 @@
 
       // addEventListener is deliberately used instead of onmessage so page
       // handlers, including later onmessage assignments, remain untouched.
-      this.addEventListener("open", () => state.enqueueLifecycle("open"));
-      this.addEventListener("close", () => state.enqueueLifecycle("close"));
-      this.addEventListener("message", (event) => state.enqueue("in", event.data));
+      this.addEventListener("open", () => {
+        liveSockets.add(this);
+        activeSocket = this;
+        state.enqueueLifecycle("open");
+      });
+      this.addEventListener("close", () => {
+        liveSockets.delete(this);
+        if (activeSocket === this) {
+          activeSocket = null;
+          for (const candidate of liveSockets) {
+            if (candidate.readyState === NativeWebSocket.OPEN) {
+              activeSocket = candidate;
+            }
+          }
+        }
+        state.enqueueLifecycle("close");
+      });
+      this.addEventListener("message", (event) => {
+        activeSocket = this;
+        state.enqueue("in", event.data);
+      });
     }
 
     send(payload) {
@@ -154,4 +174,31 @@
   }
 
   window.WebSocket = ArenaWebSocket;
+  window.__arenaSend = async (base64Bytes) => {
+    let socket = activeSocket;
+    if (!socket || socket.readyState !== NativeWebSocket.OPEN) {
+      socket = null;
+      for (const candidate of liveSockets) {
+        if (candidate.readyState === NativeWebSocket.OPEN) {
+          socket = candidate;
+        }
+      }
+      activeSocket = socket;
+    }
+    if (!socket) {
+      throw new Error("arena game WebSocket is unavailable");
+    }
+
+    const binary = atob(base64Bytes);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index);
+    }
+    socket.send(bytes);
+    const state = socketStates.get(socket);
+    if (state) {
+      await state.tail;
+    }
+    return state ? state.id : null;
+  };
 })();

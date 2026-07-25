@@ -25,6 +25,7 @@ def test_default_arena_config_loads_credentials_only_from_environment() -> None:
     assert config.lobby.homepage_timeout_seconds == 90.0
     assert config.lobby.searching_timeout_seconds == 180.0
     assert config.undo.auto_deny is True
+    assert config.actuation_mode == "protocol"
 
 
 def test_arena_config_rejects_invalid_pacing(tmp_path: Path) -> None:
@@ -40,6 +41,24 @@ def test_arena_config_rejects_invalid_pacing(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="maximum think time"):
         ArenaConfig.load(path, environ={})
+
+
+def test_arena_config_rejects_unknown_actuation_mode(tmp_path: Path) -> None:
+    path = tmp_path / "arena.json"
+    path.write_text(
+        json.dumps({"actuation_mode": "canvas"}),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="actuation_mode"):
+        ArenaConfig.load(path, environ={})
+
+    clicks = tmp_path / "clicks.json"
+    clicks.write_text(
+        json.dumps({"actuation_mode": "clicks"}),
+        encoding="utf-8",
+    )
+    assert ArenaConfig.load(clicks, environ={}).actuation_mode == "clicks"
 
 
 def test_arena_config_accepts_unlimited_lobby_sessions_and_rejects_timeouts(

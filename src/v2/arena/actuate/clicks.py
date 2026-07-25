@@ -378,7 +378,7 @@ class MockActuator(Actuator):
     ) -> ClientGesture:
         if self.stopped:
             raise ActuationError("mock actuator was stopped after divergence")
-        gesture = _gesture(
+        gesture = map_client_gesture(
             action,
             decision,
             offered_elements,
@@ -654,7 +654,7 @@ class PlaywrightActuator(Actuator):
         if self.page is None:
             raise ActuationError("Playwright page is unavailable")
         try:
-            gesture = _gesture(
+            gesture = map_client_gesture(
                 action,
                 decision,
                 offered_elements,
@@ -1591,13 +1591,14 @@ def gesture_click_targets(
     return tuple(targets)
 
 
-def _gesture(
+def map_client_gesture(
     action: int,
     decision: PendingDecisionSnapshot,
     offered: tuple[str, ...],
     *,
     prior_actions: tuple[int, ...],
 ) -> ClientGesture:
+    """Map accumulated engine actions to one concrete client answer."""
     mapping = map_engine_action(
         action,
         decision,

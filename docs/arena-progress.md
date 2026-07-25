@@ -13,10 +13,50 @@ a public WebSocket. The same feed is what the site's own client uses to render
 a game, and the site supports attaching to a running game's feed to spectate.
 Our integration simply speaks that same client protocol: a browser session
 (driven by Playwright) runs the normal client and uses its connection to handle
-the lobby, we read the game feed the client already receives, and we play our
-moves through the normal client UI. This is ordinary client interoperability —
-reading a feed the client is designed to expose and clicking the same buttons a
-person would, using the site's own client the whole way through.
+the lobby, we read the game feed the client already receives, and we send
+question answers through that connection using the client's observed,
+stateless `ANSWER_QUESTION` shape. Playwright still operates the normal lobby
+and modal controls.
+
+## Current actuation mode: protocol (2026-07-24)
+
+In-game `PendingDecision` actuation now defaults to direct client message 37,
+not DOM/canvas clicks. `src/v2/arena/browser/ws_hook.js` retains the current
+open game socket across replacement/reconnect and exposes a raw-byte sender;
+`ArenaSession.send_frame()` builds the outbound envelope. Sending still goes
+through the hook's wrapped `WebSocket.send`, so every bot-generated answer is
+mirrored into `frames.jsonl` in the same form as a client-generated outbound
+frame and is decoded by the normal replay parser.
+
+The trigger was three independent live aborts on the same Militia multi-select
+prompt: region mapping, just-in-time/polled targeting, and occlusion-aware probe
+points all failed in turn. In
+`exports/arena/20260725T013442.698102Z/` (game 181369850), the final synthetic
+click physically landed on the verified Copper target twice but the client's
+canvas picker produced no selection effect. P1 had already proved that message
+37 is the clean fallback reserved by design decision 3: 933 questions and 932
+answers parse exactly as
+`[questionIndex:u32][answerCount:u32][answers:u32...][autoPlayed:boolean]`.
+
+The protocol actuator sends the mapper's first valid answer encoding with
+`autoPlayed=false` after the existing think-time delay. The immediate
+`DecisionResolved` verification and equivalent-encoding acceptance remain in
+place. The old `PlaywrightActuator` question-click machinery is retained as
+the operator fallback:
+
+```json
+{
+  "actuation_mode": "protocol"
+}
+```
+
+The only valid values are `"protocol"` (default) and `"clicks"`. Undo denial
+remains a modal click, and game-ended/lobby controls (`OK`, `Start Search`,
+`Ready`, and `Leave Table`) are unchanged. Corpus tests re-encode all 932
+recorded outbound answers byte-for-byte, drive the three-game replay through a
+fake protocol session (807 mapper-first frames byte-identical to the human
+frame; 125 valid duplicate-card/order alternatives), and replay Militia
+question 50 as one message-37 send with no game-DOM interaction.
 
 ## Status by phase
 

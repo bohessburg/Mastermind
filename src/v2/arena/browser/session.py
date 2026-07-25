@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 from datetime import datetime, timezone
 from pathlib import Path
 import re
@@ -12,6 +13,7 @@ from playwright.async_api import BrowserContext, Page, Playwright, async_playwri
 
 from ..archive import serialize_frame_record
 from ..protocol.events import GameEvent
+from ..protocol.frames import Writer
 from ..protocol.live import RawFrameQueue, events_from_queue
 
 
@@ -146,6 +148,21 @@ class ArenaSession:
         """Yield parsed game events while idling on the raw-frame queue."""
         async for event in events_from_queue(self.frame_queue, socket=self.game_socket):
             yield event
+
+    async def send_frame(self, msg_type: int, payload_bytes: bytes) -> None:
+        """Send one raw outbound body on the hook's current game socket.
+
+        The hook calls the wrapped socket's normal ``send`` method, so its
+        existing outbound observer also archives and parses this frame.
+        """
+        if self.page is None or self.page.is_closed():
+            raise RuntimeError("Playwright page is unavailable for WebSocket send")
+        raw = Writer().u32(msg_type).bytes(payload_bytes).build()
+        encoded = base64.b64encode(raw).decode("ascii")
+        await self.page.evaluate(
+            "(base64Bytes) => window.__arenaSend(base64Bytes)",
+            encoded,
+        )
 
     async def __aenter__(self) -> "ArenaSession":
         await self.start()

@@ -1,6 +1,7 @@
 {
   "checkpoint_path": "checkpoints/remote/campaign15/gen_0045.pt",
   "stall_watchdog_seconds": 120,
+  "actuation_mode": "protocol",
   "search": {
     "obs_version": 2,
     "sims": 400,

@@ -1004,16 +1004,6 @@ async def run_game_loop(
                 prior_actions=gesture_actions[:-1],
                 answer_hint=plan.answer_hint,
             )
-            if plan.answer_hint is not None and (
-                gesture.answer_indices != plan.answer_hint
-            ):
-                raise DivergenceError(
-                    "replay actuator did not preserve the recorded answer shape",
-                    frame_index=frame_index,
-                    question_index=event.question_index,
-                    intended=plan.answer_hint,
-                    observed=gesture.answer_indices,
-                )
             intended = IntendedAction(
                 decision=snapshot.pending_decision,
                 engine_actions=plan.engine_actions,

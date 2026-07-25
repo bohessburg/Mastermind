@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from .actuate.clicks import MockActuator, PlaywrightActuator
+from .actuate.protocol import ProtocolActuator
 from .archive import GameArchive
 from .bot.policy import NNCheckpointError, load_policy
 from .config import ArenaConfig
@@ -255,12 +256,20 @@ async def _run_live(
             config.lobby,
             snapshot_dom=session.snapshot_dom,
         )
-        actuator = PlaywrightActuator(
+        click_actuator = PlaywrightActuator(
             session.page,
             snapshot_dom=session.snapshot_dom,
         )
+        actuator = (
+            ProtocolActuator(
+                session.send_frame,
+                modal_actuator=click_actuator,
+            )
+            if config.actuation_mode == "protocol"
+            else click_actuator
+        )
         modal_monitor = asyncio.create_task(
-            _monitor_modals(actuator),
+            _monitor_modals(click_actuator),
             name="arena-modal-monitor",
         )
         await lobby.queue_next_game()

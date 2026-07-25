@@ -47,6 +47,7 @@ class ArenaConfig:
     stall_watchdog_seconds: float = 120.0
     think_time_min_seconds: float = 1.25
     think_time_max_seconds: float = 2.75
+    actuation_mode: str = "protocol"
     lobby: LobbyConfig = LobbyConfig()
     undo: UndoConfig = UndoConfig()
     arena_user: str | None = None
@@ -93,6 +94,7 @@ class ArenaConfig:
             ),
             think_time_min_seconds=float(pacing.get("min_seconds", 1.25)),
             think_time_max_seconds=float(pacing.get("max_seconds", 2.75)),
+            actuation_mode=str(raw.get("actuation_mode", "protocol")),
             lobby=LobbyConfig(
                 card_pool=str(lobby_raw.get("card_pool", "base")),
                 rated=bool(lobby_raw.get("rated", False)),
@@ -149,6 +151,8 @@ class ArenaConfig:
             raise ValueError("minimum think time cannot be negative")
         if self.think_time_max_seconds < self.think_time_min_seconds:
             raise ValueError("maximum think time must be at least the minimum")
+        if self.actuation_mode not in {"protocol", "clicks"}:
+            raise ValueError("actuation_mode must be 'protocol' or 'clicks'")
         if self.lobby.max_games_per_session < 0:
             raise ValueError("lobby max_games_per_session cannot be negative")
         if not self.undo.auto_deny:
