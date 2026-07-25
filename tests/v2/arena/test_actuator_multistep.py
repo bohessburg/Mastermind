@@ -43,7 +43,27 @@ class _CardLocator:
     async def is_visible(self) -> bool:
         return True
 
-    async def evaluate(self, _script: str) -> dict[str, object]:
+    async def evaluate(
+        self,
+        _script: str,
+        bottom_biased: bool,
+    ) -> dict[str, object]:
+        points = [
+            ("center", 56.0, 88.0),
+        ]
+        if bottom_biased:
+            points.extend(
+                [
+                    ("bottom-center", 56.0, 164.0),
+                    ("bottom-left", 12.0, 164.0),
+                    ("lower-left", 12.0, 137.28),
+                    ("lower-right", 100.0, 137.28),
+                ]
+            )
+        probes = [
+            self.page.hit_probe(self.node, label, x, y)
+            for label, x, y in points
+        ]
         return {
             "name": self.node.identity,
             "width": 112.0,
@@ -51,14 +71,19 @@ class _CardLocator:
             "zIndex": 2000,
             "hasVisibleCounter": True,
             "selectedCount": self.node.selected_count,
-            "clickable": self.node.clickable,
+            "clickable": any(probe["targetHit"] for probe in probes),
+            "probes": probes,
             "hasVisibleAll": False,
             "allCoversCenter": False,
         }
 
     async def click(self, *, position: dict[str, float]) -> None:
-        assert position == {"x": 56.0, "y": 88.0}
-        self.page.click_card(self.node)
+        if self.page.should_intercept(self.node, position):
+            self.page.intercepted_positions.append(dict(position))
+            self.page.fallback_node = self.node
+            self.page.fallback_position = dict(position)
+            raise RuntimeError("element intercepted")
+        self.page.click_card(self.node, position)
 
 
 class _CardLocators:
@@ -121,21 +146,55 @@ class _ButtonLocators:
         )
 
 
+class _Mouse:
+    def __init__(self, page: _RerenderingPage) -> None:
+        self.page = page
+        self.position: tuple[float, float] | None = None
+
+    async def move(self, x: float, y: float) -> None:
+        self.position = (x, y)
+
+    async def down(self) -> None:
+        assert self.position is not None
+
+    async def up(self) -> None:
+        assert self.page.fallback_node is not None
+        assert self.page.fallback_position is not None
+        self.page.mouse_dispatches.append(self.position)
+        self.page.click_card(
+            self.page.fallback_node,
+            self.page.fallback_position,
+        )
+        self.page.fallback_node = None
+        self.page.fallback_position = None
+
+
 class _RerenderingPage:
     def __init__(
         self,
         *,
         click_has_effect: bool = True,
         replace_nodes: bool = False,
+        all_probes_covered: bool = False,
+        intercept_off_center_click: bool = False,
     ) -> None:
         self.click_has_effect = click_has_effect
         self.replace_nodes = replace_nodes
+        self.all_probes_covered = all_probes_covered
+        self.intercept_off_center_click = intercept_off_center_click
+        self.interception_used = False
         self.remaining = {"Estate": 1, "Copper": 3, "Silver": 1}
         self.selected: dict[str, int] = {}
         self.cooldowns: dict[str, int] = {}
         self.next_node_id = 1
         self.nodes: list[_CardNode] = []
         self.clicks: list[tuple[str, str, int]] = []
+        self.card_positions: list[dict[str, float]] = []
+        self.intercepted_positions: list[dict[str, float]] = []
+        self.mouse_dispatches: list[tuple[float, float] | None] = []
+        self.fallback_node: _CardNode | None = None
+        self.fallback_position: dict[str, float] | None = None
+        self.mouse = _Mouse(self)
         self.polls = 0
         self.button_enabled = True
         self.button_cooldown = 0
@@ -164,8 +223,69 @@ class _RerenderingPage:
                 self.button_enabled = True
         self._render()
 
-    def click_card(self, node: _CardNode) -> None:
+    def hit_probe(
+        self,
+        node: _CardNode,
+        label: str,
+        x: float,
+        y: float,
+    ) -> dict[str, object]:
+        selected_cover = (
+            node.selected_count == 0
+            and node.identity == "Copper"
+            and self.selected.get("Copper", 0) >= 1
+        )
+        covered = (
+            not node.clickable
+            or (
+                selected_cover
+                and (label == "center" or self.all_probes_covered)
+            )
+        )
+        if covered:
+            hit = (
+                'selection-cross stack="Copper" selected=true'
+                if selected_cover and node.clickable
+                else "div.animation-overlay stack=null selected=false"
+            )
+        else:
+            hit = (
+                f'div.name-layer stack="{node.identity}" selected='
+                f"{str(bool(node.selected_count)).lower()}"
+            )
+        return {
+            "label": label,
+            "x": x,
+            "y": y,
+            "viewportX": 100.0 + x,
+            "viewportY": 200.0 + y,
+            "hit": hit,
+            "targetHit": not covered,
+        }
+
+    def should_intercept(
+        self,
+        node: _CardNode,
+        position: dict[str, float],
+    ) -> bool:
+        if (
+            self.intercept_off_center_click
+            and not self.interception_used
+            and node.identity == "Copper"
+            and self.selected.get("Copper", 0) == 1
+            and position != {"x": 56.0, "y": 88.0}
+        ):
+            self.interception_used = True
+            return True
+        return False
+
+    def click_card(
+        self,
+        node: _CardNode,
+        position: dict[str, float],
+    ) -> None:
         self.clicks.append(("card", node.identity, node.node_id))
+        self.card_positions.append(dict(position))
         if not self.click_has_effect:
             return
         assert node.selected_count == 0
@@ -263,8 +383,8 @@ def _run_militia(page: _RerenderingPage) -> None:
     )
 
 
-def test_multiselect_waits_for_rerendered_duplicate_then_confirms() -> None:
-    page = _RerenderingPage()
+def test_multiselect_uses_exposed_lower_point_then_confirms() -> None:
+    page = _RerenderingPage(intercept_off_center_click=True)
 
     _run_militia(page)
 
@@ -276,6 +396,28 @@ def test_multiselect_waits_for_rerendered_duplicate_then_confirms() -> None:
     ]
     assert page.selected == {"Estate": 1, "Copper": 2}
     assert page.polls >= 1
+    assert page.card_positions[-1] == {"x": 56.0, "y": 164.0}
+    assert page.intercepted_positions == [{"x": 56.0, "y": 164.0}]
+    assert page.mouse_dispatches == [(156.0, 364.0)]
+
+
+def test_multiselect_reports_every_covering_hit_when_no_point_is_exposed() -> None:
+    page = _RerenderingPage(all_probes_covered=True)
+
+    with pytest.raises(ActuationError) as caught:
+        _run_militia(page)
+
+    message = str(caught.value)
+    assert "step=3/4" in message
+    assert "no probed point hits an unselected target stack" in message
+    assert "probed_points=" in message
+    assert "label='center'" in message
+    assert "label='bottom-center'" in message
+    assert 'selection-cross stack="Copper" selected=true' in message
+    assert [(kind, identity) for kind, identity, _ in page.clicks] == [
+        ("card", "Estate"),
+        ("card", "Copper"),
+    ]
 
 
 def test_multiselect_retries_one_no_effect_click_then_fails_with_step() -> None:

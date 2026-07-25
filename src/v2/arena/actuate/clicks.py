@@ -89,6 +89,30 @@ class DOMGameButton:
     enabled: bool = True
 
 
+@dataclass(frozen=True, kw_only=True)
+class DOMHitProbe:
+    """One target-relative point and the topmost element observed there."""
+
+    label: str
+    x: float
+    y: float
+    viewport_x: float
+    viewport_y: float
+    hit: str
+    target_hit: bool
+
+
+@dataclass(frozen=True, kw_only=True)
+class _ResolvedCardTarget:
+    """One live card-stack resolution, including its verified click point."""
+
+    locator: Any
+    stack: DOMCardStack
+    point: DOMHitProbe
+    probes: tuple[DOMHitProbe, ...]
+    region: str
+
+
 def offered_name(value: str) -> str:
     """Strip complex-question path prefixes from an offered element."""
     return value.rsplit(":", 1)[-1]
@@ -486,11 +510,11 @@ class PlaywrightActuator(Actuator):
         return gesture
 
     async def _click_card(self, target: DOMClickTarget) -> None:
-        candidate, stack = await self._wait_for_card_target(
+        resolved = await self._wait_for_card_target(
             target,
             expected_selected=None,
         )
-        await self._click_resolved_card(candidate, stack)
+        await self._click_resolved_card(resolved)
 
     async def _click_card_with_verification(
         self,
@@ -501,11 +525,11 @@ class PlaywrightActuator(Actuator):
         expected_after = expected_selected + 1
         last_error: _GestureStepError | None = None
         for attempt in range(2):
-            candidate, stack = await self._wait_for_card_target(
+            resolved = await self._wait_for_card_target(
                 target,
                 expected_selected=expected_selected,
             )
-            await self._click_resolved_card(candidate, stack)
+            await self._click_resolved_card(resolved)
             try:
                 await self._wait_for_selection_count(
                     target.identity,
@@ -530,7 +554,7 @@ class PlaywrightActuator(Actuator):
         target: DOMClickTarget,
         *,
         expected_selected: int | None,
-    ) -> tuple[Any, DOMCardStack]:
+    ) -> _ResolvedCardTarget:
         deadline = self._deadline()
         last_error: _GestureStepError | None = None
         while True:
@@ -552,17 +576,18 @@ class PlaywrightActuator(Actuator):
         target: DOMClickTarget,
         *,
         expected_selected: int | None,
-    ) -> tuple[Any, DOMCardStack]:
+    ) -> _ResolvedCardTarget:
         cards = self.page.locator("div.card-stacks > div")
         candidates: list[Any] = []
         facts: list[DOMCardStack] = []
+        probe_sets: list[tuple[DOMHitProbe, ...]] = []
         try:
             for index in range(await cards.count()):
                 candidate = cards.nth(index)
                 if not await candidate.is_visible():
                     continue
                 observed = await candidate.evaluate(
-                    """element => {
+                    """(element, bottomBiased) => {
                         const name = Array.from(
                             element.querySelectorAll(
                                 ".name-layer:not(.invisible)"
@@ -596,6 +621,102 @@ class PlaywrightActuator(Actuator):
                         );
                         const rect = element.getBoundingClientRect();
                         const style = getComputedStyle(element);
+                        const inset = Math.min(
+                            12,
+                            rect.width / 4,
+                            rect.height / 4
+                        );
+                        const points = [
+                            {
+                                label: "center",
+                                x: rect.width / 2,
+                                y: rect.height / 2,
+                            },
+                        ];
+                        if (bottomBiased) {
+                            points.push(
+                                {
+                                    label: "bottom-center",
+                                    x: rect.width / 2,
+                                    y: rect.height - inset,
+                                },
+                                {
+                                    label: "bottom-left",
+                                    x: inset,
+                                    y: rect.height - inset,
+                                },
+                                {
+                                    label: "lower-left",
+                                    x: inset,
+                                    y: rect.height * 0.78,
+                                },
+                                {
+                                    label: "lower-right",
+                                    x: rect.width - inset,
+                                    y: rect.height * 0.78,
+                                }
+                            );
+                        }
+                        const describeHit = hit => {
+                            if (hit === null) {
+                                return "<none>";
+                            }
+                            const classes = Array.from(hit.classList || [])
+                                .slice(0, 4).join(".");
+                            const hitStack = hit.closest(
+                                "div.card-stacks > div"
+                            );
+                            let stackIdentity = null;
+                            let stackSelected = false;
+                            if (hitStack !== null) {
+                                const hitNames = Array.from(
+                                    hitStack.querySelectorAll(
+                                        ".name-layer:not(.invisible)"
+                                    )
+                                ).map(layer => layer.textContent.trim())
+                                    .filter(Boolean);
+                                stackIdentity = (
+                                    hitNames.length === 1
+                                        ? hitNames[0]
+                                        : null
+                                );
+                                stackSelected = (
+                                    hitStack.querySelector("selection-cross")
+                                    !== null
+                                );
+                            }
+                            return (
+                                hit.tagName.toLowerCase()
+                                + (classes ? "." + classes : "")
+                                + " stack=" + JSON.stringify(stackIdentity)
+                                + " selected=" + stackSelected
+                            );
+                        };
+                        const probes = points.map(point => {
+                            const viewportX = rect.left + point.x;
+                            const viewportY = rect.top + point.y;
+                            const hit = document.elementFromPoint(
+                                viewportX,
+                                viewportY
+                            );
+                            const distinctAll = (
+                                hit !== null
+                                && hit.closest(
+                                    ".all-button:not(.invisible)"
+                                ) !== null
+                            );
+                            return {
+                                ...point,
+                                viewportX,
+                                viewportY,
+                                hit: describeHit(hit),
+                                targetHit: (
+                                    hit !== null
+                                    && element.contains(hit)
+                                    && !distinctAll
+                                ),
+                            };
+                        });
                         let allCoversCenter = false;
                         if (all) {
                             const allRect = all.getBoundingClientRect();
@@ -615,18 +736,31 @@ class PlaywrightActuator(Actuator):
                             zIndex: Number.parseInt(style.zIndex, 10) || 0,
                             hasVisibleCounter: counters.length > 0,
                             selectedCount,
-                            clickable: (
-                                style.cursor === "pointer"
-                                && style.pointerEvents !== "none"
-                            ),
+                            clickable: probes.some(probe => probe.targetHit),
+                            probes,
                             hasVisibleAll: Boolean(all),
                             allCoversCenter,
                         };
-                    }"""
+                    }""",
+                    target.region == "hand",
                 )
                 if observed["name"] is None:
                     continue
                 candidates.append(candidate)
+                probe_sets.append(
+                    tuple(
+                        DOMHitProbe(
+                            label=str(probe["label"]),
+                            x=float(probe["x"]),
+                            y=float(probe["y"]),
+                            viewport_x=float(probe["viewportX"]),
+                            viewport_y=float(probe["viewportY"]),
+                            hit=str(probe["hit"]),
+                            target_hit=bool(probe["targetHit"]),
+                        )
+                        for probe in observed["probes"]
+                    )
+                )
                 facts.append(
                     DOMCardStack(
                         identity=str(observed["name"]),
@@ -664,35 +798,64 @@ class PlaywrightActuator(Actuator):
         except ActuationError as error:
             raise _GestureStepError("not-found", str(error)) from error
         stack = facts[match]
+        probes = probe_sets[match]
         if not stack.clickable or stack.selected_count:
             raise _GestureStepError(
                 "not-found",
-                f"found=1 but target is not an unselected clickable stack: {stack!r}",
+                "found=1 but no probed point hits an unselected target stack: "
+                f"{stack!r}; probed_points={probes!r}",
             )
-        if stack.all_covers_center:
-            raise _GestureStepError(
-                "not-found",
-                "found=1 but the distinct All control covers the stack "
-                f"center: {stack!r}",
-            )
-        return candidates[match], stack
+        point = next(probe for probe in probes if probe.target_hit)
+        return _ResolvedCardTarget(
+            locator=candidates[match],
+            stack=stack,
+            point=point,
+            probes=probes,
+            region=target.region,
+        )
 
     async def _click_resolved_card(
         self,
-        candidate: Any,
-        stack: DOMCardStack,
+        resolved: _ResolvedCardTarget,
     ) -> None:
         try:
-            await candidate.click(
+            await resolved.locator.click(
                 position={
-                    "x": stack.width / 2,
-                    "y": stack.height / 2,
+                    "x": resolved.point.x,
+                    "y": resolved.point.y,
                 }
             )
         except Exception as error:
+            if resolved.region == "hand":
+                mouse = getattr(self.page, "mouse", None)
+                if mouse is not None:
+                    try:
+                        # The hit test already proved this coordinate belongs
+                        # to the hand stack. This narrow fallback bypasses
+                        # Playwright's center-biased interception check for the
+                        # canvas-styled hand UI without force-clicking through
+                        # an unrelated covering element.
+                        await mouse.move(
+                            resolved.point.viewport_x,
+                            resolved.point.viewport_y,
+                        )
+                        await mouse.down()
+                        await mouse.up()
+                        return
+                    except Exception as dispatch_error:
+                        raise _GestureStepError(
+                            "click-error",
+                            f"found=1 stack={resolved.stack!r}; "
+                            f"point={resolved.point!r}; "
+                            f"probed_points={resolved.probes!r}; "
+                            f"playwright_click={error}; "
+                            f"coordinate_dispatch={dispatch_error}",
+                        ) from dispatch_error
             raise _GestureStepError(
                 "click-error",
-                f"found=1 stack={stack!r}; click={error}",
+                f"found=1 stack={resolved.stack!r}; "
+                f"point={resolved.point!r}; "
+                f"probed_points={resolved.probes!r}; click={error}",
             ) from error
 
     async def _wait_for_selection_count(

@@ -357,6 +357,42 @@ person would, using the site's own client the whole way through.
   Militia aborts still replay to their original correct four-step logical
   plans.
 
+- **Occluded duplicate-hand-stack follow-up (2026-07-25).**
+  Game 181368037 reproduced the second-Copper Militia failure after the
+  per-step polling fix. The operator screenshot established that the state was
+  permanent occlusion rather than animation: the selected Copper is popped
+  upward and rotated across the top of the remaining Copper stack, whose lower
+  card body stays visible.
+
+  The recorded selected-state DOM provides the exact geometry. In
+  `dom-4326014.html`, the unselected Silver hand sibling is
+  `111.803px × 176.4px` at
+  `translateX(466.197px) translateY(536.4px) rotateZ(0deg)`, while the
+  selected three-Silver sibling is the same size at
+  `translateX(455.017px) translateY(492.3px) rotateZ(-10deg)`—44.1px upward
+  and 11.18px left. `dom-3631985.html` records the same layout for Market:
+  unselected at `(399.496px, 536.4px)` and selected at
+  `(388.315px, 492.3px) rotateZ(-10deg)`. The remaining stack's distinct
+  `.all-button` occupies only the lower-right rectangle
+  `left:79.1071px; top:150.94px; width:30.0762px; height:21.3444px`.
+
+  Hand-stack resolution now hit-tests center, bottom-center, bottom-left, and
+  two lower-third points with `document.elementFromPoint()`. A point is usable
+  only when the hit is the target stack or an ordinary descendant; the
+  distinct `.all-button` is explicitly excluded. Center remains first for the
+  normal path, while bottom-center is the first occlusion escape because the
+  recorded 44.1px upward pop leaves the card bottom exposed and it avoids the
+  lower-right All control. The chosen verified point is passed to Playwright
+  as a target-relative position. If Playwright still reports interception,
+  the hand-only fallback issues mouse down/up at the already hit-tested
+  viewport coordinate. Failure diagnostics list every point and the topmost
+  element, stack identity, and selected state found there.
+
+  Fake-page regressions permanently cover the remaining Copper's center while
+  leaving its bottom exposed, exercise the coordinate-dispatch fallback, and
+  verify Estate + Copper + Copper + Confirm completes. A fully covered variant
+  fails at step 3 with all point/cover identities in the structured error.
+
 - **P6 — Lobby loop + supervisor + deploy.** Unattended base-set sessions
   with archiving and recovery.
 
