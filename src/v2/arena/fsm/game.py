@@ -66,6 +66,7 @@ from ..shadow.tracker import (
 
 
 LOGGER = logging.getLogger(__name__)
+MAX_AUTOPLAY_ATTEMPTS = 2
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -184,6 +185,11 @@ class _DeferredBuy:
     turn_number: int
     seat: int
     action: int
+    source_question: PendingDecisionSnapshot
+    source_actions: tuple[int, ...]
+    acceptable_answers: tuple[tuple[int, ...], ...]
+    resolved_answers: tuple[int, ...] | None
+    autoplay_attempts: int
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -387,30 +393,73 @@ class BotDecisionProvider:
         snapshot: TrackerSnapshot,
         decision: PendingDecisionSnapshot,
     ) -> DecisionPlan:
-        del frame_index
         if snapshot.our_seat is None:
             raise BridgeError("cannot choose without a local seat")
         seat = snapshot.our_seat
 
         if self._deferred_buy is not None:
             deferred = self._deferred_buy
-            if not (
-                decision.question_id == "GAME_BUY_PHASE"
-                and snapshot.game_id == deferred.game_id
+            same_context = (
+                snapshot.game_id == deferred.game_id
                 and snapshot.turn_number == deferred.turn_number
                 and seat == deferred.seat
-                and not _offered_treasures(decision)
-            ):
-                raise BridgeError(
-                    "client did not confirm autoplay with a treasure-free "
-                    "follow-up buy question"
-                )
-            self._deferred_buy = None
-            _require_buy_or_pass(game, deferred.action)
-            return DecisionPlan(
-                engine_actions=(deferred.action,),
-                gesture_actions=(deferred.action,),
             )
+            expected_follow_up = (
+                decision.question_id == "GAME_BUY_PHASE"
+                and same_context
+                and not _offered_treasures(decision)
+            )
+            if expected_follow_up:
+                try:
+                    _require_buy_or_pass(game, deferred.action)
+                except BridgeError:
+                    self._log_deferred_buy_deviation(
+                        frame_index=frame_index,
+                        snapshot=snapshot,
+                        decision=decision,
+                        deferred=deferred,
+                        reason="deferred buy is no longer legal",
+                    )
+                    self._deferred_buy = None
+                else:
+                    self._deferred_buy = None
+                    return DecisionPlan(
+                        engine_actions=(deferred.action,),
+                        gesture_actions=(deferred.action,),
+                    )
+            elif not same_context:
+                self._log_deferred_buy_deviation(
+                    frame_index=frame_index,
+                    snapshot=snapshot,
+                    decision=decision,
+                    deferred=deferred,
+                    reason="deferred buy belongs to another game, turn, or seat",
+                )
+                self._deferred_buy = None
+            elif decision.question_id == "GAME_BUY_PHASE":
+                self._log_deferred_buy_deviation(
+                    frame_index=frame_index,
+                    snapshot=snapshot,
+                    decision=decision,
+                    deferred=deferred,
+                    reason="follow-up buy question still offers hand treasures",
+                )
+                self._deferred_buy = None
+                return await self._plan_buy(
+                    game=game,
+                    snapshot=snapshot,
+                    decision=decision,
+                    seat=seat,
+                    autoplay_attempts=deferred.autoplay_attempts,
+                )
+            else:
+                self._log_deferred_buy_deviation(
+                    frame_index=frame_index,
+                    snapshot=snapshot,
+                    decision=decision,
+                    deferred=deferred,
+                    reason="interleaved question arrived before buy follow-up",
+                )
 
         if decision.question_id == "SENTRY_DISCARD":
             if self._sentry is None:
@@ -483,36 +532,12 @@ class BotDecisionProvider:
             )
 
         if decision.question_id == "GAME_BUY_PHASE":
-            planning = game.clone()
-            treasure_actions = _collapse_offered_treasures(
-                planning,
-                decision,
-            )
-            action = await self._choose(planning, seat)
-            _require_buy_or_pass(planning, action)
-            if treasure_actions:
-                if not any(
-                    value.endswith("AUTOPLAY_TREASURES")
-                    for value in decision.offered
-                ):
-                    raise BridgeError(
-                        "buy question has hand treasures but no autoplay control"
-                    )
-                if snapshot.turn_number is None:
-                    raise BridgeError("cannot defer a buy without a turn number")
-                self._deferred_buy = _DeferredBuy(
-                    game_id=snapshot.game_id,
-                    turn_number=snapshot.turn_number,
-                    seat=seat,
-                    action=action,
-                )
-                return DecisionPlan(
-                    engine_actions=treasure_actions,
-                    gesture_actions=treasure_actions,
-                )
-            return DecisionPlan(
-                engine_actions=(action,),
-                gesture_actions=(action,),
+            return await self._plan_buy(
+                game=game,
+                snapshot=snapshot,
+                decision=decision,
+                seat=seat,
+                autoplay_attempts=0,
             )
 
         planning = game.clone()
@@ -553,10 +578,141 @@ class BotDecisionProvider:
             raise BridgeError(f"policy returned illegal action {action}")
         return action
 
+    async def _plan_buy(
+        self,
+        *,
+        game: Any,
+        snapshot: TrackerSnapshot,
+        decision: PendingDecisionSnapshot,
+        seat: int,
+        autoplay_attempts: int,
+    ) -> DecisionPlan:
+        planning = game.clone()
+        treasure_actions = _collapse_offered_treasures(planning, decision)
+        action = await self._choose(planning, seat)
+        _require_buy_or_pass(planning, action)
+        if not treasure_actions:
+            return DecisionPlan(
+                engine_actions=(action,),
+                gesture_actions=(action,),
+            )
+        if snapshot.turn_number is None:
+            raise BridgeError("cannot defer a buy without a turn number")
+
+        has_autoplay = any(
+            value.endswith("AUTOPLAY_TREASURES")
+            for value in decision.offered
+        )
+        use_autoplay = (
+            has_autoplay and autoplay_attempts < MAX_AUTOPLAY_ATTEMPTS
+        )
+        gesture_actions = (
+            treasure_actions if use_autoplay else treasure_actions[:1]
+        )
+        next_attempts = autoplay_attempts + int(use_autoplay)
+        acceptable_answers = possible_answer_indices(
+            gesture_actions,
+            decision,
+        )
+        answer_hint = (
+            None
+            if use_autoplay
+            else next(
+                answers
+                for answers in acceptable_answers
+                if len(answers) == 4 and answers[:2] == (1, 1)
+            )
+        )
+        self._deferred_buy = _DeferredBuy(
+            game_id=snapshot.game_id,
+            turn_number=snapshot.turn_number,
+            seat=seat,
+            action=action,
+            source_question=decision,
+            source_actions=gesture_actions,
+            acceptable_answers=acceptable_answers,
+            resolved_answers=None,
+            autoplay_attempts=next_attempts,
+        )
+        if not use_autoplay:
+            LOGGER.warning(
+                "AUTOPLAY BUY FALLBACK: playing one treasure explicitly after "
+                "%d autoplay attempts; snapshot=%r question=%r actions=%r "
+                "answers=%r",
+                autoplay_attempts,
+                _buy_snapshot_context(snapshot),
+                _question_context(decision),
+                gesture_actions,
+                acceptable_answers,
+            )
+        return DecisionPlan(
+            engine_actions=gesture_actions,
+            gesture_actions=gesture_actions,
+            answer_hint=answer_hint,
+        )
+
+    def observe_resolution(self, resolution: DecisionResolved) -> None:
+        """Retain the accepted answer for deviation diagnostics."""
+        deferred = self._deferred_buy
+        if (
+            deferred is not None
+            and deferred.source_question.question_index
+            == resolution.question_index
+        ):
+            self._deferred_buy = replace(
+                deferred,
+                resolved_answers=resolution.answers,
+            )
+
+    def reset_for_game(self, game_id: int | None) -> None:
+        """Discard question-chain state before a newly observed game."""
+        del game_id
+        self._reset_transient_state()
+
+    def reset_after_game(self, game_id: int | None) -> None:
+        """Discard question-chain state once a game-ending frame arrives."""
+        del game_id
+        self._reset_transient_state()
+
     def reset_after_resync(self) -> None:
         """Discard multi-question state derived from the pre-undo shadow."""
+        self._reset_transient_state()
+
+    def _reset_transient_state(self) -> None:
         self._sentry = None
         self._deferred_buy = None
+
+    @staticmethod
+    def _log_deferred_buy_deviation(
+        *,
+        frame_index: int,
+        snapshot: TrackerSnapshot,
+        decision: PendingDecisionSnapshot,
+        deferred: _DeferredBuy,
+        reason: str,
+    ) -> None:
+        LOGGER.warning(
+            "AUTOPLAY BUY DEVIATION: %s; frame=%d deferred=%r current=%r",
+            reason,
+            frame_index,
+            {
+                "game_id": deferred.game_id,
+                "turn_number": deferred.turn_number,
+                "seat": deferred.seat,
+                "buy_action": deferred.action,
+                "autoplay_attempts": deferred.autoplay_attempts,
+                "source_question": _question_context(
+                    deferred.source_question
+                ),
+                "source_actions": deferred.source_actions,
+                "acceptable_answers": deferred.acceptable_answers,
+                "resolved_answers": deferred.resolved_answers,
+            },
+            {
+                "snapshot": _buy_snapshot_context(snapshot),
+                "question": _question_context(decision),
+            },
+        )
 
 
 class NNMCTSDecisionProvider(BotDecisionProvider):
@@ -642,21 +798,72 @@ async def run_game_loop(
         assert active is not None
         if active.pending is None:
             return
-        verify_action_events(
-            active.pending,
-            active.pending_events,
-            frame_index=frame_index,
-        )
         assert active.pending_snapshot is not None
         assert active.pending_plan is not None
         current_snapshot = tracker.snapshot()
+        partial_autoplay = _recoverable_partial_autoplay(
+            active.pending,
+            active.pending_events,
+            active.pending_snapshot,
+            current_snapshot,
+        )
+        if partial_autoplay:
+            resolution = next(
+                event
+                for event in active.pending_events
+                if isinstance(event, DecisionResolved)
+                and event.question_index
+                == active.pending.decision.question_index
+            )
+            # Keep answer verification strict; only the deterministic Play
+            # outcome is allowed to be partial when the new prompt explicitly
+            # offers the missing treasures again.
+            verify_action_resolution(
+                active.pending,
+                resolution,
+                frame_index=frame_index,
+            )
+            LOGGER.warning(
+                "AUTOPLAY BUY PARTIAL OUTCOME: rebuilding from tracker; "
+                "frame=%d submitted=%r current=%r observed_events=%r",
+                frame_index,
+                {
+                    "question": _question_context(active.pending.decision),
+                    "actions": active.pending.gesture_actions,
+                    "submitted_answers": (
+                        active.pending.gesture.answer_indices
+                    ),
+                    "acceptable_answers": (
+                        active.pending.acceptable_answers
+                    ),
+                    "resolved_answers": resolution.answers,
+                },
+                {
+                    "snapshot": _buy_snapshot_context(current_snapshot),
+                    "question": _question_context(
+                        current_snapshot.pending_decision
+                    ),
+                },
+                tuple(active.pending_events),
+            )
+        else:
+            verify_action_events(
+                active.pending,
+                active.pending_events,
+                frame_index=frame_index,
+            )
         crossed_turn_boundary = (
             current_snapshot.turn_number
             != active.pending_snapshot.turn_number
             or current_snapshot.turn_owner
             != active.pending_snapshot.turn_owner
         )
-        if active.pending_plan.engine_actions:
+        if partial_autoplay:
+            active.shadow = None
+            active.shadow_turn = None
+            active.turn_start_snapshot = None
+            active.turn_history.clear()
+        elif active.pending_plan.engine_actions:
             current_step = _TurnStep(
                 snapshot=active.pending_snapshot,
                 actions=active.pending_plan.engine_actions,
@@ -757,6 +964,13 @@ async def run_game_loop(
                         event,
                         frame_index=frame_index,
                     )
+                    observe_resolution = getattr(
+                        decision_provider,
+                        "observe_resolution",
+                        None,
+                    )
+                    if observe_resolution is not None:
+                        await _maybe_await(observe_resolution(event))
 
             if undo_resync is not None:
                 if active is None:
@@ -800,6 +1014,13 @@ async def run_game_loop(
 
             if isinstance(event, GameStart):
                 if active is None or active.game_id != event.game_id:
+                    reset_for_game = getattr(
+                        decision_provider,
+                        "reset_for_game",
+                        None,
+                    )
+                    if reset_for_game is not None:
+                        await _maybe_await(reset_for_game(event.game_id))
                     active = _ActiveGame(
                         game_id=event.game_id,
                         players=event.players,
@@ -948,6 +1169,13 @@ async def run_game_loop(
                 )
                 _finish_archive(active, result)
                 results.append(result)
+                reset_after_game = getattr(
+                    decision_provider,
+                    "reset_after_game",
+                    None,
+                )
+                if reset_after_game is not None:
+                    await _maybe_await(reset_after_game(active.game_id))
                 active = None
                 if max_games is not None and len(results) >= max_games:
                     return tuple(results)
@@ -1903,6 +2131,86 @@ def _offered_treasures(
         value
         for value in decision.offered
         if value.startswith("1:0:")
+    )
+
+
+def _question_context(
+    decision: PendingDecisionSnapshot | None,
+) -> dict[str, object] | None:
+    if decision is None:
+        return None
+    return {
+        "question_index": decision.question_index,
+        "decision_type": decision.decision_type,
+        "question_id": decision.question_id,
+        "offered": decision.offered,
+        "minimum": decision.minimum,
+        "maximum": decision.maximum,
+        "association": decision.association,
+    }
+
+
+def _buy_snapshot_context(snapshot: TrackerSnapshot) -> dict[str, object]:
+    return {
+        "game_id": snapshot.game_id,
+        "turn_number": snapshot.turn_number,
+        "turn_owner": snapshot.turn_owner,
+        "our_seat": snapshot.our_seat,
+        "phase": snapshot.phase,
+    }
+
+
+def _recoverable_partial_autoplay(
+    intended: IntendedAction,
+    events: Iterable[GameEvent],
+    submitted_snapshot: TrackerSnapshot,
+    current_snapshot: TrackerSnapshot,
+) -> bool:
+    """Allow a verified autoplay answer to be retried from its new prompt."""
+    current = current_snapshot.pending_decision
+    if (
+        intended.decision.question_id != "GAME_BUY_PHASE"
+        or intended.gesture.answer_indices != (2, 0)
+        or current is None
+        or current.question_id != "GAME_BUY_PHASE"
+        or current_snapshot.game_id != submitted_snapshot.game_id
+        or current_snapshot.turn_number != submitted_snapshot.turn_number
+        or current_snapshot.turn_owner != submitted_snapshot.turn_owner
+        or not _offered_treasures(current)
+    ):
+        return False
+    resolution = next(
+        (
+            event
+            for event in events
+            if isinstance(event, DecisionResolved)
+            and event.question_index == intended.decision.question_index
+        ),
+        None,
+    )
+    if (
+        resolution is None
+        or resolution.answers not in intended.acceptable_answers
+    ):
+        return False
+    expected = Counter(
+        offered_name(value)
+        for value in _offered_treasures(intended.decision)
+    )
+    observed = Counter(
+        card
+        for event in events
+        if isinstance(event, Play)
+        and event.seat == current_snapshot.our_seat
+        for card in event.cards
+    )
+    remaining = Counter(
+        offered_name(value) for value in _offered_treasures(current)
+    )
+    return (
+        bool(remaining)
+        and not (observed - expected)
+        and expected - observed == remaining
     )
 
 

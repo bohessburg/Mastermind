@@ -58,6 +58,56 @@ fake protocol session (807 mapper-first frames byte-identical to the human
 frame; 125 valid duplicate-card/order alternatives), and replay Militia
 question 50 as one message-37 send with no game-DOM interaction.
 
+## Autoplay/deferred-buy recovery (2026-07-25)
+
+Live game 181375685 did not fail on a malformed follow-up from that game. The
+session archive shows that the deferred state came from the preceding game
+181375622:
+
+```text
+1784959146569 PendingDecision question_index=12 ... question_id='GAME_BUY_PHASE'
+  offered=(..., '1:0:Copper', '1:0:Copper', '1:0:Copper',
+  '2:AUTOPLAY_TREASURES') minimum=0 maximum=3
+1784959149592 GameResult game_id=181375622 reason='game-finished' ...
+1784959149903 DecisionResolved question_index=12 answers=(2, 0) seat=0 ...
+```
+
+The result arrived during the configured think delay, before the bot's
+outbound autoplay answer. Consequently there was no follow-up buy question,
+but the long-lived provider retained game 181375622's deferred buy. In the
+next game, only the start handshake had been submitted before the abort. Its
+first local buy frame was the ordinary initial question:
+
+```text
+1784959190593 PendingDecision question_index=5 ... question_id='GAME_BUY_PHASE'
+  offered=('0:Curse', '0:Copper', '0:Silver', '0:Estate', '0:Chapel',
+  '0:Harbinger', '0:Moat', '0:Village', '1:0:Copper', '1:0:Copper',
+  '1:0:Copper', '2:AUTOPLAY_TREASURES') minimum=0 maximum=3
+```
+
+The old guard compared that frame with the stale `(game_id=181375622,
+turn_number=3, seat=0)` deferred state. Game 181375685 was at turn 1, seat 1,
+so it raised before sending any answer to question 5.
+
+Providers now clear multi-question state at both game start and game end. A
+same-game deviation no longer aborts merely because it is not the expected
+treasure-free buy prompt: stale cross-turn state is dropped, interleaved
+questions are planned while retaining the deferred buy, and a buy prompt that
+still offers treasures is rebuilt from the tracker and replanned. Autoplay is
+attempted at most twice per chain; subsequent prompts play one offered treasure
+explicitly until the NN can be evaluated on a fully collapsed buy state. The
+NN is never called while an offered hand treasure remains legal in the
+planning clone.
+
+Immediate `DecisionResolved` question/answer verification and all
+mapper-equivalent encodings remain unchanged. Outcome verification is relaxed
+only for an accepted `(2, 0)` followed by a buy prompt that re-offers exactly
+the treasures missing from observed `Play` events. That narrow case discards
+the shadow and rebuilds from the authoritative tracker. Every deviation logs
+the complete source/current question shapes, planned engine actions,
+mapper-acceptable answers, observed resolution answer, retry count, and
+game/turn/seat/phase context.
+
 ## Lobby and supervisor hardening (2026-07-25)
 
 The arena now fails closed instead of silently re-clicking a stuck automatch

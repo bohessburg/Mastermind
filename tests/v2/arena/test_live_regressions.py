@@ -35,8 +35,11 @@ from src.v2.arena.fsm.game import (
 )
 from src.v2.arena.protocol.events import (
     DecisionResolved,
+    GameEnd,
     GameStart,
     PendingDecision,
+    Play,
+    ResourceUpdate,
 )
 from src.v2.arena.protocol.recording import parse_recording
 from src.v2.arena.shadow.bridge import game_from_snapshot
@@ -64,6 +67,10 @@ LIVE_GAME_3_ARCHIVE = Path(
 )
 REFERENCE_RECORDING = Path(
     "arena-recordings/20260724T142103.096991Z/frames.jsonl"
+)
+AUTOPLAY_ABORT_ARCHIVE = Path(
+    "exports/arena/20260725T053730.304380Z/"
+    "20260725T055943.084274Z-game-181375685/frames.jsonl"
 )
 
 
@@ -205,6 +212,182 @@ def test_buy_provider_handles_pass_and_already_collapsed_state() -> None:
     assert direct.gesture_actions == (silver,)
 
 
+def test_incident_archive_replays_past_partial_autoplay_follow_up(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    if not AUTOPLAY_ABORT_ARCHIVE.is_file():
+        pytest.skip(
+            f"missing autoplay incident fixture: {AUTOPLAY_ABORT_ARCHIVE}"
+        )
+    events = parse_recording(AUTOPLAY_ABORT_ARCHIVE).events
+    tracker = Tracker()
+    prior_snapshot: TrackerSnapshot | None = None
+    in_prior_game = False
+    for event in events:
+        if (
+            isinstance(event, GameStart)
+            and event.game_id == 181375622
+        ):
+            in_prior_game = True
+        if not in_prior_game:
+            continue
+        tracker.consume(event)
+        if (
+            isinstance(event, PendingDecision)
+            and event.question_index == 12
+        ):
+            prior_snapshot = tracker.snapshot()
+            break
+    assert prior_snapshot is not None
+    assert prior_snapshot.pending_decision is not None
+
+    silver = int(dz.A_BUY_BASE + dz.def_id("Silver"))
+    copper_play = int(dz.A_PLAY_BASE + dz.def_id("Copper"))
+    policy_calls = 0
+
+    def collapsed_policy(game: Any, seat: int) -> int:
+        nonlocal policy_calls
+        del seat
+        policy_calls += 1
+        assert not bool(game.legal_mask()[copper_play])
+        return silver
+
+    provider = BotDecisionProvider(collapsed_policy)
+    stale_plan = asyncio.run(
+        provider.plan(
+            frame_index=5760,
+            game=game_from_snapshot(prior_snapshot),
+            snapshot=prior_snapshot,
+            decision=prior_snapshot.pending_decision,
+        )
+    )
+    assert map_engine_actions(
+        stale_plan.gesture_actions,
+        prior_snapshot.pending_decision,
+    ).answers == (2, 0)
+
+    incident_start = next(
+        index
+        for index, event in enumerate(events)
+        if isinstance(event, GameStart)
+        and event.game_id == 181375685
+    )
+    replay = list(events[incident_start:])
+    question = replay[-1]
+    assert isinstance(question, PendingDecision)
+    assert question.question_index == 5
+    supply = tuple(
+        value for value in question.offered if value.startswith("0:")
+    )
+    two_coppers = (
+        *supply,
+        "1:0:Copper",
+        "1:0:Copper",
+        "2:AUTOPLAY_TREASURES",
+    )
+    replay.extend(
+        (
+            DecisionResolved(
+                question_index=5,
+                answers=(2, 0),
+                seat=1,
+                auto_played=False,
+            ),
+            Play(
+                seat=1,
+                cards=("Copper",),
+                count=1,
+                from_zone="hand",
+                to_zone="in-play",
+                from_zone_index=24,
+                to_zone_index=25,
+            ),
+            ResourceUpdate(
+                seat=1,
+                resource="coins",
+                value=1,
+                counter_index=12,
+            ),
+            replace(
+                question,
+                question_index=6,
+                offered=two_coppers,
+            ),
+            DecisionResolved(
+                question_index=6,
+                answers=(2, 0),
+                seat=1,
+                auto_played=False,
+            ),
+            Play(
+                seat=1,
+                cards=("Copper",),
+                count=1,
+                from_zone="hand",
+                to_zone="in-play",
+                from_zone_index=24,
+                to_zone_index=25,
+            ),
+            ResourceUpdate(
+                seat=1,
+                resource="coins",
+                value=2,
+                counter_index=12,
+            ),
+            Play(
+                seat=1,
+                cards=("Copper",),
+                count=1,
+                from_zone="hand",
+                to_zone="in-play",
+                from_zone_index=24,
+                to_zone_index=25,
+            ),
+            ResourceUpdate(
+                seat=1,
+                resource="coins",
+                value=3,
+                counter_index=12,
+            ),
+            replace(
+                question,
+                question_index=7,
+                offered=supply,
+                maximum=1,
+            ),
+            GameEnd(game_id=181375685, reason="test-complete"),
+        )
+    )
+
+    caplog.set_level("WARNING")
+    actuator = MockActuator(replay=True)
+    results = asyncio.run(
+        run_game_loop(
+            tuple(replay),
+            actuator=actuator,
+            decision_provider=provider,
+        )
+    )
+
+    assert len(results) == 1
+    assert results[0].completed
+    assert not results[0].divergence_aborted
+    assert results[0].decisions == 4
+    assert [
+        (gesture.question_index, gesture.answer_indices)
+        for gesture in actuator.gestures
+    ] == [
+        (2, (0,)),
+        (5, (2, 0)),
+        (6, (2, 0)),
+        (7, (0, 2)),
+    ]
+    assert policy_calls == 3
+    assert "AUTOPLAY BUY PARTIAL OUTCOME" in caplog.text
+    assert "follow-up buy question still offers hand treasures" in caplog.text
+    assert "'resolved_answers': (2, 0)" in caplog.text
+
+
 class _RepeatedModeDecisionGame:
     """A clone whose second mode question keeps the same engine signature."""
 
@@ -283,6 +466,211 @@ def _library_mode_decision() -> PendingDecisionSnapshot:
         maximum=1,
         association="Library",
     )
+
+
+def test_buy_follow_up_with_treasures_retries_twice_then_plays_explicitly(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    _, frame_index, snapshot, decision = _live_turn_one()
+    copper_play = int(dz.A_PLAY_BASE + dz.def_id("Copper"))
+    silver = int(dz.A_BUY_BASE + dz.def_id("Silver"))
+    policy_calls = 0
+
+    def collapsed_policy(game: Any, seat: int) -> int:
+        nonlocal policy_calls
+        del seat
+        policy_calls += 1
+        assert not bool(game.legal_mask()[copper_play])
+        return silver
+
+    caplog.set_level("WARNING")
+    provider = BotDecisionProvider(collapsed_policy)
+    game = game_from_snapshot(snapshot)
+    first = asyncio.run(
+        provider.plan(
+            frame_index=frame_index,
+            game=game,
+            snapshot=snapshot,
+            decision=decision,
+        )
+    )
+    provider.observe_resolution(
+        DecisionResolved(
+            question_index=decision.question_index,
+            answers=(2, 0),
+            seat=snapshot.our_seat,
+            auto_played=False,
+        )
+    )
+    game.step(first.engine_actions[0])
+
+    supply = tuple(
+        value for value in decision.offered if value.startswith("0:")
+    )
+    retry = replace(
+        decision,
+        question_index=decision.question_index + 1,
+        offered=(
+            *supply,
+            "1:0:Copper",
+            "1:0:Copper",
+            "2:AUTOPLAY_TREASURES",
+        ),
+    )
+    second = asyncio.run(
+        provider.plan(
+            frame_index=frame_index + 1,
+            game=game,
+            snapshot=replace(snapshot, pending_decision=retry),
+            decision=retry,
+        )
+    )
+    assert second.gesture_actions == (copper_play, copper_play)
+    assert map_engine_actions(second.gesture_actions, retry).answers == (2, 0)
+    provider.observe_resolution(
+        DecisionResolved(
+            question_index=retry.question_index,
+            answers=(2, 0),
+            seat=snapshot.our_seat,
+            auto_played=False,
+        )
+    )
+    game.step(second.engine_actions[0])
+
+    final_treasure = replace(
+        retry,
+        question_index=retry.question_index + 1,
+        offered=(
+            *supply,
+            "1:0:Copper",
+            "2:AUTOPLAY_TREASURES",
+        ),
+    )
+    third = asyncio.run(
+        provider.plan(
+            frame_index=frame_index + 2,
+            game=game,
+            snapshot=replace(snapshot, pending_decision=final_treasure),
+            decision=final_treasure,
+        )
+    )
+
+    assert third.engine_actions == (copper_play,)
+    assert third.gesture_actions == (copper_play,)
+    assert third.answer_hint is not None
+    assert len(third.answer_hint) == 4
+    assert third.answer_hint[:2] == (1, 1)
+    assert policy_calls == 3
+    assert "AUTOPLAY BUY FALLBACK" in caplog.text
+    assert "'resolved_answers': (2, 0)" in caplog.text
+
+
+def test_interleaved_question_is_planned_before_deferred_buy_follow_up(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    _, frame_index, snapshot, decision = _live_turn_one()
+    copper_play = int(dz.A_PLAY_BASE + dz.def_id("Copper"))
+    silver = int(dz.A_BUY_BASE + dz.def_id("Silver"))
+    option = int(dz.A_OPTION_BASE + 1)
+    choices = iter((silver, option))
+    provider = BotDecisionProvider(
+        lambda game, seat: next(choices)
+    )
+    game = game_from_snapshot(snapshot)
+    autoplay = asyncio.run(
+        provider.plan(
+            frame_index=frame_index,
+            game=game,
+            snapshot=snapshot,
+            decision=decision,
+        )
+    )
+    assert autoplay.engine_actions == (copper_play,) * 3
+    for action in autoplay.engine_actions:
+        game.step(action)
+    provider.observe_resolution(
+        DecisionResolved(
+            question_index=decision.question_index,
+            answers=(2, 0),
+            seat=snapshot.our_seat,
+            auto_played=False,
+        )
+    )
+
+    caplog.set_level("WARNING")
+    interrupt = _library_mode_decision()
+    interrupt_plan = asyncio.run(
+        provider.plan(
+            frame_index=frame_index + 1,
+            game=_BatchedDecisionGame((option,), changes_after=1),
+            snapshot=replace(snapshot, pending_decision=interrupt),
+            decision=interrupt,
+        )
+    )
+    assert interrupt_plan.engine_actions == (option,)
+
+    follow_up = _without_treasures(decision)
+    buy_plan = asyncio.run(
+        provider.plan(
+            frame_index=frame_index + 2,
+            game=game,
+            snapshot=replace(snapshot, pending_decision=follow_up),
+            decision=follow_up,
+        )
+    )
+
+    assert buy_plan.engine_actions == (silver,)
+    assert "interleaved question arrived before buy follow-up" in caplog.text
+    assert "'question_id': 'LIBRARY'" in caplog.text
+    assert "'resolved_answers': (2, 0)" in caplog.text
+
+
+def test_single_resolution_collapse_replans_at_next_turn(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    _, frame_index, snapshot, decision = _live_turn_one()
+    silver = int(dz.A_BUY_BASE + dz.def_id("Silver"))
+    option = int(dz.A_OPTION_BASE + 1)
+    choices = iter((silver, option))
+    provider = BotDecisionProvider(
+        lambda game, seat: next(choices)
+    )
+    autoplay = asyncio.run(
+        provider.plan(
+            frame_index=frame_index,
+            game=game_from_snapshot(snapshot),
+            snapshot=snapshot,
+            decision=decision,
+        )
+    )
+    assert autoplay.gesture_actions
+    provider.observe_resolution(
+        DecisionResolved(
+            question_index=decision.question_index,
+            answers=(2, 0),
+            seat=snapshot.our_seat,
+            auto_played=False,
+        )
+    )
+
+    caplog.set_level("WARNING")
+    next_question = _library_mode_decision()
+    next_plan = asyncio.run(
+        provider.plan(
+            frame_index=frame_index + 1,
+            game=_BatchedDecisionGame((option,), changes_after=1),
+            snapshot=replace(
+                snapshot,
+                turn_number=snapshot.turn_number + 1,
+                pending_decision=next_question,
+            ),
+            decision=next_question,
+        )
+    )
+
+    assert next_plan.engine_actions == (option,)
+    assert "belongs to another game, turn, or seat" in caplog.text
+    assert "'resolved_answers': (2, 0)" in caplog.text
 
 
 def test_choose_mode_provider_stops_before_an_identical_next_prompt() -> None:
