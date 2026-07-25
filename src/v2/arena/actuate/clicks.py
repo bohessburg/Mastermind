@@ -19,7 +19,7 @@ from typing import Any, Awaitable, Callable, Iterable, Sequence
 
 import dominion_v2_py as dz
 
-from ..protocol.events import UndoRequest
+from ..protocol.events import TimeoutOffer, UndoRequest
 from ..shadow.tracker import PendingDecisionSnapshot
 
 
@@ -355,6 +355,11 @@ class Actuator(ABC):
         del request
         return False
 
+    async def claim_timeout_offer(self, offer: TimeoutOffer) -> bool:
+        """Force-end an eligible opponent, returning whether it was actuated."""
+        del offer
+        return False
+
     async def inspect_unknown_modals(self) -> None:
         """Capture newly observed modal shapes that this actuator does not know."""
 
@@ -366,6 +371,7 @@ class MockActuator(Actuator):
         self.replay = replay
         self.gestures: list[ClientGesture] = []
         self.undo_denials: list[UndoRequest] = []
+        self.timeout_claims: list[TimeoutOffer] = []
         self.stopped = False
 
     async def act(
@@ -393,6 +399,12 @@ class MockActuator(Actuator):
         self.undo_denials.append(request)
         return True
 
+    async def claim_timeout_offer(self, offer: TimeoutOffer) -> bool:
+        if self.stopped:
+            return False
+        self.timeout_claims.append(offer)
+        return True
+
     def stop(self) -> None:
         self.stopped = True
 
@@ -402,6 +414,10 @@ UNDO_DECLINE_SELECTOR = (
     'button.lobby-button[ng-click="$ctrl.decline()"]'
 )
 UNDO_MODAL_BUTTON_SELECTOR = "undo-request modal-window button.lobby-button"
+TIMEOUT_CLAIM_SELECTOR = (
+    'timeout-request modal-window '
+    'button.lobby-button[ng-click="$ctrl.click()"]'
+)
 MODAL_CONTAINER_SELECTOR = 'modal-window, [role="dialog"]'
 _NEGATIVE_MODAL_LABELS = frozenset(
     {"no", "deny", "decline", "reject", "cancel"}
@@ -545,6 +561,42 @@ class PlaywrightActuator(Actuator):
                 f"selector inspection/click failed: {error}",
             )
 
+    async def claim_timeout_offer(self, offer: TimeoutOffer) -> bool:
+        """Click the client bundle's exact force-end control if visible."""
+        deadline = asyncio.get_running_loop().time() + (
+            self.actuation_timeout_seconds
+        )
+        try:
+            while True:
+                controls = await self._visible_locators(TIMEOUT_CLAIM_SELECTOR)
+                if len(controls) == 1:
+                    await controls[0].click()
+                    LOGGER.warning(
+                        "CLAIMED timeout offer for opponent seat %d at "
+                        "decision %d using %s",
+                        offer.player_seat,
+                        offer.decision_index,
+                        TIMEOUT_CLAIM_SELECTOR,
+                    )
+                    return True
+                if len(controls) > 1:
+                    return await self._unresolved_timeout_offer(
+                        offer,
+                        f"evidenced selector matched {len(controls)} visible "
+                        "controls",
+                    )
+                if asyncio.get_running_loop().time() >= deadline:
+                    return await self._unresolved_timeout_offer(
+                        offer,
+                        "evidenced selector matched no visible controls",
+                    )
+                await asyncio.sleep(self.poll_interval_seconds)
+        except Exception as error:
+            return await self._unresolved_timeout_offer(
+                offer,
+                f"selector inspection/click failed: {error}",
+            )
+
     async def inspect_unknown_modals(self) -> None:
         """Snapshot each unrecognized visible modal once per appearance."""
         try:
@@ -629,6 +681,29 @@ class PlaywrightActuator(Actuator):
             request.requester_seat,
             request.decision_index,
             searched,
+            detail,
+            destination or "<snapshot unavailable>",
+        )
+        return False
+
+    async def _unresolved_timeout_offer(
+        self,
+        offer: TimeoutOffer,
+        detail: str,
+    ) -> bool:
+        destination = await self._snapshot_dom_if_available(
+            (
+                "timeout-claim-unresolved-"
+                f"seat-{offer.player_seat}-decision-{offer.decision_index}"
+            )
+        )
+        LOGGER.error(
+            "TIMEOUT CLAIM FAILED SAFELY: no force-end control clicked for "
+            "opponent seat %d decision %d; searched=%r; detail=%s; "
+            "snapshot=%s",
+            offer.player_seat,
+            offer.decision_index,
+            TIMEOUT_CLAIM_SELECTOR,
             detail,
             destination or "<snapshot unavailable>",
         )

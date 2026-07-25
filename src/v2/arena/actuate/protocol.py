@@ -4,8 +4,13 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 
-from ..protocol.events import UndoRequest
-from ..protocol.messages import ANSWER_QUESTION, encode_answer
+from ..protocol.events import TimeoutOffer, UndoRequest
+from ..protocol.messages import (
+    ANSWER_QUESTION,
+    TIMEOUT_REQUEST,
+    encode_answer,
+    encode_timeout_request,
+)
 from ..shadow.tracker import PendingDecisionSnapshot
 from .clicks import (
     ActuationError,
@@ -65,6 +70,21 @@ class ProtocolActuator(Actuator):
         if self.modal_actuator is None:
             return False
         return await self.modal_actuator.deny_undo_request(request)
+
+    async def claim_timeout_offer(self, offer: TimeoutOffer) -> bool:
+        """Use the bundle's stateless timeout request without touching the DOM."""
+        try:
+            await self.send_frame(
+                TIMEOUT_REQUEST,
+                encode_timeout_request(offer.player_seat),
+            )
+        except Exception as error:
+            raise ActuationError(
+                "failed timeout claim protocol send for opponent seat "
+                f"{offer.player_seat} decision {offer.decision_index}; "
+                f"detail={error}"
+            ) from error
+        return True
 
     async def inspect_unknown_modals(self) -> None:
         """Keep modal monitoring on the existing Playwright actuator."""

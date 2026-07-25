@@ -251,6 +251,14 @@ class TimeoutOffer(GameEvent):
 
 
 @dataclass(frozen=True, kw_only=True)
+class TimeoutClaim(GameEvent):
+    """The local client submitted the metagame timeout/force-end request."""
+
+    player_seat: int
+    decision_index: int
+
+
+@dataclass(frozen=True, kw_only=True)
 class UndoResync(GameEvent):
     """Runtime evidence that a post-undo FullState reseeded the tracker."""
 

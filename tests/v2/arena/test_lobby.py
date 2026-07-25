@@ -27,6 +27,10 @@ from src.v2.arena.fsm.lobby import (
 
 
 RECORDING = Path("arena-recordings/20260724T142103.096991Z")
+RESUME_FAILURE_DOM = Path(
+    "exports/arena/20260725T025231.042167Z/"
+    "dom-20260725T025402.631104Z-lobby-failure-homepage-start-search-not-found.html"
+)
 
 
 class _FakeClock:
@@ -388,6 +392,51 @@ def test_lobby_fsm_hands_direct_automatch_game_to_game_loop() -> None:
     assert page.clicks == [START_SEARCH_SELECTOR]
 
 
+def test_lobby_fsm_resumes_a_running_game_before_homepage_search() -> None:
+    page = _FakePage()
+    page.screen = "game"
+    clock = _FakeClock()
+    lobby = LobbyFSM(page, _config(), clock=clock, sleep=clock.sleep)
+
+    assert asyncio.run(lobby.resume_running_game_if_present())
+    assert lobby.state is LobbyState.IN_GAME
+    assert page.clicks == []
+
+
+def test_lobby_fsm_resume_recovery_leaves_then_requeues() -> None:
+    page = _FakePage(end_game_dialog=False)
+    page.screen = "game"
+    clock = _FakeClock()
+    snapshots: list[str] = []
+
+    async def snapshot_dom(label: str) -> None:
+        snapshots.append(label)
+
+    lobby = LobbyFSM(
+        page,
+        _config(),
+        clock=clock,
+        sleep=clock.sleep,
+        snapshot_dom=snapshot_dom,
+    )
+    assert asyncio.run(lobby.resume_running_game_if_present())
+    page.screen = "game_over"
+
+    asyncio.run(lobby.recover_resumed_game_and_queue_next())
+
+    assert lobby.state is LobbyState.IN_GAME
+    assert page.clicks == [
+        LEAVE_TABLE_SELECTOR,
+        START_SEARCH_SELECTOR,
+        START_GAME_SELECTOR,
+    ]
+    assert snapshots == [
+        "lobby-resume-recovery",
+        "lobby-searching-wait",
+        "lobby-table-waiting-wait",
+    ]
+
+
 def test_lobby_fsm_does_not_treat_game_chat_without_board_as_in_game() -> None:
     page = _FakePage(missing_table_start=True, game_chat_only=True)
     clock = _FakeClock()
@@ -475,3 +524,12 @@ def test_recorded_lobby_control_selectors_resolve_saved_dom_snapshots() -> None:
     assert f"<{IN_GAME_SELECTOR}" not in scoreboard
     assert f"<{IN_GAME_SELECTOR}" in in_game.read_text(encoding="utf-8")
     assert f"<{IN_GAME_SELECTOR}" in later_in_game.read_text(encoding="utf-8")
+
+
+def test_restart_failure_dom_is_recognized_as_an_in_progress_game() -> None:
+    assert RESUME_FAILURE_DOM.is_file(), "missing restart failure DOM evidence"
+
+    html = RESUME_FAILURE_DOM.read_text(encoding="utf-8")
+
+    assert f"<{IN_GAME_SELECTOR}" in html
+    assert START_SEARCH_SELECTOR not in html

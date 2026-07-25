@@ -23,8 +23,10 @@ def test_default_arena_config_loads_credentials_only_from_environment() -> None:
     assert config.lobby.max_games_per_session == 0
     assert config.stall_watchdog_seconds == 120.0
     assert config.lobby.homepage_timeout_seconds == 90.0
+    assert config.lobby.resume_full_state_timeout_seconds == 30.0
     assert config.lobby.searching_timeout_seconds == 180.0
     assert config.undo.auto_deny is True
+    assert config.timeout.claim_grace_seconds == 30.0
     assert config.actuation_mode == "protocol"
 
 
@@ -98,3 +100,29 @@ def test_arena_config_allows_only_boolean_true_undo_auto_deny(
     )
     with pytest.raises(ValueError, match="'auto_deny' must be a boolean"):
         ArenaConfig.load(not_boolean, environ={})
+
+
+def test_arena_config_rejects_negative_timeout_claim_grace(
+    tmp_path: Path,
+) -> None:
+    invalid = tmp_path / "invalid-timeout.json"
+    invalid.write_text(
+        json.dumps({"timeout": {"claim_grace_seconds": -1}}),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="timeout claim grace"):
+        ArenaConfig.load(invalid, environ={})
+
+
+def test_arena_config_rejects_zero_resume_full_state_timeout(
+    tmp_path: Path,
+) -> None:
+    invalid = tmp_path / "invalid-resume.json"
+    invalid.write_text(
+        json.dumps({"lobby": {"resume_full_state_timeout_seconds": 0}}),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="resume_full_state timeout"):
+        ArenaConfig.load(invalid, environ={})

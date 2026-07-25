@@ -30,6 +30,7 @@ from .events import (
     ResourceUpdate,
     Reveal,
     Shuffle,
+    TimeoutClaim,
     TimeoutOffer,
     Topdeck,
     Trash,
@@ -226,6 +227,7 @@ RELEVANT_KEYS = frozenset(
         (Direction.INBOUND, 35),
         (Direction.INBOUND, 37),
         (Direction.OUTBOUND, 37),
+        (Direction.OUTBOUND, 40),
     }
 )
 ABILITY_DESCRIPTION_TYPES = ("MOVEMENT_CAUSE", "BY_NAME", "WITH_ARGUMENTS")
@@ -386,6 +388,8 @@ class ArenaParser:
                 # the server's subsequent message 14.
                 Reader(frame.payload).finish()
                 return []
+            if frame.msg_type == 40:
+                return [self._parse_timeout_claim(frame)]
             if frame.msg_type == 44:
                 Reader(frame.payload).finish()
                 return []
@@ -601,6 +605,22 @@ class ArenaParser:
                 timestamp_ms=frame.timestamp_ms,
             )
         raise ProtocolError(f"unknown metagame-info type {kind}")
+
+    def _parse_timeout_claim(self, frame: DecodedFrame) -> TimeoutClaim:
+        """Decode client message 40 from the timeout-request modal.
+
+        Client 2.2.8 serializes ``[decision-index:s32][player-seat:s32]``.
+        Its own controller intentionally passes ``-1`` for the former.
+        """
+        reader = Reader(frame.payload)
+        decision_index = reader.s32()
+        player_seat = reader.s32()
+        reader.finish()
+        return TimeoutClaim(
+            player_seat=player_seat,
+            decision_index=decision_index,
+            timestamp_ms=frame.timestamp_ms,
+        )
 
     def _parse_full_state(
         self,

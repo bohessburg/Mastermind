@@ -20,6 +20,7 @@ class LobbyConfig:
     rated: bool = False
     max_games_per_session: int = 0
     homepage_timeout_seconds: float = 90.0
+    resume_full_state_timeout_seconds: float = 30.0
     searching_timeout_seconds: float = 180.0
     table_waiting_timeout_seconds: float = 30.0
     in_game_timeout_seconds: float = 3600.0
@@ -33,6 +34,13 @@ class UndoConfig:
     """Safety policy for metagame undo requests."""
 
     auto_deny: bool = True
+
+
+@dataclass(frozen=True, kw_only=True)
+class TimeoutConfig:
+    """Safety policy for an opponent's metagame timeout offer."""
+
+    claim_grace_seconds: float = 30.0
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -50,6 +58,7 @@ class ArenaConfig:
     actuation_mode: str = "protocol"
     lobby: LobbyConfig = LobbyConfig()
     undo: UndoConfig = UndoConfig()
+    timeout: TimeoutConfig = TimeoutConfig()
     arena_user: str | None = None
     arena_pass: str | None = None
 
@@ -75,6 +84,7 @@ class ArenaConfig:
         pacing = _object(raw, "think_time")
         lobby_raw = _object(raw, "lobby")
         undo_raw = _object(raw, "undo")
+        timeout_raw = _object(raw, "timeout")
         env = os.environ if environ is None else environ
 
         cap_value = search.get("wall_clock_cap_seconds", 30.0)
@@ -104,6 +114,9 @@ class ArenaConfig:
                 homepage_timeout_seconds=float(
                     lobby_raw.get("homepage_timeout_seconds", 90.0)
                 ),
+                resume_full_state_timeout_seconds=float(
+                    lobby_raw.get("resume_full_state_timeout_seconds", 30.0)
+                ),
                 searching_timeout_seconds=float(
                     lobby_raw.get("searching_timeout_seconds", 180.0)
                 ),
@@ -125,6 +138,11 @@ class ArenaConfig:
             ),
             undo=UndoConfig(
                 auto_deny=_boolean(undo_raw, "auto_deny", default=True),
+            ),
+            timeout=TimeoutConfig(
+                claim_grace_seconds=float(
+                    timeout_raw.get("claim_grace_seconds", 30.0)
+                ),
             ),
             arena_user=env.get("ARENA_USER"),
             arena_pass=env.get("ARENA_PASS"),
@@ -159,8 +177,11 @@ class ArenaConfig:
             raise ValueError(
                 "undo.auto_deny must be true; granting undo is unsupported"
             )
+        if self.timeout.claim_grace_seconds < 0:
+            raise ValueError("timeout claim grace must be non-negative")
         for name, value in (
             ("homepage", self.lobby.homepage_timeout_seconds),
+            ("resume_full_state", self.lobby.resume_full_state_timeout_seconds),
             ("searching", self.lobby.searching_timeout_seconds),
             ("table_waiting", self.lobby.table_waiting_timeout_seconds),
             ("in_game", self.lobby.in_game_timeout_seconds),

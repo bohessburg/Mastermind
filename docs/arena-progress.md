@@ -491,6 +491,51 @@ question 50 as one message-37 send with no game-DOM interaction.
   identical FullState with undo signals removed still trips the original
   zone-count mismatch.
 
+- **Opponent timeout claims (2026-07-25).**
+  The parked game in
+  `exports/arena/20260725T014909.665607Z/frames.jsonl` reaches
+  `TimeoutOffer(player_seat=1, decision_index=32)` and then only WebSocket
+  keepalives. The cached 2.2.8 body bundle identifies the exact control as
+  `timeout-request modal-window
+  button.lobby-button[ng-click="$ctrl.click()"]`. Its controller calls
+  `metaGameModel.requestTimeout(getResignablePlayerIndex())`; the latter calls
+  `serverMessenger.timeoutRequest({decisionIndex: -1, playerIndex: seat})`.
+  The wire writer emits client message 40 (`TIMEOUT_REQUEST`) with two signed
+  big-endian ints, `[-1, player-seat]`.
+
+  Arena therefore uses the stateless protocol path in the default
+  `actuation_mode: "protocol"`; `ArenaSession.send_frame()` keeps the outbound
+  message mirrored in `frames.jsonl`. The parser recognizes that outbound
+  message as `TimeoutClaim`, rather than leaving it as `UnknownFrame`. The
+  clicks fallback uses only the same evidenced `$ctrl.click()` selector; an
+  absent, duplicated, or failed control captures a labeled DOM snapshot and
+  logs `TIMEOUT CLAIM FAILED SAFELY` without guessing.
+
+  `timeout.claim_grace_seconds` defaults to 30 in `configs/arena.json`.
+  While the offer is outstanding, the live async event pump polls its deadline
+  even though the opponent's silence is not a stall-watchdog obligation. A
+  decoded later `DecisionResolved` for the offered seat proves that player
+  returned during grace, so the claim is discarded quietly. A timeout signal
+  for a plausible local timeout is logged at critical severity and never sends
+  a self-resign. The parked archive replay advances a fake clock and proves
+  that message 40 fires 30 seconds after the offer; separate offline tests
+  cover the cancellation, self-timeout, click fallback, and exact wire shape.
+
+- **Reconnect into a running game (2026-07-25).**
+  Startup now checks the recorded `game-area` board signal before waiting for
+  the homepage **Start search** control. If a supervisor restart retained an
+  active board, the lobby enters `IN_GAME` directly and buffers the reconnect
+  feed until its authoritative `FullState` arrives; that buffer is then passed
+  unchanged to the normal game loop, so pending local questions and timeout
+  offers follow their ordinary paths. The check is locked to
+  `dom-20260725T025402.631104Z-lobby-failure-homepage-start-search-not-found.html`,
+  which contains `game-area` and no automatch control. A missing or rejected
+  seed is loud but recoverable: after the config-driven
+  `lobby.resume_full_state_timeout_seconds` (30 seconds by default), the DOM
+  is archived as `lobby-resume-recovery`, the existing game-ended **Ok** / **Leave
+  Table** path runs, and the normal search cycle resumes. A plain homepage
+  keeps the independent 90-second, one-reload hardening unchanged.
+
 - **Overnight mode (2026-07-24).**
   The live process is now restart-safe for an external supervisor. The game
   loop runs a configurable stall watchdog (`stall_watchdog_seconds`, default

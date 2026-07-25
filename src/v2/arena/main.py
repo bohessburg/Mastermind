@@ -24,7 +24,7 @@ from .fsm.game import (
     run_game_loop,
 )
 from .fsm.lobby import LobbyError, LobbyFSM
-from .protocol.events import GameEvent
+from .protocol.events import FullState, GameEvent
 from .protocol.live import RawFrameQueue, events_from_queue
 from .protocol.recording import events_from_recording
 
@@ -112,6 +112,9 @@ async def _run_dry(config: ArenaConfig) -> int:
                     ledger_path=run_dir / "record.jsonl",
                 ),
                 auto_deny_undo=config.undo.auto_deny,
+                timeout_offer_grace_seconds=(
+                    config.timeout.claim_grace_seconds
+                ),
                 stall_watchdog_seconds=config.stall_watchdog_seconds,
             )
         finally:
@@ -272,15 +275,23 @@ async def _run_live(
             _monitor_modals(click_actuator),
             name="arena-modal-monitor",
         )
-        await lobby.queue_next_game()
+        resumed_game, first_game_events = await _start_or_resume_game(
+            lobby,
+            events,
+            resume_full_state_timeout_seconds=(
+                config.lobby.resume_full_state_timeout_seconds
+            ),
+        )
 
         completed_games = 0
         wins = losses = ties = unknown = 0
         while True:
+            game_events = first_game_events or _events_for_one_game(events)
+            first_game_events = None
             try:
                 results = await asyncio.wait_for(
                     run_game_loop(
-                        _events_for_one_game(events),
+                        game_events,
                         actuator=actuator,
                         decision_provider=provider,
                         think_time_min_seconds=config.think_time_min_seconds,
@@ -290,6 +301,9 @@ async def _run_live(
                         archive_factory=archive_factory,
                         max_games=1,
                         auto_deny_undo=config.undo.auto_deny,
+                        timeout_offer_grace_seconds=(
+                            config.timeout.claim_grace_seconds
+                        ),
                         stall_watchdog_seconds=config.stall_watchdog_seconds,
                         stall_screenshot_hook=stall_screenshot,
                         stall_dom_hook=stall_dom,
@@ -305,10 +319,24 @@ async def _run_live(
                 ) from error
 
             if len(results) != 1:
+                if resumed_game:
+                    LOGGER.critical(
+                        "RESUME RECOVERY: reconnect ended before the resumed "
+                        "game produced GameEnd"
+                    )
+                    await lobby.recover_resumed_game_and_queue_next()
+                    resumed_game = False
+                    continue
                 raise RuntimeError(
                     "live event feed ended before the next game produced GameEnd"
                 )
             result = results[0]
+            if resumed_game and await _recover_rejected_resumed_game(
+                lobby,
+                result,
+            ):
+                resumed_game = False
+                continue
             abort_exit_code = _exit_code_for_game_result(result)
             if abort_exit_code == EXIT_STALL:
                 print(
@@ -341,6 +369,7 @@ async def _run_live(
                 )
                 return EXIT_DIVERGENCE
 
+            resumed_game = False
             completed_games += 1
             if result.outcome == "win":
                 wins += 1
@@ -434,6 +463,93 @@ async def _events_for_one_game(
         if event is None:
             return
         yield event
+
+
+async def _start_or_resume_game(
+    lobby: LobbyFSM,
+    events: asyncio.Queue[GameEvent | None],
+    *,
+    resume_full_state_timeout_seconds: float,
+) -> tuple[bool, AsyncIterable[GameEvent] | None]:
+    """Choose the retained game board or the normal homepage search path."""
+    if not await lobby.resume_running_game_if_present():
+        await lobby.queue_next_game()
+        return False, None
+
+    buffered = await _wait_for_resumed_full_state(
+        events,
+        timeout_seconds=resume_full_state_timeout_seconds,
+    )
+    if buffered is not None:
+        return True, _prepend_events(buffered, _events_for_one_game(events))
+
+    LOGGER.critical(
+        "RESUME RECOVERY: no FullState arrived within %.1fs; leaving the "
+        "retained table and returning to automatch",
+        resume_full_state_timeout_seconds,
+    )
+    await lobby.recover_resumed_game_and_queue_next()
+    return False, None
+
+
+async def _wait_for_resumed_full_state(
+    events: asyncio.Queue[GameEvent | None],
+    *,
+    timeout_seconds: float,
+) -> tuple[GameEvent, ...] | None:
+    """Buffer reconnect events until the tracker can seed from FullState."""
+    buffered: list[GameEvent] = []
+    deadline = asyncio.get_running_loop().time() + timeout_seconds
+    while True:
+        remaining = deadline - asyncio.get_running_loop().time()
+        if remaining <= 0:
+            return None
+        try:
+            event = await asyncio.wait_for(events.get(), timeout=remaining)
+        except TimeoutError:
+            return None
+        if event is None:
+            return None
+        buffered.append(event)
+        if isinstance(event, FullState):
+            return tuple(buffered)
+
+
+async def _prepend_events(
+    prefix: tuple[GameEvent, ...],
+    suffix: AsyncIterable[GameEvent],
+) -> AsyncIterator[GameEvent]:
+    """Replay preflight events before continuing with the live queue."""
+    for event in prefix:
+        yield event
+    async for event in suffix:
+        yield event
+
+
+def _resumed_tracker_was_rejected(result: object) -> bool:
+    """Whether a reconnect FullState, rather than normal play, diverged."""
+    report = getattr(result, "divergence_report", None)
+    return bool(
+        getattr(result, "divergence_aborted", False)
+        and report is not None
+        and getattr(report, "error_type", None) == "TrackerError"
+        and "FullState" in str(getattr(result, "reason", ""))
+    )
+
+
+async def _recover_rejected_resumed_game(
+    lobby: LobbyFSM,
+    result: object,
+) -> bool:
+    """Recover the normal search cycle only from a rejected reconnect seed."""
+    if not _resumed_tracker_was_rejected(result):
+        return False
+    LOGGER.critical(
+        "RESUME RECOVERY: resumed FullState was rejected by the tracker: %s",
+        getattr(result, "reason", "unknown tracker failure"),
+    )
+    await lobby.recover_resumed_game_and_queue_next()
+    return True
 
 
 async def _request_resign(page: Any) -> None:

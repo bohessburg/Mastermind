@@ -15,11 +15,15 @@
   "undo": {
     "auto_deny": true
   },
+  "timeout": {
+    "claim_grace_seconds": 30
+  },
   "lobby": {
     "card_pool": "base",
     "rated": false,
     "max_games_per_session": 0,
     "homepage_timeout_seconds": 90,
+    "resume_full_state_timeout_seconds": 30,
     "searching_timeout_seconds": 180,
     "table_waiting_timeout_seconds": 30,
     "in_game_timeout_seconds": 3600,

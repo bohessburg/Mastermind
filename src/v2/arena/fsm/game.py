@@ -49,6 +49,7 @@ from ..protocol.events import (
     Reveal,
     SessionStart,
     Shuffle,
+    TimeoutOffer,
     Topdeck,
     UndoRequest,
     UndoResync,
@@ -162,6 +163,7 @@ class _ActiveGame:
     pending_snapshot: TrackerSnapshot | None = None
     pending_plan: DecisionPlan | None = None
     pending_events: list[GameEvent] = field(default_factory=list)
+    timeout_offer: _PendingTimeoutOffer | None = None
     archive: GameArchive | None = None
 
 
@@ -185,12 +187,29 @@ class _DeferredBuy:
 
 
 @dataclass(frozen=True, kw_only=True)
+class _PendingTimeoutOffer:
+    """One opponent offer kept live until it is cancelled or claimed."""
+
+    offer: TimeoutOffer
+    deadline_at: float
+    deadline_timestamp_ms: int | None
+
+
+@dataclass(frozen=True, kw_only=True)
 class _WatchdogStall(GameEvent):
     """Internal sentinel produced instead of waiting forever for an event."""
 
     frame_index: int
     last_event_timestamp_ms: int | None
     silent_seconds: float
+
+
+@dataclass(frozen=True, kw_only=True)
+class _TimeoutOfferGraceExpired(GameEvent):
+    """Internal sentinel emitted after an unresolved offer's grace period."""
+
+    player_seat: int
+    decision_index: int
 
 
 class _StallWatchdogAbort(RuntimeError):
@@ -581,6 +600,7 @@ async def run_game_loop(
     archive_factory: Callable[[int | None], GameArchive] | None = None,
     max_games: int | None = None,
     auto_deny_undo: bool = True,
+    timeout_offer_grace_seconds: float = 30.0,
     stall_watchdog_seconds: float | None = None,
     clock: Callable[[], float] = time.monotonic,
     watchdog_poll_seconds: float = 0.25,
@@ -604,6 +624,8 @@ async def run_game_loop(
         raise ValueError("maximum think time must be at least the minimum")
     if max_games is not None and max_games <= 0:
         raise ValueError("max_games must be positive or null")
+    if timeout_offer_grace_seconds < 0:
+        raise ValueError("timeout-offer grace must be non-negative")
     if stall_watchdog_seconds is not None and stall_watchdog_seconds <= 0:
         raise ValueError("stall watchdog must be positive or null")
     if watchdog_poll_seconds <= 0:
@@ -676,6 +698,9 @@ async def run_game_loop(
     async for frame_index, event in _indexed_events(
         events,
         obligation=lambda: _has_outstanding_obligation(active, tracker),
+        timeout_offer=lambda: (
+            active.timeout_offer if active is not None else None
+        ),
         stall_watchdog_seconds=stall_watchdog_seconds,
         clock=clock,
         sleep=sleep,
@@ -684,6 +709,37 @@ async def run_game_loop(
         try:
             if isinstance(event, _WatchdogStall):
                 raise _StallWatchdogAbort(event)
+            if isinstance(event, _TimeoutOfferGraceExpired):
+                if (
+                    active is not None
+                    and active.timeout_offer is not None
+                    and active.timeout_offer.offer.player_seat
+                    == event.player_seat
+                    and active.timeout_offer.offer.decision_index
+                    == event.decision_index
+                ):
+                    offer = active.timeout_offer.offer
+                    # Clear before sending so a reentrant archive frame cannot
+                    # produce a duplicate claim while the socket call awaits.
+                    active.timeout_offer = None
+                    claimed = await actuator.claim_timeout_offer(offer)
+                    if claimed:
+                        LOGGER.warning(
+                            "CLAIMED opponent timeout after %.1fs: seat %d "
+                            "decision %d",
+                            timeout_offer_grace_seconds,
+                            offer.player_seat,
+                            offer.decision_index,
+                        )
+                    else:
+                        LOGGER.error(
+                            "TIMEOUT CLAIM FAILED SAFELY: no actuation for "
+                            "opponent seat %d decision %d after %.1fs",
+                            offer.player_seat,
+                            offer.decision_index,
+                            timeout_offer_grace_seconds,
+                        )
+                continue
             tracker.consume(event)
             undo_resync = tracker.last_undo_resync
             if active is not None:
@@ -768,6 +824,44 @@ async def run_game_loop(
             if isinstance(event, GameResult):
                 active.game_result = event
 
+            if (
+                active.timeout_offer is not None
+                and _timeout_offer_was_cancelled(
+                    event,
+                    active.timeout_offer.offer,
+                )
+            ):
+                active.timeout_offer = None
+
+            if isinstance(event, TimeoutOffer):
+                snapshot = tracker.snapshot()
+                if snapshot.our_seat is None:
+                    LOGGER.error(
+                        "TIMEOUT OFFER IGNORED: local seat is unknown for "
+                        "seat %d decision %d",
+                        event.player_seat,
+                        event.decision_index,
+                    )
+                elif _timeout_offer_is_for_our_seat(event, snapshot):
+                    LOGGER.critical(
+                        "TIMEOUT OFFER FOR OUR SEAT: seat %d decision %d; "
+                        "never self-resigning through the timeout path",
+                        event.player_seat,
+                        event.decision_index,
+                    )
+                else:
+                    active.timeout_offer = _PendingTimeoutOffer(
+                        offer=event,
+                        deadline_at=clock() + timeout_offer_grace_seconds,
+                        deadline_timestamp_ms=(
+                            None
+                            if event.timestamp_ms is None
+                            else event.timestamp_ms
+                            + round(timeout_offer_grace_seconds * 1_000)
+                        ),
+                    )
+                continue
+
             if isinstance(event, UndoRequest):
                 snapshot = tracker.snapshot()
                 if (
@@ -812,9 +906,11 @@ async def run_game_loop(
                 active.pending_snapshot = None
                 active.pending_plan = None
                 active.pending_events.clear()
+                active.timeout_offer = None
                 continue
 
             if isinstance(event, GameEnd):
+                active.timeout_offer = None
                 if (
                     active.pending is None
                     or any(
@@ -1159,6 +1255,7 @@ async def _indexed_events(
     events: Iterable[GameEvent] | AsyncIterable[GameEvent],
     *,
     obligation: Callable[[], bool] | None = None,
+    timeout_offer: Callable[[], _PendingTimeoutOffer | None] | None = None,
     stall_watchdog_seconds: float | None = None,
     clock: Callable[[], float] = time.monotonic,
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
@@ -1172,26 +1269,48 @@ async def _indexed_events(
         last_event_timestamp_ms: int | None = None
         while True:
             next_event = asyncio.create_task(iterator.__anext__())
-            while (
-                stall_watchdog_seconds is not None
-                and obligation is not None
-                and obligation()
-            ):
-                silent_seconds = clock() - last_relevant_at
-                if silent_seconds >= stall_watchdog_seconds:
-                    next_event.cancel()
-                    await asyncio.gather(next_event, return_exceptions=True)
-                    yield index, _WatchdogStall(
-                        frame_index=index,
-                        last_event_timestamp_ms=last_event_timestamp_ms,
-                        silent_seconds=silent_seconds,
-                    )
-                    return
-                poll = min(
-                    watchdog_poll_seconds,
-                    stall_watchdog_seconds - silent_seconds,
+            while not next_event.done():
+                now = clock()
+                pending_timeout = (
+                    timeout_offer() if timeout_offer is not None else None
                 )
-                poll_task = asyncio.create_task(sleep(poll))
+                if (
+                    pending_timeout is not None
+                    and now >= pending_timeout.deadline_at
+                ):
+                    yield index, _TimeoutOfferGraceExpired(
+                        player_seat=pending_timeout.offer.player_seat,
+                        decision_index=pending_timeout.offer.decision_index,
+                        timestamp_ms=pending_timeout.deadline_timestamp_ms,
+                    )
+                    continue
+
+                silent_seconds: float | None = None
+                if (
+                    stall_watchdog_seconds is not None
+                    and obligation is not None
+                    and obligation()
+                ):
+                    silent_seconds = now - last_relevant_at
+                    if silent_seconds >= stall_watchdog_seconds:
+                        next_event.cancel()
+                        await asyncio.gather(next_event, return_exceptions=True)
+                        yield index, _WatchdogStall(
+                            frame_index=index,
+                            last_event_timestamp_ms=last_event_timestamp_ms,
+                            silent_seconds=silent_seconds,
+                        )
+                        return
+
+                waits = [watchdog_poll_seconds]
+                if pending_timeout is not None:
+                    waits.append(pending_timeout.deadline_at - now)
+                if (
+                    silent_seconds is not None
+                    and stall_watchdog_seconds is not None
+                ):
+                    waits.append(stall_watchdog_seconds - silent_seconds)
+                poll_task = asyncio.create_task(sleep(min(waits)))
                 done, _ = await asyncio.wait(
                     {next_event, poll_task},
                     return_when=asyncio.FIRST_COMPLETED,
@@ -1211,8 +1330,81 @@ async def _indexed_events(
             yield index, event
             index += 1
         return
+
+    next_index = 0
     for index, event in enumerate(events):
+        next_index = index + 1
+        while True:
+            pending_timeout = (
+                timeout_offer() if timeout_offer is not None else None
+            )
+            if not _timeout_offer_is_due_before_event(pending_timeout, event):
+                break
+            assert pending_timeout is not None
+            yield index, _TimeoutOfferGraceExpired(
+                player_seat=pending_timeout.offer.player_seat,
+                decision_index=pending_timeout.offer.decision_index,
+                timestamp_ms=pending_timeout.deadline_timestamp_ms,
+            )
         yield index, event
+
+    pending_timeout = timeout_offer() if timeout_offer is not None else None
+    if pending_timeout is not None:
+        yield next_index, _TimeoutOfferGraceExpired(
+            player_seat=pending_timeout.offer.player_seat,
+            decision_index=pending_timeout.offer.decision_index,
+            timestamp_ms=pending_timeout.deadline_timestamp_ms,
+        )
+
+
+def _timeout_offer_is_due_before_event(
+    pending_timeout: _PendingTimeoutOffer | None,
+    event: GameEvent,
+) -> bool:
+    """Replay timeout grace from recorded frame timestamps when available."""
+    return (
+        pending_timeout is not None
+        and pending_timeout.deadline_timestamp_ms is not None
+        and event.timestamp_ms is not None
+        and event.timestamp_ms >= pending_timeout.deadline_timestamp_ms
+    )
+
+
+def _timeout_offer_was_cancelled(
+    event: GameEvent,
+    offer: TimeoutOffer,
+) -> bool:
+    """Stand down once the offered player makes a decoded game decision.
+
+    Client 2.2.8 has no distinct timeout-cancel metagame kind: it adds a
+    timeout offer to ``permanentlyResignablePlayers`` and relies on game-end
+    for normal cleanup.  A later decision resolved for that seat is therefore
+    the stream-level proof that the opponent returned during our grace period.
+    """
+    return (
+        isinstance(event, DecisionResolved)
+        and event.seat == offer.player_seat
+        and event.question_index > offer.decision_index
+    )
+
+
+def _timeout_offer_is_for_our_seat(
+    offer: TimeoutOffer,
+    snapshot: TrackerSnapshot,
+) -> bool:
+    """Identify the defensive self-timeout case without blocking an opponent.
+
+    A self timeout is only plausible while the local player owns the active
+    turn (or before the first turn is known).  The stalled capture's offer
+    names seat 1 while the tracker has seat 0 active, so treating its field as
+    a self-resign signal would contradict the live timeout prompt and leave
+    the opponent's force-end control unhandled.
+    """
+    return (
+        snapshot.our_seat is not None
+        and offer.player_seat == snapshot.our_seat
+        and snapshot.turn_owner in (None, snapshot.our_seat)
+    )
 
 
 def _is_game_relevant_event(event: GameEvent) -> bool:

@@ -186,6 +186,32 @@ class LobbyFSM:
         await self._click(start_game, LobbyControl.START_GAME)
         self._transition(LobbyState.IN_GAME)
 
+    async def resume_running_game_if_present(self) -> bool:
+        """Enter the game loop when a reconnect retained an in-play board."""
+        self._require_state(LobbyState.HOMEPAGE)
+        if not await self._in_game_board_is_present():
+            return False
+        LOGGER.warning(
+            "startup found an in-progress game board; waiting for its "
+            "authoritative FullState instead of starting automatch"
+        )
+        self._transition(LobbyState.IN_GAME)
+        return True
+
+    async def recover_resumed_game_and_queue_next(self) -> None:
+        """Leave a resumed game that never seeded a safe tracker state."""
+        self._require_state(LobbyState.IN_GAME)
+        LOGGER.critical(
+            "RESUME RECOVERY: authoritative game state was unavailable or "
+            "rejected; archiving the DOM and leaving the table before requeue"
+        )
+        await self._snapshot_dom("lobby-resume-recovery")
+        # The recorded table exit is the safe path after a terminal game.  A
+        # reconnect that cannot produce a trustworthy FullState is deliberately
+        # abandoned rather than played from an unknown local state.
+        self._transition(LobbyState.GAME_OVER)
+        await self.leave_after_game(requeue=True)
+
     def game_ended(self) -> None:
         """Advance on the decoded ``GameEnd`` feed event."""
         self._require_state(LobbyState.IN_GAME)
