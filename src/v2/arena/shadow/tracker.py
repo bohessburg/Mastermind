@@ -26,6 +26,8 @@ from ..protocol.events import (
     Topdeck,
     Trash,
     TurnStart,
+    UndoRequest,
+    UndoResolved,
     ZoneTransfer,
 )
 
@@ -37,10 +39,23 @@ TRACKED_ZONE_KINDS = frozenset(
 _SET_ASIDE_ZONE_KINDS = frozenset({"set-aside", "zone-type-24"})
 RESOURCE_NAMES = frozenset({"actions", "buys", "coins"})
 TREASURE_NAMES = frozenset({"Copper", "Silver", "Gold", "Potion"})
+UNDO_SIGNAL_MAX_AGE_MS = 30_000
+UNDO_SIGNAL_MAX_EVENT_GAP = 64
 
 
 class TrackerError(RuntimeError):
     """The normalized stream disagreed with the tracked public state."""
+
+
+@dataclass(frozen=True, kw_only=True)
+class UndoResyncInfo:
+    """Evidence retained for the loop when an undo-authorized reseed occurs."""
+
+    game_id: int
+    requester_seat: int
+    decision_index: int
+    signal_timestamp_ms: int | None
+    full_state_timestamp_ms: int | None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -155,8 +170,11 @@ class Tracker:
         self.phase: str | None = None
         self.pending_decision: PendingDecisionSnapshot | None = None
         self.ended = False
+        self.last_undo_resync: UndoResyncInfo | None = None
 
         self._initialized = False
+        self._recent_undo_request: UndoRequest | None = None
+        self._events_since_undo_request: int | None = None
         self._card_totals: Counter[str] = Counter()
         self._owned: dict[int, Counter[str]] = {}
         self._resources: dict[int, dict[str, int]] = {}
@@ -167,6 +185,9 @@ class Tracker:
 
     def consume(self, event: GameEvent) -> None:
         """Consume one event and raise immediately on any count divergence."""
+        self.last_undo_resync = None
+        if self._events_since_undo_request is not None:
+            self._events_since_undo_request += 1
         try:
             self._consume(event)
             if self._initialized:
@@ -262,6 +283,17 @@ class Tracker:
                 and self.pending_decision.question_index == event.question_index
             ):
                 self.pending_decision = None
+        elif isinstance(event, UndoRequest):
+            self._recent_undo_request = event
+            self._events_since_undo_request = 0
+        elif isinstance(event, UndoResolved):
+            if (
+                self._recent_undo_request is not None
+                and event.decision_index
+                == self._recent_undo_request.decision_index
+            ):
+                self._recent_undo_request = None
+                self._events_since_undo_request = None
         elif isinstance(event, PileReorder):
             self._on_pile_reorder(event)
         elif isinstance(event, PileUpdate):
@@ -288,6 +320,9 @@ class Tracker:
         self.pending_decision = None
         self.ended = False
         self._initialized = False
+        self._recent_undo_request = None
+        self._events_since_undo_request = None
+        self.last_undo_resync = None
         self._card_totals.clear()
         self._owned.clear()
         self._resources.clear()
@@ -307,9 +342,72 @@ class Tracker:
             if event.replacement:
                 self._replace_full_state(event, reported_totals, reported_zones)
             else:
-                self._reconcile_full_state(event, reported_totals, reported_zones)
+                self._reconcile_or_resync_after_undo(
+                    event,
+                    reported_totals,
+                    reported_zones,
+                )
         else:
             self._seed_full_state(event, reported_totals, reported_zones)
+
+    def _reconcile_or_resync_after_undo(
+        self,
+        event: FullState,
+        totals: Counter[str],
+        zones: dict[int, _ZoneState],
+    ) -> None:
+        old_zones = {
+            index: _ZoneState(known=zone.known.copy(), anonymous=zone.anonymous)
+            for index, zone in self._zones.items()
+        }
+        old_zone_kind = self._zone_kind.copy()
+        old_zone_owner = self._zone_owner.copy()
+        old_supply_name = self._supply_name.copy()
+        old_resources = {
+            seat: resources.copy()
+            for seat, resources in self._resources.items()
+        }
+        try:
+            self._reconcile_full_state(event, totals, zones)
+            return
+        except TrackerError:
+            self._zones = old_zones
+            self._zone_kind = old_zone_kind
+            self._zone_owner = old_zone_owner
+            self._supply_name = old_supply_name
+            self._resources = old_resources
+            if not self._undo_signal_is_recent(event):
+                raise
+
+        request = self._recent_undo_request
+        assert request is not None
+        self._replace_full_state(event, totals, zones)
+        self.pending_decision = None
+        self.last_undo_resync = UndoResyncInfo(
+            game_id=event.game_id,
+            requester_seat=request.requester_seat,
+            decision_index=request.decision_index,
+            signal_timestamp_ms=request.timestamp_ms,
+            full_state_timestamp_ms=event.timestamp_ms,
+        )
+        self._recent_undo_request = None
+        self._events_since_undo_request = None
+
+    def _undo_signal_is_recent(self, full_state: FullState) -> bool:
+        request = self._recent_undo_request
+        gap = self._events_since_undo_request
+        if (
+            request is None
+            or gap is None
+            or gap > UNDO_SIGNAL_MAX_EVENT_GAP
+            or self.turn_number is None
+            or self.ended
+        ):
+            return False
+        if request.timestamp_ms is None or full_state.timestamp_ms is None:
+            return True
+        age_ms = full_state.timestamp_ms - request.timestamp_ms
+        return 0 <= age_ms <= UNDO_SIGNAL_MAX_AGE_MS
 
     def _zones_from_full_state(
         self, zones: tuple[FullStateZone, ...]

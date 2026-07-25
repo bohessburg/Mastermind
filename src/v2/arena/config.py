@@ -29,6 +29,13 @@ class LobbyConfig:
 
 
 @dataclass(frozen=True, kw_only=True)
+class UndoConfig:
+    """Safety policy for metagame undo requests."""
+
+    auto_deny: bool = True
+
+
+@dataclass(frozen=True, kw_only=True)
 class ArenaConfig:
     """All operator-controlled settings for one arena process."""
 
@@ -40,6 +47,7 @@ class ArenaConfig:
     think_time_min_seconds: float = 1.25
     think_time_max_seconds: float = 2.75
     lobby: LobbyConfig = LobbyConfig()
+    undo: UndoConfig = UndoConfig()
     arena_user: str | None = None
     arena_pass: str | None = None
 
@@ -64,6 +72,7 @@ class ArenaConfig:
         search = _object(raw, "search")
         pacing = _object(raw, "think_time")
         lobby_raw = _object(raw, "lobby")
+        undo_raw = _object(raw, "undo")
         env = os.environ if environ is None else environ
 
         cap_value = search.get("wall_clock_cap_seconds", 30.0)
@@ -108,6 +117,9 @@ class ArenaConfig:
                     lobby_raw.get("leaving_timeout_seconds", 30.0)
                 ),
             ),
+            undo=UndoConfig(
+                auto_deny=_boolean(undo_raw, "auto_deny", default=True),
+            ),
             arena_user=env.get("ARENA_USER"),
             arena_pass=env.get("ARENA_PASS"),
         )
@@ -133,6 +145,10 @@ class ArenaConfig:
             raise ValueError("maximum think time must be at least the minimum")
         if self.lobby.max_games_per_session < 0:
             raise ValueError("lobby max_games_per_session cannot be negative")
+        if not self.undo.auto_deny:
+            raise ValueError(
+                "undo.auto_deny must be true; granting undo is unsupported"
+            )
         for name, value in (
             ("homepage", self.lobby.homepage_timeout_seconds),
             ("searching", self.lobby.searching_timeout_seconds),
@@ -150,4 +166,16 @@ def _object(raw: Mapping[str, object], key: str) -> Mapping[str, object]:
     value = raw.get(key, {})
     if not isinstance(value, dict):
         raise ValueError(f"arena config {key!r} must be an object")
+    return value
+
+
+def _boolean(
+    raw: Mapping[str, object],
+    key: str,
+    *,
+    default: bool,
+) -> bool:
+    value = raw.get(key, default)
+    if not isinstance(value, bool):
+        raise ValueError(f"arena config {key!r} must be a boolean")
     return value

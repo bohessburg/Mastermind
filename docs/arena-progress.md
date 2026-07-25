@@ -393,6 +393,44 @@ person would, using the site's own client the whole way through.
   verify Estate + Copper + Copper + Confirm completes. A fully covered variant
   fails at step 3 with all point/cover identities in the structured error.
 
+- **Undo auto-deny and bounded tracker recovery (2026-07-25).**
+  The failed game 181368463 in
+  `exports/arena/20260725T002942.738597Z/` established that granting an
+  opponent undo rewinds server state while the arena tracker is normally
+  forward-only. Server message 35 is now decoded as three big-endian 32-bit
+  fields, `[metagame-kind][player-seat][decision-index]`. Client bundle 2.2.8
+  defines kind 0 as an undo request, 1 as a timeout offer, 2 as undo denied,
+  and 3 as undo cancelled. The three game-181368463 frames are request
+  `(0, 0, 21)`, cancellation `(3, 0, 21)`, and request `(0, 0, 39)`;
+  the latter is followed by the recorded outbound grant and rewound
+  FullState. Message 35 no longer remains unknown in that archive.
+
+  `undo.auto_deny` is true in `configs/arena.json`, defaults true, and rejects
+  false: granting is not a supported configuration. Bundle 2.2.8 supplies the
+  exact negative control
+  `undo-request modal-window button.lobby-button[ng-click="$ctrl.decline()"]`.
+  Recorded DOM snapshots contain the undo component shells but no rendered
+  request, so the actuator also has a guarded generic-button fallback confined
+  to `undo-request modal-window`. It accepts exactly one visible button whose
+  `ng-click` handler or label is negative and never selects a grant/accept
+  handler. Ambiguity, absence, or click failure captures a labeled DOM
+  snapshot, logs a loud warning, makes no click, and leaves the request to
+  expire without aborting the game. A live modal monitor similarly snapshots
+  each unrecognized modal fingerprint once per visible occurrence.
+
+  A non-replacement mid-game FullState mismatch still raises `TrackerError` by
+  default. The sole exception is a mismatch within both 30 seconds and 64
+  normalized events of an unresolved undo request; a decoded denial or
+  cancellation closes that window immediately. That FullState uses the
+  existing reconnect replacement machinery as authoritative state, clears any
+  pending question, and emits resync evidence. The game loop then invalidates
+  the native shadow, turn reconstruction history, pending actuation, and
+  provider multi-question state before the next decision. It logs at critical
+  severity and writes an explicit `UndoResync` record into the per-game
+  archive. The original failed archive now replays through game end; the
+  identical FullState with undo signals removed still trips the original
+  zone-count mismatch.
+
 - **P6 — Lobby loop + supervisor + deploy.** Unattended base-set sessions
   with archiving and recovery.
 

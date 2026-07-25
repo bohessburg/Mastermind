@@ -10,6 +10,9 @@
     "min_seconds": 1.25,
     "max_seconds": 2.75
   },
+  "undo": {
+    "auto_deny": true
+  },
   "lobby": {
     "card_pool": "base",
     "rated": false,

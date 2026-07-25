@@ -9,6 +9,8 @@ of truth for both the browser actuator and offline replay.
 from __future__ import annotations
 
 import asyncio
+import logging
+import re
 from abc import ABC, abstractmethod
 from collections import Counter
 from dataclasses import dataclass
@@ -17,7 +19,11 @@ from typing import Any, Awaitable, Callable, Iterable, Sequence
 
 import dominion_v2_py as dz
 
+from ..protocol.events import UndoRequest
 from ..shadow.tracker import PendingDecisionSnapshot
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 class ActionMappingError(ValueError):
@@ -344,6 +350,14 @@ class Actuator(ABC):
     ) -> ClientGesture:
         """Perform the gesture represented by the accumulated action plan."""
 
+    async def deny_undo_request(self, request: UndoRequest) -> bool:
+        """Deny an opponent undo, returning whether a control was clicked."""
+        del request
+        return False
+
+    async def inspect_unknown_modals(self) -> None:
+        """Capture newly observed modal shapes that this actuator does not know."""
+
 
 class MockActuator(Actuator):
     """Offline actuator that records exactly what would have been clicked."""
@@ -351,6 +365,7 @@ class MockActuator(Actuator):
     def __init__(self, *, replay: bool = False) -> None:
         self.replay = replay
         self.gestures: list[ClientGesture] = []
+        self.undo_denials: list[UndoRequest] = []
         self.stopped = False
 
     async def act(
@@ -372,8 +387,44 @@ class MockActuator(Actuator):
         self.gestures.append(gesture)
         return gesture
 
+    async def deny_undo_request(self, request: UndoRequest) -> bool:
+        if self.stopped:
+            return False
+        self.undo_denials.append(request)
+        return True
+
     def stop(self) -> None:
         self.stopped = True
+
+
+UNDO_DECLINE_SELECTOR = (
+    'undo-request modal-window '
+    'button.lobby-button[ng-click="$ctrl.decline()"]'
+)
+UNDO_MODAL_BUTTON_SELECTOR = "undo-request modal-window button.lobby-button"
+MODAL_CONTAINER_SELECTOR = 'modal-window, [role="dialog"]'
+_NEGATIVE_MODAL_LABELS = frozenset(
+    {"no", "deny", "decline", "reject", "cancel"}
+)
+_NEGATIVE_HANDLER = re.compile(r"(?:decline|deny|reject|cancel)\s*\(", re.I)
+_POSITIVE_HANDLER = re.compile(r"(?:grant|accept|approve|confirm)\s*\(", re.I)
+_RECOGNIZED_MODAL_OWNERS = frozenset(
+    {
+        "connected-to-game-server",
+        "connecting-to-game",
+        "game-ended-notification",
+        "loading-game",
+        "new-errata-warning",
+        "open-tournament-matches",
+        "pending-undo-request",
+        "reconnecting",
+        "reconnecting-failed",
+        "resign-request",
+        "spectator-undo-request",
+        "timeout-request",
+        "undo-request",
+    }
+)
 
 
 class PlaywrightActuator(Actuator):
@@ -412,6 +463,185 @@ class PlaywrightActuator(Actuator):
         self.snapshot_dom = snapshot_dom
         self.actuation_timeout_seconds = actuation_timeout_seconds
         self.poll_interval_seconds = poll_interval_seconds
+        self._active_unknown_modals: set[str] = set()
+
+    async def deny_undo_request(self, request: UndoRequest) -> bool:
+        """Click only the evidenced decline control; ambiguity safely times out."""
+        searched = [
+            UNDO_DECLINE_SELECTOR,
+            (
+                f"{UNDO_MODAL_BUTTON_SELECTOR} with negative ng-click "
+                "handler or label"
+            ),
+        ]
+        deadline = asyncio.get_running_loop().time() + (
+            self.actuation_timeout_seconds
+        )
+        try:
+            while True:
+                exact = await self._visible_locators(UNDO_DECLINE_SELECTOR)
+                if len(exact) == 1:
+                    await exact[0].click()
+                    LOGGER.warning(
+                        "AUTO-DENIED undo request from seat %d at decision %d "
+                        "using %s",
+                        request.requester_seat,
+                        request.decision_index,
+                        UNDO_DECLINE_SELECTOR,
+                    )
+                    return True
+                if len(exact) > 1:
+                    return await self._unresolved_undo_request(
+                        request,
+                        searched,
+                        f"evidenced selector matched {len(exact)} visible controls",
+                    )
+
+                candidates = await self._visible_locators(
+                    UNDO_MODAL_BUTTON_SELECTOR
+                )
+                negative: list[Any] = []
+                for candidate in candidates:
+                    handler = (
+                        (await candidate.get_attribute("ng-click")) or ""
+                    ).strip()
+                    label = (await candidate.inner_text()).strip().casefold()
+                    label = re.sub(r"\s+", " ", label)
+                    is_negative = (
+                        bool(_NEGATIVE_HANDLER.search(handler))
+                        or label in _NEGATIVE_MODAL_LABELS
+                    )
+                    is_positive = bool(_POSITIVE_HANDLER.search(handler))
+                    if is_negative and not is_positive:
+                        negative.append(candidate)
+                if len(negative) == 1:
+                    await negative[0].click()
+                    LOGGER.warning(
+                        "AUTO-DENIED undo request from seat %d at decision %d "
+                        "using the guarded generic modal fallback",
+                        request.requester_seat,
+                        request.decision_index,
+                    )
+                    return True
+                if len(negative) > 1:
+                    return await self._unresolved_undo_request(
+                        request,
+                        searched,
+                        f"generic fallback found {len(negative)} negative "
+                        f"controls among {len(candidates)} visible buttons",
+                    )
+                if asyncio.get_running_loop().time() >= deadline:
+                    return await self._unresolved_undo_request(
+                        request,
+                        searched,
+                        "generic fallback found no unambiguous negative "
+                        f"control among {len(candidates)} visible buttons",
+                    )
+                await asyncio.sleep(self.poll_interval_seconds)
+        except Exception as error:
+            return await self._unresolved_undo_request(
+                request,
+                searched,
+                f"selector inspection/click failed: {error}",
+            )
+
+    async def inspect_unknown_modals(self) -> None:
+        """Snapshot each unrecognized visible modal once per appearance."""
+        try:
+            containers = await self._visible_locators(
+                MODAL_CONTAINER_SELECTOR
+            )
+            observed: set[str] = set()
+            for container in containers:
+                descriptor = await container.evaluate(
+                    """element => {
+                        const modal = element.tagName.toLowerCase() ===
+                            "modal-window"
+                            ? element
+                            : element.closest("modal-window");
+                        const owner = modal && modal.parentElement
+                            ? modal.parentElement.tagName.toLowerCase()
+                            : element.tagName.toLowerCase();
+                        const handlers = Array.from(
+                            element.querySelectorAll("button")
+                        ).map(button => button.getAttribute("ng-click") || "")
+                            .filter(Boolean).sort();
+                        return {
+                            owner,
+                            text: (element.textContent || "")
+                                .replace(/\\s+/g, " ").trim().slice(0, 240),
+                            handlers,
+                        };
+                    }"""
+                )
+                owner = str(descriptor.get("owner", "")).casefold()
+                if owner in _RECOGNIZED_MODAL_OWNERS:
+                    continue
+                fingerprint = "|".join(
+                    (
+                        owner or "<unknown-owner>",
+                        ",".join(descriptor.get("handlers", ())),
+                    )
+                )
+                observed.add(fingerprint)
+                if fingerprint in self._active_unknown_modals:
+                    continue
+                destination = await self._snapshot_dom_if_available(
+                    "unknown-modal"
+                )
+                LOGGER.error(
+                    "UNKNOWN MODAL: captured newly visible owner=%r text=%r "
+                    "handlers=%r snapshot=%s",
+                    owner,
+                    descriptor.get("text", ""),
+                    descriptor.get("handlers", ()),
+                    destination or "<snapshot unavailable>",
+                )
+            self._active_unknown_modals = observed
+        except Exception as error:
+            LOGGER.warning("unknown-modal inspection failed safely: %s", error)
+
+    async def _visible_locators(self, selector: str) -> list[Any]:
+        locator = self.page.locator(selector)
+        visible: list[Any] = []
+        for index in range(await locator.count()):
+            candidate = locator.nth(index)
+            if await candidate.is_visible():
+                visible.append(candidate)
+        return visible
+
+    async def _unresolved_undo_request(
+        self,
+        request: UndoRequest,
+        searched: list[str],
+        detail: str,
+    ) -> bool:
+        destination = await self._snapshot_dom_if_available(
+            (
+                "undo-auto-deny-unresolved-"
+                f"seat-{request.requester_seat}-decision-{request.decision_index}"
+            )
+        )
+        LOGGER.error(
+            "AUTO-DENY FAILED SAFELY: no undo control clicked for seat %d "
+            "decision %d; searched=%r; detail=%s; snapshot=%s; the server "
+            "request will be allowed to time out",
+            request.requester_seat,
+            request.decision_index,
+            searched,
+            detail,
+            destination or "<snapshot unavailable>",
+        )
+        return False
+
+    async def _snapshot_dom_if_available(self, label: str) -> str | None:
+        if self.snapshot_dom is None:
+            return None
+        try:
+            return str(await self.snapshot_dom(label))
+        except Exception as error:
+            LOGGER.error("DOM snapshot %r failed: %s", label, error)
+            return None
 
     async def act(
         self,

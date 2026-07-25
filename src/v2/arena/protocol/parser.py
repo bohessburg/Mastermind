@@ -28,9 +28,12 @@ from .events import (
     ResourceUpdate,
     Reveal,
     Shuffle,
+    TimeoutOffer,
     Topdeck,
     Trash,
     TurnStart,
+    UndoRequest,
+    UndoResolved,
     UnknownFrame,
     ZoneTransfer,
 )
@@ -215,6 +218,7 @@ RELEVANT_KEYS = frozenset(
     {
         (Direction.INBOUND, 32),
         (Direction.INBOUND, 33),
+        (Direction.INBOUND, 35),
         (Direction.INBOUND, 37),
         (Direction.OUTBOUND, 37),
     }
@@ -359,6 +363,8 @@ class ArenaParser:
             if frame.msg_type == 34:
                 self._parse_ticker(frame.payload)
                 return []
+            if frame.msg_type == 35:
+                return [self._parse_metagame_info(frame)]
             if frame.msg_type == 36:
                 Reader(frame.payload).finish()
                 return []
@@ -441,6 +447,39 @@ class ArenaParser:
             outbound=outbound,
             timestamp_ms=frame.timestamp_ms,
         )
+
+    def _parse_metagame_info(self, frame: DecodedFrame) -> GameEvent:
+        """Decode server message 35 from client bundle 2.2.8.
+
+        Its payload is ``[kind:u32][player:s32][decision:s32]``.  The kind
+        ordinal follows the bundle's processor table: undo request, timeout
+        offer, undo denied, and undo cancelled.
+        """
+        reader = Reader(frame.payload)
+        kind = reader.u32()
+        player_seat = reader.s32()
+        decision_index = reader.s32()
+        reader.finish()
+        if kind == 0:
+            return UndoRequest(
+                requester_seat=player_seat,
+                decision_index=decision_index,
+                timestamp_ms=frame.timestamp_ms,
+            )
+        if kind == 1:
+            return TimeoutOffer(
+                player_seat=player_seat,
+                decision_index=decision_index,
+                timestamp_ms=frame.timestamp_ms,
+            )
+        if kind in (2, 3):
+            return UndoResolved(
+                resolution="denied" if kind == 2 else "cancelled",
+                actor_seat=player_seat,
+                decision_index=decision_index,
+                timestamp_ms=frame.timestamp_ms,
+            )
+        raise ProtocolError(f"unknown metagame-info type {kind}")
 
     def _parse_full_state(
         self,

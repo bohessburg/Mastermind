@@ -22,6 +22,7 @@ def test_default_arena_config_loads_credentials_only_from_environment() -> None:
     assert config.arena_pass == "secret"
     assert config.lobby.max_games_per_session == 5
     assert config.lobby.searching_timeout_seconds == 180.0
+    assert config.undo.auto_deny is True
 
 
 def test_arena_config_rejects_invalid_pacing(tmp_path: Path) -> None:
@@ -56,3 +57,23 @@ def test_arena_config_accepts_unlimited_lobby_sessions_and_rejects_timeouts(
     )
     with pytest.raises(ValueError, match="leaving timeout"):
         ArenaConfig.load(invalid, environ={})
+
+
+def test_arena_config_allows_only_boolean_true_undo_auto_deny(
+    tmp_path: Path,
+) -> None:
+    disabled = tmp_path / "disabled.json"
+    disabled.write_text(
+        json.dumps({"undo": {"auto_deny": False}}),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="undo.auto_deny must be true"):
+        ArenaConfig.load(disabled, environ={})
+
+    not_boolean = tmp_path / "not-boolean.json"
+    not_boolean.write_text(
+        json.dumps({"undo": {"auto_deny": "true"}}),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="'auto_deny' must be a boolean"):
+        ArenaConfig.load(not_boolean, environ={})

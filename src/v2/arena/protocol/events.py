@@ -225,6 +225,41 @@ class DecisionResolved(GameEvent):
     auto_played: bool
 
 
+@dataclass(frozen=True, kw_only=True)
+class UndoRequest(GameEvent):
+    """One player asked to rewind to a prior decision."""
+
+    requester_seat: int
+    decision_index: int
+
+
+@dataclass(frozen=True, kw_only=True)
+class UndoResolved(GameEvent):
+    """The pending undo was denied or cancelled without rewinding."""
+
+    resolution: str
+    actor_seat: int
+    decision_index: int
+
+
+@dataclass(frozen=True, kw_only=True)
+class TimeoutOffer(GameEvent):
+    """One player became eligible for a metagame timeout request."""
+
+    player_seat: int
+    decision_index: int
+
+
+@dataclass(frozen=True, kw_only=True)
+class UndoResync(GameEvent):
+    """Runtime evidence that a post-undo FullState reseeded the tracker."""
+
+    game_id: int
+    requester_seat: int
+    decision_index: int
+    reason: str
+
+
 @dataclass(frozen=True)
 class ResourceUpdate(GameEvent):
     seat: int | None

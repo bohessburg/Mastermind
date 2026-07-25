@@ -92,6 +92,7 @@ async def _run_dry(config: ArenaConfig) -> int:
             # multi-minute test without exercising additional behavior.
             think_time_min_seconds=0.0,
             think_time_max_seconds=0.0,
+            auto_deny_undo=config.undo.auto_deny,
         )
     finally:
         await producer
@@ -141,6 +142,7 @@ async def _run_live(
 
     session = ArenaSession()
     event_pump: asyncio.Task[None] | None = None
+    modal_monitor: asyncio.Task[None] | None = None
     try:
         await session.start()
         assert session.run_dir is not None
@@ -191,6 +193,10 @@ async def _run_live(
             session.page,
             snapshot_dom=session.snapshot_dom,
         )
+        modal_monitor = asyncio.create_task(
+            _monitor_modals(actuator),
+            name="arena-modal-monitor",
+        )
         await lobby.queue_next_game()
 
         completed_games = 0
@@ -207,6 +213,7 @@ async def _run_live(
                         resign_hook=resign,
                         archive_factory=archive_factory,
                         max_games=1,
+                        auto_deny_undo=config.undo.auto_deny,
                     ),
                     timeout=config.lobby.in_game_timeout_seconds,
                 )
@@ -248,10 +255,24 @@ async def _run_live(
         await asyncio.Event().wait()
         return 1
     finally:
+        if modal_monitor is not None:
+            modal_monitor.cancel()
+            await asyncio.gather(modal_monitor, return_exceptions=True)
         if event_pump is not None:
             event_pump.cancel()
             await asyncio.gather(event_pump, return_exceptions=True)
         await session.stop()
+
+
+async def _monitor_modals(
+    actuator: PlaywrightActuator,
+    *,
+    poll_seconds: float = 0.25,
+) -> None:
+    """Continuously archive novel modal markup without blocking game play."""
+    while True:
+        await actuator.inspect_unknown_modals()
+        await asyncio.sleep(poll_seconds)
 
 
 async def _pump_session_events(

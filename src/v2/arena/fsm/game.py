@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import logging
 import random
 from collections import Counter
 from collections.abc import AsyncIterable, AsyncIterator, Iterable
@@ -45,6 +46,8 @@ from ..protocol.events import (
     Reveal,
     Shuffle,
     Topdeck,
+    UndoRequest,
+    UndoResync,
     UnknownFrame,
     ZoneTransfer,
 )
@@ -55,6 +58,9 @@ from ..shadow.tracker import (
     TrackerError,
     TrackerSnapshot,
 )
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -104,6 +110,7 @@ class GameRunResult:
     decisions: int
     validations: int
     rigged_steps: int
+    undo_resyncs: int
     reason: str
     divergence_report: DivergenceReport | None = None
 
@@ -115,6 +122,7 @@ class _ActiveGame:
     decisions: int = 0
     validations: int = 0
     rigged_steps: int = 0
+    undo_resyncs: int = 0
     shadow: Any | None = None
     shadow_turn: tuple[int | None, int | None] | None = None
     turn_start_snapshot: TrackerSnapshot | None = None
@@ -176,6 +184,9 @@ class RecordedDecisionProvider:
     def plan_for_frame(self, frame_index: int) -> DecisionPlan | None:
         """Inspect one offline plan without running the async loop."""
         return self._plans.get(frame_index)
+
+    def reset_after_resync(self) -> None:
+        """Recorded plans carry no mutable interpreter state."""
 
     def _build_plans(self) -> dict[int, DecisionPlan]:
         plans: dict[int, DecisionPlan] = {}
@@ -477,6 +488,11 @@ class BotDecisionProvider:
             raise BridgeError(f"policy returned illegal action {action}")
         return action
 
+    def reset_after_resync(self) -> None:
+        """Discard multi-question state derived from the pre-undo shadow."""
+        self._sentry = None
+        self._deferred_buy = None
+
 
 class NNMCTSDecisionProvider(BotDecisionProvider):
     """The production provider backed by the shared P4 NN-MCTS service."""
@@ -518,6 +534,7 @@ async def run_game_loop(
     resign_hook: Callable[[], object | Awaitable[object]] | None = None,
     archive_factory: Callable[[int | None], GameArchive] | None = None,
     max_games: int | None = None,
+    auto_deny_undo: bool = True,
 ) -> tuple[GameRunResult, ...]:
     """Consume normalized events and play until every observed game ends.
 
@@ -530,6 +547,8 @@ async def run_game_loop(
         raise ValueError("maximum think time must be at least the minimum")
     if max_games is not None and max_games <= 0:
         raise ValueError("max_games must be positive or null")
+    if not auto_deny_undo:
+        raise ValueError("undo auto-deny is the only supported arena behavior")
     rng = random_source or random.Random()
     tracker = Tracker()
     active: _ActiveGame | None = None
@@ -596,6 +615,7 @@ async def run_game_loop(
     async for frame_index, event in _indexed_events(events):
         try:
             tracker.consume(event)
+            undo_resync = tracker.last_undo_resync
             if active is not None:
                 active.pending_events.append(event)
                 if active.archive is not None:
@@ -611,6 +631,46 @@ async def run_game_loop(
                         event,
                         frame_index=frame_index,
                     )
+
+            if undo_resync is not None:
+                if active is None:
+                    raise TrackerError(
+                        "undo FullState resync occurred without an active game"
+                    )
+                active.shadow = None
+                active.shadow_turn = None
+                active.turn_start_snapshot = None
+                active.turn_history.clear()
+                active.pending = None
+                active.pending_snapshot = None
+                active.pending_plan = None
+                active.pending_events.clear()
+                active.undo_resyncs += 1
+                reset_provider = getattr(
+                    decision_provider,
+                    "reset_after_resync",
+                    None,
+                )
+                if reset_provider is not None:
+                    await _maybe_await(reset_provider())
+                marker = UndoResync(
+                    game_id=undo_resync.game_id,
+                    requester_seat=undo_resync.requester_seat,
+                    decision_index=undo_resync.decision_index,
+                    reason="mismatching FullState after recent undo signal",
+                    timestamp_ms=undo_resync.full_state_timestamp_ms,
+                )
+                if active.archive is not None:
+                    active.archive.append_event(frame_index, marker)
+                LOGGER.critical(
+                    "UNDO RESYNC: authoritative FullState reseeded game %d "
+                    "after seat %d requested decision %d; invalidated the "
+                    "mid-turn shadow and pending actuation",
+                    undo_resync.game_id,
+                    undo_resync.requester_seat,
+                    undo_resync.decision_index,
+                )
+                continue
 
             if isinstance(event, GameStart):
                 if active is None or active.game_id != event.game_id:
@@ -631,6 +691,23 @@ async def run_game_loop(
                 continue
 
             if active is None:
+                continue
+
+            if isinstance(event, UndoRequest):
+                snapshot = tracker.snapshot()
+                if (
+                    snapshot.our_seat is not None
+                    and event.requester_seat != snapshot.our_seat
+                ):
+                    denied = await actuator.deny_undo_request(event)
+                    if not denied:
+                        LOGGER.error(
+                            "AUTO-DENY did not click a control for opponent "
+                            "seat %d decision %d; continuing safely while the "
+                            "server request times out",
+                            event.requester_seat,
+                            event.decision_index,
+                        )
                 continue
 
             if (
@@ -689,6 +766,7 @@ async def run_game_loop(
                     decisions=active.decisions,
                     validations=active.validations,
                     rigged_steps=active.rigged_steps,
+                    undo_resyncs=active.undo_resyncs,
                     reason=event.reason,
                 )
                 _finish_archive(active, result)
@@ -926,6 +1004,7 @@ async def run_game_loop(
                 decisions=active.decisions,
                 validations=active.validations,
                 rigged_steps=active.rigged_steps,
+                undo_resyncs=active.undo_resyncs,
                 reason=str(error),
                 divergence_report=report,
             )
