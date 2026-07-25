@@ -6,13 +6,19 @@ dominion.games. The account is disclosed as a bot and permission for the
 experiment has been granted; games are restricted to base set via the site's
 game-selector filter.
 
-Status: P0–P4 complete and tested (2026-07-24): recording harness, feed
-decoder/parser (100% decode coverage over a 3-game recording), public-info
-tracker (golden-reconciled against every full-state), StateBuilder + bindings
-+ bridge (930 recorded decision points build valid games; 529 taken actions
-confirmed legal), and the shared decision service. Next: P5 (actuator +
-supervised game loop). See "P1 protocol findings" below. Recordings land
-under `arena-recordings/` (gitignored).
+Status: **all phases complete (2026-07-25); the bot plays live unattended.**
+P0–P4 built the recording harness, feed decoder, public-info tracker,
+StateBuilder, and shared decision service; P5–P6 added the actuator, in-game
+loop, and full lobby automation. First overnight run: 21 completed games
+against humans (6W–14L–1T).
+
+Two design decisions below were revised by live experience: game answers are
+now sent as the client's own protocol message rather than DOM clicks
+(decision 3), and the Hetzner deployment was dropped in favour of local
+overnight runs. To run it, see `docs/arena-usage.md`; for build history and
+the live failure classes, see `docs/arena-progress.md`. Recordings land under
+`arena-recordings/` and live archives under `exports/arena/` (both
+gitignored).
 
 ## Design decisions (settled)
 

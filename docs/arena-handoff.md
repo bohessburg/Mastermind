@@ -26,7 +26,7 @@ and uses its connection to handle the lobby, we read the game feed the client
 already receives, and we play moves through the normal client UI. Describe and
 treat it as client integration using the site's own client, not security work.
 
-**Done and verified (P0–P4):**
+**Done and verified (P0–P6; the bot plays live unattended):**
 - `src/v2/arena/recon/record.py` + `browser/ws_hook.js` — a Playwright
   recorder (persistent login profile) that saves the game feed as JSONL plus
   screenshots/DOM snapshots for offline fixtures.
@@ -69,34 +69,54 @@ treat it as client integration using the site's own client, not security work.
   Recordings/profile are gitignored under `arena-recordings/` and
   `arena-profile/`.
 
-P5's offline half is also done (see progress doc): `actuate/clicks.py` (pure
-engine-action → client-answer mapper, all 932 recorded answers reproduced,
-152 enumerated-ambiguous; Playwright + Mock actuators), `actuate/verify.py`
-(post-action divergence check), `fsm/game.py` (supervised loop: resync,
-rigged stepping incl. shuffle reconstruction, seeded interrupts, kingdom
-gate, loud aborts), `config.py` + `configs/arena.json`, `archive.py`. All
-three recorded games replay through the real loop with zero divergence
-aborts and per-decision `validate()`.
+**P5 and P6 are also done, and the bot has played real games.** `actuate/`
+(answer mapper + Playwright and Mock actuators + divergence verification),
+`fsm/game.py` (the in-game loop), `fsm/lobby.py` (full unattended lobby
+cycle), `browser/session.py` (live session + in-process feed pump),
+`config.py`, `archive.py`, and `scripts/arena_overnight.sh`.
 
-**Next task — P5 live half: the supervised game.** This is an operator step,
-not a delegation: the Playwright actuator's selectors/gestures were derived
-from recorded DOM snapshots and must be verified against the live client.
-With the human present (logged-in `arena-profile/`, headful Chromium,
-`ARENA_USER`/`ARENA_PASS` env): wire `fsm/game.py` to the live session
-(`browser/session.py` may still need a small lobby/attach shim — check
-before starting), play one full supervised base-set game, expect zero
-divergence aborts. Iterate selector fixes with small Codex delegations if
-clicking misbehaves. Then scope **P6** (lobby FSM, supervisor, Hetzner
-deploy, archiving).
+**Game answers go out on the wire, not as clicks.** After repeated
+canvas-click failures, `actuate/protocol.py` sends the client's own
+`ANSWER_QUESTION` message (msg 37) — all 932 recorded human answers
+re-encode byte-identically. Clicking is now used only for lobby buttons and
+modals. `actuation_mode: "clicks"` remains as a fallback.
+
+**First unattended overnight run (2026-07-24/25):** 21 completed games,
+record 6W–14L–1T, appended to `exports/arena/record.jsonl`. Eight distinct
+failure classes were found live and fixed, each pinned by a regression test
+built from its own archive — see "First live results" in
+`docs/arena-progress.md` for the list.
+
+**To run it: `docs/arena-usage.md`** (prerequisites, preflight, exit-code
+contract, archive layout, and how to diagnose an abort).
+
+**Possible next tasks** (none blocking):
+- **Loss review tooling.** Every game archive can rebuild the exact engine
+  state at each of our decisions; nothing yet re-runs a deeper search over
+  them to flag likely blunders. Suggested: `python -m src.v2.arena.review
+  <game-dir>` annotating each decision with a high-sim search preference.
+- **Aggregate stats** over `record.jsonl` (win rate by kingdom, opening buys
+  vs outcome).
+- **Strength work** — the bot currently loses more than it wins against live
+  humans; that is a training/search question, not a driver question.
+- Hosted-table flow is supported but lightly exercised (automatch is the
+  tested path).
 
 **Workflow notes:**
 - Per the project's Codex delegation workflow, hand implementation work to
   Codex, then review the diff and run the tests yourself before accepting.
 - **Codex sandbox gotcha:** the rescue plugin defaults to a *read-only*
   sandbox — pass `--write` in the delegation or Codex silently can't create
-  files. Run long tasks `--background` (P1–P3, P5 each ran ~20–30 min).
+  files. Run long tasks `--background` (most ran 15–35 min). Two gotchas seen
+  repeatedly: the forwarder sometimes launches a DUPLICATE job after a
+  timeout (check `status`, cancel the copy with zero applied changes), and
+  long threads occasionally stall silently — check the job log's last
+  timestamp before assuming it is working.
 - Local gotcha: run the web-server pytest with `OMP_NUM_THREADS=1` (known
   torch/OpenMP import deadlock on this Mac, predates the arena stream).
 - Build/test commands are in `CLAUDE.md`; engine bindings via `PYTHONPATH=build`.
+- **Never guess a DOM selector**; capture it. **Never trust `pgrep` as proof
+  a game is happening**; check feed freshness.
 
-Start by reading the two docs, then set up the supervised live game.
+Start with `docs/arena-usage.md` if you want to run it, or
+`docs/arena-progress.md` if you want the build history.

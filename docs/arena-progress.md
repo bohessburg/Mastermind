@@ -720,8 +720,39 @@ session close its persistent browser context before process exit.
   launches the process under `caffeinate -is`; restart looping remains the
   responsibility of the outer orchestrator.
 
-- **P6 — Lobby loop + supervisor + deploy.** Unattended base-set sessions
-  with archiving and recovery.
+- **P6 — Lobby loop + supervisor: complete for local overnight running
+  (2026-07-25).** `src/v2/arena/fsm/lobby.py` drives the full unattended
+  cycle — Start Search, automatch, the in-feed start handshake, game-ended
+  OK, Leave Table, requeue — with bounded re-search, search-engagement
+  verification, blocking-modal handling, an idle watchdog, and per-state
+  logging. `scripts/arena_overnight.sh` runs it under `caffeinate` with
+  unlimited games. Restart-on-exit is the orchestrator's job (exit-code
+  contract below). The planned Hetzner deployment was dropped: the operator
+  runs sessions locally overnight instead.
+
+## First live results (2026-07-24/25)
+
+The first unattended overnight session played real rated-off base-set games
+against humans. Running record is appended to `exports/arena/record.jsonl`;
+after the first night it stood at 6W–14L–1T over 21 completed games.
+
+Every live abort during that night became a permanent regression test built
+from its own archive. The failure classes found and closed, in order:
+
+1. Off-distribution buy decisions (collapse-trained checkpoint asked to act
+   with unplayed treasures) — fixed by collapsing treasures before search.
+2. Click-region confusion (buy pile vs hand card vs autoplay control).
+3. Stacked-hand prompts (duplicate cards share one stack; confirm button).
+4. Mode-question over-batching (Library re-presents an identical signature).
+5. Encoding equivalence (duplicate copies: server's answer differs from ours
+   but means the same move) — verifier now accepts the enumerated set.
+6. Click timing/occlusion on multi-select prompts — ultimately retired
+   wholesale by switching game answers to the protocol path (see above).
+7. Lobby: cold-start render, the in-feed start handshake (the "Start game"
+   prompt is a feed question, not a lobby button), reconnect-limit modal,
+   custom-element visibility, silent re-search loop, idle hang.
+8. Cross-game state leak (deferred buy surviving a game that ended during
+   think-time).
 
 ## How to reproduce P1 results
 
@@ -740,8 +771,12 @@ session close its persistent browser context before process exit.
 - Card and pile identities in the feed are numeric; the mapping to names is
   generated from the client's published card table (documented in
   `cards.py`) and regenerated when the client version changes.
-- Committed on branch `v2-phase1`: P0–P2 (`a2780de`), P4 (`a450bd3`), P3
-  follows.
+- All arena work is committed on branch `v2-phase1`. Operator instructions
+  for running live sessions are in `docs/arena-usage.md`.
+- Per-game archives (`exports/arena/<session>/<ts>-game-<id>/`) keep
+  `frames.jsonl`, `events.jsonl`, `decisions.jsonl`, and `result.json`; each
+  is a replayable fixture, and past incidents are cited as test evidence by
+  path. Do not delete `exports/arena/` runs referenced by tests.
 - The web-server pytest suite intermittently deadlocks on this Mac inside
   torch's OpenMP threads at import (predates the arena stream; hung runs from
   July 10/14 observed). Workaround: `OMP_NUM_THREADS=1` when running
