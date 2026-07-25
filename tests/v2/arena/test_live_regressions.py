@@ -718,6 +718,7 @@ def test_choose_mode_provider_stops_before_an_identical_next_prompt() -> None:
             (
                 int(dz.A_SELECT_BASE + dz.def_id("Copper")),
                 int(dz.A_SELECT_BASE + dz.def_id("Estate")),
+                int(dz.A_SELECT_BASE + dz.def_id("Silver")),
             ),
         ),
         (
@@ -1187,44 +1188,15 @@ def test_live_militia_and_reference_moat_have_executable_click_plans() -> None:
     )
     targets = gesture_click_targets(gesture, militia, militia.offered)
 
-    assert gesture.answer_indices == (2, 0, 1)
+    assert gesture.answer_indices == (3, 4)
     assert gesture.click_button
     assert [
         (target.region, target.identity, target.offered_index)
         for target in targets
     ] == [
-        ("hand", "Gold", 2),
-        ("hand", "Copper", 0),
-        ("hand", "Copper", 1),
+        ("hand", "Copper", 3),
+        ("hand", "Militia", 4),
         ("submit-button", "MILITIA", -1),
-    ]
-
-    three_coppers = replace(
-        militia,
-        offered=("Copper", "Copper", "Copper"),
-        minimum=3,
-        maximum=3,
-    )
-    copper_gesture = asyncio.run(
-        MockActuator(replay=True).act(
-            copper,
-            three_coppers,
-            three_coppers.offered,
-            prior_actions=(copper, copper),
-        )
-    )
-    assert [
-        (target.region, target.identity)
-        for target in gesture_click_targets(
-            copper_gesture,
-            three_coppers,
-            three_coppers.offered,
-        )
-    ] == [
-        ("hand", "Copper"),
-        ("hand", "Copper"),
-        ("hand", "Copper"),
-        ("submit-button", "MILITIA"),
     ]
 
     if not REFERENCE_RECORDING.is_file():
@@ -1273,7 +1245,7 @@ def test_live_game_2_replays_through_militia_question_55() -> None:
     resolved = DecisionResolved(
         timestamp_ms=question.timestamp_ms + 1,
         question_index=question.question_index,
-        answers=(2, 0, 1),
+        answers=(3, 4),
         seat=1,
         auto_played=False,
     )
@@ -1290,7 +1262,7 @@ def test_live_game_2_replays_through_militia_question_55() -> None:
 
     assert not any(result.divergence_aborted for result in results)
     assert actuator.gestures[-1].question_index == 55
-    assert actuator.gestures[-1].answer_indices == (2, 0, 1)
+    assert actuator.gestures[-1].answer_indices == (3, 4)
     assert actuator.gestures[-1].click_button
 
 
@@ -1502,10 +1474,10 @@ def test_actuation_error_reports_offered_targets_and_failed_step() -> None:
         )
 
     message = str(caught.value)
-    assert "gesture (2, 0, 1)" in message
+    assert "gesture (3, 4)" in message
     assert f"offered={decision.offered!r}" in message
     assert "resolved_targets=" in message
-    assert "step=1/4" in message
-    assert "target=DOMClickTarget(region='hand', identity='Gold'" in message
+    assert "step=1/3" in message
+    assert "target=DOMClickTarget(region='hand', identity='Copper'" in message
     assert "status=not-found" in message
     assert "found=0" in message

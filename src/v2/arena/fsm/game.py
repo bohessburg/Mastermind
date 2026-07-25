@@ -1118,6 +1118,31 @@ async def run_game_loop(
                     question_index=question_index,
                 )
 
+            if (
+                isinstance(event, UnknownFrame)
+                and event.direction == "in"
+                and event.msg_type == 1
+            ):
+                pending = active.pending
+                if pending is None:
+                    raise DivergenceError(
+                        "unrecognized inbound server rejection/error without "
+                        "a pending submitted answer: "
+                        f"sequence={event.sequence} raw={event.raw.hex()} "
+                        f"reason={event.reason or 'unknown parser failure'}",
+                        frame_index=frame_index,
+                    )
+                raise DivergenceError(
+                    "server rejected submitted answer: "
+                    f"question={pending.decision.question_index} "
+                    f"answers={pending.gesture.answer_indices} "
+                    f"sequence={event.sequence} raw={event.raw.hex()} "
+                    f"reason={event.reason or 'unknown parser failure'}",
+                    frame_index=frame_index,
+                    question_index=pending.decision.question_index,
+                    intended=pending.gesture.answer_indices,
+                )
+
             if isinstance(event, Reconnect):
                 active.shadow = None
                 active.shadow_turn = None
@@ -1735,6 +1760,22 @@ def _recorded_plan(
                     + dz.def_id(offered_name(decision.offered[answers[1]]))
                 ),
             )
+    elif question == "MILITIA":
+        discarded = set(answers)
+        if len(discarded) != len(answers) or any(
+            not 0 <= answer < len(decision.offered) for answer in answers
+        ):
+            raise ValueError(
+                f"invalid recorded Militia discard answer {answers}"
+            )
+        actions = tuple(
+            int(
+                dz.A_SELECT_BASE
+                + dz.def_id(offered_name(value))
+            )
+            for index, value in enumerate(decision.offered)
+            if index not in discarded
+        )
     elif question == "SENTRY_TOPDECK":
         actions = (
             int(

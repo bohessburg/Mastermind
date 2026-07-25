@@ -166,20 +166,21 @@ def test_militia_question_50_is_one_protocol_frame_without_dom_actuation() -> No
     fake_session = _FakeSession()
     actuator = ProtocolActuator(fake_session.send_frame)
     copper = int(dz.A_SELECT_BASE + dz.def_id("Copper"))
+    silver = int(dz.A_SELECT_BASE + dz.def_id("Silver"))
 
     gesture = asyncio.run(
         actuator.act(
-            copper,
+            silver,
             _snapshot(question),
             question.offered,
-            prior_actions=(copper,),
+            prior_actions=(copper, silver),
         )
     )
 
-    assert gesture.answer_indices == (0, 3)
+    assert gesture.answer_indices == (3, 4)
     assert fake_session.sent == [
         Writer()
         .u32(ANSWER_QUESTION)
-        .bytes(encode_answer(50, (0, 3), auto_played=False))
+        .bytes(encode_answer(50, (3, 4), auto_played=False))
         .build()
     ]

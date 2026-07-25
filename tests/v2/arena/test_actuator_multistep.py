@@ -293,7 +293,7 @@ class _RerenderingPage:
         self.remaining[node.identity] -= 1
         self.selected[node.identity] = self.selected.get(node.identity, 0) + 1
         self.cooldowns[node.identity] = 1
-        if sum(self.selected.values()) == 3:
+        if sum(self.selected.values()) == 2:
             self.button_enabled = False
             self.button_cooldown = 1
         self._render()
@@ -368,6 +368,7 @@ def _militia_decision() -> PendingDecisionSnapshot:
 def _run_militia(page: _RerenderingPage) -> None:
     copper = int(dz.A_SELECT_BASE + dz.def_id("Copper"))
     estate = int(dz.A_SELECT_BASE + dz.def_id("Estate"))
+    silver = int(dz.A_SELECT_BASE + dz.def_id("Silver"))
     decision = _militia_decision()
     asyncio.run(
         PlaywrightActuator(
@@ -378,7 +379,7 @@ def _run_militia(page: _RerenderingPage) -> None:
             copper,
             decision,
             decision.offered,
-            prior_actions=(estate, copper),
+            prior_actions=(estate, silver),
         )
     )
 
@@ -389,12 +390,11 @@ def test_multiselect_uses_exposed_lower_point_then_confirms() -> None:
     _run_militia(page)
 
     assert [(kind, identity) for kind, identity, _ in page.clicks] == [
-        ("card", "Estate"),
         ("card", "Copper"),
         ("card", "Copper"),
         ("button", "confirm"),
     ]
-    assert page.selected == {"Estate": 1, "Copper": 2}
+    assert page.selected == {"Copper": 2}
     assert page.polls >= 1
     assert page.card_positions[-1] == {"x": 56.0, "y": 164.0}
     assert page.intercepted_positions == [{"x": 56.0, "y": 164.0}]
@@ -408,14 +408,13 @@ def test_multiselect_reports_every_covering_hit_when_no_point_is_exposed() -> No
         _run_militia(page)
 
     message = str(caught.value)
-    assert "step=3/4" in message
+    assert "step=2/3" in message
     assert "no probed point hits an unselected target stack" in message
     assert "probed_points=" in message
     assert "label='center'" in message
     assert "label='bottom-center'" in message
     assert 'selection-cross stack="Copper" selected=true' in message
     assert [(kind, identity) for kind, identity, _ in page.clicks] == [
-        ("card", "Estate"),
         ("card", "Copper"),
     ]
 
@@ -427,13 +426,13 @@ def test_multiselect_retries_one_no_effect_click_then_fails_with_step() -> None:
         _run_militia(page)
 
     message = str(caught.value)
-    assert "step=1/4" in message
-    assert "target=DOMClickTarget(region='hand', identity='Estate'" in message
+    assert "step=1/3" in message
+    assert "target=DOMClickTarget(region='hand', identity='Copper'" in message
     assert "status=no-effect" in message
     assert "after one retry" in message
     assert [(kind, identity) for kind, identity, _ in page.clicks] == [
-        ("card", "Estate"),
-        ("card", "Estate"),
+        ("card", "Copper"),
+        ("card", "Copper"),
     ]
 
 
@@ -472,32 +471,35 @@ def _archived_decision(
 
 
 @pytest.mark.parametrize(
-    ("path", "question_index", "labels", "answers"),
+    ("path", "question_index", "keep_labels", "answers", "discard_labels"),
     [
         (
             FIRST_ABORT,
             55,
             ("Gold", "Copper", "Copper"),
-            (2, 0, 1),
+            (3, 4),
+            ("Copper", "Militia"),
         ),
         (
             SECOND_ABORT,
             42,
             ("Estate", "Copper", "Copper"),
-            (4, 0, 1),
+            (2, 3),
+            ("Silver", "Copper"),
         ),
     ],
 )
-def test_archived_militia_aborts_keep_the_correct_four_step_plan(
+def test_archived_militia_keep_choices_produce_two_discard_targets(
     path: Path,
     question_index: int,
-    labels: tuple[str, str, str],
-    answers: tuple[int, int, int],
+    keep_labels: tuple[str, str, str],
+    answers: tuple[int, int],
+    discard_labels: tuple[str, str],
 ) -> None:
     decision = _archived_decision(path, question_index)
     actions = tuple(
         int(dz.A_SELECT_BASE + dz.def_id(label))
-        for label in labels
+        for label in keep_labels
     )
     gesture = asyncio.run(
         MockActuator(replay=True).act(
@@ -514,8 +516,7 @@ def test_archived_militia_aborts_keep_the_correct_four_step_plan(
         (target.region, target.identity)
         for target in targets
     ] == [
-        ("hand", labels[0]),
-        ("hand", labels[1]),
-        ("hand", labels[2]),
+        ("hand", discard_labels[0]),
+        ("hand", discard_labels[1]),
         ("submit-button", "MILITIA"),
     ]

@@ -250,6 +250,9 @@ def possible_answer_indices(
         indices = _card_assignments(actions_tuple, offered, region="select")
         return _unique((1, index_tuple[0], 0) for index_tuple in indices)
 
+    if question == "MILITIA":
+        return _militia_discard_answers(actions_tuple, decision, offered)
+
     if question in {"SENTRY_TRASH", "SENTRY_DISCARD"} and all(
         _action_region(action) == "option" for action in actions_tuple
     ):
@@ -1757,6 +1760,50 @@ def _card_assignments(
     if not assignments:
         raise ActionMappingError("card actions reuse an unavailable offered copy")
     return _unique(assignments)
+
+
+def _militia_discard_answers(
+    actions: tuple[int, ...],
+    decision: PendingDecisionSnapshot,
+    offered: tuple[str, ...],
+) -> tuple[tuple[int, ...], ...]:
+    """Translate native Militia *keep* choices to client discard indices.
+
+    ``DiscardDownTo`` deliberately exposes the cards that remain in hand to
+    the engine: an organic Militia frame selects three cards to keep, then the
+    interpreter discards every other card.  dominion.games asks for the
+    complement instead.  Treating the native selections as direct client
+    selections therefore submits three discards from a five-card hand.
+    """
+    if decision.decision_type != "DISCARD":
+        raise ActionMappingError(
+            "MILITIA must be a DISCARD client question, got "
+            f"{decision.decision_type!r}"
+        )
+    if decision.minimum != decision.maximum:
+        raise ActionMappingError(
+            "MILITIA must require one exact discard count, got "
+            f"{decision.minimum}..{decision.maximum}"
+        )
+    discard_count = decision.minimum
+    if not 0 <= discard_count <= len(offered):
+        raise ActionMappingError(
+            "MILITIA discard count is outside its offered hand: "
+            f"count={discard_count} offered={len(offered)}"
+        )
+    keep_count = len(offered) - discard_count
+    if len(actions) != keep_count:
+        raise ActionMappingError(
+            "MILITIA native frame selects cards to keep: expected "
+            f"{keep_count} keep actions for {discard_count} discards, got "
+            f"{len(actions)}"
+        )
+
+    keep_assignments = _card_assignments(actions, offered, region="select")
+    return _unique(
+        tuple(index for index in range(len(offered)) if index not in kept)
+        for kept in keep_assignments
+    )
 
 
 def _offered_def(value: str) -> int | None:

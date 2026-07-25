@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from pathlib import Path
 from typing import Any, AsyncIterator
 
 import pytest
@@ -14,7 +13,7 @@ from src.v2.arena.actuate.clicks import (
     PlaywrightActuator,
 )
 from src.v2.arena.actuate.protocol import ProtocolActuator
-from src.v2.arena.fsm.game import RecordedDecisionProvider, run_game_loop
+from src.v2.arena.fsm.game import run_game_loop
 from src.v2.arena.protocol.events import (
     DecisionResolved,
     GameEnd,
@@ -29,14 +28,6 @@ from src.v2.arena.protocol.messages import (
     encode_timeout_request,
 )
 from src.v2.arena.protocol.parser import ArenaParser
-from src.v2.arena.protocol.recording import parse_recording
-
-
-PARKED_ARCHIVE = Path(
-    "exports/arena/20260725T014909.665607Z/frames.jsonl"
-)
-
-
 class _NoDecisions:
     async def plan(self, **_: Any) -> None:
         raise AssertionError("timeout fixtures do not contain local questions")
@@ -227,28 +218,33 @@ def test_click_actuator_uses_exact_timeout_claim_control() -> None:
     assert button.clicked
 
 
-def test_parked_archive_claims_thirty_seconds_after_timeout_offer() -> None:
-    if not PARKED_ARCHIVE.is_file():
-        pytest.skip(f"missing parked timeout fixture: {PARKED_ARCHIVE}")
-    events = parse_recording(PARKED_ARCHIVE).events
+def test_parked_async_stream_claims_thirty_seconds_after_timeout_offer() -> None:
     clock = _FakeClock()
     session = _FakeSession(clock)
     offer_seen_at: list[float] = []
 
     async def parked_events() -> AsyncIterator[GameEvent]:
-        for event in events:
-            yield event
-            if isinstance(event, TimeoutOffer):
-                # Resume only after the loop has retained the offer and armed
-                # its grace deadline.
-                offer_seen_at.append(clock())
+        yield _start()
+        yield TimeoutOffer(
+            player_seat=1,
+            decision_index=32,
+            timestamp_ms=2_000,
+        )
+        # Resume only after the loop has retained the offer and armed its
+        # grace deadline.
+        offer_seen_at.append(clock())
         await session.claimed.wait()
+        yield GameEnd(
+            game_id=999,
+            reason="timeout-claimed",
+            timestamp_ms=32_000,
+        )
 
     results = asyncio.run(
         run_game_loop(
             parked_events(),
             actuator=ProtocolActuator(session.send_frame),
-            decision_provider=RecordedDecisionProvider(events),
+            decision_provider=_NoDecisions(),
             timeout_offer_grace_seconds=30.0,
             clock=clock,
             sleep=clock.sleep,
@@ -256,7 +252,8 @@ def test_parked_archive_claims_thirty_seconds_after_timeout_offer() -> None:
         )
     )
 
-    assert len(results) == 8
+    assert len(results) == 1
+    assert results[0].completed
     assert len(offer_seen_at) == 1
     assert session.claimed_at is not None
     assert session.claimed_at - offer_seen_at[0] == pytest.approx(30.0)
