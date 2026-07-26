@@ -17,7 +17,7 @@ import time
 import warnings
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import torch
 
@@ -1144,6 +1144,7 @@ def run_seat_swapped_match(
     games: int,
     seed: int,
     device: torch.device,
+    progress_callback: Callable[[int, int, int], None] | None = None,
 ) -> SeatSwappedMatch:
     """Run a deterministic, seat-swapped NN-MCTS match.
 
@@ -1167,18 +1168,38 @@ def run_seat_swapped_match(
     records: list[dict[str, Any]] = []
     a_players: list[int] = []
     start = time.perf_counter()
+    progress_wins = progress_losses = progress_ties = 0
     for count, a_player, seat_models, offset in (
         (first_half, 0, (model_a, model_b), 0),
         (second_half, 1, (model_b, model_a), 1),
     ):
         if count == 0:
             continue
+
+        def report_finished(completed: list[dict[str, Any]]) -> None:
+            nonlocal progress_wins, progress_losses, progress_ties
+            if progress_callback is None:
+                return
+            for record in completed:
+                winner = record.get("winner")
+                if winner is None:
+                    progress_ties += 1
+                elif int(winner) == a_player:
+                    progress_wins += 1
+                else:
+                    progress_losses += 1
+                progress_callback(progress_wins, progress_losses, progress_ties)
+
+        route_kwargs: dict[str, Any] = {}
+        if progress_callback is not None:
+            route_kwargs["on_finished"] = report_finished
         _, completed = play_routed_games(
             seat_models,
             config,
             seed=int(seed) + (offset * 0x10001),
             device=device,
             target_games=count,
+            **route_kwargs,
         )
         for record in completed:
             winner = record.get("winner")

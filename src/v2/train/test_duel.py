@@ -12,6 +12,24 @@ V2_CHECKPOINT = ROOT / "checkpoints/remote/campaign15/gen_0045.pt"
 V3_CHECKPOINT = ROOT / "checkpoints/remote/campaign18/gen_0005.pt"
 
 
+def test_duel_progress_line_is_flushed_at_ten_game_cadence(capsys) -> None:
+    now = [10.0]
+    progress = duel._DuelProgress(20, clock=lambda: now[0])
+
+    progress.record(5, 4, 0)
+    assert capsys.readouterr().out == ""
+    now[0] = 12.0
+    progress.record(5, 4, 1)
+    first = capsys.readouterr().out
+    assert first == "10/20 games, a 5W-4L-1T, 18000 games/hr\n"
+
+    progress.record(6, 4, 1)
+    assert capsys.readouterr().out == ""
+    now[0] = 14.0
+    progress.record(10, 8, 2)
+    assert capsys.readouterr().out == "20/20 games, a 10W-8L-2T, 18000 games/hr\n"
+
+
 @pytest.mark.skipif(
     not V2_CHECKPOINT.exists() or not V3_CHECKPOINT.exists(),
     reason="mixed-version remote checkpoints are not available locally",

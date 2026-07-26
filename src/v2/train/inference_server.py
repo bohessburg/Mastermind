@@ -13,14 +13,18 @@ import copy
 import io
 import json
 import logging
+import math
 import multiprocessing as mp
+import os
 import queue
+import sys
 import time
 import traceback
 import uuid
 import warnings
+from collections import deque
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable
 
 import numpy as np
 import torch
@@ -33,8 +37,8 @@ except ImportError:  # pragma: no cover - supported CPython versions provide it
 import dominion_v2_py as dz
 
 from .config import TrainConfig
-from .model import build_model
-from .observation import obs_size_for_config
+from .model import build_model, model_config_dict
+from .observation import observations_for_model, obs_size_for_config, obs_size_for_version
 
 
 logger = logging.getLogger(__name__)
@@ -44,13 +48,28 @@ def _align(offset: int, alignment: int = 8) -> int:
     return (offset + alignment - 1) // alignment * alignment
 
 
-def _request_layout(spec: WorkerSharedMemorySpec) -> tuple[int, int, int, int]:
+def _request_layout(spec: WorkerSharedMemorySpec) -> tuple[int, int, int, int, int, int]:
     obs_bytes = spec.slots * spec.max_request * spec.obs_size * np.dtype(np.float32).itemsize
     masks_offset = obs_bytes
     masks_bytes = spec.slots * spec.max_request * spec.action_size * np.dtype(np.uint8).itemsize
     counts_offset = _align(masks_offset + masks_bytes, np.dtype(np.uint64).itemsize)
-    sequences_offset = _align(counts_offset + spec.slots * np.dtype(np.uint32).itemsize, np.dtype(np.uint64).itemsize)
-    return masks_offset, counts_offset, sequences_offset, sequences_offset + spec.slots * np.dtype(np.uint64).itemsize
+    model_ids_offset = counts_offset + spec.slots * np.dtype(np.uint32).itemsize
+    submitted_ns_offset = _align(
+        model_ids_offset + spec.slots * np.dtype(np.uint32).itemsize,
+        np.dtype(np.uint64).itemsize,
+    )
+    sequences_offset = _align(
+        submitted_ns_offset + spec.slots * np.dtype(np.uint64).itemsize,
+        np.dtype(np.uint64).itemsize,
+    )
+    return (
+        masks_offset,
+        counts_offset,
+        model_ids_offset,
+        submitted_ns_offset,
+        sequences_offset,
+        sequences_offset + spec.slots * np.dtype(np.uint64).itemsize,
+    )
 
 
 def _response_layout(spec: WorkerSharedMemorySpec) -> tuple[int, int, int]:
@@ -98,7 +117,14 @@ class WorkerSharedMemoryViews:
         self.spec = spec
         self.request_block = shared_memory.SharedMemory(name=spec.request_name)
         self.response_block = shared_memory.SharedMemory(name=spec.response_name)
-        request_masks_offset, request_counts_offset, request_sequences_offset, _ = _request_layout(spec)
+        (
+            request_masks_offset,
+            request_counts_offset,
+            request_model_ids_offset,
+            request_submitted_ns_offset,
+            request_sequences_offset,
+            _,
+        ) = _request_layout(spec)
         response_policies_offset, response_sequences_offset, _ = _response_layout(spec)
         self.request_obs = np.ndarray(
             (spec.slots, spec.max_request, spec.obs_size),
@@ -116,6 +142,18 @@ class WorkerSharedMemoryViews:
             dtype=np.uint32,
             buffer=self.request_block.buf,
             offset=request_counts_offset,
+        )
+        self.request_model_ids = np.ndarray(
+            (spec.slots,),
+            dtype=np.uint32,
+            buffer=self.request_block.buf,
+            offset=request_model_ids_offset,
+        )
+        self.request_submitted_ns = np.ndarray(
+            (spec.slots,),
+            dtype=np.uint64,
+            buffer=self.request_block.buf,
+            offset=request_submitted_ns_offset,
         )
         self.request_sequences = np.ndarray(
             (spec.slots,),
@@ -172,7 +210,7 @@ class SharedMemoryTransport:
         # leaving room for the request/response and worker suffixes.
         token = f"dz{uuid.uuid4().hex[:12]}"
         layout_spec = WorkerSharedMemorySpec("", "", slots, max_request, int(obs_size), dz.ACTION_SPACE_SIZE)
-        request_bytes = _request_layout(layout_spec)[3]
+        request_bytes = _request_layout(layout_spec)[5]
         response_bytes = _response_layout(layout_spec)[2]
         specs: list[WorkerSharedMemorySpec] = []
         blocks: list[Any] = []
@@ -250,6 +288,8 @@ class _Request:
     request_id: int
     slot: int | None
     count: int
+    model_id: int
+    submitted_at_s: float
     obs: np.ndarray
     masks: np.ndarray
 
@@ -277,6 +317,129 @@ class _GenerationMetrics:
             metrics["_server_total_evals"] = float(self.evals)
             metrics["_server_total_batches"] = float(self.batches)
         return metrics
+
+
+@dataclass(frozen=True)
+class _ReadyModel:
+    model_id: int
+    trigger: str
+
+
+class _PerModelRequestQueues:
+    """Persistent per-model accumulators with independent fire deadlines."""
+
+    def __init__(
+        self,
+        *,
+        worker_count: int,
+        target_rows: int,
+        max_batch: int,
+        coalesce_s: float,
+    ) -> None:
+        if worker_count <= 0:
+            raise ValueError("coalescing worker_count must be positive")
+        if target_rows <= 0 or max_batch <= 0:
+            raise ValueError("coalescing row limits must be positive")
+        if not math.isfinite(coalesce_s) or coalesce_s < 0.0:
+            raise ValueError("coalescing deadline must be finite and non-negative")
+        self.worker_count = int(worker_count)
+        self.target_rows = min(int(target_rows), int(max_batch))
+        self.max_batch = int(max_batch)
+        self.coalesce_s = float(coalesce_s)
+        self._requests: dict[int, deque[_Request]] = {}
+        self._rows: dict[int, int] = {}
+        self._worker_counts: dict[int, int] = {}
+
+    def add(self, request: _Request) -> None:
+        if request.count <= 0 or request.count > self.max_batch:
+            raise ValueError("inference request batch is outside server_max_batch")
+        self._requests.setdefault(request.model_id, deque()).append(request)
+        self._rows[request.model_id] = self._rows.get(request.model_id, 0) + request.count
+        self._worker_counts[request.worker_id] = self._worker_counts.get(request.worker_id, 0) + 1
+
+    def rows_for(self, model_id: int) -> int:
+        return self._rows.get(int(model_id), 0)
+
+    def request_count_for(self, model_id: int) -> int:
+        return len(self._requests.get(int(model_id), ()))
+
+    def has_requests(self) -> bool:
+        return bool(self._requests)
+
+    def _deadline(self, model_id: int) -> float:
+        requests = self._requests[model_id]
+        return min(request.submitted_at_s for request in requests) + self.coalesce_s
+
+    def ready_model(self, now: float) -> _ReadyModel | None:
+        """Select one fireable model, always preferring current model zero."""
+
+        all_workers_pending = len(self._worker_counts) >= self.worker_count
+        candidates: list[_ReadyModel] = []
+        for model_id in self._requests:
+            if self._rows[model_id] >= self.target_rows:
+                trigger = "fill_target"
+            elif float(now) >= self._deadline(model_id):
+                trigger = "deadline"
+            elif all_workers_pending:
+                trigger = "all_workers_pending"
+            else:
+                continue
+            candidates.append(_ReadyModel(model_id, trigger))
+        if not candidates:
+            return None
+        for candidate in candidates:
+            if candidate.model_id == 0:
+                return candidate
+        return min(candidates, key=lambda candidate: (self._deadline(candidate.model_id), candidate.model_id))
+
+    def seconds_until_deadline(self, now: float) -> float | None:
+        if not self._requests:
+            return None
+        return max(0.0, min(self._deadline(model_id) for model_id in self._requests) - float(now))
+
+    def take_batch(self, model_id: int) -> list[_Request]:
+        """Remove one request-aligned batch without splitting worker requests."""
+
+        model_id = int(model_id)
+        requests = self._requests.get(model_id)
+        if not requests:
+            raise ValueError("cannot take a batch for a model with no pending requests")
+        batch: list[_Request] = []
+        rows = 0
+        while requests:
+            request = requests[0]
+            if batch and rows + request.count > self.max_batch:
+                break
+            requests.popleft()
+            batch.append(request)
+            rows += request.count
+            remaining_for_worker = self._worker_counts[request.worker_id] - 1
+            if remaining_for_worker:
+                self._worker_counts[request.worker_id] = remaining_for_worker
+            else:
+                del self._worker_counts[request.worker_id]
+        self._rows[model_id] -= rows
+        if not requests:
+            del self._requests[model_id]
+            del self._rows[model_id]
+        return batch
+
+
+def _drain_during_flight(
+    in_flight: Any,
+    dequeue: Callable[[float], _Request],
+    accept: Callable[[_Request], None],
+    *,
+    poll_interval_s: float = 0.0005,
+) -> float:
+    """Drain request headers while an aggregate device result is pending."""
+
+    while not in_flight.ready():
+        try:
+            accept(dequeue(poll_interval_s))
+        except queue.Empty:
+            continue
+    return float(in_flight.finish())
 
 
 def _normalized_server_batch_buckets(buckets: list[int] | None) -> tuple[int, ...]:
@@ -349,6 +512,27 @@ def _maybe_compile_server_evaluator(
     return compile_server_evaluator(model)
 
 
+@dataclass
+class _InFlightForward:
+    """One aggregate result whose single device-to-host copy may still run."""
+
+    started_at_s: float
+    completion_event: Any | None
+    retained_tensors: tuple[Any, ...] = ()
+    _elapsed_s: float | None = None
+
+    def ready(self) -> bool:
+        return self.completion_event is None or bool(self.completion_event.query())
+
+    def finish(self) -> float:
+        if self._elapsed_s is None:
+            if self.completion_event is not None:
+                self.completion_event.synchronize()
+            self._elapsed_s = time.perf_counter() - self.started_at_s
+            self.retained_tensors = ()
+        return self._elapsed_s
+
+
 class _PinnedStaging:
     """Persistent host staging for a complete server batch and its responses."""
 
@@ -366,11 +550,21 @@ class _PinnedStaging:
         self.values_np = self.values.numpy()
         self.policies_np = self.policies.numpy()
 
-    def load_requests(self, requests: list[_Request]) -> int:
+    def load_requests(
+        self,
+        requests: list[_Request],
+        source_obs_version: int,
+        model_obs_version: int,
+    ) -> int:
         offset = 0
         for request in requests:
             end = offset + request.count
-            self.obs_np[offset:end] = request.obs
+            adapted_obs = observations_for_model(
+                request.obs,
+                source_obs_version,
+                model_obs_version,
+            )
+            self.obs_np[offset:end] = adapted_obs
             self.masks_np[offset:end] = request.masks
             offset = end
         return offset
@@ -380,6 +574,72 @@ class _PinnedStaging:
 
         self.obs[:count].zero_()
         self.masks[:count].zero_()
+
+    def launch(
+        self,
+        model: torch.nn.Module,
+        count: int,
+        use_fp16: bool,
+        *,
+        evaluator: torch.nn.Module | None = None,
+        use_bf16: bool = False,
+        batch_buckets: tuple[int, ...] | list[int] | None = None,
+    ) -> _InFlightForward:
+        forward_count = _bucketed_batch_size(count, batch_buckets)
+        if forward_count > self.obs.shape[0]:
+            raise ValueError("bucketed server batch exceeds staging capacity")
+        if forward_count > count:
+            # The zero legal mask is immaterial to real rows, and keeps the
+            # padded rows harmless for both architecture evaluation paths.
+            self.zero_inputs_slice(count, forward_count)
+        started_at_s = time.perf_counter()
+        if self.device.type == "cuda":
+            with torch.inference_mode():
+                obs = self.obs[:forward_count].to(self.device, non_blocking=True)
+                masks = self.masks[:forward_count].to(self.device, non_blocking=True)
+                if use_bf16:
+                    with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+                        if evaluator is None:
+                            policies, values = model.evaluate(obs, masks)
+                        else:
+                            policies, values = evaluator(obs, masks)
+                elif evaluator is None:
+                    # Keep the legacy CUDA eager path structurally unchanged
+                    # when every optional precision/compiler knob is disabled.
+                    with torch.autocast(device_type="cuda", dtype=torch.float16, enabled=use_fp16):
+                        policies, values = model.evaluate(obs, masks)
+                else:
+                    with torch.autocast(device_type="cuda", dtype=torch.float16, enabled=use_fp16):
+                        policies, values = evaluator(obs, masks)
+                real_values = values if forward_count == count else values[:count]
+                real_policies = policies if forward_count == count else policies[:count]
+                values_float = real_values.float()
+                policies_float = real_policies.float()
+                # Exactly one aggregate D2H copy per output tensor. The CUDA
+                # event is recorded after both copies, so host scatter cannot
+                # observe partially transferred response buffers.
+                self.values[:count].copy_(values_float, non_blocking=True)
+                self.policies[:count].copy_(policies_float, non_blocking=True)
+                completion = torch.cuda.Event(enable_timing=False)
+                completion.record(torch.cuda.current_stream(self.device))
+            return _InFlightForward(
+                started_at_s,
+                completion,
+                (obs, masks, policies, values, values_float, policies_float),
+            )
+        else:
+            with torch.inference_mode():
+                if evaluator is None:
+                    policies, values = model.evaluate(self.obs[:forward_count], self.masks[:forward_count])
+                else:
+                    policies, values = evaluator(self.obs[:forward_count], self.masks[:forward_count])
+                if forward_count == count:
+                    self.values[:count].copy_(values.float())
+                    self.policies[:count].copy_(policies.float())
+                else:
+                    self.values[:count].copy_(values[:count].float())
+                    self.policies[:count].copy_(policies[:count].float())
+            return _InFlightForward(started_at_s, None)
 
     def forward(
         self,
@@ -391,52 +651,16 @@ class _PinnedStaging:
         use_bf16: bool = False,
         batch_buckets: tuple[int, ...] | list[int] | None = None,
     ) -> float:
-        forward_count = _bucketed_batch_size(count, batch_buckets)
-        if forward_count > self.obs.shape[0]:
-            raise ValueError("bucketed server batch exceeds staging capacity")
-        if forward_count > count:
-            # The zero legal mask is immaterial to real rows, and keeps the
-            # padded rows harmless for both architecture evaluation paths.
-            self.zero_inputs_slice(count, forward_count)
-        start = time.perf_counter()
-        if self.device.type == "cuda":
-            obs = self.obs[:forward_count].to(self.device, non_blocking=True)
-            masks = self.masks[:forward_count].to(self.device, non_blocking=True)
-            if use_bf16:
-                with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
-                    if evaluator is None:
-                        policies, values = model.evaluate(obs, masks)
-                    else:
-                        policies, values = evaluator(obs, masks)
-            elif evaluator is None:
-                # Keep the legacy CUDA eager path structurally unchanged when
-                # every new server knob is disabled.
-                with torch.autocast(device_type="cuda", dtype=torch.float16, enabled=use_fp16):
-                    policies, values = model.evaluate(obs, masks)
-            else:
-                with torch.autocast(device_type="cuda", dtype=torch.float16, enabled=use_fp16):
-                    policies, values = evaluator(obs, masks)
-            # Persistent pinned response tensors receive each aggregate output
-            # once; individual worker slices are then copied into their rings.
-            if forward_count == count:
-                self.values[:count].copy_(values.float(), non_blocking=True)
-                self.policies[:count].copy_(policies.float(), non_blocking=True)
-            else:
-                self.values[:count].copy_(values[:count].float(), non_blocking=True)
-                self.policies[:count].copy_(policies[:count].float(), non_blocking=True)
-            torch.cuda.current_stream(self.device).synchronize()
-        else:
-            if evaluator is None:
-                policies, values = model.evaluate(self.obs[:forward_count], self.masks[:forward_count])
-            else:
-                policies, values = evaluator(self.obs[:forward_count], self.masks[:forward_count])
-            if forward_count == count:
-                self.values[:count].copy_(values.float())
-                self.policies[:count].copy_(policies.float())
-            else:
-                self.values[:count].copy_(values[:count].float())
-                self.policies[:count].copy_(policies[:count].float())
-        return time.perf_counter() - start
+        """Synchronous compatibility wrapper used only during warmup."""
+
+        return self.launch(
+            model,
+            count,
+            use_fp16,
+            evaluator=evaluator,
+            use_bf16=use_bf16,
+            batch_buckets=batch_buckets,
+        ).finish()
 
     def zero_inputs_slice(self, start: int, end: int) -> None:
         self.obs[start:end].zero_()
@@ -471,6 +695,69 @@ def _warm_server_evaluator(
         logger.info("inference server warmup bucket=%d elapsed_ms=%.3f", bucket, elapsed * 1000.0)
 
 
+@dataclass
+class _ResidentModel:
+    """One server-owned model, compiled evaluator, and shape-specific staging."""
+
+    config: dict[str, Any]
+    obs_version: int
+    model: torch.nn.Module
+    evaluator: torch.nn.Module | None
+    staging: _PinnedStaging
+
+
+def _payload_parts(
+    payload: bytes | tuple[bytes, dict[str, Any]],
+    fallback_model_config: object,
+) -> tuple[bytes, dict[str, Any]]:
+    if isinstance(payload, bytes):
+        return payload, model_config_dict(fallback_model_config)
+    if (
+        isinstance(payload, tuple)
+        and len(payload) == 2
+        and isinstance(payload[0], bytes)
+        and isinstance(payload[1], dict)
+    ):
+        return payload[0], dict(payload[1])
+    raise TypeError("server model payload must be bytes or (bytes, model_config)")
+
+
+def _build_resident_model(
+    model_config: dict[str, Any],
+    device: torch.device,
+    config: TrainConfig,
+    batch_buckets: tuple[int, ...],
+    use_bf16: bool,
+) -> _ResidentModel:
+    configured_version = model_config.get("obs_version")
+    obs_version = int(config.selfplay.obs_version if configured_version is None else configured_version)
+    if obs_version not in (1, 2, 3):
+        raise ValueError(f"server model has invalid obs_version {obs_version!r}")
+    model = build_model(
+        model_config,
+        obs_size_for_version(obs_version),
+        dz.ACTION_SPACE_SIZE,
+    ).to(device)
+    model.eval()
+    normalized_config = model_config_dict(getattr(model, "_dominion_model_config", model_config))
+    staging = _PinnedStaging(
+        device,
+        max(int(config.server_max_batch), max(batch_buckets, default=0)),
+        obs_size_for_version(obs_version),
+    )
+    evaluator = _maybe_compile_server_evaluator(model, device, bool(config.server_compile))
+    _warm_server_evaluator(
+        staging,
+        model,
+        evaluator,
+        bool(config.server_fp16),
+        use_bf16,
+        batch_buckets,
+        int(config.server_max_batch),
+    )
+    return _ResidentModel(normalized_config, obs_version, model, evaluator, staging)
+
+
 def _server_device(name: str) -> torch.device:
     requested = name.lower()
     if requested not in {"cpu", "cuda"}:
@@ -480,48 +767,89 @@ def _server_device(name: str) -> torch.device:
     return torch.device(requested)
 
 
+def _scatter_responses(
+    requests: list[_Request],
+    values: np.ndarray,
+    policies: np.ndarray,
+    endpoints: InferenceServerEndpoints,
+    views: list[WorkerSharedMemoryViews],
+) -> None:
+    """Scatter contiguous aggregate result slices with one memcpy per ring."""
+
+    expected_rows = sum(request.count for request in requests)
+    if values.shape[0] < expected_rows or policies.shape[0] < expected_rows:
+        raise ValueError("aggregate inference result is smaller than its request batch")
+    offset = 0
+    for request in requests:
+        end = offset + request.count
+        if endpoints.transport == "shm":
+            assert request.slot is not None
+            view = views[request.worker_id]
+            np.copyto(view.response_values[request.slot, : request.count], values[offset:end])
+            np.copyto(view.response_policies[request.slot, : request.count], policies[offset:end])
+            if endpoints.poll == "spin":
+                view.response_sequences[request.slot] = request.request_id
+            else:
+                endpoints.response_queues[request.worker_id].put(
+                    (request.slot, request.count, request.request_id)
+                )
+        else:
+            endpoints.response_queues[request.worker_id].put(
+                (
+                    "response",
+                    request.request_id,
+                    values[offset:end].copy(),
+                    policies[offset:end].copy(),
+                )
+            )
+        offset = end
+
+
 def _server_main(
     config: TrainConfig,
     endpoints: InferenceServerEndpoints,
     command_queue: Any,
     status_queue: Any,
+    telemetry_queue: Any,
 ) -> None:
     """Process entry point; all model updates occur between complete batches."""
-    carry: _Request | None = None
+    parent_pid = os.getppid()
     running = True
     metrics = _GenerationMetrics()
+    heartbeat_started = time.monotonic()
+    heartbeat_requests = 0
+    heartbeat_evals = 0
+    heartbeat_batches = 0
+    heartbeat_wait_start = 0
     views: list[WorkerSharedMemoryViews] = []
     try:
         device = _server_device(config.server_device)
-        obs_size = obs_size_for_config(config)
-        model = build_model(config.model, obs_size, dz.ACTION_SPACE_SIZE).to(device)
-        model.eval()
+        source_obs_version = int(config.selfplay.obs_version)
         batch_buckets = _normalized_server_batch_buckets(config.server_batch_buckets)
-        staging = _PinnedStaging(
-            device,
-            max(int(config.server_max_batch), max(batch_buckets, default=0)),
-            obs_size,
-        )
         use_bf16 = bool(config.server_autocast_bf16)
         if use_bf16 and device.type != "cuda":
             logger.warning("server_autocast_bf16=true is ignored on %s; CUDA is required", device.type)
             use_bf16 = False
         if use_bf16 and config.server_fp16:
             logger.warning("server_autocast_bf16=true takes precedence over server_fp16=true")
-        evaluator: torch.nn.Module | None = None
+        pending = _PerModelRequestQueues(
+            worker_count=len(endpoints.response_queues),
+            target_rows=int(config.server_coalesce_target_rows),
+            max_batch=int(config.server_max_batch),
+            coalesce_s=float(config.server_coalesce_ms) / 1000.0,
+        )
         try:
-            evaluator = _maybe_compile_server_evaluator(model, device, bool(config.server_compile))
-            _warm_server_evaluator(
-                staging,
-                model,
-                evaluator,
-                bool(config.server_fp16),
-                use_bf16,
-                batch_buckets,
-                int(config.server_max_batch),
-            )
+            resident_models = [
+                _build_resident_model(
+                    model_config_dict(config.model),
+                    device,
+                    config,
+                    batch_buckets,
+                    use_bf16,
+                )
+            ]
         except Exception as exc:
-            if evaluator is not None:
+            if bool(config.server_compile) and device.type == "cuda":
                 raise RuntimeError(
                     "server_compile warmup failed; refusing to fall back to eager execution. "
                     "Check the full-graph compiler error above."
@@ -542,8 +870,86 @@ def _server_main(
         ]
         spin_cursor = 0
 
+        def emit_heartbeat_if_due() -> None:
+            """Report server work without adding a request-path round trip."""
+
+            nonlocal heartbeat_started, heartbeat_requests, heartbeat_evals, heartbeat_batches, heartbeat_wait_start
+            now = time.monotonic()
+            if heartbeat_requests == 0 or now - heartbeat_started < 60.0:
+                return
+            elapsed = now - heartbeat_started
+            assert metrics.batch_waits_s is not None
+            waits_ms = np.asarray(metrics.batch_waits_s[heartbeat_wait_start:], dtype=np.float64) * 1000.0
+            summary = {
+                "requests_per_sec": float(heartbeat_requests / elapsed),
+                "evals_per_sec": float(heartbeat_evals / elapsed),
+                "mean_batch_size": float(heartbeat_evals / heartbeat_batches) if heartbeat_batches else 0.0,
+                "wait_p50_ms": float(np.percentile(waits_ms, 50.0)) if waits_ms.size else 0.0,
+                "wait_p99_ms": float(np.percentile(waits_ms, 99.0)) if waits_ms.size else 0.0,
+            }
+            print(
+                "inference server: "
+                f"{summary['requests_per_sec']:.1f} requests/s, "
+                f"mean batch {summary['mean_batch_size']:.1f}, "
+                f"wait p50/p99 {summary['wait_p50_ms']:.2f}/{summary['wait_p99_ms']:.2f} ms",
+                file=sys.stderr,
+                flush=True,
+            )
+            try:
+                telemetry_queue.put_nowait(summary)
+            except queue.Full:
+                # Telemetry is deliberately best-effort: trainer progress
+                # never gets to delay serving work.
+                pass
+            heartbeat_started = now
+            heartbeat_requests = 0
+            heartbeat_evals = 0
+            heartbeat_batches = 0
+            heartbeat_wait_start = len(metrics.batch_waits_s)
+
+        def install_models(
+            payloads: list[bytes | tuple[bytes, dict[str, Any]]],
+        ) -> None:
+            """Install one copy per table entry, reusing compiled shapes."""
+
+            nonlocal resident_models
+            if not payloads:
+                raise ValueError("inference server requires at least one resident model")
+            installed: list[_ResidentModel] = []
+            for model_id, payload in enumerate(payloads):
+                state_payload, requested_config = _payload_parts(payload, config.model)
+                configured_version = requested_config.get("obs_version")
+                requested_version = int(
+                    source_obs_version if configured_version is None else configured_version
+                )
+                requested_config = dict(requested_config)
+                requested_config["obs_version"] = requested_version
+                reusable = resident_models[model_id] if model_id < len(resident_models) else None
+                if reusable is not None and reusable.config == requested_config:
+                    resident = reusable
+                else:
+                    try:
+                        resident = _build_resident_model(
+                            requested_config,
+                            device,
+                            config,
+                            batch_buckets,
+                            use_bf16,
+                        )
+                    except Exception as exc:
+                        if bool(config.server_compile) and device.type == "cuda":
+                            raise RuntimeError(
+                                f"server_compile warmup failed for model {model_id}; "
+                                "refusing to fall back to eager execution"
+                            ) from exc
+                        raise
+                resident.model.load_state_dict(deserialize_cpu_state_dict(state_payload))
+                resident.model.eval()
+                installed.append(resident)
+            resident_models = installed
+
         def handle_commands() -> None:
-            nonlocal running, metrics
+            nonlocal running, metrics, heartbeat_started, heartbeat_requests, heartbeat_evals, heartbeat_batches, heartbeat_wait_start
             while True:
                 try:
                     command = command_queue.get_nowait()
@@ -555,18 +961,35 @@ def _server_main(
                     return
                 if kind == "weights":
                     _, generation, payload = command
-                    model.load_state_dict(deserialize_cpu_state_dict(payload))
-                    model.eval()
+                    resident_models[0].model.load_state_dict(deserialize_cpu_state_dict(payload))
+                    resident_models[0].model.eval()
                     status_queue.put(("weights", generation, None))
+                    continue
+                if kind == "models":
+                    _, generation, payloads = command
+                    install_models(list(payloads))
+                    status_queue.put(("models", generation, len(resident_models)))
                     continue
                 if kind == "metrics":
                     _, generation, include_totals = command
                     status_queue.put(("metrics", generation, metrics.snapshot(bool(include_totals))))
                     metrics = _GenerationMetrics()
+                    heartbeat_started = time.monotonic()
+                    heartbeat_requests = 0
+                    heartbeat_evals = 0
+                    heartbeat_batches = 0
+                    heartbeat_wait_start = 0
                     continue
                 raise RuntimeError(f"unknown inference-server command: {kind}")
 
-        def shared_request_from_header(worker_id: int, slot: int, count: int, sequence: int) -> _Request:
+        def shared_request_from_header(
+            worker_id: int,
+            slot: int,
+            count: int,
+            sequence: int,
+            model_id: int,
+            submitted_ns: int,
+        ) -> _Request:
             if not (0 <= worker_id < len(views)):
                 raise ValueError("shared-memory request has invalid worker id")
             view = views[worker_id]
@@ -574,11 +997,17 @@ def _server_main(
                 raise ValueError("shared-memory request has invalid slot or count")
             if slot != sequence % view.spec.slots:
                 raise ValueError("shared-memory request sequence does not match its slot")
+            if not 0 <= model_id < len(resident_models):
+                raise ValueError(f"inference request references unknown model id {model_id}")
+            if submitted_ns <= 0:
+                raise ValueError("shared-memory request is missing its submission timestamp")
             return _Request(
                 worker_id=worker_id,
                 request_id=sequence,
                 slot=slot,
                 count=count,
+                model_id=model_id,
+                submitted_at_s=float(submitted_ns) / 1.0e9,
                 obs=view.request_obs[slot, :count],
                 masks=view.request_masks[slot, :count],
             )
@@ -596,7 +1025,16 @@ def _server_main(
                 if sequence <= int(last_request_sequences[worker_id][slot]):
                     continue
                 count = int(view.request_counts[slot])
-                request = shared_request_from_header(worker_id, slot, count, sequence)
+                model_id = int(view.request_model_ids[slot])
+                submitted_ns = int(view.request_submitted_ns[slot])
+                request = shared_request_from_header(
+                    worker_id,
+                    slot,
+                    count,
+                    sequence,
+                    model_id,
+                    submitted_ns,
+                )
                 last_request_sequences[worker_id][slot] = sequence
                 spin_cursor = (flat_slot + 1) % total_slots
                 return request
@@ -616,19 +1054,41 @@ def _server_main(
                     time.sleep(0)
             if endpoints.transport == "shm":
                 if timeout is None:
-                    worker_id, slot, count, sequence = endpoints.request_queue.get()
+                    worker_id, slot, count, sequence, model_id, submitted_ns = endpoints.request_queue.get()
                 elif timeout <= 0.0:
-                    worker_id, slot, count, sequence = endpoints.request_queue.get_nowait()
+                    worker_id, slot, count, sequence, model_id, submitted_ns = (
+                        endpoints.request_queue.get_nowait()
+                    )
                 else:
-                    worker_id, slot, count, sequence = endpoints.request_queue.get(timeout=timeout)
-                worker_id, slot, count, sequence = int(worker_id), int(slot), int(count), int(sequence)
-                return shared_request_from_header(worker_id, slot, count, sequence)
+                    worker_id, slot, count, sequence, model_id, submitted_ns = (
+                        endpoints.request_queue.get(timeout=timeout)
+                    )
+                worker_id, slot, count, sequence, model_id, submitted_ns = (
+                    int(worker_id),
+                    int(slot),
+                    int(count),
+                    int(sequence),
+                    int(model_id),
+                    int(submitted_ns),
+                )
+                return shared_request_from_header(
+                    worker_id,
+                    slot,
+                    count,
+                    sequence,
+                    model_id,
+                    submitted_ns,
+                )
             if timeout is None:
-                worker_id, request_id, obs, masks = endpoints.request_queue.get()
+                worker_id, request_id, model_id, submitted_ns, obs, masks = endpoints.request_queue.get()
             elif timeout <= 0.0:
-                worker_id, request_id, obs, masks = endpoints.request_queue.get_nowait()
+                worker_id, request_id, model_id, submitted_ns, obs, masks = (
+                    endpoints.request_queue.get_nowait()
+                )
             else:
-                worker_id, request_id, obs, masks = endpoints.request_queue.get(timeout=timeout)
+                worker_id, request_id, model_id, submitted_ns, obs, masks = (
+                    endpoints.request_queue.get(timeout=timeout)
+                )
             obs = np.ascontiguousarray(obs, dtype=np.float32)
             masks = np.ascontiguousarray(masks, dtype=np.uint8)
             if (
@@ -637,87 +1097,81 @@ def _server_main(
                 or masks.shape != (obs.shape[0], dz.ACTION_SPACE_SIZE)
             ):
                 raise ValueError("queue inference request shape mismatch")
-            return _Request(int(worker_id), int(request_id), None, int(obs.shape[0]), obs, masks)
+            model_id = int(model_id)
+            if not 0 <= model_id < len(resident_models):
+                raise ValueError(f"inference request references unknown model id {model_id}")
+            submitted_ns = int(submitted_ns)
+            if submitted_ns <= 0:
+                raise ValueError("queue inference request is missing its submission timestamp")
+            return _Request(
+                int(worker_id),
+                int(request_id),
+                None,
+                int(obs.shape[0]),
+                model_id,
+                float(submitted_ns) / 1.0e9,
+                obs,
+                masks,
+            )
 
         while running:
+            if os.getppid() != parent_pid:
+                # Do not leave the sole GPU owner orphaned if the trainer is
+                # killed before its normal finally block can send ``stop``.
+                break
             handle_commands()
             if not running:
                 break
-            if carry is None:
+            ready = pending.ready_model(time.perf_counter())
+            if ready is None:
+                until_deadline = pending.seconds_until_deadline(time.perf_counter())
+                timeout = 0.01 if until_deadline is None else min(0.01, until_deadline)
                 try:
-                    request = dequeue_request(timeout=0.01)
+                    pending.add(dequeue_request(timeout=timeout))
                 except queue.Empty:
                     continue
-            else:
-                request, carry = carry, None
-            if request.count > config.server_max_batch:
-                raise ValueError("inference request batch is outside server_max_batch")
+                continue
 
-            requests = [request]
-            batch_size = request.count
-            wait_start = time.perf_counter()
-            deadline = wait_start + (float(config.server_max_wait_ms) / 1000.0)
-            while batch_size < config.server_max_batch:
-                try:
-                    candidate = dequeue_request(timeout=0.0)
-                except queue.Empty:
-                    remaining = deadline - time.perf_counter()
-                    if remaining <= 0.0:
-                        break
-                    try:
-                        candidate = dequeue_request(timeout=remaining)
-                    except queue.Empty:
-                        break
-                if candidate.count > config.server_max_batch:
-                    raise ValueError("inference request batch is outside server_max_batch")
-                if batch_size + candidate.count > config.server_max_batch:
-                    carry = candidate
-                    break
-                requests.append(candidate)
-                batch_size += candidate.count
-
-            # Generation barriers ensure any newly received state is installed
-            # only between complete batches, never halfway through a forward.
-            handle_commands()
-            if not running:
-                break
-            batch_wait = time.perf_counter() - wait_start
-            assert staging.load_requests(requests) == batch_size
-            inference_time = staging.forward(
-                model,
+            requests = pending.take_batch(ready.model_id)
+            batch_size = sum(request.count for request in requests)
+            batch_fire = time.perf_counter()
+            resident = resident_models[ready.model_id]
+            assert resident.staging.load_requests(
+                requests,
+                source_obs_version,
+                resident.obs_version,
+            ) == batch_size
+            in_flight = resident.staging.launch(
+                resident.model,
                 batch_size,
                 bool(config.server_fp16),
-                evaluator=evaluator,
+                evaluator=resident.evaluator,
                 use_bf16=use_bf16,
                 batch_buckets=batch_buckets,
             )
+            inference_time = _drain_during_flight(
+                in_flight,
+                dequeue_request,
+                pending.add,
+            )
+            _scatter_responses(
+                requests,
+                resident.staging.values_np[:batch_size],
+                resident.staging.policies_np[:batch_size],
+                endpoints,
+                views,
+            )
+
             metrics.evals += batch_size
             metrics.batches += 1
             metrics.inference_time += inference_time
-            metrics.batch_waits_s.append(batch_wait)
-
-            offset = 0
-            for request in requests:
-                end = offset + request.count
-                if endpoints.transport == "shm":
-                    assert request.slot is not None
-                    view = views[request.worker_id]
-                    np.copyto(view.response_values[request.slot, : request.count], staging.values_np[offset:end])
-                    np.copyto(view.response_policies[request.slot, : request.count], staging.policies_np[offset:end])
-                    if endpoints.poll == "spin":
-                        view.response_sequences[request.slot] = request.request_id
-                    else:
-                        endpoints.response_queues[request.worker_id].put((request.slot, request.count, request.request_id))
-                else:
-                    endpoints.response_queues[request.worker_id].put(
-                        (
-                            "response",
-                            request.request_id,
-                            staging.values_np[offset:end].copy(),
-                            staging.policies_np[offset:end].copy(),
-                        )
-                    )
-                offset = end
+            assert metrics.batch_waits_s is not None
+            batch_waits_s = [max(0.0, batch_fire - request.submitted_at_s) for request in requests]
+            metrics.batch_waits_s.extend(batch_waits_s)
+            heartbeat_requests += len(requests)
+            heartbeat_evals += batch_size
+            heartbeat_batches += 1
+            emit_heartbeat_if_due()
     except BaseException:
         endpoints.alive_event.clear()
         status_queue.put(("error", -1, traceback.format_exc()))
@@ -734,6 +1188,19 @@ class InferenceServer:
     def __init__(self, config: TrainConfig, worker_count: int):
         if worker_count <= 0:
             raise ValueError("worker_count must be positive")
+        if (
+            not isinstance(config.server_coalesce_target_rows, int)
+            or isinstance(config.server_coalesce_target_rows, bool)
+            or config.server_coalesce_target_rows <= 0
+        ):
+            raise ValueError("server_coalesce_target_rows must be a positive integer")
+        if (
+            isinstance(config.server_coalesce_ms, bool)
+            or not isinstance(config.server_coalesce_ms, (int, float))
+            or not math.isfinite(float(config.server_coalesce_ms))
+            or float(config.server_coalesce_ms) < 0.0
+        ):
+            raise ValueError("server_coalesce_ms must be finite and non-negative")
         self.config = copy.deepcopy(config)
         requested_transport = config.server_transport.lower()
         if requested_transport not in {"shm", "queue"}:
@@ -746,6 +1213,10 @@ class InferenceServer:
         self.response_queues = [context.Queue(maxsize=2) for _ in range(worker_count)]
         self.command_queue = context.Queue()
         self.status_queue = context.Queue()
+        # A best-effort once-per-minute channel gives the trainer its latest
+        # serving rate without querying the server during the inference loop.
+        self.telemetry_queue = context.Queue(maxsize=2)
+        self.latest_evals_per_sec = 0.0
         self.alive_event = context.Event()
         request_batch_size = max(1, min(config.selfplay.max_batch, config.server_max_batch // worker_count))
         obs_size = obs_size_for_config(config)
@@ -787,7 +1258,7 @@ class InferenceServer:
         )
         self.process = context.Process(
             target=_server_main,
-            args=(self.config, self.endpoints, self.command_queue, self.status_queue),
+            args=(self.config, self.endpoints, self.command_queue, self.status_queue, self.telemetry_queue),
             name="dominion-inference-server",
         )
         try:
@@ -796,6 +1267,7 @@ class InferenceServer:
             self.request_queue.close()
             self.command_queue.close()
             self.status_queue.close()
+            self.telemetry_queue.close()
             for response_queue in self.response_queues:
                 response_queue.close()
             if self.shared_transport is not None:
@@ -824,8 +1296,9 @@ class InferenceServer:
             pass
         raise RuntimeError(f"inference server exited unexpectedly (exitcode={self.process.exitcode}){detail}")
 
-    def _wait_for_status(self, expected_kind: str, generation: int) -> Any:
-        deadline = time.monotonic() + max(5.0, float(self.config.server_response_timeout_s))
+    def _wait_for_status(self, expected_kind: str, generation: int, timeout_s: float | None = None) -> Any:
+        effective = float(self.config.server_response_timeout_s) if timeout_s is None else float(timeout_s)
+        deadline = time.monotonic() + max(5.0, effective)
         while True:
             self.ensure_alive()
             remaining = deadline - time.monotonic()
@@ -846,10 +1319,37 @@ class InferenceServer:
         self.command_queue.put(("weights", generation, serialize_cpu_state_dict(model)))
         self._wait_for_status("weights", generation)
 
+    def sync_models(
+        self,
+        payloads: list[bytes | tuple[bytes, dict[str, Any]]],
+        generation: int,
+    ) -> None:
+        """Atomically replace the generation's resident model table."""
+
+        if not payloads:
+            raise ValueError("inference server requires at least one model payload")
+        self.ensure_alive()
+        self.command_queue.put(("models", generation, list(payloads)))
+        installed = self._wait_for_status(
+            "models", generation, timeout_s=getattr(self.config, "server_install_timeout_s", 900.0)
+        )
+        if int(installed) != len(payloads):
+            raise RuntimeError("inference server installed an incomplete model table")
+
     def collect_metrics(self, generation: int, include_totals: bool = False) -> dict[str, float]:
         self.ensure_alive()
         self.command_queue.put(("metrics", generation, include_totals))
         return self._wait_for_status("metrics", generation)
+
+    def drain_telemetry(self) -> float:
+        """Return the latest server rate without sending it a command."""
+        while True:
+            try:
+                summary = self.telemetry_queue.get_nowait()
+            except queue.Empty:
+                return self.latest_evals_per_sec
+            if isinstance(summary, dict):
+                self.latest_evals_per_sec = float(summary.get("evals_per_sec", 0.0))
 
     def close(self) -> None:
         if self.process.is_alive():
@@ -865,6 +1365,7 @@ class InferenceServer:
         self.request_queue.close()
         self.command_queue.close()
         self.status_queue.close()
+        self.telemetry_queue.close()
         for response_queue in self.response_queues:
             response_queue.close()
         if self.shared_transport is not None:
@@ -901,14 +1402,17 @@ def _bench_worker_main(
                 slot = sequence % shared_views.spec.slots
                 np.copyto(shared_views.request_obs[slot, :count], obs)
                 np.copyto(shared_views.request_masks[slot, :count], masks)
+                submitted_ns = time.perf_counter_ns()
                 if endpoints.poll == "spin":
                     shared_views.request_counts[slot] = count
+                    shared_views.request_model_ids[slot] = 0
+                    shared_views.request_submitted_ns[slot] = submitted_ns
                     shared_views.request_sequences[slot] = sequence
                     request: tuple[Any, ...] = ()
                 else:
-                    request = (worker_id, slot, count, sequence)
+                    request = (worker_id, slot, count, sequence, 0, submitted_ns)
             else:
-                request = (worker_id, sequence, obs, masks)
+                request = (worker_id, sequence, 0, time.perf_counter_ns(), obs, masks)
             if shared_views is None or endpoints.poll != "spin":
                 while True:
                     if not endpoints.alive_event.is_set():
@@ -1059,7 +1563,8 @@ def bench_server(
         cfg.server_transport = transport
         cfg.server_poll = poll
         cfg.server_max_batch = max_batch
-        cfg.server_max_wait_ms = 2.0
+        cfg.server_coalesce_target_rows = min(512, max_batch)
+        cfg.server_coalesce_ms = 4.0
         cfg.server_response_timeout_s = 10.0
         cfg.selfplay.max_batch = max_batch
         cfg.model.hidden_sizes = [32]

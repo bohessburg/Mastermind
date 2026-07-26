@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import copy
 import multiprocessing as mp
+import os
 import queue
 import random
 import time
@@ -356,6 +357,13 @@ def _worker_device(name: str) -> torch.device:
     return torch.device(requested)
 
 
+def _server_selfplay_enabled(config: TrainConfig) -> bool:
+    enabled = getattr(config, "server_selfplay", False)
+    if not isinstance(enabled, bool):
+        raise ValueError("server_selfplay must be a boolean")
+    return enabled or config.worker_device.lower() == "server"
+
+
 def _seed_worker(seed: int, device: torch.device | None) -> None:
     random.seed(seed)
     np.random.seed(seed)
@@ -390,7 +398,7 @@ def _local_evaluator(model: torch.nn.Module, device: torch.device) -> Callable[[
 def _server_evaluator(
     endpoints: InferenceServerEndpoints,
     worker_index: int,
-) -> tuple[Callable[[np.ndarray, np.ndarray], tuple[np.ndarray, np.ndarray]], WorkerSharedMemoryViews | None]:
+) -> tuple[Callable[..., tuple[np.ndarray, np.ndarray]], WorkerSharedMemoryViews | None]:
     response_queue = endpoints.response_queues[worker_index]
     request_id = 0
     shared_views = (
@@ -399,29 +407,44 @@ def _server_evaluator(
         else None
     )
 
-    def evaluate(obs: np.ndarray, masks: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    def evaluate(
+        obs: np.ndarray,
+        masks: np.ndarray,
+        model_id: int = 0,
+    ) -> tuple[np.ndarray, np.ndarray]:
         nonlocal request_id
         request_id += 1
         deadline = time.monotonic() + endpoints.response_timeout_s
         count = int(obs.shape[0])
         if count <= 0 or count > endpoints.request_batch_size:
             raise RuntimeError("worker attempted an invalid inference-server request batch")
+        if not isinstance(model_id, (int, np.integer)) or int(model_id) < 0:
+            raise RuntimeError("worker attempted an invalid inference-server model id")
+        model_id = int(model_id)
         if shared_views is not None:
             slot = request_id % shared_views.spec.slots
             np.copyto(shared_views.request_obs[slot, :count], np.asarray(obs, dtype=np.float32))
             np.copyto(shared_views.request_masks[slot, :count], np.asarray(masks, dtype=np.uint8))
+            submitted_ns = time.perf_counter_ns()
             if endpoints.poll == "spin":
                 shared_views.request_counts[slot] = count
+                shared_views.request_model_ids[slot] = model_id
+                shared_views.request_submitted_ns[slot] = submitted_ns
                 shared_views.request_sequences[slot] = request_id
                 request = ()
             else:
-                request = (worker_index, slot, count, request_id)
+                request = (worker_index, slot, count, request_id, model_id, submitted_ns)
         else:
+            request_obs = np.ascontiguousarray(obs, dtype=np.float32)
+            request_masks = np.ascontiguousarray(masks, dtype=np.uint8)
+            submitted_ns = time.perf_counter_ns()
             request = (
                 worker_index,
                 request_id,
-                np.ascontiguousarray(obs, dtype=np.float32),
-                np.ascontiguousarray(masks, dtype=np.uint8),
+                model_id,
+                submitted_ns,
+                request_obs,
+                request_masks,
             )
         if shared_views is None or endpoints.poll != "spin":
             while True:
@@ -755,6 +778,33 @@ def _evaluate_manifest_model_groups(
     return logits_out, values_out
 
 
+def _evaluate_manifest_server_groups(
+    evaluate: Callable[..., tuple[np.ndarray, np.ndarray]],
+    obs: np.ndarray,
+    masks: np.ndarray,
+    model_ids: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Submit homogeneous per-model requests and restore native leaf order."""
+
+    ids = np.asarray(model_ids, dtype=np.uint32)
+    if ids.ndim != 1 or ids.shape[0] != obs.shape[0]:
+        raise ValueError("leaf model attribution must have one entry per observation")
+    logits_out = np.empty((obs.shape[0], dz.ACTION_SPACE_SIZE), dtype=np.float32)
+    values_out = np.empty((obs.shape[0],), dtype=np.float32)
+    for model_id in np.unique(ids):
+        rows = np.flatnonzero(ids == model_id)
+        logits, values = evaluate(obs[rows], masks[rows], int(model_id))
+        logits_array = np.asarray(logits, dtype=np.float32)
+        values_array = np.asarray(values, dtype=np.float32)
+        if logits_array.shape != (rows.shape[0], dz.ACTION_SPACE_SIZE):
+            raise RuntimeError("inference server returned a policy batch with the wrong shape")
+        if values_array.shape != (rows.shape[0],):
+            raise RuntimeError("inference server returned a value batch with the wrong shape")
+        logits_out[rows] = logits_array
+        values_out[rows] = values_array
+    return logits_out, values_out
+
+
 def _record_manifest_outcomes(
     stats: SelfPlayStats,
     records: list[dict[str, Any]],
@@ -860,10 +910,13 @@ def _generate_manifest_games(
 
         inference_start = time.perf_counter()
         if model_table is None:
-            if np.any(model_ids_array != 0):
-                raise RuntimeError("inference-server self-play cannot route a historical model")
             assert evaluate is not None
-            logits_np, values_np = evaluate(obs, masks)
+            logits_np, values_np = _evaluate_manifest_server_groups(
+                evaluate,
+                obs,
+                masks,
+                model_ids_array,
+            )
         else:
             assert device is not None
             logits_np, values_np = _evaluate_manifest_model_groups(
@@ -944,13 +997,14 @@ def _worker_main(
     inference_endpoints: InferenceServerEndpoints | None,
 ) -> None:
     """Worker entry point. Kept module-level for the spawn start method."""
+    parent_pid = os.getppid()
     generation = -1
     shared_views: WorkerSharedMemoryViews | None = None
     try:
         worker_seed = int(config.seed) + worker_index
-        server_mode = config.worker_device.lower() == "server"
+        server_mode = _server_selfplay_enabled(config)
         if server_mode and inference_endpoints is None:
-            raise RuntimeError("worker_device=server requires inference-server endpoints")
+            raise RuntimeError("shared server self-play requires inference-server endpoints")
         device = None if server_mode else _worker_device(config.worker_device)
         _seed_worker(worker_seed, device)
         worker_selfplay = copy.deepcopy(config.selfplay)
@@ -978,7 +1032,12 @@ def _worker_main(
         deferred: list[dict[str, Any]] = []
 
         while True:
-            command = command_queue.get()
+            try:
+                command = command_queue.get(timeout=0.5)
+            except queue.Empty:
+                if os.getppid() != parent_pid:
+                    return
+                continue
             if command[0] == "stop":
                 return
             (
@@ -1046,11 +1105,6 @@ def _worker_main(
                 if len(slots) != int(target_games):
                     raise RuntimeError("self-play slot manifest does not match the worker game quota")
                 if model is None or device is None:
-                    if any(
-                        slot.seat0_model_id != 0 or slot.seat1_model_id != 0
-                        for slot in slots
-                    ):
-                        raise RuntimeError("mini-league self-play requires worker_device='cpu' or 'cuda'")
                     manifest_model_table: list[torch.nn.Module] | None = None
                     manifest_device: torch.device | None = None
                     manifest_evaluate = evaluate
@@ -1156,9 +1210,9 @@ class ParallelSelfPlayPool:
     def __init__(self, config: TrainConfig, inference_server: InferenceServer | None = None):
         self.config = copy.deepcopy(config)
         self.quotas = game_quotas(config.selfplay.games_per_generation, config.parallel_workers)
-        server_mode = config.worker_device.lower() == "server"
+        server_mode = _server_selfplay_enabled(config)
         if server_mode != (inference_server is not None):
-            raise ValueError("worker_device=server requires exactly one inference server")
+            raise ValueError("shared server self-play requires exactly one inference server")
         self.inference_server = inference_server
         endpoints = inference_server.endpoints if inference_server is not None else None
         context = mp.get_context("spawn")
@@ -1183,8 +1237,10 @@ class ParallelSelfPlayPool:
         segments: list[SelfPlaySegment] | None = None,
         model_state_payloads: list[ModelStatePayload] | None = None,
         selfplay_config: Any | None = None,
+        progress_callback: Callable[[int, int], None] | None = None,
     ) -> ParallelSelfPlayResult:
         effective_selfplay = self.config.selfplay if selfplay_config is None else selfplay_config
+        worker_model_payloads = model_state_payloads
         if self.inference_server is not None:
             self.inference_server.ensure_alive()
             state_payload = None
@@ -1201,18 +1257,35 @@ class ParallelSelfPlayPool:
             segments = index_selfplay_segments(segments)
             if sum(segment.n_games for segment in segments) != self.config.selfplay.games_per_generation:
                 raise ValueError("self-play segments must cover exactly one generation")
-            if self.inference_server is not None and any(segment.is_league for segment in segments):
-                raise ValueError("mini-league self-play is unavailable with worker_device='server'")
             if self.inference_server is None:
-                model_state_payloads = model_state_payloads or [serialize_cpu_state_dict(model)]
-                if not model_state_payloads:
+                worker_model_payloads = worker_model_payloads or [serialize_cpu_state_dict(model)]
+                if not worker_model_payloads:
                     raise ValueError("local self-play segments require a best-model payload")
-            else:
-                model_state_payloads = []
             per_worker_segments = split_segments_by_quotas(segments, self.quotas)
         else:
-            model_state_payloads = []
             per_worker_segments = [None] * len(self.quotas)
+
+        if self.inference_server is not None:
+            server_payloads = worker_model_payloads or [
+                (
+                    serialize_cpu_state_dict(model),
+                    model_config_dict(getattr(model, "_dominion_model_config", self.config.model)),
+                )
+            ]
+            if segments is not None:
+                highest_model_id = max(
+                    max(segment.seat0_model_id, segment.seat1_model_id)
+                    for segment in segments
+                )
+                if highest_model_id >= len(server_payloads):
+                    raise ValueError("self-play segment references a missing server model payload")
+            self.inference_server.sync_models(server_payloads, generation)
+            # Model bytes are installed once in the server, never copied into
+            # the worker command queues.
+            worker_model_payloads = []
+        elif segments is None:
+            worker_model_payloads = []
+
         for command_queue, quota, worker_segments in zip(self.command_queues, self.quotas, per_worker_segments):
             opening_settings = (
                 bool(effective_selfplay.opening_templates_enabled),
@@ -1227,7 +1300,7 @@ class ParallelSelfPlayPool:
                     quota,
                     state_payload,
                     worker_segments,
-                    model_state_payloads,
+                    worker_model_payloads,
                     opening_settings,
                 )
             )
@@ -1238,6 +1311,8 @@ class ParallelSelfPlayPool:
         seat_model_evals: dict[tuple[int, int], int] = {}
         completed: set[int] = set()
         start = time.perf_counter()
+        if progress_callback is not None:
+            progress_callback(stats.games, stats.positions)
         while len(completed) < len(self.quotas):
             try:
                 message = self.result_queue.get(timeout=1.0)
@@ -1247,6 +1322,8 @@ class ParallelSelfPlayPool:
                 failed = [process.name for process in self.processes if process.exitcode not in (None, 0)]
                 if failed:
                     raise RuntimeError(f"self-play worker exited unexpectedly: {', '.join(failed)}")
+                if progress_callback is not None:
+                    progress_callback(stats.games, stats.positions)
                 continue
 
             kind, worker_index, message_generation, payload = message
@@ -1259,6 +1336,10 @@ class ParallelSelfPlayPool:
                 received_by_worker[worker_index] += games
                 stats.games += games
                 stats.positions += positions
+                # Records are the established worker-to-trainer transport, so
+                # this incremental count adds no worker IPC on the hot path.
+                if progress_callback is not None:
+                    progress_callback(stats.games, stats.positions)
                 continue
             if kind != "done":
                 raise RuntimeError(f"unknown self-play worker message: {kind}")

@@ -58,6 +58,7 @@ if __package__ in (None, ""):
     from src.v2.train.inference_server import InferenceServer, serialize_cpu_state_dict
     from src.v2.train.model import build_model, count_parameters, masked_policy_loss, model_config_dict
     from src.v2.train.observation import obs_size_for_config, obs_size_for_version, obs_version_for_checkpoint
+    from src.v2.train.progress import TrainingProgress
     from src.v2.train.replay import ReplayBuffer, load_replay_state, save_replay_state
     from src.v2.train.selfplay import SelfPlayStats, run_routed_self_play_generation, run_self_play_generation
     from src.v2.train.workers import ParallelSelfPlayPool
@@ -95,6 +96,7 @@ else:
     from .inference_server import InferenceServer, serialize_cpu_state_dict
     from .model import build_model, count_parameters, masked_policy_loss, model_config_dict
     from .observation import obs_size_for_config, obs_size_for_version, obs_version_for_checkpoint
+    from .progress import TrainingProgress
     from .replay import ReplayBuffer, load_replay_state, save_replay_state
     from .selfplay import SelfPlayStats, run_routed_self_play_generation, run_self_play_generation
     from .workers import ParallelSelfPlayPool
@@ -647,6 +649,24 @@ def validated_eval_sentinels(raw_sentinels: object) -> list[tuple[str, int]]:
     return sentinels
 
 
+def _format_evals_per_second(value: float) -> str:
+    if value >= 1000.0:
+        return f"{value / 1000.0:.0f}k"
+    return f"{value:.0f}"
+
+
+def _print_selfplay_heartbeat(snapshot: dict[str, Any]) -> None:
+    """One deliberately flush-safe console line for an in-flight generation."""
+    message = (
+        f"gen {snapshot['generation']} selfplay "
+        f"{snapshot['games_done']}/{snapshot['games_total']} games, "
+        f"{snapshot['recent_games_per_hour']:.0f} games/hr"
+    )
+    if "server_evals_per_sec" in snapshot:
+        message += f", srv {_format_evals_per_second(float(snapshot['server_evals_per_sec']))} evals/s"
+    print(message, flush=True)
+
+
 def run_training(config: TrainConfig, resume: str | None = None, profile: bool = False) -> dict[str, Any]:
     requested = config
     if not isinstance(config.init_weights, str):
@@ -665,14 +685,18 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
         config.device = requested.device
         config.parallel_workers = requested.parallel_workers
         config.worker_device = requested.worker_device
+        config.server_selfplay = requested.server_selfplay
         config.server_device = requested.server_device
         config.server_max_batch = requested.server_max_batch
+        config.server_coalesce_target_rows = requested.server_coalesce_target_rows
+        config.server_coalesce_ms = requested.server_coalesce_ms
         config.server_max_wait_ms = requested.server_max_wait_ms
         config.server_fp16 = requested.server_fp16
         config.server_compile = requested.server_compile
         config.server_autocast_bf16 = requested.server_autocast_bf16
         config.server_batch_buckets = requested.server_batch_buckets
         config.server_response_timeout_s = requested.server_response_timeout_s
+        config.server_install_timeout_s = requested.server_install_timeout_s
         config.server_transport = requested.server_transport
         config.server_shm_slots = requested.server_shm_slots
         config.server_poll = requested.server_poll
@@ -702,6 +726,13 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
 
     validate_deep_slice_config(config.selfplay)
     validate_opening_template_config(config.selfplay)
+    if not isinstance(config.server_selfplay, bool):
+        raise ValueError("server_selfplay must be a boolean")
+    shared_server_selfplay = (
+        config.server_selfplay or config.worker_device.lower() == "server"
+    )
+    if config.server_selfplay and config.parallel_workers <= 1:
+        raise ValueError("server_selfplay requires parallel_workers greater than one")
 
     metrics: list[dict[str, Any]] = []
     generations = 1 if profile else max(0, config.generations - start_generation)
@@ -719,6 +750,7 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
 
     inference_server: InferenceServer | None = None
     pool: ParallelSelfPlayPool | None = None
+    progress = TrainingProgress(config.checkpoint_dir)
     use_gating = gating_enabled(config)
     if not isinstance(config.scripted_opponents, dict):
         raise ValueError("scripted_opponents must be an object mapping kind to fraction")
@@ -755,7 +787,8 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
     if league_configured:
         # External opponents must be available before generation one even for
         # ungated runs; their input pipeline is validated during this copy.
-        seed_league_checkpoints(config, device)
+        league_load_device = torch.device("cpu") if shared_server_selfplay else device
+        seed_league_checkpoints(config, league_load_device)
         configured_league_opponents.update(path.name for path in league_checkpoint_paths(config))
     if use_gating:
         # A fresh run seeds best from the initial candidate. On resume, best.pt
@@ -770,12 +803,32 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
             start_generation=start_generation,
         )
     try:
-        if config.parallel_workers > 1 and config.worker_device.lower() == "server":
+        progress.start(_print_selfplay_heartbeat)
+        if config.parallel_workers > 1 and shared_server_selfplay:
             inference_server = InferenceServer(config, config.parallel_workers)
         if config.parallel_workers > 1:
             pool = ParallelSelfPlayPool(config, inference_server)
         for generation in range(start_generation + 1, start_generation + generations + 1):
             gen_start = time.perf_counter()
+            progress.transition(
+                generation,
+                "selfplay",
+                games_total=config.selfplay.games_per_generation,
+                server_mode=inference_server is not None,
+            )
+
+            def report_selfplay_progress(games_done: int, positions_done: int) -> None:
+                server_evals = (
+                    inference_server.drain_telemetry()
+                    if inference_server is not None
+                    else None
+                )
+                progress.update(
+                    games_done=games_done,
+                    positions_done=positions_done,
+                    server_evals_per_sec=server_evals,
+                )
+
             lr = learning_rate_for_generation(config, generation)
             set_optimizer_lr(optimizer, lr)
             generation_selfplay = scheduled_opening_selfplay_config(config.selfplay, generation)
@@ -823,15 +876,12 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
                     )
                     aggregate_games_per_hour = sp_stats.games_per_hour
                 else:
-                    if inference_server is not None:
-                        # The acknowledgement is a generation barrier: workers do
-                        # not submit work until the server owns this complete state.
-                        inference_server.sync_weights(model, generation)
                     parallel_result = pool.generate(
                         model,
                         replay,
                         generation,
                         selfplay_config=generation_selfplay,
+                        progress_callback=report_selfplay_progress,
                     )
                     sp_stats = parallel_result.stats
                     aggregate_games_per_hour = parallel_result.aggregate_games_per_hour
@@ -865,8 +915,6 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
                 segments, history_indices = compact_selfplay_segments(sampled_segments)
                 league_paths = [all_league_paths[index] for index in history_indices]
                 planned_league_games = sum(segment.n_games for segment in segments if segment.is_league)
-                if planned_league_games and inference_server is not None:
-                    raise ValueError("mini-league self-play requires worker_device='cpu' or 'cuda', not 'server'")
                 if pool is None:
                     model_table = [active_model, *[load_best_checkpoint(config, device, path)[0] for path in league_paths]]
                     sp_stats = _run_segmented_single_pipeline(
@@ -880,25 +928,25 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
                     )
                     aggregate_games_per_hour = sp_stats.games_per_hour
                 else:
-                    if inference_server is not None:
-                        inference_server.sync_weights(active_model, generation)
-                    payloads = []
-                    if inference_server is None:
+                    payloads = [
+                        (
+                            serialize_cpu_state_dict(active_model),
+                            model_config_dict(
+                                getattr(active_model, "_dominion_model_config", config.model)
+                            ),
+                        )
+                    ]
+                    opponent_device = torch.device("cpu") if inference_server is not None else device
+                    for path in league_paths:
+                        opponent, _ = load_best_checkpoint(config, opponent_device, path)
                         payloads.append(
                             (
-                                serialize_cpu_state_dict(active_model),
-                                model_config_dict(getattr(active_model, "_dominion_model_config", config.model)),
+                                serialize_cpu_state_dict(opponent),
+                                model_config_dict(
+                                    getattr(opponent, "_dominion_model_config", config.model)
+                                ),
                             )
                         )
-                    if inference_server is None:
-                        for path in league_paths:
-                            opponent, _ = load_best_checkpoint(config, device, path)
-                            payloads.append(
-                                (
-                                    serialize_cpu_state_dict(opponent),
-                                    model_config_dict(getattr(opponent, "_dominion_model_config", config.model)),
-                                )
-                            )
                     parallel_result = pool.generate(
                         active_model,
                         replay,
@@ -906,6 +954,7 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
                         segments=segments,
                         model_state_payloads=payloads,
                         selfplay_config=generation_selfplay,
+                        progress_callback=report_selfplay_progress,
                     )
                     sp_stats = parallel_result.stats
                     aggregate_games_per_hour = parallel_result.aggregate_games_per_hour
@@ -924,6 +973,22 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
                     "server_batch_wait_p99_ms": 0.0,
                 }
             )
+            progress.update(
+                games_done=sp_stats.games,
+                positions_done=sp_stats.positions,
+                server_evals_per_sec=server_metrics.get("server_evals_per_sec"),
+                force=True,
+            )
+            progress.transition(
+                generation,
+                "train",
+                games_total=config.selfplay.games_per_generation,
+                games_done=sp_stats.games,
+                positions_done=sp_stats.positions,
+                recent_games_per_hour=aggregate_games_per_hour,
+                server_mode=inference_server is not None,
+                server_evals_per_sec=server_metrics.get("server_evals_per_sec"),
+            )
 
             losses = {"policy_loss": float("nan"), "value_loss": float("nan"), "entropy": float("nan")}
             steps = config.optim.train_steps_per_generation
@@ -937,6 +1002,16 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
 
             gate_row: dict[str, Any] = {}
             if use_gating:
+                progress.transition(
+                    generation,
+                    "gate",
+                    games_total=config.selfplay.games_per_generation,
+                    games_done=sp_stats.games,
+                    positions_done=sp_stats.positions,
+                    recent_games_per_hour=aggregate_games_per_hour,
+                    server_mode=inference_server is not None,
+                    server_evals_per_sec=server_metrics.get("server_evals_per_sec"),
+                )
                 assert best_model is not None
                 assert best_generation is not None
                 assert best_path is not None
@@ -969,6 +1044,16 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
                     "best_generation": best_generation,
                 }
 
+            progress.transition(
+                generation,
+                "checkpoint",
+                games_total=config.selfplay.games_per_generation,
+                games_done=sp_stats.games,
+                positions_done=sp_stats.positions,
+                recent_games_per_hour=aggregate_games_per_hour,
+                server_mode=inference_server is not None,
+                server_evals_per_sec=server_metrics.get("server_evals_per_sec"),
+            )
             path = save_checkpoint(
                 config,
                 generation,
@@ -990,6 +1075,16 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
                 )
             )
             if should_eval:
+                progress.transition(
+                    generation,
+                    "eval",
+                    games_total=config.selfplay.games_per_generation,
+                    games_done=sp_stats.games,
+                    positions_done=sp_stats.positions,
+                    recent_games_per_hour=aggregate_games_per_hour,
+                    server_mode=inference_server is not None,
+                    server_evals_per_sec=server_metrics.get("server_evals_per_sec"),
+                )
                 if __package__ in (None, ""):
                     from src.v2.train.evaluate import evaluate_checkpoint
                 else:
@@ -1101,6 +1196,7 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
             pool.close()
         if inference_server is not None:
             inference_server.close()
+        progress.close()
 
     if profile and metrics:
         row = metrics[-1]

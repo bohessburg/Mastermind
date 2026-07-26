@@ -144,10 +144,20 @@ class TrainConfig:
     # exactly deterministic for the default configuration.
     parallel_workers: int = 1
     worker_device: str = "cuda"
-    # Used only when worker_device="server". The server owns the one model
-    # inference context while workers remain CPU-only SelfPlayRunner hosts.
+    # Route parallel workers through one shared inference process. False keeps
+    # the established per-worker eager model replicas for deterministic
+    # debugging. ``worker_device="server"`` remains a compatibility alias.
+    server_selfplay: bool = False
+    # Used only when shared server self-play is enabled. The server owns all
+    # resident model inference contexts while workers remain CPU-only runners.
     server_device: str = "cuda"
     server_max_batch: int = 8192
+    # Cross-worker serving waits until one model reaches this many live rows,
+    # every worker has submitted, or the bounded deadline below expires.
+    server_coalesce_target_rows: int = 512
+    server_coalesce_ms: float = 4.0
+    # Retained for config/checkpoint compatibility; coalescing now uses the
+    # explicit deadline above.
     server_max_wait_ms: float = 2.0
     server_fp16: bool = False
     # CUDA-only opt-in: compile the serving evaluation graph with
@@ -161,6 +171,10 @@ class TrainConfig:
     # at their exact size.
     server_batch_buckets: list[int] | None = None
     server_response_timeout_s: float = 30.0
+    # Model-table installs legitimately take minutes on first generation
+    # (torch.compile + per-bucket warmup for every resident model); liveness
+    # is still polled continuously, so a dead server fails fast regardless.
+    server_install_timeout_s: float = 900.0
     # Shared memory is the fast path; queue is retained for unsupported hosts.
     server_transport: str = "shm"
     server_shm_slots: int = 2

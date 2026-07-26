@@ -4,7 +4,7 @@ import math
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any, Sequence
+from typing import Any, Callable, Sequence
 
 import numpy as np
 import torch
@@ -523,6 +523,7 @@ def play_routed_games(
     kingdom_mode: str | None = None,
     sims_override: int = 0,
     league_opponent: str | None = None,
+    on_finished: Callable[[list[dict]], None] | None = None,
 ) -> tuple[SelfPlayStats, list[dict]]:
     """Generate an exact number of games while routing every leaf by seat."""
     if target_games < 0:
@@ -582,7 +583,10 @@ def play_routed_games(
         stats.leaves += batch
         stats.nn_evals += batch
         remaining = target_games - len(records)
-        records.extend(finished[:remaining])
+        completed = finished[:remaining]
+        records.extend(completed)
+        if completed and on_finished is not None:
+            on_finished(completed)
     stats.games, stats.positions = _records_to_replay(records, _DiscardReplay())
     record_opening_template_telemetry(stats, records)
     _record_scripted_outcomes(stats, records, scripted_kind)

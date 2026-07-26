@@ -17,9 +17,10 @@ import argparse
 import copy
 import json
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import numpy as np
 import torch
@@ -96,6 +97,27 @@ class LoadedDuelCheckpoint:
     @property
     def obs_version(self) -> int:
         return int(self.config.selfplay.obs_version)
+
+
+class _DuelProgress:
+    """Emit a compact, flushed score line every ten completed duel games."""
+
+    def __init__(self, games_total: int, *, clock: Callable[[], float] = time.perf_counter) -> None:
+        self.games_total = int(games_total)
+        self.clock = clock
+        self.started = float(clock())
+
+    def record(self, wins: int, losses: int, ties: int) -> None:
+        completed = int(wins) + int(losses) + int(ties)
+        if completed == 0 or completed % 10 != 0:
+            return
+        elapsed = float(self.clock()) - self.started
+        games_per_hour = 3600.0 * completed / elapsed if elapsed > 0.0 else 0.0
+        print(
+            f"{completed}/{self.games_total} games, a {wins}W-{losses}L-{ties}T, "
+            f"{games_per_hour:.0f} games/hr",
+            flush=True,
+        )
 
 
 def _require_servable_observations(a_version: int, b_version: int) -> int:
@@ -260,6 +282,7 @@ def duel_loaded_checkpoints(
         n_games=n_games,
         max_batch=max_batch,
     )
+    progress = _DuelProgress(games)
     match = run_seat_swapped_match(
         a.model,
         b.model,
@@ -267,6 +290,7 @@ def duel_loaded_checkpoints(
         games=int(games),
         seed=int(seed),
         device=device,
+        progress_callback=progress.record,
     )
     return _duel_stats(match)
 

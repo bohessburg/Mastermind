@@ -6,7 +6,7 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import numpy as np
 import torch
@@ -69,6 +69,29 @@ class EvalStats:
             "games_per_hour": self.games_per_hour,
             "wall_time": self.wall_time,
         }
+
+
+class _EvalProgress:
+    """Emit a compact, flushed score line every 25 completed evaluation games."""
+
+    def __init__(self, games_total: int, *, clock: Callable[[], float] = time.perf_counter) -> None:
+        self.games_total = int(games_total)
+        self.clock = clock
+        self.started = float(clock())
+        self.next_report = 25
+
+    def record(self, completed: int, wins: int, losses: int, ties: int) -> None:
+        completed = int(completed)
+        if completed < self.next_report:
+            return
+        elapsed = float(self.clock()) - self.started
+        games_per_hour = 3600.0 * completed / elapsed if elapsed > 0.0 else 0.0
+        print(
+            f"{completed}/{self.games_total} games, nn {wins}W-{losses}L-{ties}T, "
+            f"{games_per_hour:.0f} games/hr",
+            flush=True,
+        )
+        self.next_report = ((completed // 25) + 1) * 25
 
 
 def _load_checkpoint_config(payload: dict[str, Any]) -> TrainConfig:
@@ -238,6 +261,7 @@ def evaluate_model(
     )
     model.eval()
     start = time.perf_counter()
+    progress = _EvalProgress(games)
     idle = 0
     with torch.no_grad():
         while runner.games_completed() < games:
@@ -255,6 +279,15 @@ def evaluate_model(
             logits_np = logits.detach().cpu().numpy().astype(np.float32, copy=False)
             values_np = values.detach().cpu().numpy().astype(np.float32, copy=False)
             runner.provide_evaluations(values_np, logits_np)
+            completed = int(runner.games_completed())
+            if completed >= progress.next_report:
+                running = runner.result()
+                progress.record(
+                    completed,
+                    int(running["nn_wins"]),
+                    int(running["scripted_wins"]),
+                    int(running["ties"]),
+                )
 
     result = runner.result()
     finished_games = runner.finished_games()

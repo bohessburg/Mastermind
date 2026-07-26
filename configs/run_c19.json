@@ -6,6 +6,7 @@
   "device": "auto",
   "parallel_workers": 24,
   "worker_device": "cuda",
+  "server_selfplay": true,
   "gate_games": 0,
   "checkpoint_dir": "checkpoints/campaign19",
   "metrics_csv": "checkpoints/campaign19/metrics.csv",

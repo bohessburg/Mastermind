@@ -14,6 +14,23 @@ from .test_train_smoke import read_metrics, tiny_config
 from .train import build_objects, run_training, save_checkpoint, validated_eval_sentinels
 
 
+def test_eval_progress_line_is_flushed_at_twenty_five_game_cadence(capsys) -> None:
+    now = [20.0]
+    progress = evaluate._EvalProgress(100, clock=lambda: now[0])
+
+    progress.record(24, 12, 10, 2)
+    assert capsys.readouterr().out == ""
+    now[0] = 25.0
+    progress.record(25, 13, 10, 2)
+    assert capsys.readouterr().out == "25/100 games, nn 13W-10L-2T, 18000 games/hr\n"
+
+    progress.record(49, 25, 20, 4)
+    assert capsys.readouterr().out == ""
+    now[0] = 30.0
+    progress.record(50, 26, 20, 4)
+    assert capsys.readouterr().out == "50/100 games, nn 26W-20L-4T, 18000 games/hr\n"
+
+
 def test_eval_sentinel_validator_accepts_engine3_engine2_and_thinner() -> None:
     assert validated_eval_sentinels(
         [

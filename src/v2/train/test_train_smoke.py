@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import json
 import math
 import time
 from collections import Counter
@@ -15,6 +16,7 @@ import dominion_v2_py as dz
 
 from .config import TrainConfig, load_config, save_config
 from .observation import obs_version_for_checkpoint
+from .progress import PROGRESS_REQUIRED_KEYS, PROGRESS_PHASES, validate_progress_schema
 from .selfplay import play_routed_games
 from .train import (
     build_objects,
@@ -137,6 +139,12 @@ def test_tiny_training_smoke_checkpoint_and_metrics(tmp_path: Path) -> None:
     assert len(metrics) == 2
     assert (Path(cfg.checkpoint_dir) / "gen_0001.pt").exists()
     assert (Path(cfg.checkpoint_dir) / "gen_0002.pt").exists()
+    progress_path = Path(cfg.checkpoint_dir) / "progress.json"
+    progress = json.loads(progress_path.read_text(encoding="utf-8"))
+    assert validate_progress_schema(progress)
+    assert PROGRESS_REQUIRED_KEYS.issubset(progress)
+    assert progress["phase"] in PROGRESS_PHASES
+    assert progress["generation"] == 2
 
     for row in metrics:
         assert int(row["games"]) >= cfg.selfplay.games_per_generation
