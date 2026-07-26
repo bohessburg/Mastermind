@@ -253,6 +253,19 @@ async def _run_live(
         assert session.run_dir is not None
         assert session.page is not None
         print(f"live archive: {session.run_dir}", flush=True)
+        (session.run_dir / "session.json").write_text(
+            json.dumps(
+                {
+                    "checkpoint_path": str(config.checkpoint_path),
+                    "obs_version": config.obs_version,
+                    "sims": config.sims,
+                    "determinizations": config.determinizations,
+                },
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
         if not (config.arena_user and config.arena_pass):
             print(
                 "ARENA_USER/ARENA_PASS are not both set; log in through the "

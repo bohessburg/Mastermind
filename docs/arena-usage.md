@@ -125,6 +125,7 @@ Restarting with a fresh browser has reliably cleared stuck site-side states.
 exports/arena/
   record.jsonl                     # one line per completed game, all sessions
   <session-ts>/
+    session.json                   # which checkpoint/obs/sims played this session
     frames.jsonl                   # raw feed for the whole session
     exit.json                      # why the process stopped
     dom-*.html                     # DOM captures at failures/waits

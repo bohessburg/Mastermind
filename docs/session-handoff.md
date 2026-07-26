@@ -51,12 +51,20 @@ is a c18+ lever.
 (`docs/human-games-analysis.md`) showed the binding constraint is plan-level
 exploration / archetype monoculture, not value calibration — do not resume it.
 
-The campaign roadmap c18–c21 is now specced in `IMPLEMENTATION_PLAN.md`
-(Phase T2): c18 = forced-opening self-play on obs-v3 (global trash encoding,
-in implementation via Codex as of 2026-07-25), c19 = ~4x network scale-up
-(d320/5L/8H), c20 = extended high-temperature sampling window, c21+ = neural
-exploiter league. Standing policy: no scripted opponents in the training
-pool ever again — scripts are sentinels/eval instruments only.
+The campaign roadmap c18–c21 is specced in `IMPLEMENTATION_PLAN.md`
+(Phase T2). **c18 COMPLETE (2026-07-26, cut at gen 25 per pre-registered
+rule):** from-scratch obs-v3 + forced openings reached 45% engine3 / 58%
+thinner / 40% vs the c15 champ in 25 gens (~$7), then capped — the Chapel
+probe showed AVOIDANCE DRIFT (unforced trasher-buying decays as lambda
+anneals to zero; net converges to the champ's archetype). c18 flagship:
+`checkpoints/remote/campaign18/gen_0025.pt`. Full entry at the tail of
+`docs/training-log.md`. **Next: c19 = ~4x scale-up (d320/5L/8H) PLUS
+anneal floor (lambda_final 0.15, p_unconstrained_final 0.7)** — the floor
+is empirically required, not a discretionary second lever. Standing
+policy: no scripted opponents in the training pool ever again — scripts
+are sentinels/eval instruments only. New instruments that carry forward:
+duel.py (clean NN-vs-NN champion duels, cross-obs via downgrade), the
+thinner sentinel (weak lower bound), the Chapel retention probe.
 
 Still true anytime: human-record games vs the flagship — the only benchmark
 that has never saturated. Arena harness Militia discard bug is the top

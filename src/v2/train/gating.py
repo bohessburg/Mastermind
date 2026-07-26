@@ -13,9 +13,11 @@ import math
 import random
 import re
 import shutil
+import time
 import warnings
 from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import Any
 
 import torch
 
@@ -44,6 +46,22 @@ class GateStats:
     @property
     def win_pct(self) -> float:
         return self.wins / self.decisive if self.decisive else 0.0
+
+
+@dataclass(frozen=True)
+class SeatSwappedMatch:
+    """Results and records from a deterministic two-seat NN match.
+
+    ``records`` retain the original runner records so standalone consumers can
+    inspect completed games without growing a second NN-vs-NN game loop.  The
+    corresponding entry in ``a_players`` identifies the seat occupied by the
+    first model for that record.
+    """
+
+    stats: GateStats
+    records: tuple[dict[str, Any], ...]
+    a_players: tuple[int, ...]
+    wall_time: float
 
 
 @dataclass(frozen=True)
@@ -1118,6 +1136,68 @@ def gate_match_seed(config: TrainConfig, generation: int) -> int:
     return int(config.seed) ^ (int(generation) * 0x6A09E667)
 
 
+def run_seat_swapped_match(
+    model_a: torch.nn.Module,
+    model_b: torch.nn.Module,
+    config: SelfPlayConfig,
+    *,
+    games: int,
+    seed: int,
+    device: torch.device,
+) -> SeatSwappedMatch:
+    """Run a deterministic, seat-swapped NN-MCTS match.
+
+    This is the common game-driving path for training gates and offline
+    checkpoint duels.  ``config`` is deliberately caller-owned: gates retain
+    their historical copied self-play settings, while an offline evaluator can
+    supply uniform, noise-free conditions for arbitrary checkpoints.  Mixed
+    observation versions are handled by ``play_routed_games``' per-seat
+    routing, including the exact v3-to-v2 downgrade.
+    """
+    from .selfplay import play_routed_games
+
+    if games < 0:
+        raise ValueError("games cannot be negative")
+    if games == 0:
+        return SeatSwappedMatch(GateStats(0, 0, 0), (), (), 0.0)
+
+    first_half = (int(games) + 1) // 2
+    second_half = int(games) - first_half
+    wins = losses = ties = 0
+    records: list[dict[str, Any]] = []
+    a_players: list[int] = []
+    start = time.perf_counter()
+    for count, a_player, seat_models, offset in (
+        (first_half, 0, (model_a, model_b), 0),
+        (second_half, 1, (model_b, model_a), 1),
+    ):
+        if count == 0:
+            continue
+        _, completed = play_routed_games(
+            seat_models,
+            config,
+            seed=int(seed) + (offset * 0x10001),
+            device=device,
+            target_games=count,
+        )
+        for record in completed:
+            winner = record.get("winner")
+            if winner is None:
+                ties += 1
+            elif int(winner) == a_player:
+                wins += 1
+            else:
+                losses += 1
+            records.append(record)
+            a_players.append(a_player)
+    return SeatSwappedMatch(
+        stats=GateStats(wins=wins, losses=losses, ties=ties),
+        records=tuple(records),
+        a_players=tuple(a_players),
+        wall_time=time.perf_counter() - start,
+    )
+
+
 def run_gate_match(
     candidate: torch.nn.Module,
     best: torch.nn.Module,
@@ -1126,8 +1206,6 @@ def run_gate_match(
     device: torch.device,
 ) -> GateStats:
     """Run a deterministic, seat-swapped NN-MCTS candidate-versus-best match."""
-    from .selfplay import play_routed_games
-
     games = int(config.gate_games)
     if games <= 0:
         return GateStats(0, 0, 0)
@@ -1143,29 +1221,11 @@ def run_gate_match(
     gate_config.dirichlet_frac = 0.0
     gate_config.temp_moves = int(config.gate_temp_moves)
     gate_config.kingdom_mode = "random"
-    first_half = (games + 1) // 2
-    second_half = games - first_half
-    wins = losses = ties = 0
-    seed = gate_match_seed(config, generation)
-    for count, candidate_player, seat_models, offset in (
-        (first_half, 0, (candidate, best), 0),
-        (second_half, 1, (best, candidate), 1),
-    ):
-        if count == 0:
-            continue
-        _, records = play_routed_games(
-            seat_models,
-            gate_config,
-            seed=seed + (offset * 0x10001),
-            device=device,
-            target_games=count,
-        )
-        for record in records:
-            winner = record.get("winner")
-            if winner is None:
-                ties += 1
-            elif int(winner) == candidate_player:
-                wins += 1
-            else:
-                losses += 1
-    return GateStats(wins=wins, losses=losses, ties=ties)
+    return run_seat_swapped_match(
+        candidate,
+        best,
+        gate_config,
+        games=games,
+        seed=gate_match_seed(config, generation),
+        device=device,
+    ).stats

@@ -1018,3 +1018,50 @@ scores) are under `exports/arena/`, plus unified analysis records via
 `python -m src.v2.records.convert` — enough to rebuild any decision and
 re-search it at higher sims, which is the obvious next diagnostic for
 where the 400-sim policy actually goes wrong against humans.
+
+C18 CAMPAIGN (2026-07-25/26): from-scratch CardTokenNet on obs-v3
+(1788: v2 + global trash section + select-semantic one-hot + tokenizer
+source-card embedding), archetype-seeded self-play (6 opening templates,
+root-prior lambda-mix annealed 0.6->0, trash-selection guard), league of
+v2 ancestors served via exact v3->v2 obs downgrade, NO scripted opponents
+in the training pool (Phase T2 policy). New vast 5090 box (192 cores),
+16 workers, ~2,300 games/hr mature, 25 gens in ~14h wall incl. one
+container-restart resume (gen 4 replayed; zero data loss). ~$7 spent.
+
+RESULTS — fastest strength ramp in project history:
+- engine3 eval: 1.0 / 14.9 / 25.5 / 36.7 / 45.7 / 45.4 at g1/5/10/15/20/25.
+  Matched the entire MLP era (34-37) by g15 and c15's g19 read (~48) by g20.
+- thinner sentinel (NEW, Chapel-engine exploiter script; weak lower bound
+  — flagship c15 beats it 73-74%): 8.5 -> 58.5% by g20. The thin-engine
+  axis climbed fastest of all.
+- bigmoney: 7 -> 68%. vloss 0.349 -> 0.031 (margin_blend scale).
+- CHAMPION DUELS (new duel.py, clean 400-sim seat-swapped 200g vs c15
+  gen_0045 via obs downgrade): 24.7 (g5) / 27.1 (g10) / 39.0 (g15) /
+  39.3 (g20) / 40.2 (g25). Surge g10->15, then FLAT ~39-40 for ten gens
+  while sentinels kept climbing.
+
+CUT at gen 25 per pre-registered rule (duel < 45%). c18 FLAGSHIP:
+gen_0025 (best duel + bigmoney + lowest vloss; g20 statistically tied).
+
+ROOT CAUSE OF THE CAP — CHAPEL PROBE (policy-only, 240 fixed turn-1..4
+buy nodes on Chapel kingdoms, attack vs no-attack split, gens 5-25 +
+champ): P(buy Chapel) unforced declines MONOTONICALLY 0.117 -> 0.070
+(no-attack) and 0.093 -> 0.056 (attack) as lambda anneals, with NO
+attack-conditional selectivity, converging from above toward the champ's
+flat 0.036. Verdict: AVOIDANCE DRIFT — as forcing anneals out, the
+policy prior regresses toward the money basin and the net converges to
+the champ's own archetype (explaining the ~40% mirror cap). The
+templates create winning trashing trajectories (t1/t4 beat unconstrained
+seats through g20) but the 1.5M net does not RETAIN the archetype
+unforced. Buffer trash rate decayed 4.05 -> 2.21 in step with lambda.
+
+STANDING CONCLUSIONS: (1) the exploration package works as data
+machinery — repertoire enters the buffer and converts to real strength
+(g10->15 champ surge came exactly as template data compounded); (2)
+anneal-to-zero is WRONG — retention needs either a lambda floor or more
+capacity (or both); (3) obs-v3 + from-scratch transformer reaches
+near-champ strength in 25 gens for ~$7 — iteration is cheap now.
+C19 (scale d192/3L -> d320/5L/8H ~6M params) should also FLOOR the
+anneal (proposal: lambda_final 0.15, p_unconstrained_final 0.7) so the
+scale read isn't confounded by the known-broken schedule; the probe
+(chapel_probe.py pattern, recreate from log) is the retention instrument.
