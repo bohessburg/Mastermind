@@ -371,26 +371,44 @@ class _PerModelRequestQueues:
         return min(request.submitted_at_s for request in requests) + self.coalesce_s
 
     def ready_model(self, now: float) -> _ReadyModel | None:
-        """Select one fireable model, always preferring current model zero."""
+        """Select one fireable model without starving expired model queues."""
 
+        now = float(now)
         all_workers_pending = len(self._worker_counts) >= self.worker_count
+        expired: list[_ReadyModel] = []
         candidates: list[_ReadyModel] = []
         for model_id in self._requests:
-            if self._rows[model_id] >= self.target_rows:
+            deadline = self._deadline(model_id)
+            if now >= deadline:
+                expired.append(_ReadyModel(model_id, "deadline"))
+                continue
+            elif self._rows[model_id] >= self.target_rows:
                 trigger = "fill_target"
-            elif float(now) >= self._deadline(model_id):
-                trigger = "deadline"
             elif all_workers_pending:
                 trigger = "all_workers_pending"
             else:
                 continue
             candidates.append(_ReadyModel(model_id, trigger))
+        if expired:
+            return min(
+                expired,
+                key=lambda candidate: (
+                    self._deadline(candidate.model_id),
+                    candidate.model_id,
+                ),
+            )
         if not candidates:
             return None
         for candidate in candidates:
             if candidate.model_id == 0:
                 return candidate
-        return min(candidates, key=lambda candidate: (self._deadline(candidate.model_id), candidate.model_id))
+        return min(
+            candidates,
+            key=lambda candidate: (
+                self._deadline(candidate.model_id),
+                candidate.model_id,
+            ),
+        )
 
     def seconds_until_deadline(self, now: float) -> float | None:
         if not self._requests:
@@ -832,10 +850,17 @@ def _server_main(
             use_bf16 = False
         if use_bf16 and config.server_fp16:
             logger.warning("server_autocast_bf16=true takes precedence over server_fp16=true")
+        # With compile enabled, a merged batch above the largest warmed bucket
+        # would run at its exact size and trigger a mid-serve torch.compile
+        # stall (30s+), starving workers into response timeouts. Cap merges at
+        # the largest bucket so every forward hits a pre-warmed shape.
+        merge_cap = int(config.server_max_batch)
+        if bool(config.server_compile) and batch_buckets:
+            merge_cap = min(merge_cap, max(batch_buckets))
         pending = _PerModelRequestQueues(
             worker_count=len(endpoints.response_queues),
             target_rows=int(config.server_coalesce_target_rows),
-            max_batch=int(config.server_max_batch),
+            max_batch=merge_cap,
             coalesce_s=float(config.server_coalesce_ms) / 1000.0,
         )
         try:

@@ -17,6 +17,7 @@ from .gating import SelfPlaySegment
 from .inference_server import (
     InferenceServer,
     WorkerSharedMemoryViews,
+    _GenerationMetrics,
     _PerModelRequestQueues,
     _Request,
     _drain_during_flight,
@@ -32,6 +33,17 @@ from .workers import (
     _evaluate_manifest_server_groups,
     _server_evaluator,
 )
+
+
+class _FakeClock:
+    def __init__(self, now: float = 0.0) -> None:
+        self.now = float(now)
+
+    def __call__(self) -> float:
+        return self.now
+
+    def advance(self, seconds: float) -> None:
+        self.now += float(seconds)
 
 
 def _fake_request(
@@ -52,7 +64,8 @@ def _fake_request(
     )
 
 
-def test_per_model_firing_is_independent_and_prioritizes_current_model() -> None:
+def test_per_model_firing_is_independent_before_deadline() -> None:
+    clock = _FakeClock()
     pending = _PerModelRequestQueues(
         worker_count=16,
         target_rows=10,
@@ -63,24 +76,106 @@ def test_per_model_firing_is_independent_and_prioritizes_current_model() -> None
     pending.add(_fake_request(1, 0, 6, 0.001))
     pending.add(_fake_request(2, 0, 5, 0.002))
 
-    ready = pending.ready_model(0.002)
+    clock.advance(0.002)
+    ready = pending.ready_model(clock())
     assert ready is not None
     assert (ready.model_id, ready.trigger) == (0, "fill_target")
     assert sum(request.count for request in pending.take_batch(0)) == 11
     assert pending.rows_for(1) == 2
-    assert pending.ready_model(0.003) is None
+    clock.advance(0.001)
+    assert pending.ready_model(clock()) is None
 
-    # A second current-model batch still fires first even after the league
-    # trickle's independent deadline expires.
-    pending.add(_fake_request(1, 0, 7, 0.004))
-    pending.add(_fake_request(2, 0, 4, 0.005))
-    ready = pending.ready_model(0.006)
+
+def test_expired_league_preempts_continuously_eligible_current_then_current_resumes() -> None:
+    clock = _FakeClock()
+    pending = _PerModelRequestQueues(
+        worker_count=64,
+        target_rows=128,
+        max_batch=256,
+        coalesce_s=0.004,
+    )
+    pending.add(_fake_request(57, 1, 12, clock()))
+    pending.add(_fake_request(58, 1, 12, 0.001))
+    pending.add(_fake_request(0, 0, 148, 0.001))
+
+    clock.advance(0.002)
+    ready = pending.ready_model(clock())
     assert ready is not None
     assert (ready.model_id, ready.trigger) == (0, "fill_target")
     pending.take_batch(0)
-    ready = pending.ready_model(0.006)
+
+    # Requests accumulated during the current-model forward make it
+    # continuously eligible when the scheduler re-evaluates.
+    pending.add(_fake_request(1, 0, 148, 0.003))
+    clock.advance(0.003)
+    ready = pending.ready_model(clock())
     assert ready is not None
     assert (ready.model_id, ready.trigger) == (1, "deadline")
+    pending.take_batch(1)
+
+    ready = pending.ready_model(clock())
+    assert ready is not None
+    assert (ready.model_id, ready.trigger) == (0, "fill_target")
+
+
+def test_multiple_expired_models_fire_oldest_request_first() -> None:
+    clock = _FakeClock(0.006)
+    pending = _PerModelRequestQueues(
+        worker_count=64,
+        target_rows=128,
+        max_batch=256,
+        coalesce_s=0.004,
+    )
+    pending.add(_fake_request(58, 5, 12, 0.000))
+    pending.add(_fake_request(59, 2, 12, 0.001))
+    pending.add(_fake_request(0, 0, 148, 0.005))
+
+    ready = pending.ready_model(clock())
+    assert ready is not None
+    assert (ready.model_id, ready.trigger) == (5, "deadline")
+    pending.take_batch(5)
+
+    ready = pending.ready_model(clock())
+    assert ready is not None
+    assert (ready.model_id, ready.trigger) == (2, "deadline")
+    pending.take_batch(2)
+
+    ready = pending.ready_model(clock())
+    assert ready is not None
+    assert (ready.model_id, ready.trigger) == (0, "fill_target")
+
+
+def test_deadline_preemption_preserves_throughput_accounting() -> None:
+    clock = _FakeClock(0.005)
+    pending = _PerModelRequestQueues(
+        worker_count=64,
+        target_rows=10,
+        max_batch=32,
+        coalesce_s=0.004,
+    )
+    pending.add(_fake_request(57, 1, 3, 0.000))
+    pending.add(_fake_request(0, 0, 12, 0.002))
+    metrics = _GenerationMetrics()
+
+    expected = [(1, 3, 0.001), (0, 12, 0.003)]
+    for expected_model, expected_rows, elapsed in expected:
+        ready = pending.ready_model(clock())
+        assert ready is not None
+        assert ready.model_id == expected_model
+        requests = pending.take_batch(ready.model_id)
+        rows = sum(request.count for request in requests)
+        assert rows == expected_rows
+        metrics.evals += rows
+        metrics.batches += 1
+        metrics.inference_time += elapsed
+        clock.advance(elapsed)
+
+    snapshot = metrics.snapshot(include_totals=True)
+    assert snapshot["_server_total_evals"] == 15.0
+    assert snapshot["_server_total_batches"] == 2.0
+    assert snapshot["server_mean_batch_size"] == pytest.approx(7.5)
+    assert snapshot["server_evals_per_sec"] == pytest.approx(3750.0)
+    assert not pending.has_requests()
 
 
 def test_all_workers_pending_fires_without_cross_model_row_merging() -> None:

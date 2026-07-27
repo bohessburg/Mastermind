@@ -4,7 +4,7 @@
   "generations": 100,
   "init_weights": "",
   "device": "auto",
-  "parallel_workers": 24,
+  "parallel_workers": 128,
   "worker_device": "cuda",
   "server_selfplay": true,
   "gate_games": 0,
