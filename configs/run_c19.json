@@ -57,7 +57,7 @@
     4096
   ],
   "selfplay": {
-    "n_games": 128,
+    "n_games": 64,
     "sims_per_move": 512,
     "games_per_generation": 1024,
     "deep_slice_fraction": 0.0,

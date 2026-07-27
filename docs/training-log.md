@@ -1065,3 +1065,37 @@ C19 (scale d192/3L -> d320/5L/8H ~6M params) should also FLOOR the
 anneal (proposal: lambda_final 0.15, p_unconstrained_final 0.7) so the
 scale read isn't confounded by the known-broken schedule; the probe
 (chapel_probe.py pattern, recreate from log) is the retention instrument.
+
+SERVING STACK SHAKEOUT (2026-07-26/27, overnight): the shared inference
+server (one GPU process serving 128 CPU-only workers via SHM rings)
+went from design to validated production through five distinct failure
+modes, each caught by live telemetry and fixed:
+(1) NO COALESCING: first build fired per-request batches (mean 36,
+    15K evals/s) — slower end-to-end than eager. Fix: bounded drain
+    cycles (target rows / deadline / all-workers-pending).
+(2) SERIALIZED CYCLE: coalescing knobs alone still ran every resident
+    model's forward every cycle (~77ms cycle, waits p50==p99). Fix:
+    per-model firing + drain-during-GPU-flight + contiguous scatter.
+(3) MID-SERVE COMPILE STALLS: merged batches above the largest warmed
+    bucket ran at exact size and triggered 30s+ torch.compile stalls
+    (worker timeouts). Fix: cap merges at the largest compiled bucket.
+(4) PRIORITY STARVATION: at saturation, continuously-eligible model 0
+    starved league models; their host workers timed out. Fix:
+    deadline-exceeded models preempt, oldest-first.
+(5) n_games/RING MISMATCH: campaign config n_games=128 vs 64-row SHM
+    request ring split every collect into two serialized round-trips —
+    the "campaign slow, probe fast" mystery. Fix: n_games=64.
+SELF-INFLICTED DETOURS, for the record: blanket OMP_NUM_THREADS=1
+(fixing a real 9K-thread explosion) single-threaded the server's CPU
+work and halved it — reverted entirely, thread explosion accepted as
+benign; 337 zombie workers accumulated because stop-kills only swept
+trainer+GPU pids while server-mode workers are CPU-only — new fleets
+fought zombie herds (startup timeout crashes) until a full sweep.
+VALIDATED END STATE: 709 games/hr blind-weights (vs 122 eager, 5.8x),
+~930-1025 games/hr by gen 5-8, 55K evals/s aggregate, batches ~160-250,
+zero timeouts. Duels run concurrently with training at ~400 games/hr.
+OPS RULES ADDED: check cgroup cpu.max not nproc (one box advertised 192
+cores, quota 46); kill by process-tree walk, never trainer+GPU pids;
+never pattern-match processes in the same command that kills (killed own
+ssh session twice); baseline log-grep counts on append-mode logs;
+progress.json + heartbeat telemetry now mandatory on all long jobs.
