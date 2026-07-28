@@ -70,6 +70,8 @@ class DuelStats:
     end_province: int
     end_piles: int
     wall_time: float
+    # (a_seat, turns, result) per completed game, result in {"W","L","T"} for a.
+    per_game: tuple = ()
 
     @property
     def decisive(self) -> int:
@@ -247,6 +249,17 @@ def _duel_stats(match: SeatSwappedMatch) -> DuelStats:
     stats = match.stats
     if stats.wins + stats.losses + stats.ties != len(match.records):
         raise RuntimeError("seat-swapped duel did not retain every completed game")
+    turn_offset = _v2_turn_counter_offset()
+    per_game = []
+    for record, a_player in zip(match.records, match.a_players):
+        final = np.asarray(record.get("observations"), dtype=np.float32)[-1]
+        turns = int(final[turn_offset])
+        winner = record.get("winner")
+        if winner is None or int(winner) < 0:
+            result = "T"
+        else:
+            result = "W" if int(winner) == int(a_player) else "L"
+        per_game.append((int(a_player), turns, result))
     return DuelStats(
         games=len(match.records),
         wins_a=stats.wins,
@@ -256,6 +269,7 @@ def _duel_stats(match: SeatSwappedMatch) -> DuelStats:
         end_province=end_province,
         end_piles=end_piles,
         wall_time=match.wall_time,
+        per_game=tuple(per_game),
     )
 
 
@@ -334,6 +348,10 @@ def print_summary(stats: DuelStats) -> None:
         f"{stats.games},{stats.wins_a},{stats.wins_b},{stats.ties},{stats.truncated},"
         f"{stats.end_province},{stats.end_piles},{stats.win_pct_a_excl_ties:.2f},{stats.games_per_hour:.2f}"
     )
+    # Per-game telemetry for length/seat analysis; grep '^pg,' to extract.
+    print("pg,index,a_seat,turns,result")
+    for index, (a_seat, turns, result) in enumerate(stats.per_game):
+        print(f"pg,{index},{a_seat},{turns},{result}", flush=False)
 
 
 def main(argv: list[str] | None = None) -> int:

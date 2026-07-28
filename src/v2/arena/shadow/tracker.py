@@ -39,6 +39,9 @@ TRACKED_ZONE_KINDS = frozenset(
 _SET_ASIDE_ZONE_KINDS = frozenset({"set-aside", "zone-type-24"})
 RESOURCE_NAMES = frozenset({"actions", "buys", "coins"})
 TREASURE_NAMES = frozenset({"Copper", "Silver", "Gold", "Potion"})
+BASE_SUPPLY_NAMES = frozenset(
+    {"Copper", "Silver", "Gold", "Estate", "Duchy", "Province", "Curse"}
+)
 UNDO_SIGNAL_MAX_AGE_MS = 30_000
 UNDO_SIGNAL_MAX_EVENT_GAP = 64
 
@@ -336,6 +339,7 @@ class Tracker:
             raise TrackerError(
                 f"FullState game {event.game_id} follows GameStart {self.game_id}"
             )
+        self._learn_kingdom_order(event.zones)
         reported_totals = Counter(dict(event.card_counts))
         reported_zones = self._zones_from_full_state(event.zones)
         if self._initialized:
@@ -424,6 +428,29 @@ class Tracker:
                 )
             result[zone.index] = state
         return result
+
+    def _learn_kingdom_order(
+        self, zones: tuple[FullStateZone, ...]
+    ) -> None:
+        """Use FullState's ordered supply list if GameStart lacked a kingdom."""
+        full_state_kingdom = tuple(
+            zone.display_name
+            for zone in zones
+            if zone.kind == "supply"
+            and zone.display_name is not None
+            and zone.display_name not in BASE_SUPPLY_NAMES
+        )
+        if not self.kingdom:
+            self.kingdom = full_state_kingdom
+            return
+        if (
+            full_state_kingdom
+            and set(full_state_kingdom) != set(self.kingdom)
+        ):
+            raise TrackerError(
+                "FullState kingdom does not match GameStart: "
+                f"{full_state_kingdom!r} vs {self.kingdom!r}"
+            )
 
     def _seed_full_state(
         self,

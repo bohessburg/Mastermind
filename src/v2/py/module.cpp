@@ -269,6 +269,24 @@ void parse_snapshot_counts(
     }
 }
 
+void parse_snapshot_kingdom_order(
+    const py::handle object,
+    Snapshot& snapshot) {
+    if (!py::isinstance<py::sequence>(object)
+        || py::isinstance<py::str>(object)) {
+        throw std::invalid_argument(
+            "snapshot kingdom_order must be a sequence of def/name values");
+    }
+    const py::sequence order = py::reinterpret_borrow<py::sequence>(object);
+    if (py::len(order) > MAX_PILES) {
+        throw std::invalid_argument("snapshot kingdom_order exceeds MAX_PILES");
+    }
+    snapshot.kingdom_order_count = static_cast<std::uint8_t>(py::len(order));
+    for (std::uint8_t i = 0; i < snapshot.kingdom_order_count; ++i) {
+        snapshot.kingdom_order[i] = parse_def(order[i]);
+    }
+}
+
 [[nodiscard]] SnapshotPhase parse_snapshot_phase(const py::handle object) {
     const std::string phase = py::cast<std::string>(object);
     if (phase == "action") {
@@ -325,6 +343,9 @@ void parse_snapshot_counts(
         snapshot.supply,
         "snapshot supply",
         snapshot.supply_present);
+    if (dict.contains("kingdom_order")) {
+        parse_snapshot_kingdom_order(dict["kingdom_order"], snapshot);
+    }
     parse_snapshot_counts(
         required_snapshot_field(dict, "trash", "snapshot"),
         snapshot.trash,

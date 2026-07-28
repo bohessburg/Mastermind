@@ -52,6 +52,34 @@ def _supply(snapshot: TrackerSnapshot) -> dict[int, int]:
     }
 
 
+def _kingdom_order(snapshot: TrackerSnapshot) -> tuple[int, ...]:
+    """Return the dealt kingdom sequence as engine definition IDs."""
+    order: list[int] = []
+    seen: set[str] = set()
+    for name in snapshot.kingdom:
+        if name in BASIC_SUPPLY:
+            raise BridgeError(f"kingdom contains basic supply pile {name!r}")
+        if name in seen:
+            raise BridgeError(f"kingdom contains duplicate pile {name!r}")
+        seen.add(name)
+        try:
+            order.append(int(dz.def_id(name)))
+        except (ValueError, TypeError) as error:
+            raise BridgeError(
+                f"engine has no card definition for kingdom pile {name!r}"
+            ) from error
+    return tuple(order)
+
+
+def _engine_turn_number(turn_number: int) -> int:
+    """Translate the arena's one-based displayed turn to engine turn_counter."""
+    if turn_number < 1:
+        raise BridgeError(
+            f"arena turn number must be one-based, got {turn_number}"
+        )
+    return turn_number - 1
+
+
 def _take_arbitrary(
     available: Counter[str],
     count: int,
@@ -203,10 +231,11 @@ def engine_snapshot(snapshot: TrackerSnapshot) -> dict[str, object]:
         "num_players": len(snapshot.players),
         "our_player": snapshot.our_seat,
         "supply": _supply(snapshot),
+        "kingdom_order": _kingdom_order(snapshot),
         "players": [_player(snapshot, seat) for seat in snapshot.seats],
         "trash": _def_counts(snapshot.trash),
         "card_totals": _def_counts(snapshot.card_totals),
-        "turn_number": snapshot.turn_number,
+        "turn_number": _engine_turn_number(snapshot.turn_number),
         "phase": PHASES[snapshot.phase],
         "current_player": snapshot.turn_owner,
         "interrupt": _seeded_interrupt(snapshot),

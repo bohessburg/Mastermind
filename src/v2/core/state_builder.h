@@ -43,6 +43,11 @@ struct Snapshot {
     PlayerId our_player = 0;
     std::uint8_t supply_present[MAX_SLOTS]{};
     SnapshotCardCounts supply{};
+    // The base piles are always rebuilt in new_game's canonical order. Keep
+    // the dealt kingdom sequence separately, because pile order is part of
+    // the encoded observation ABI.
+    DefId kingdom_order[MAX_PILES]{};
+    std::uint8_t kingdom_order_count = 0;
     SnapshotPlayer players[MAX_PLAYERS]{};
     SnapshotCardCounts trash{};
     SnapshotCardCounts card_totals{};

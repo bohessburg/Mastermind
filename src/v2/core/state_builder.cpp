@@ -554,6 +554,79 @@ void collect_card_counts(
     }
 }
 
+constexpr DefId CANONICAL_BASE_SUPPLY[] = {
+    DEF_COPPER,
+    DEF_SILVER,
+    DEF_GOLD,
+    DEF_ESTATE,
+    DEF_DUCHY,
+    DEF_PROVINCE,
+    DEF_CURSE,
+};
+
+[[nodiscard]] bool is_canonical_base_supply(DefId def) noexcept {
+    for (const DefId base : CANONICAL_BASE_SUPPLY) {
+        if (base == def) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void validate_kingdom_order(const Snapshot& snapshot) {
+    if (snapshot.kingdom_order_count > MAX_PILES) {
+        invalid("kingdom order exceeds MAX_PILES");
+    }
+    bool ordered[MAX_SLOTS]{};
+    for (std::uint8_t i = 0; i < snapshot.kingdom_order_count; ++i) {
+        const DefId def = snapshot.kingdom_order[i];
+        if (def >= card_def_count()) {
+            invalid("kingdom order contains an unknown definition");
+        }
+        if (is_canonical_base_supply(def)) {
+            invalid(std::string("kingdom order contains canonical base pile: ")
+                + card_def(def).name);
+        }
+        if (snapshot.supply_present[def] == 0U) {
+            invalid(std::string("kingdom order contains absent supply pile: ")
+                + card_def(def).name);
+        }
+        if (ordered[def]) {
+            invalid(std::string("kingdom order contains duplicate pile: ")
+                + card_def(def).name);
+        }
+        ordered[def] = true;
+    }
+
+    // Snapshots created by older native callers did not carry a kingdom
+    // sequence. Retain their deterministic def-id fallback, while requiring
+    // an explicitly supplied sequence to account for every non-base pile.
+    if (snapshot.kingdom_order_count == 0U) {
+        return;
+    }
+    for (DefId def = 0; def < card_def_count(); ++def) {
+        if (snapshot.supply_present[def] != 0U
+            && !is_canonical_base_supply(def)
+            && !ordered[def]) {
+            invalid(std::string("kingdom order omits supply pile: ")
+                + card_def(def).name);
+        }
+    }
+}
+
+void append_supply_pile(
+    GameState& state,
+    const Snapshot& snapshot,
+    DefId def) {
+    if (state.num_piles >= MAX_PILES) {
+        invalid("too many supply piles");
+    }
+    Pile& pile = state.piles[state.num_piles];
+    pile.base = add_slot(state, def);
+    pile.count = static_cast<std::uint8_t>(snapshot.supply.by_def[def]);
+    ++state.num_piles;
+}
+
 } // namespace
 
 GameState build_game_from_snapshot(const Snapshot& snapshot) {
@@ -574,16 +647,7 @@ GameState build_game_from_snapshot(const Snapshot& snapshot) {
             invalid("supply contains an unknown definition");
         }
     }
-    constexpr DefId required_supply[] = {
-        DEF_COPPER,
-        DEF_SILVER,
-        DEF_GOLD,
-        DEF_ESTATE,
-        DEF_DUCHY,
-        DEF_PROVINCE,
-        DEF_CURSE,
-    };
-    for (const DefId def : required_supply) {
+    for (const DefId def : CANONICAL_BASE_SUPPLY) {
         if (snapshot.supply_present[def] == 0U) {
             invalid(std::string("required supply pile is missing: ")
                 + card_def(def).name);
@@ -612,13 +676,25 @@ GameState build_game_from_snapshot(const Snapshot& snapshot) {
         if (snapshot.supply.by_def[def] > 255U) {
             invalid("supply count exceeds engine range");
         }
-        if (state.num_piles >= MAX_PILES) {
-            invalid("too many supply piles");
+    }
+    validate_kingdom_order(snapshot);
+
+    // Match new_game exactly: basic piles first in their canonical layout,
+    // then kingdom piles in the dealt order supplied by the arena tracker.
+    for (const DefId def : CANONICAL_BASE_SUPPLY) {
+        append_supply_pile(state, snapshot, def);
+    }
+    if (snapshot.kingdom_order_count != 0U) {
+        for (std::uint8_t i = 0; i < snapshot.kingdom_order_count; ++i) {
+            append_supply_pile(state, snapshot, snapshot.kingdom_order[i]);
         }
-        Pile& pile = state.piles[state.num_piles];
-        pile.base = add_slot(state, def);
-        pile.count = static_cast<std::uint8_t>(snapshot.supply.by_def[def]);
-        ++state.num_piles;
+    } else {
+        for (DefId def = 0; def < card_def_count(); ++def) {
+            if (snapshot.supply_present[def] != 0U
+                && !is_canonical_base_supply(def)) {
+                append_supply_pile(state, snapshot, def);
+            }
+        }
     }
 
     for (PlayerId player = 0; player < snapshot.num_players; ++player) {

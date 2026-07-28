@@ -6,11 +6,14 @@
 #include "v2/core/state_builder.h"
 #include "v2/core/turns.h"
 #include "v2/drivers/bots.h"
+#include "v2/encode/encoder.h"
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cstdint>
+#include <cstring>
 #include <span>
 #include <stdexcept>
 #include <vector>
@@ -38,6 +41,44 @@ namespace {
         setup.kingdom[i] = kingdom[i];
     }
     return setup;
+}
+
+[[nodiscard]] Setup arena_ordered_setup() {
+    Setup setup{};
+    setup.num_players = 2;
+    constexpr DefId kingdom[] = {
+        DEF_LABORATORY,
+        DEF_MOAT,
+        DEF_MERCHANT,
+        DEF_WORKSHOP,
+        DEF_HARBINGER,
+        DEF_WITCH,
+        DEF_VILLAGE,
+        DEF_ARTISAN,
+        DEF_MINE,
+        DEF_VASSAL,
+    };
+    setup.kingdom_count =
+        static_cast<std::uint8_t>(sizeof(kingdom) / sizeof(kingdom[0]));
+    for (std::uint8_t i = 0; i < setup.kingdom_count; ++i) {
+        setup.kingdom[i] = kingdom[i];
+    }
+    return setup;
+}
+
+[[nodiscard]] bool is_canonical_base_pile(DefId def) noexcept {
+    switch (def) {
+    case DEF_COPPER:
+    case DEF_SILVER:
+    case DEF_GOLD:
+    case DEF_ESTATE:
+    case DEF_DUCHY:
+    case DEF_PROVINCE:
+    case DEF_CURSE:
+        return true;
+    default:
+        return false;
+    }
 }
 
 void add_count(SnapshotCardCounts& counts, DefId def, std::uint16_t amount = 1U) {
@@ -97,6 +138,11 @@ void add_ordered(
         const DefId def = state.slot_to_def[pile.base];
         snapshot.supply_present[def] = 1U;
         snapshot.supply.by_def[def] = pile.count;
+        if (!is_canonical_base_pile(def)) {
+            REQUIRE(snapshot.kingdom_order_count < MAX_PILES);
+            snapshot.kingdom_order[snapshot.kingdom_order_count] = def;
+            ++snapshot.kingdom_order_count;
+        }
     }
     for (std::uint8_t slot = 0; slot < state.num_slots; ++slot) {
         const DefId def = state.slot_to_def[slot];
@@ -294,6 +340,40 @@ TEST_CASE(
     }
     REQUIRE(sampled >= 100);
     REQUIRE(behavior_checks >= 80);
+}
+
+TEST_CASE(
+    "v2 snapshot rebuild preserves dealt supply order and turn encoding",
+    "[v2][state-builder][encoder]") {
+    const GameState organic =
+        Game::new_game(arena_ordered_setup(), 0xA11E'0A00ULL);
+    const Snapshot snapshot = snapshot_of(organic, 0U);
+    const GameState rebuilt = build_game_from_snapshot(snapshot);
+
+    REQUIRE(organic.turn_counter == 0U);
+    REQUIRE(snapshot.turn_number == 0U);
+    REQUIRE(rebuilt.turn_counter == organic.turn_counter);
+    REQUIRE(rebuilt.num_piles == organic.num_piles);
+    REQUIRE(snapshot.kingdom_order_count == 10U);
+    for (std::uint8_t pile = 0; pile < organic.num_piles; ++pile) {
+        CHECK(
+            rebuilt.slot_to_def[rebuilt.piles[pile].base]
+            == organic.slot_to_def[organic.piles[pile].base]);
+    }
+
+    std::array<float, OBS_SIZE_V3> organic_obs{};
+    std::array<float, OBS_SIZE_V3> rebuilt_obs{};
+    encode(organic, 0U, organic_obs.data(), ObsVersion::V3);
+    encode(rebuilt, 0U, rebuilt_obs.data(), ObsVersion::V3);
+    REQUIRE(std::memcmp(
+                organic_obs.data() + OBS_V2_SUPPLY_OFFSET,
+                rebuilt_obs.data() + OBS_V2_SUPPLY_OFFSET,
+                OBS_SUPPLY_SIZE * sizeof(float))
+        == 0);
+    REQUIRE(
+        organic_obs[OBS_V2_TURN_OFFSET + OBS_PHASE_COUNT + 2U] == 0.0F);
+    REQUIRE(
+        rebuilt_obs[OBS_V2_TURN_OFFSET + OBS_PHASE_COUNT + 2U] == 0.0F);
 }
 
 TEST_CASE(

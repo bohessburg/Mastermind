@@ -16,7 +16,7 @@ def test_default_arena_config_loads_credentials_only_from_environment() -> None:
 
     assert config.sims == 400
     assert config.checkpoint_path == Path(
-        "checkpoints/remote/campaign18/gen_0020.pt"
+        "checkpoints/remote/campaign19/gen_0015.pt"
     )
     assert config.arena_user == "operator"
     assert config.arena_pass == "secret"
