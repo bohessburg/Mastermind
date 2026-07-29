@@ -1142,3 +1142,31 @@ restructuring per findings: curated engine-kingdom curriculum phases,
 full-game guidance, and human-game imitation (the only source of
 competent engine piloting). Serving stack + duel/benchmark/telemetry
 harnesses carry forward unchanged.
+
+VALUE-HEAD ENGINE PROBE (2026-07-28, local, post-c19): counterfactual
+obs-editing on 14 real mid-game buy states (turn>=10, engine-dominant
+kingdom: Village/Smithy/Lab/Market/Chapel/Festival/CR/Moat/Militia/
+Witch). Own deck+discard composition swapped between matched variants
+(equal VP): MONEY 7C/3S/2G/3E, ENGINE 3C/2S/2Vil/2Smi/2Lab/1Mkt/1Cha/3E
+(thinned, built), JUNK 9C/1S/4Curse/3E control. Value head means:
+  c15 gen_0045:  money +0.897 | engine +0.717 | junk -0.032
+  c18 gen_0025:  money +0.819 | engine -0.686 | junk -0.948
+  c19 g5/25/40:  money ~-0.86 | engine ~-0.98 | junk ~-1.00
+FINDINGS: (1) EVERY net in the lineage prices a fully-built engine deck
+BELOW a plain money deck on an engine board — the value head is where
+engine lines die: MCTS backups steer away from engine plans regardless
+of policy exploration, so no policy-side curriculum (templates, floors)
+could ever convert. (2) The bias is honest-in-distribution: under the
+nets' own mediocre engine piloting, engines DO lose — the piloting
+chicken-and-egg is encoded in the value function. (3) c18's anti-engine
+bias is extreme (built engine at -0.69). (4) c19's values saturate
+hard-negative on ALL variants of these off-distribution states (even
+money ~-0.86 where c18 reads +0.82 on identical inputs) — its tightly
+fit value head (vloss 0.021, entropy 1.20) is OOD-brittle, a candidate
+mechanism for the second-seat gap and human-play failures. Junk control
+sane everywhere. Probe: scratchpad value_probe.py pattern (obs-edit,
+recreate from log). IMPLICATION (ranking only, spec deferred): fixes
+must change the OUTCOME DATA the value head trains on — engine wins
+must actually occur in training games (human-game imitation; curated
+engine-kingdom phases); policy-only guidance cannot work. Input to the
+pre-c20 architecture audit.
