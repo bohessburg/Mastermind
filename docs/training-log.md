@@ -1099,3 +1099,46 @@ cores, quota 46); kill by process-tree walk, never trainer+GPU pids;
 never pattern-match processes in the same command that kills (killed own
 ssh session twice); baseline log-grep counts on append-mode logs;
 progress.json + heartbeat telemetry now mandatory on all long jobs.
+
+C19 CAMPAIGN COMPLETE (2026-07-27/28, cut at gen 45 per rule): 4x scale
+(CardTokenNet d320/5L/8H, 6.63M params) from scratch on obs-v3, anneal
+FLOORS (lambda ->0.15, p_unc ->0.7), league of c18+v2 ancestors via obs
+downgrade, no scripted training opponents. New 246-core vast box, 128
+workers, shared inference server: 708 games/hr gen 1 -> 1,700+ mature;
+45 generations in ~34h wall, ~$45 total incl. probes/duels.
+
+RESULTS — every scripted/neural instrument at or past champ level:
+- engine3: 21% (g1) -> 55.3% (g40, 400-game benchmark; champ's own
+  definitive read 56.1 — statistical tie). bigmoney 83/100 (record).
+  thinner 8.5 -> 71%.
+- CHAMPION DUELS vs c15 gen_0045 (200g, 400 sims, seat-swapped):
+  22.3 / 27.6 / 43.6 / 39.4 / 42.1 / 44.3 / 42.8 / 47.7 / 44.3 at
+  g5..g45. Peak 47.7 (g40) — the closest any artifact has come to the
+  champ; NO CROSSING. Seat structure stable: ~50-58% going first,
+  ~29-38% going second — the entire remaining gap is second-seat play,
+  uniform across game lengths (per-game telemetry refuted the
+  short-wins/long-losses hypothesis; front-loading was seat blocking).
+- League proxy runs 0-7pts HOT vs clean duels at later gens (mutual
+  noise compresses skill gaps — randomness favors the underdog).
+
+VERDICT (Jack, from arena/live play, confirmed by telemetry):
+c19 converged to THE SAME ARCHETYPE AS THE CHAMP — money+attacks, near
+zero unforced trasher/engine buys (Chapel ~0.13/game unconstrained,
+over-buys attacks). Scale bought a stronger money bot, not a different
+player. The anneal floor did not prevent repertoire regression; forced
+openings produced games the net learned to BEAT, not to ADOPT (template
+seats vs unconstrained hovered 45-55% — neutral gradient). Diagnosis
+candidates for restructuring: (1) piloting chicken-and-egg (engines
+lose under mediocre self-piloting, so the data honestly teaches money);
+(2) kingdom-averaging (money decent everywhere beats engines-great-
+somewhere for an unconditional prior); (3) attack signal density
+(immediate credit vs 10-turn engine payoff horizon).
+
+FLAGSHIP: campaign19/gen_0040 (47.7 champ duel, 55.3 engine3-400g).
+All 45 checkpoints + replay + metrics banked. NEXT (pre-c20 audit,
+convened early): value-head counterfactual probe (built engine deck vs
+money deck — locates the failure in value/policy/data), then
+restructuring per findings: curated engine-kingdom curriculum phases,
+full-game guidance, and human-game imitation (the only source of
+competent engine piloting). Serving stack + duel/benchmark/telemetry
+harnesses carry forward unchanged.
