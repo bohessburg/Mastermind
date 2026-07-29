@@ -1,142 +1,149 @@
 # Session Handoff — Training Program State
 
-Snapshot: 2026-07-24. Read with `docs/training-log.md` (experiment history —
-the c15/c16/c17 and phase-close entries at the bottom are the current state),
-`IMPLEMENTATION_PLAN.md` (Phase T), `docs/bot_strategies.md` (scripted bots,
-EngineBotV3), `docs/web-ui-handoff.md` (web UI is a separate session's domain).
+Snapshot: 2026-07-28. Read with `docs/training-log.md` (experiment history —
+the c18/c19/serving-shakeout/value-probe entries at the bottom are the
+current state), `IMPLEMENTATION_PLAN.md` (Phase T2 roadmap + pre-c20 gate),
+`docs/human-games-analysis.md`, `docs/bot_strategies.md`,
+`docs/web-ui-handoff.md` (web UI is a separate session's domain).
+
+## THE CENTRAL FINDING (2026-07-28) — read this first
+
+The value-head engine probe (training-log tail) closed the question the
+whole program has circled since the human-games analysis: **every network
+in the lineage — c15 champ, c18, c19 — prices a fully-built, thinned
+engine deck BELOW a plain money deck on an engine-dominant board.** The
+value head is where engine lines die: MCTS backups steer away from engine
+plans no matter what the policy explores, so NO policy-side curriculum
+(forced openings, anneal floors, obs enrichment, 4x scale — all tried,
+c18+c19) can convert. The bias is honest-in-distribution: under the nets'
+own mediocre engine piloting, engines DO lose in self-play — the
+chicken-and-egg is encoded in the value function.
+
+**Implication (ranking established, SPEC DELIBERATELY NOT YET DRAFTED —
+Jack wants the restructuring design done fresh):** fixes must change the
+OUTCOME DATA the value head trains on — engine wins must actually happen
+in training games. Ranked candidates: (1) human-game imitation (the only
+existing source of competent engine piloting; 113 competitive records in
+`exports/records/` + the arena can harvest more); (2) curated
+engine-kingdom curriculum phases (boards where even mediocre engine play
+beats money); (3) full-game guidance as supplement only. Secondary
+finding feeding the pre-c20 audit: c19's tightly-fit value head
+(vloss 0.021) saturates hard-negative on off-distribution states —
+OOD-brittleness is a candidate mechanism for its second-seat gap and
+human-play failures.
 
 ## What is running RIGHT NOW
 
-**No training.** The program is PAUSED: box 3 (vast.ai RTX 5090) ran out of
-credit 2026-07-15 and is gone. Jack manages the vast console himself; we have
-no VAST_API_KEY and cannot provision or destroy instances — wait for a box.
+**Nothing.** c19 was cut at gen 45 (2026-07-28, pre-registered rule) and
+the vast box destroyed. All artifacts banked locally. No GPU exists; the
+next box gets provisioned when the restructuring design is ready.
 
-**Serving:** the flagship is deployed on a Hetzner VPS via the `deploy/`
-stack (single Docker image: built Vite client + FastAPI from one origin,
-optional Caddy TLS profile; see `deploy/README.md`). 400 sims. Local serving:
-`DOMINION_NN_CHECKPOINT=checkpoints/remote/campaign15/gen_0045.pt` + uvicorn
-(see `docs/play-the-net.md`).
+**Serving:** flagship deployment on the Hetzner VPS (`deploy/` stack,
+400 sims) — still c15 gen_0045 unless Jack switched it.
 
-## Flagship of record: c15 gen_0045 (card-token transformer)
+## Strength ladder (all clean 400-sim reads)
 
-Best engine3 read 62.8% (honest band ~56-57), and the first checkpoint ever
-to take a game off Jack (41-40; his overall record vs the program is
-otherwise unbeaten — human W-L is a tracked metric).
+- **c15 gen_0045 remains the strongest artifact** (Jack's correction on
+  record: strongest AND cheapest). engine3 56.1% (definitive sweep).
+- **c19 gen_0040 is the strongest challenger ever**: 47.7% vs the champ
+  head-to-head (peak; final band 42-48), engine3 55.3% (400g — statistical
+  tie with champ), bigmoney 81-83%, thinner 71%. BUT Jack's live-play
+  verdict, telemetry-confirmed: c19 converged to the champ's own
+  archetype — money+attacks, ~0.13 unforced Chapel buys/game, over-buys
+  attacks. A bigger champ, not a different player. Humans still beat it.
+- Champ-duel seat structure (stable across 5 milestones): ~50-58% going
+  FIRST, ~29-38% going SECOND — the whole gap is second-seat play,
+  uniform across game lengths (per-game telemetry refuted the
+  short-wins hypothesis).
 
-**Operating point everywhere: 400 sims, fixed c_puct 1.25.** Deep search
-REGRESSES: the 2026-07-20 sims sweep (500 games/point vs engine3) shows a
-flat plateau 200-1000 sims (~52-56%) then monotonic decline — 1600 sims
-scores 39.7%. Do not raise sims to "play stronger." Policy-only (sims=1) is
-4.0% vs engine3 — nearly all strength lives in search; the distillation gap
-is a c18+ lever.
+## Campaign history this phase (details in training-log)
 
-## Campaign results this phase (details in training-log)
+- **c18** (obs-v3 + forced openings, 1.5M): cut g25; avoidance drift —
+  policy regressed to money as lambda annealed to zero.
+- **c19** (4x scale d320/5L/8H + anneal floors 0.15/0.7): cut g45; same
+  archetype convergence despite floors. 45 gens, ~$45, ~34h. Proved:
+  capacity is NOT the constraint; serving stack does 1,700+ games/hr.
+- League-proxy calibration: runs 0-7pts HOT vs clean duels at later gens
+  (mutual selfplay noise compresses skill gaps — favors the underdog).
+  Never quote league lines as duel forecasts.
 
-- **c15** (card-token transformer, 1.5M params, mixed-arch league): the
-  architecture thesis PROVED — −44% offline value MSE vs MLP, from-scratch
-  engine3 curve 48.2% (g19) → 62.8% (g45) → 56-57 (g50/55, cut at 55). Every
-  MLP-lineage flagship reads 34-37% on the same sentinel.
-- **c16** (40% engine3 opponent mix, no league/curriculum, warm-start c15
-  g45): sentinel FLAT ~50-55 through 25 gens. Engine pressure alone does not
-  convert value accuracy into strength.
-- **c17** (margin_blend value targets α=0.6, warm-start c16 g30): the
-  score-snapshot bias is ELIMINATED (probe-verified: bot no longer panic-buys
-  Duchies when behind), but the STRENGTH VERDICT IS INCOMPLETE — sentinel
-  flat 48.5-51.5 through gen 15, interrupted ~gen 20 by the box lapse just
-  as the replay buffer converted to majority-new-target data.
+## Next moves (in order)
 
-## Next moves (re-scoped 2026-07-25 after the human-games analysis)
+1. **Restructuring design session** (Jack-led, not yet started): turn the
+   value-head finding into a c20 recipe. Do NOT draft ahead of him.
+2. **Pre-c20 gate (Phase T2, mandatory):** architecture/topology audit +
+   literature review (set transformers, pointer nets, OpenAI Five/
+   AlphaStar entity encoders, published deckbuilder AI). The probe
+   findings and seat-gap data are its inputs.
+3. Arena/human data: harvesting more human games is now doubly valuable
+   (eval set AND imitation source). Militia arena bug was fixed by the
+   other session; arena runs are unblocked.
 
-**c17 is ABANDONED** (Jack's call, 2026-07-25): the human-games analysis
-(`docs/human-games-analysis.md`) showed the binding constraint is plan-level
-exploration / archetype monoculture, not value calibration — do not resume it.
+## Local artifacts (all verified)
 
-The campaign roadmap c18–c21 is specced in `IMPLEMENTATION_PLAN.md`
-(Phase T2). **c18 COMPLETE (2026-07-26, cut at gen 25 per pre-registered
-rule):** from-scratch obs-v3 + forced openings reached 45% engine3 / 58%
-thinner / 40% vs the c15 champ in 25 gens (~$7), then capped — the Chapel
-probe showed AVOIDANCE DRIFT (unforced trasher-buying decays as lambda
-anneals to zero; net converges to the champ's archetype). c18 flagship:
-`checkpoints/remote/campaign18/gen_0025.pt`. Full entry at the tail of
-`docs/training-log.md`. **Next: c19 = ~4x scale-up (d320/5L/8H) PLUS
-anneal floor (lambda_final 0.15, p_unconstrained_final 0.7)** — the floor
-is empirically required, not a discretionary second lever. Standing
-policy: no scripted opponents in the training pool ever again — scripts
-are sentinels/eval instruments only. New instruments that carry forward:
-duel.py (clean NN-vs-NN champion duels, cross-obs via downgrade), the
-thinner sentinel (weak lower bound), the Chapel retention probe.
+- `checkpoints/remote/campaign19/` — ALL 45 gens + metrics.csv +
+  replay_state.npz + console19.log. Flagship gen_0040.
+- `checkpoints/remote/campaign18/` — all 25 gens + metrics + replay.
+- Earlier campaigns unchanged (c13/c14/c15/c16/c17 as before; c14
+  replay_state.npz = 1.26M obs-v2 offline set).
+- Configs: run_c18.json, run_c19.json (the floors recipe), probe scripts
+  recreatable from training-log entries (chapel_probe, value_probe).
 
-Still true anytime: human-record games vs the flagship — the only benchmark
-that has never saturated. Arena harness Militia discard bug is the top
-pre-arena fix (25 of 64 arena losses; see human-games-analysis Finding 0).
+## Code facts that carry forward (all committed on v2-phase1)
 
-## Local artifacts (all verified via torch.load)
+- **Shared inference server** (`src/v2/train/inference_server.py`):
+  `server_selfplay: true` routes all workers through one GPU process —
+  coalesced cross-worker batches, per-model firing with deadline
+  preemption, merge-cap at largest compiled bucket, obs-v3→v2 downgrade
+  for league ancestors. 5.8x over eager. Worker count sized to the REAL
+  cgroup quota (`cat /sys/fs/cgroup/cpu.max` or cpu.cfs_quota_us — NEVER
+  nproc; one box advertised 192 cores with a 46-core quota).
+- **duel.py**: clean NN-vs-NN checkpoint duels (400 sims, no noise,
+  seat-BLOCKED halves — first 100 = A first player), cross-obs via
+  downgrade, per-game telemetry lines `pg,index,a_seat,turns,result`.
+  ~2x slower than evaluate.py by structure (both seats search) + config
+  (n_games 64/max_batch 512 — bumpable to 128/2048 for ~2x, untested).
+- **Progress telemetry**: trainer writes `<ckpt_dir>/progress.json`
+  (~30s atomic) + 60s console heartbeats; duel/evaluate print periodic
+  progress; server logs batching stats. PYTHONUNBUFFERED=1 always.
+- CardTokenNet scales cleanly (d320/5L/8H = 6.63M proven); obs-v3 (1788)
+  = v2 + trash section + select-semantic one-hot + source-card embedding.
+- margin_blend targets, visit-scaled PUCT (negative, off), thinner
+  sentinel (weak lower bound: champ beats it 73%) unchanged.
 
-- `checkpoints/remote/campaign13/` — 12 ckpts incl. gen_0065 (MLP-era
-  flagship; 85.6% was vs the weak chart bot — 34.5% vs engine3).
-- `checkpoints/remote/campaign14/` — 0001/0020/0025/0030/0035/0038 +
-  metrics.csv + **replay_state.npz (1.26M obs-v2 positions — the offline
-  validation set; c15 gate 1 ran on it)**.
-- `checkpoints/remote/campaign15/` — eval gens 0005-0055 (~18 MB each).
-- `checkpoints/remote/campaign16/` — 0025/0029/0030. `campaign17/` — 0015.
-- Configs: `configs/run_c15.json` (full recipe), `run_c16.json`,
-  `run_c17.json` (margin_blend). Exports of notable human games in
-  `exports/` (T004… = first bot win vs Jack).
+## Ops lessons (updated the hard way, 2026-07-26/28)
 
-## Code facts that carry forward (all merged on v2-phase1)
-
-- `build_model()` factory (`src/v2/train/model.py`): `model_config["arch"]`
-  absent/"mlp" → DominionNet, "card_transformer" → CardTokenNet
-  (`src/v2/train/card_transformer.py`). Checkpoints self-describe; mixed-arch
-  league works (worker payload carries model_config).
-- CardTokenNet: nn.Embedding(41,192) + 19 per-card scalars → 48 supply
-  tokens + global token, 3 pre-LN layers, pointer policy head, tanh value
-  off global. Zero C++ changes; tokenizer slices obs v2.
-- Inference server: `server_compile` (torch.compile reduce-overhead,
-  fullgraph), `server_autocast_bf16`, `server_batch_buckets` (static shapes).
-  Compiled+bf16 = 368-439K evals/s on the 5090 vs ~70K eager.
-- margin_blend value target (α=0.6, wins→[0.8,1.0]) — the c17 bias fix.
-- Visit-scaled PUCT: implemented, NEGATIVE result, default off ("fixed").
-- EngineBotV3 (`src/v2/bots/` — another session owns it; integrate, don't
-  modify): selfplay opponent kind "engine3", eval sentinel columns
-  sentinel_engine3_*, web seat "bot:engine3" ("Human vs EngineBot" mode).
-
-## Ops lessons (expensive to relearn — next box will likely be vast again)
-
-- NEVER pkill/pgrep a pattern present in your own ssh cmdline. Stop runs
-  ONLY via `/root/stop_train.sh`; ALWAYS stop before any launch.
-- Launch detached: `setsid nohup … >> console.log 2>&1 < /dev/null &`;
-  verify via second ssh. Flaky links sever long sessions — poll with short
-  connections; rsync -az --partial with retries, never scp (silent
-  truncation); md5sum anything that matters.
-- Box "death" can be a proxy outage: check `uptime` + trainer `ps etimes`
-  before assuming a restart wipe. Real restarts wipe the container disk and
-  reassign the ssh port — sync checkpoints home at every eval milestone.
-- Fresh-box build: tarball includes tests/ (v2_fuzz sources), cmake
-  -DBUILD_TESTS=OFF, pip pybind11 into /venv/main, target dominion_v2_py.
-- Watcher pattern: local loop polling metrics.csv, campaign-specific state
-  file, 3-consecutive-failure dead check; it EXITS after each report — must
-  actually re-arm (verify the call, don't just claim it). Eval reports in
-  chat as the FINAL message of a turn; never push notifications.
+- **Stop = kill the whole tree**: trainer + spawn_main workers + GPU
+  pids; server-mode workers are CPU-only and INVISIBLE to nvidia-smi
+  (337 zombies once accumulated). Verify zero fleet procs + clean
+  /dev/shm (kill -9 leaks segments AND sem.mp-* semaphores) before
+  any relaunch.
+- NEVER pattern-match processes in the same command that kills — killed
+  our own ssh session twice. Collect PIDs first, kill by explicit list.
+- Baseline log-grep counts on append-mode logs before alerting on them.
+- Launch detached (setsid nohup, verify via second ssh); rsync
+  --partial, never scp; md5sum checkpoints; bank at every milestone.
+- Watchers exit-per-event and MUST be re-armed; notification queues can
+  delay — milestone routines must re-check the generation counter, not
+  trust firing order.
+- ALL user-facing reporting goes in the FINAL message of a turn (mid-turn
+  text is lost); interventions on running campaigns require the full
+  incident report (problem/evidence/change/cost) in that final message.
 
 ## Eval discipline
 
-- The honest strength read is the **engine3 sentinel** (or evaluate.py
-  --opponent engine3/engine2). The legacy "engine" chart bot is much weaker
-  than the drivers bots — pre-reframe "~89% vs EngineBot" rows mean "vs
-  chart money bot." Sentinel noise at n=200 is ~±3.5 for one sigma.
-- Counterfactual obs-editing probes (policy forward passes on edited
-  observations) beat metrics for behavior questions — established results:
-  tit-for-tat attack retaliation (formed by gen 5), Moat-discount, and the
-  score-snapshot bias before/after margin_blend.
-- Human playtests are ground truth for repertoire gaps (gen 30 loss: never
-  bought Sentry, panic-greened while behind — the probe-confirmed bias).
+- Honest strength = clean duels (duel.py) and evaluate.py at 400 sims.
+  n=200 sigma ≈ ±3.5. League lines are directional only (hot bias).
+- Counterfactual obs-editing probes remain the behavior-question tool:
+  established results now include the engine value probe (see top),
+  Chapel retention/avoidance, tit-for-tat, score-snapshot bias.
+- Human play is ground truth. Telemetry counters can dress up "basically
+  never" as a number — read them per-game (0.13 Chapels/game), not
+  per-100-seat-games.
 
 ## Playable seats (web UI)
 
-bot:nn (policy only), bot:nnmcts (search; NN_MCTS_SIMS env, default 400),
-bot:engine3 / bot:engine2 / bot (scripted). Any checkpoint via
-DOMINION_NN_CHECKPOINT or bot:nnmcts:<path>; the loader is factory-aware
-(arch from checkpoint payload). DEFAULT_NN_CHECKPOINT currently
-campaign13/gen_0065 — override to the flagship when serving. Finished games
-persist to exports/<session>.json.
+Unchanged: bot:nn, bot:nnmcts (NN_MCTS_SIMS, default 400), bot:engine3 /
+bot:engine2 / bot / bot:thinner. Any checkpoint via DOMINION_NN_CHECKPOINT
+or bot:nnmcts:<path>; loader is factory-aware. To play the c19 flagship:
+DOMINION_NN_CHECKPOINT=checkpoints/remote/campaign19/gen_0040.pt.
