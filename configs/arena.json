@@ -1,10 +1,10 @@
 {
-  "checkpoint_path": "checkpoints/remote/campaign19/gen_0040.pt",
+  "checkpoint_path": "checkpoints/remote/campaign15/gen_0045.pt",
   "stall_watchdog_seconds": 120,
   "idle_watchdog_seconds": 600,
   "actuation_mode": "protocol",
   "search": {
-    "obs_version": 3,
+    "obs_version": 2,
     "sims": 400,
     "determinizations": 2,
     "wall_clock_cap_seconds": 30.0
