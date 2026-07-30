@@ -8,8 +8,10 @@
 #include "v2/core/turns.h"
 #include "v2/drivers/bots.h"
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <stdexcept>
 
@@ -170,6 +172,22 @@ void add_to_discard(GameState& state, PlayerId player_id, DefId def, std::uint8_
     return true;
 }
 
+void run_external_search(
+    Mcts& search,
+    const std::array<float, ACTION_SPACE_SIZE>& root_priors,
+    std::uint32_t simulations,
+    Xoshiro256pp& rng) {
+    for (std::uint32_t simulation = 0U; simulation < simulations; ++simulation) {
+        MctsPendingLeaf leaf{};
+        REQUIRE(search.collect_external_leaf(leaf));
+        search.provide_external_evaluation(
+            leaf,
+            0.0F,
+            leaf.node == 0U ? root_priors.data() : nullptr,
+            rng);
+    }
+}
+
 [[nodiscard]] ActionMask highest_prior_actions(
     const ActionMask& legal,
     const std::array<float, ACTION_SPACE_SIZE>& priors,
@@ -296,6 +314,141 @@ TEST_CASE("v2 MCTS fixed PUCT preserves seeded tree selection", "[v2][mcts][puct
         REQUIRE(actual.value_sum == expected.value_sum);
         REQUIRE(actual.prior == expected.prior);
     }
+}
+
+TEST_CASE("v2 MCTS root forced playouts cover positive-prior children", "[v2][mcts][forced]") {
+    const GameState state = buy_position(3);
+    ActionMask legal{};
+    REQUIRE(Game::legal_actions(state, legal) >= 3);
+    const std::array<Action, 3> support = {
+        legal.nth_set(0U),
+        legal.nth_set(1U),
+        legal.nth_set(2U),
+    };
+    std::array<float, ACTION_SPACE_SIZE> priors{};
+    priors[support[0]] = 0.94F;
+    priors[support[1]] = 0.04F;
+    priors[support[2]] = 0.02F;
+
+    MctsConfig baseline_config{};
+    baseline_config.determinizations = 1U;
+    baseline_config.max_tree_nodes = 1024U;
+    baseline_config.rollout_policy = MctsRolloutPolicy::External;
+
+    Mcts baseline(baseline_config);
+    baseline.reset(state, 0U);
+    Xoshiro256pp baseline_rng = Xoshiro256pp::seeded(0xF0CE'ED01ULL);
+    run_external_search(baseline, priors, 12U, baseline_rng);
+
+    MctsConfig forced_config = baseline_config;
+    forced_config.forced_playouts = true;
+    forced_config.forced_playouts_k = 2.0F;
+    Mcts forced(forced_config);
+    forced.reset(state, 0U);
+    // This fixed normalized vector stands in for a root after Dirichlet
+    // mixing; the runtime marker exercises the training-only gate.
+    forced.set_root_dirichlet_noise_active(true);
+    Xoshiro256pp forced_rng = Xoshiro256pp::seeded(0xF0CE'ED01ULL);
+    run_external_search(forced, priors, 12U, forced_rng);
+
+    const MctsNode& root = forced.node(0U);
+    for (std::uint32_t child_index = root.first_child; child_index != MCTS_NULL;
+         child_index = forced.node(child_index).next_sibling) {
+        const MctsNode& child = forced.node(child_index);
+        if (child.prior > 0.0F) {
+            REQUIRE(child.visits >= mcts_forced_playout_visits(
+                child.prior,
+                root.visits,
+                forced_config.forced_playouts_k));
+        }
+    }
+    // The two low-prior but legal children were starved without the root-only
+    // override and receive visits once it is active.
+    REQUIRE(baseline.root_visits_for(support[1]) == 0U);
+    REQUIRE(baseline.root_visits_for(support[2]) == 0U);
+    REQUIRE(forced.root_visits_for(support[1]) > 0U);
+    REQUIRE(forced.root_visits_for(support[2]) > 0U);
+}
+
+TEST_CASE("v2 selfplay forced-playout target pruning preserves the visit argmax", "[v2][mcts][forced]") {
+    const GameState state = buy_position(3);
+    ActionMask legal{};
+    REQUIRE(Game::legal_actions(state, legal) >= 4);
+    const std::array<Action, 4> support = {
+        legal.nth_set(0U),
+        legal.nth_set(1U),
+        legal.nth_set(2U),
+        legal.nth_set(3U),
+    };
+    std::array<float, ACTION_SPACE_SIZE> priors{};
+    priors[support[0]] = 0.58F;
+    priors[support[1]] = 0.30F;
+    priors[support[2]] = 0.08F;
+    priors[support[3]] = 0.04F;
+
+    MctsConfig config{};
+    config.determinizations = 1U;
+    config.max_tree_nodes = 2048U;
+    config.rollout_policy = MctsRolloutPolicy::External;
+    Mcts search(config);
+    search.reset(state, 0U);
+    Xoshiro256pp rng = Xoshiro256pp::seeded(0xF0CE'ED02ULL);
+    run_external_search(search, priors, 40U, rng);
+
+    float raw[ACTION_SPACE_SIZE]{};
+    float pruned[ACTION_SPACE_SIZE]{};
+    search.root_visit_policy(raw, 1.0F);
+    selfplay_pruned_root_visit_policy(search, 2.0F, pruned);
+
+    const MctsNode& root = search.node(0U);
+    const Action best = search.best_root_action();
+    std::uint32_t expected_sum = 0U;
+    bool saw_floor = false;
+    bool saw_non_argmax_subtraction = false;
+    for (std::uint32_t child_index = root.first_child; child_index != MCTS_NULL;
+         child_index = search.node(child_index).next_sibling) {
+        const MctsNode& child = search.node(child_index);
+        std::uint32_t expected = child.visits;
+        if (child.action_from_parent != best) {
+            const std::uint32_t forced = mcts_forced_playout_visits(
+                child.prior,
+                root.visits,
+                2.0F);
+            expected = child.visits > forced ? child.visits - forced : 0U;
+            saw_floor = saw_floor || (child.visits > 0U && child.visits <= forced);
+            saw_non_argmax_subtraction = saw_non_argmax_subtraction
+                || (child.visits > forced && expected < child.visits);
+        }
+        expected_sum += expected;
+    }
+    REQUIRE(expected_sum > 0U);
+    REQUIRE(saw_floor);
+    REQUIRE(saw_non_argmax_subtraction);
+
+    float sum = 0.0F;
+    for (std::uint32_t child_index = root.first_child; child_index != MCTS_NULL;
+         child_index = search.node(child_index).next_sibling) {
+        const MctsNode& child = search.node(child_index);
+        std::uint32_t expected = child.visits;
+        if (child.action_from_parent != best) {
+            const std::uint32_t forced = mcts_forced_playout_visits(
+                child.prior,
+                root.visits,
+                2.0F);
+            expected = child.visits > forced ? child.visits - forced : 0U;
+        }
+        REQUIRE(pruned[child.action_from_parent] >= 0.0F);
+        REQUIRE(pruned[child.action_from_parent]
+                == Catch::Approx(static_cast<float>(expected) / static_cast<float>(expected_sum)));
+        sum += pruned[child.action_from_parent];
+    }
+    REQUIRE(sum == Catch::Approx(1.0F));
+    for (Action action = 0U; action < ACTION_SPACE_SIZE; ++action) {
+        REQUIRE(pruned[action] >= 0.0F);
+    }
+    // The argmax's raw visit count is untouched before renormalization, so
+    // its probability can only gain mass as non-argmax visits are removed.
+    REQUIRE(pruned[best] >= raw[best]);
 }
 
 TEST_CASE("v2 MCTS prefers Province over Estate with eight coins", "[v2][mcts]") {

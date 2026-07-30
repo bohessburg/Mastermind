@@ -11,6 +11,9 @@ from typing import Any
 SCRIPTED_OPPONENT_KINDS = frozenset({"bigmoney", "engine", "engine3", "random", "scaffold"})
 VALUE_TARGET_KINDS = frozenset({"outcome", "winloss", "margin", "margin_blend"})
 C_PUCT_SCHEDULES = frozenset({"fixed", "visit_scaled"})
+DETERMINIZE_MODES = frozenset({"off", "per_decision", "per_turn"})
+TEMP_MODES = frozenset({"legacy", "per_seat_buy"})
+OPTIMIZER_KINDS = frozenset({"adamw", "adam"})
 
 
 @dataclass
@@ -28,6 +31,9 @@ class ModelConfig:
     # CardTokenNet v2 checkpoints omitted this because its layout was
     # implicit. New transformer checkpoints record it so v3 is unambiguous.
     obs_version: int | None = None
+    # None keeps the auxiliary margin-distribution head absent. Enabling
+    # aux_margin_weight promotes this to the documented 21-bin default.
+    aux_margin_buckets: int | None = None
 
 
 @dataclass
@@ -46,7 +52,18 @@ class SelfPlayConfig:
     c_puct_base: float = 19652.0
     dirichlet_alpha: float = 0.30
     dirichlet_frac: float = 0.25
-    temp_moves: int = 12
+    # KataGo-style root forced playouts and target pruning remain opt-in so
+    # existing replay/checkpoint behavior is unchanged unless configured.
+    forced_playouts: bool = False
+    forced_playouts_k: float = 2.0
+    # Legacy preserves the global self-play decision clock. Per-seat buy
+    # scheduling decouples purchase exploration from effect/action choices.
+    temp_moves: int = 20
+    temp_mode: str = "legacy"
+    temp_buy_turns: int = 14
+    temp_action_plies: int = 10
+    temp_effect_plies: int = 6
+    temp_final: float = 0.0
     # v1 remains the default so existing campaigns and checkpoints retain
     # their exact model input shape until a run explicitly opts into v2.
     obs_version: int = 1
@@ -77,6 +94,9 @@ class SelfPlayConfig:
     auto_play_treasures: bool = False
     prune_treasure_plays: bool = False
     tree_reuse: bool = False
+    # Honest hidden-information root sampling is opt-in so older campaign
+    # configs and checkpoints retain their original search behavior.
+    determinize: str = "off"
     min_new_sims: int = 64
     expand_top_k: int = 0
     # c18 opening-template curriculum. The train loop turns the schedule
@@ -96,6 +116,9 @@ class SelfPlayConfig:
 
 @dataclass
 class OptimConfig:
+    # AdamW decouples weight decay from Adam's adaptive moments. Set this to
+    # "adam" only when reproducing an older coupled-L2 campaign.
+    optimizer: str = "adamw"
     lr: float = 1.0e-3
     lr_schedule: str = "constant"
     min_lr: float = 1.0e-5
@@ -104,6 +127,35 @@ class OptimConfig:
     weight_decay: float = 1.0e-4
     batch_size: int = 256
     train_steps_per_generation: int = 100
+
+
+@dataclass
+class ImitationConfig:
+    """Human-game behavior-cloning and self-play anchor settings.
+
+    The anchor is deliberately a persistent training prior, not a warmup-only
+    regularizer.  A nonzero floor is the intended steady-state policy for this
+    project: anchor schedules should retain a nonzero final value and must not
+    be annealed to zero once human behavior is in use.
+    """
+
+    # Directory containing tuple_manifest.json and tuples-*.npz shards.
+    human_tuples: str = "exports/tuples"
+    # Optional manifest-backed filters. Empty lists retain every exported row.
+    opponent_kinds: list[str] = field(default_factory=list)
+    seat_indices: list[int] = field(default_factory=list)
+    # Fresh runs only: these steps occur before self-play generation one.
+    pretrain_steps: int = 0
+    pretrain_batch_size: int = 256
+    pretrain_lr: float | None = None
+    # Zero keeps existing campaigns byte-for-byte on the self-play-only path.
+    anchor_weight: float = 0.0
+    anchor_batch_size: int = 256
+    # [generation, weight] breakpoints, linearly interpolated like league
+    # schedules. Keep a nonzero final floor; never anneal the anchor to zero.
+    anchor_weight_schedule: list = field(default_factory=list)
+    # beta=0 is uniform hard-label CE; positive beta enables lightweight AWR.
+    anchor_awr_beta: float = 0.0
 
 
 @dataclass
@@ -120,6 +172,9 @@ class EvalConfig:
     eval_kingdoms: str = "random"
     eval_n_games: int = 64
     eval_max_batch: int = 512
+    # Keep periodic measurements clairvoyant by default; campaigns can opt
+    # into the same per-decision root sampling as evaluate.py --honest.
+    eval_honest: bool = False
     # These are deliberately small regression sentinels rather than another
     # training data source. MCTS uses the expensive scaffold, so keep its
     # default game count especially conservative.
@@ -225,9 +280,13 @@ class TrainConfig:
     gate_force_accept_every: int = 0
     checkpoint_dir: str = "checkpoints"
     metrics_csv: str = "checkpoints/metrics.csv"
+    # KataGo-style decomposed terminal-margin supervision. Zero preserves the
+    # established scalar-only objective and leaves the head absent by default.
+    aux_margin_weight: float = 0.0
     model: ModelConfig = field(default_factory=ModelConfig)
     selfplay: SelfPlayConfig = field(default_factory=SelfPlayConfig)
     optim: OptimConfig = field(default_factory=OptimConfig)
+    imitation: ImitationConfig = field(default_factory=ImitationConfig)
     replay: ReplayConfig = field(default_factory=ReplayConfig)
     eval: EvalConfig = field(default_factory=EvalConfig)
 
@@ -277,6 +336,163 @@ def validate_c_puct_config(config: SelfPlayConfig) -> None:
             raise ValueError(f"{field_name} must be finite and positive")
         if not math.isfinite(float(value)) or float(value) <= 0.0:
             raise ValueError(f"{field_name} must be finite and positive")
+
+
+def validate_determinize_config(config: SelfPlayConfig) -> None:
+    """Validate the training-only self-play root-sampling policy."""
+    if not isinstance(config.determinize, str) or config.determinize.lower() not in DETERMINIZE_MODES:
+        allowed = ", ".join(sorted(DETERMINIZE_MODES))
+        raise ValueError(f"unknown selfplay determinize mode {config.determinize!r}; expected one of {allowed}")
+
+
+def validate_temperature_config(config: SelfPlayConfig) -> None:
+    """Validate the decision-kind-aware self-play temperature schedule."""
+    if not isinstance(config.temp_mode, str) or config.temp_mode.lower() not in TEMP_MODES:
+        allowed = ", ".join(sorted(TEMP_MODES))
+        raise ValueError(f"unknown selfplay temp_mode {config.temp_mode!r}; expected one of {allowed}")
+    for field_name in (
+        "temp_moves",
+        "temp_buy_turns",
+        "temp_action_plies",
+        "temp_effect_plies",
+    ):
+        value = getattr(config, field_name)
+        if (
+            not isinstance(value, int)
+            or isinstance(value, bool)
+            or value < 0
+            or value > 65535
+        ):
+            raise ValueError(f"{field_name} must be a non-negative integer no greater than 65535")
+    value = config.temp_final
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError("temp_final must be a finite non-negative number")
+    if not math.isfinite(float(value)) or float(value) < 0.0:
+        raise ValueError("temp_final must be a finite non-negative number")
+
+
+def validate_forced_playouts_config(config: SelfPlayConfig) -> None:
+    """Validate opt-in KataGo-style root forced-playout settings."""
+    if not isinstance(config.forced_playouts, bool):
+        raise ValueError("forced_playouts must be a boolean")
+    value = config.forced_playouts_k
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError("forced_playouts_k must be a finite positive number")
+    if not math.isfinite(float(value)) or float(value) <= 0.0:
+        raise ValueError("forced_playouts_k must be a finite positive number")
+
+
+def validate_optimizer_kind(optimizer: object) -> str:
+    """Return a validated optimizer name used by the Python trainer."""
+    if not isinstance(optimizer, str) or optimizer not in OPTIMIZER_KINDS:
+        allowed = ", ".join(sorted(OPTIMIZER_KINDS))
+        raise ValueError(f"unknown optimizer {optimizer!r}; expected one of {allowed}")
+    return optimizer
+
+
+def validate_optim_config(config: OptimConfig) -> None:
+    validate_optimizer_kind(config.optimizer)
+
+
+def _finite_nonnegative(value: object, name: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{name} must be a finite non-negative number")
+    normalized = float(value)
+    if not math.isfinite(normalized) or normalized < 0.0:
+        raise ValueError(f"{name} must be a finite non-negative number")
+    return normalized
+
+
+def validate_aux_margin_config(config: TrainConfig) -> None:
+    """Validate and materialize opt-in margin-head configuration.
+
+    The head is absent unless explicitly requested by a bucket count or a
+    positive training weight. A positive weight without a count uses the
+    documented default: 21 lower-edge buckets from -20 through +20 in steps
+    of two.
+    """
+
+    weight = _finite_nonnegative(config.aux_margin_weight, "aux_margin_weight")
+    buckets = config.model.aux_margin_buckets
+    if buckets is None:
+        if weight > 0.0:
+            config.model.aux_margin_buckets = 21
+            buckets = 21
+    elif isinstance(buckets, bool) or not isinstance(buckets, int) or buckets < 2:
+        raise ValueError("model.aux_margin_buckets must be null or an integer of at least two")
+    if (weight > 0.0 or buckets is not None) and config.model.arch != "card_transformer":
+        raise ValueError("auxiliary margin distribution is supported only by model.arch='card_transformer'")
+
+
+def effective_anchor_weight(schedule: list, anchor_weight: float, generation: int) -> float:
+    """Resolve imitation-anchor breakpoints with league-schedule semantics."""
+    fixed_weight = _finite_nonnegative(anchor_weight, "anchor_weight")
+    if not isinstance(schedule, list):
+        raise ValueError("anchor_weight_schedule must be a list of [generation, weight] pairs")
+    if not isinstance(generation, int) or isinstance(generation, bool):
+        raise ValueError("generation must be an integer")
+    if not schedule:
+        return fixed_weight
+
+    breakpoints: list[tuple[int, float]] = []
+    previous_generation: int | None = None
+    for raw_breakpoint in schedule:
+        if not isinstance(raw_breakpoint, list) or len(raw_breakpoint) != 2:
+            raise ValueError("anchor_weight_schedule must contain [generation, weight] pairs")
+        raw_generation, raw_weight = raw_breakpoint
+        if not isinstance(raw_generation, int) or isinstance(raw_generation, bool) or raw_generation < 0:
+            raise ValueError("anchor_weight_schedule generation must be an integer at least zero")
+        weight = _finite_nonnegative(raw_weight, "anchor_weight_schedule weight")
+        if previous_generation is not None and raw_generation <= previous_generation:
+            raise ValueError("anchor_weight_schedule generations must be strictly increasing")
+        breakpoints.append((raw_generation, weight))
+        previous_generation = raw_generation
+
+    if generation <= breakpoints[0][0]:
+        return breakpoints[0][1]
+    if generation >= breakpoints[-1][0]:
+        return breakpoints[-1][1]
+    for (start_generation, start_weight), (end_generation, end_weight) in zip(
+        breakpoints, breakpoints[1:]
+    ):
+        if generation <= end_generation:
+            progress = (generation - start_generation) / (end_generation - start_generation)
+            return start_weight + (end_weight - start_weight) * progress
+    raise RuntimeError("anchor weight schedule did not cover its interpolation interval")
+
+
+def anchor_weight_for_generation(config: ImitationConfig, generation: int) -> float:
+    """Return the configured steady-state human-anchor weight for a generation."""
+    return effective_anchor_weight(config.anchor_weight_schedule, config.anchor_weight, generation)
+
+
+def validate_imitation_config(config: ImitationConfig) -> None:
+    """Validate optional human imitation settings without touching tuple files."""
+    if not isinstance(config.human_tuples, str) or not config.human_tuples:
+        raise ValueError("imitation.human_tuples must be a non-empty string path")
+    if not isinstance(config.opponent_kinds, list) or not all(
+        isinstance(kind, str) and kind for kind in config.opponent_kinds
+    ):
+        raise ValueError("imitation.opponent_kinds must be a list of non-empty strings")
+    if not isinstance(config.seat_indices, list) or not all(
+        isinstance(seat, int) and not isinstance(seat, bool) and seat >= 0
+        for seat in config.seat_indices
+    ):
+        raise ValueError("imitation.seat_indices must be a list of non-negative integers")
+    for field_name in ("pretrain_steps", "pretrain_batch_size", "anchor_batch_size"):
+        value = getattr(config, field_name)
+        if not isinstance(value, int) or isinstance(value, bool) or value < (0 if field_name == "pretrain_steps" else 1):
+            qualifier = "non-negative" if field_name == "pretrain_steps" else "positive"
+            raise ValueError(f"imitation.{field_name} must be a {qualifier} integer")
+    if config.pretrain_lr is not None:
+        if isinstance(config.pretrain_lr, bool) or not isinstance(config.pretrain_lr, (int, float)):
+            raise ValueError("imitation.pretrain_lr must be null or a finite positive number")
+        if not math.isfinite(float(config.pretrain_lr)) or float(config.pretrain_lr) <= 0.0:
+            raise ValueError("imitation.pretrain_lr must be null or a finite positive number")
+    _finite_nonnegative(config.anchor_weight, "anchor_weight")
+    _finite_nonnegative(config.anchor_awr_beta, "anchor_awr_beta")
+    # Evaluating at generation zero validates the whole breakpoint list.
+    anchor_weight_for_generation(config, 0)
 
 
 def _opening_unit_interval(value: object, name: str) -> float:
@@ -425,6 +641,12 @@ def load_config(path: str | Path | None) -> TrainConfig:
     validate_scripted_opponent_kinds(cfg)
     validate_value_target_config(cfg.selfplay)
     validate_c_puct_config(cfg.selfplay)
+    validate_determinize_config(cfg.selfplay)
+    validate_temperature_config(cfg.selfplay)
+    validate_forced_playouts_config(cfg.selfplay)
+    validate_optim_config(cfg.optim)
+    validate_aux_margin_config(cfg)
+    validate_imitation_config(cfg.imitation)
     validate_deep_slice_config(cfg.selfplay)
     validate_opening_template_config(cfg.selfplay)
     return cfg

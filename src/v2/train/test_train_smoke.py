@@ -409,7 +409,9 @@ def test_parallel_record_packing_rejects_a_v1_row_for_a_v2_generation() -> None:
     record = {
         "observations": np.zeros((1, dz.OBS_SIZE_V1), dtype=np.float32),
         "policy_targets": np.zeros((1, dz.ACTION_SPACE_SIZE), dtype=np.float32),
+        "legal_mask": np.zeros((1, dz.ACTION_SPACE_SIZE), dtype=np.bool_),
         "values": np.zeros((1,), dtype=np.float32),
+        "margins": np.zeros((1,), dtype=np.int16),
     }
 
     with pytest.raises(ValueError, match="observation width"):
@@ -442,7 +444,7 @@ def test_split_checkpoint_roundtrip(tmp_path: Path) -> None:
     assert generation == 1
     for key in ("capacity", "obs_size", "action_size", "write", "size", "rng_state"):
         assert actual[key] == expected[key]
-    for key in ("obs", "policy", "value", "legal_mask"):
+    for key in ("obs", "policy", "value", "legal_mask", "margin"):
         np.testing.assert_array_equal(actual[key], expected[key])
 
 

@@ -173,10 +173,21 @@ void require_same_records(const std::vector<SelfPlayRecord>& lhs, const std::vec
         REQUIRE(lhs[index].moves == rhs[index].moves);
         REQUIRE(lhs[index].winner == rhs[index].winner);
         REQUIRE(lhs[index].kingdom_count == rhs[index].kingdom_count);
+        REQUIRE(std::memcmp(lhs[index].kingdom, rhs[index].kingdom, sizeof(lhs[index].kingdom)) == 0);
+        REQUIRE(std::memcmp(lhs[index].scores, rhs[index].scores, sizeof(lhs[index].scores)) == 0);
+        REQUIRE(lhs[index].scripted_nn_player == rhs[index].scripted_nn_player);
+        REQUIRE(lhs[index].game_index == rhs[index].game_index);
+        REQUIRE(lhs[index].seat0_model_id == rhs[index].seat0_model_id);
+        REQUIRE(lhs[index].seat1_model_id == rhs[index].seat1_model_id);
+        REQUIRE(lhs[index].scripted_bot == rhs[index].scripted_bot);
+        REQUIRE(lhs[index].sims_override == rhs[index].sims_override);
         REQUIRE(lhs[index].observations == rhs[index].observations);
         REQUIRE(lhs[index].policy_targets == rhs[index].policy_targets);
+        REQUIRE(lhs[index].sampled_actions == rhs[index].sampled_actions);
+        REQUIRE(lhs[index].legal_mask_words == rhs[index].legal_mask_words);
         REQUIRE(lhs[index].players == rhs[index].players);
         REQUIRE(lhs[index].values == rhs[index].values);
+        REQUIRE(lhs[index].margins == rhs[index].margins);
         REQUIRE(lhs[index].cards_trashed == rhs[index].cards_trashed);
         REQUIRE(std::memcmp(
                     lhs[index].seat_template_ids,
@@ -191,6 +202,40 @@ void require_same_records(const std::vector<SelfPlayRecord>& lhs, const std::vec
                     rhs[index].unconstrained_buy_counts,
                     sizeof(lhs[index].unconstrained_buy_counts)) == 0);
     }
+}
+
+void require_temperature_sampling_mode(float temperature, bool expect_argmax) {
+    GameState state = opening_buy_state({DEF_CHAPEL}, 3);
+    MctsConfig config{};
+    config.rollout_policy = MctsRolloutPolicy::External;
+    config.determinizations = 1U;
+    config.max_tree_nodes = 256U;
+    Mcts search(config);
+    search.reset(state, 0U);
+    MctsPendingLeaf leaf{};
+    REQUIRE(search.collect_external_leaf(leaf));
+    float priors[ACTION_SPACE_SIZE]{};
+    for (Action action = 0U; action < ACTION_SPACE_SIZE; ++action) {
+        priors[action] = leaf.legal.test(action) ? 1.0F : 0.0F;
+    }
+    Xoshiro256pp expansion_rng = Xoshiro256pp::seeded(0x7E4D'0001ULL);
+    search.provide_external_evaluation(leaf, 0.0F, priors, expansion_rng);
+
+    Xoshiro256pp argmax_rng = Xoshiro256pp::seeded(0x7E4D'0002ULL);
+    const Action argmax = search.sample_root_action(0.0F, argmax_rng);
+    if (expect_argmax) {
+        Xoshiro256pp choice_rng = Xoshiro256pp::seeded(0x7E4D'0003ULL);
+        REQUIRE(search.sample_root_action(temperature, choice_rng) == argmax);
+        return;
+    }
+
+    bool sampled_non_argmax = false;
+    for (std::uint64_t seed = 1U; seed <= 64U; ++seed) {
+        Xoshiro256pp choice_rng = Xoshiro256pp::seeded(seed);
+        sampled_non_argmax = sampled_non_argmax
+            || search.sample_root_action(temperature, choice_rng) != argmax;
+    }
+    REQUIRE(sampled_non_argmax);
 }
 
 } // namespace
@@ -267,6 +312,83 @@ TEST_CASE("v2 external MCTS policy targets are legal-action masked", "[v2][selfp
     }
     REQUIRE(illegal_zero);
     REQUIRE(sum == Catch::Approx(1.0F).margin(0.0001F));
+}
+
+TEST_CASE("v2 selfplay temperature schedule decouples seats and decision kinds", "[v2][selfplay][temperature]") {
+    SelfPlayConfig config{};
+    REQUIRE(config.temp_mode == SelfPlayTempMode::Legacy);
+    REQUIRE(config.temp_moves == 20U);
+    REQUIRE(selfplay_temperature_for(
+                config, DecisionKind::Choose, 19U, 999U, 999U)
+            == 1.0F);
+    REQUIRE(selfplay_temperature_for(
+                config, DecisionKind::Choose, 20U, 0U, 1U)
+            == 0.0F);
+
+    config.temp_mode = SelfPlayTempMode::PerSeatBuy;
+    config.temp_buy_turns = 2U;
+    config.temp_action_plies = 2U;
+    config.temp_effect_plies = 2U;
+    config.temp_final = 0.0F;
+
+    // turns.cpp increments after cleanup: 0/1 are the players' first turns.
+    REQUIRE(selfplay_seat_turn_number(0U) == 1U);
+    REQUIRE(selfplay_seat_turn_number(1U) == 1U);
+    REQUIRE(selfplay_seat_turn_number(2U) == 2U);
+    REQUIRE(selfplay_seat_turn_number(3U) == 2U);
+
+    const float buy_early = selfplay_temperature_for(
+        config, DecisionKind::PhaseBuy, 999U, 99U, 2U);
+    const float buy_late = selfplay_temperature_for(
+        config, DecisionKind::PhaseBuy, 0U, 0U, 3U);
+    const float action_seat_one_early = selfplay_temperature_for(
+        config, DecisionKind::PhaseAction, 0U, 1U, 99U);
+    const float action_seat_zero_late = selfplay_temperature_for(
+        config, DecisionKind::PhaseAction, 0U, 2U, 99U);
+    const float effect_early = selfplay_temperature_for(
+        config, DecisionKind::ChooseGain, 0U, 1U, 99U);
+    const float effect_late = selfplay_temperature_for(
+        config, DecisionKind::ReactWindow, 0U, 2U, 99U);
+
+    REQUIRE(buy_early == 1.0F);
+    REQUIRE(buy_late == 0.0F);
+    REQUIRE(action_seat_one_early == 1.0F);
+    REQUIRE(action_seat_zero_late == 0.0F);
+    REQUIRE(effect_early == 1.0F);
+    REQUIRE(effect_late == 0.0F);
+
+    // A positive temperature samples visit mass; zero is the root argmax.
+    require_temperature_sampling_mode(buy_early, false);
+    require_temperature_sampling_mode(buy_late, true);
+    require_temperature_sampling_mode(action_seat_one_early, false);
+    require_temperature_sampling_mode(action_seat_zero_late, true);
+    require_temperature_sampling_mode(effect_early, false);
+    require_temperature_sampling_mode(effect_late, true);
+
+    config.temp_final = 0.25F;
+    REQUIRE(selfplay_temperature_for(
+                config, DecisionKind::ChooseOption, 0U, 2U, 99U)
+            == Catch::Approx(0.25F));
+}
+
+TEST_CASE("v2 legacy temperature mode preserves seeded action streams", "[v2][selfplay][temperature]") {
+    SelfPlayConfig historical = fixed_config(1U, 8U, 8U, 0x5E1F'7A20ULL);
+    historical.auto_play_treasures = true;
+    historical.prune_treasure_plays = true;
+
+    SelfPlayConfig mode_off = historical;
+    // These fields must be inert while legacy mode retains the global clock.
+    mode_off.temp_mode = SelfPlayTempMode::Legacy;
+    mode_off.temp_buy_turns = 0U;
+    mode_off.temp_action_plies = 0U;
+    mode_off.temp_effect_plies = 0U;
+    mode_off.temp_final = 0.0F;
+
+    const std::vector<SelfPlayRecord> expected = run_until_finished(historical, 1U);
+    const std::vector<SelfPlayRecord> actual = run_until_finished(mode_off, 1U);
+    REQUIRE_FALSE(expected.empty());
+    REQUIRE_FALSE(expected.front().sampled_actions.empty());
+    require_same_records(expected, actual);
 }
 
 TEST_CASE("v2 opening templates resolve legal price-band preferences", "[v2][selfplay][opening]") {
@@ -412,7 +534,9 @@ TEST_CASE("v2 selfplay finished records have normalized policies and terminal va
     REQUIRE(record.moves > 0U);
     REQUIRE(record.observations.size() == static_cast<std::size_t>(record.moves) * OBS_SIZE);
     REQUIRE(record.policy_targets.size() == static_cast<std::size_t>(record.moves) * ACTION_SPACE_SIZE);
+    REQUIRE(record.legal_mask_words.size() == static_cast<std::size_t>(record.moves) * ACTION_MASK_WORDS);
     REQUIRE(record.values.size() == record.moves);
+    REQUIRE(record.margins.size() == record.moves);
     for (std::uint16_t move = 0; move < record.moves; ++move) {
         float sum = 0.0F;
         bool nonnegative = true;
@@ -425,6 +549,67 @@ TEST_CASE("v2 selfplay finished records have normalized policies and terminal va
         REQUIRE(sum == Catch::Approx(1.0F).margin(0.0001F));
         REQUIRE((record.values[move] == -1.0F || record.values[move] == 0.0F || record.values[move] == 1.0F));
     }
+}
+
+TEST_CASE("v2 selfplay records final margins from each recorded seat perspective", "[v2][selfplay][margin]") {
+    const std::vector<SelfPlayRecord> records = run_until_finished(
+        fixed_config(2U, 8U, 16U, 0x5E1F'4D41'5247ULL),
+        1U);
+    REQUIRE_FALSE(records.empty());
+
+    const SelfPlayRecord& record = records.front();
+    bool saw_seat[MAX_PLAYERS]{};
+    REQUIRE(record.margins.size() == record.moves);
+    for (std::uint16_t move = 0U; move < record.moves; ++move) {
+        const PlayerId player = record.players[move];
+        REQUIRE(player < MAX_PLAYERS);
+        const PlayerId opponent = static_cast<PlayerId>(player == 0U ? 1U : 0U);
+        const int expected = std::clamp(
+            static_cast<int>(record.scores[player]) - static_cast<int>(record.scores[opponent]),
+            -127,
+            127);
+        REQUIRE(record.margins[move] == expected);
+        saw_seat[player] = true;
+    }
+    REQUIRE(saw_seat[0U]);
+    REQUIRE(saw_seat[1U]);
+}
+
+TEST_CASE("v2 selfplay records legal zero-visit root actions", "[v2][selfplay]") {
+    SelfPlayConfig config = fixed_config(1U, 2U, 4U, 0x5E1F'0A11ULL);
+    config.auto_play_treasures = true;
+    config.prune_treasure_plays = true;
+    // root_visit_policy uses its visit-weight form while this remains positive,
+    // so a zero target here means the legal child had zero root visits.
+    config.temp_moves = 255U;
+    const std::vector<SelfPlayRecord> records = run_until_finished(config, 1U);
+
+    bool found_legal_zero_visit = false;
+    for (const SelfPlayRecord& record : records) {
+        REQUIRE(record.legal_mask_words.size()
+                == static_cast<std::size_t>(record.moves) * ACTION_MASK_WORDS);
+        for (std::uint16_t move = 0U; move < record.moves; ++move) {
+            std::uint32_t legal_count = 0U;
+            std::uint32_t nonzero_policy_count = 0U;
+            const float* policy = record.policy_targets.data()
+                + (static_cast<std::size_t>(move) * ACTION_SPACE_SIZE);
+            for (Action action = 0U; action < ACTION_SPACE_SIZE; ++action) {
+                const bool legal = (record.legal_mask_words[
+                    (static_cast<std::size_t>(move) * ACTION_MASK_WORDS) + (action >> 6U)]
+                    & (std::uint64_t{1} << (action & 63U))) != 0U;
+                legal_count += legal ? 1U : 0U;
+                nonzero_policy_count += policy[action] > 0.0F ? 1U : 0U;
+            }
+            if (legal_count > nonzero_policy_count) {
+                found_legal_zero_visit = true;
+                break;
+            }
+        }
+        if (found_legal_zero_visit) {
+            break;
+        }
+    }
+    REQUIRE(found_legal_zero_visit);
 }
 
 TEST_CASE("v2 selfplay MarginBlend terminal target tempers margin influence", "[v2][selfplay][value]") {
@@ -466,6 +651,40 @@ TEST_CASE("v2 selfplay is deterministic with a fixed mock evaluator", "[v2][self
         REQUIRE(a[i].policy_targets == b[i].policy_targets);
         REQUIRE(a[i].values == b[i].values);
     }
+}
+
+TEST_CASE("v2 selfplay disables forced-playout target changes by default", "[v2][selfplay][forced]") {
+    SelfPlayConfig baseline = fixed_config(1U, 4U, 8U, 0x5E1F'F0CEULL);
+    baseline.dirichlet_frac = 0.25F;
+    baseline.auto_play_treasures = true;
+    baseline.prune_treasure_plays = true;
+    baseline.temp_moves = 0U;
+    // Both configs take the historical raw root_visit_policy path. Altering
+    // k while the flag is off must therefore be bit-for-bit inert.
+    SelfPlayConfig disabled = baseline;
+    disabled.forced_playouts = false;
+    disabled.forced_playouts_k = 17.0F;
+
+    require_same_records(
+        run_until_finished(baseline, 1U),
+        run_until_finished(disabled, 1U));
+}
+
+TEST_CASE("v2 per-decision determinized selfplay records are bitwise deterministic", "[v2][selfplay][determinize]") {
+    SelfPlayConfig config = fixed_config(2U, 8U, 8U, 0x5E1F'D371ULL);
+    config.auto_play_treasures = true;
+    config.prune_treasure_plays = true;
+    config.temp_moves = 0U;
+    config.max_tree_nodes = 512U;
+    config.determinize = SelfPlayDeterminizeMode::PerDecision;
+    // Existing configs may request this combination. The runner must accept
+    // it and disable reuse internally because every root is freshly sampled.
+    config.tree_reuse = true;
+
+    const std::vector<SelfPlayRecord> first = run_until_finished(config, 1U);
+    const std::vector<SelfPlayRecord> second = run_until_finished(config, 1U);
+    REQUIRE_FALSE(first.empty());
+    require_same_records(first, second);
 }
 
 TEST_CASE("v2 templated selfplay is deterministic and disabled forcing is inert", "[v2][selfplay][opening]") {

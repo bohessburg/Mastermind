@@ -47,6 +47,27 @@ class _LocalSnapshot:
     trash: Counter[int]
 
 
+def final_state_hash_matches(data: Mapping[str, Any], state_hash: int) -> bool:
+    """Return whether either recorded hash generation matches ``state_hash``.
+
+    State-hash generation currently coincides with ``ENCODER_GENERATION``: both
+    changed for the landscape-sentinel repair.  Reuse that engine marker until
+    a future state-format change makes the two generations diverge.
+    """
+    actual_hash = f"0x{int(state_hash):016x}"
+    expected_hashes = (
+        data.get("final_state_hash"),
+        data.get(f"final_state_hash_gen{int(dz.ENCODER_GENERATION)}"),
+    )
+    # Keep the legacy behavior for exports that never recorded a hash at all.
+    if all(expected is None for expected in expected_hashes):
+        return True
+    return any(
+        expected is not None and str(expected).lower() == actual_hash
+        for expected in expected_hashes
+    )
+
+
 def is_local_export_data(data: object) -> bool:
     """Return whether a decoded object has the unchanged web export shape."""
     return (
@@ -79,14 +100,7 @@ def is_complete_local_export_data(data: object) -> bool:
             if action < 0 or action >= len(mask) or not bool(mask[action]):
                 return False
             game.step(action)
-        expected = data.get("final_state_hash")
-        return (
-            bool(game.game_over())
-            and (
-                expected is None
-                or str(expected).lower() == f"0x{int(game.state_hash()):016x}"
-            )
-        )
+        return bool(game.game_over()) and final_state_hash_matches(data, game.state_hash())
     except (KeyError, TypeError, ValueError):
         return False
 
@@ -148,11 +162,12 @@ def convert_local_data(
             )
         )
 
-    expected_hash = data.get("final_state_hash")
     actual_hash = f"0x{int(game.state_hash()):016x}"
-    if expected_hash is not None and str(expected_hash).lower() != actual_hash:
+    if not final_state_hash_matches(data, game.state_hash()):
         raise ValueError(
-            f"local replay hash mismatch: {actual_hash} != {expected_hash}"
+            "local replay hash mismatch: "
+            f"{actual_hash} matches neither final_state_hash nor "
+            f"final_state_hash_gen{int(dz.ENCODER_GENERATION)}"
         )
 
     scores = tuple(int(game.score(seat)) for seat in range(len(seat_kinds)))

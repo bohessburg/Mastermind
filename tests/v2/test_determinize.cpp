@@ -6,6 +6,7 @@
 #include "v2/core/setup.h"
 #include "v2/drivers/bots.h"
 #include "v2/encode/encoder.h"
+#include "v2/mcts/selfplay.h"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -41,6 +42,12 @@ namespace {
 [[nodiscard]] std::array<float, OBS_SIZE_V2> encoded_v2(const GameState& state, PlayerId player) noexcept {
     std::array<float, OBS_SIZE_V2> out{};
     encode_v2(state, player, out.data());
+    return out;
+}
+
+[[nodiscard]] std::array<float, OBS_SIZE_V3> encoded_v3(const GameState& state, PlayerId player) noexcept {
+    std::array<float, OBS_SIZE_V3> out{};
+    encode_v3(state, player, out.data());
     return out;
 }
 
@@ -87,6 +94,42 @@ void seed_hidden_pool(GameState& state) {
     return std::memcmp(lhs.players[player].hand, rhs.players[player].hand, sizeof(lhs.players[player].hand)) == 0;
 }
 
+[[nodiscard]] std::array<std::uint16_t, MAX_SLOTS> hidden_zone_multiset(
+    const GameState& state,
+    PlayerId player) noexcept {
+    std::array<std::uint16_t, MAX_SLOTS> counts{};
+    const PlayerState& owner = state.players[player];
+    for (Slot slot = 0U; slot < state.num_slots; ++slot) {
+        counts[slot] = owner.hand[slot];
+    }
+    for (std::uint8_t index = 0U; index < owner.deck.size; ++index) {
+        const Slot slot = owner.deck.cards[index];
+        if (slot < state.num_slots) {
+            ++counts[slot];
+        }
+    }
+    return counts;
+}
+
+[[nodiscard]] std::uint16_t hidden_hand_size(const GameState& state, PlayerId player) noexcept {
+    std::uint16_t total = 0U;
+    for (Slot slot = 0U; slot < state.num_slots; ++slot) {
+        total = static_cast<std::uint16_t>(total + state.players[player].hand[slot]);
+    }
+    return total;
+}
+
+[[nodiscard]] bool hidden_zones_equal(
+    const GameState& lhs,
+    const GameState& rhs,
+    PlayerId player) noexcept {
+    const PlayerState& left = lhs.players[player];
+    const PlayerState& right = rhs.players[player];
+    return std::memcmp(left.hand, right.hand, sizeof(left.hand)) == 0
+        && left.deck.size == right.deck.size
+        && std::memcmp(left.deck.cards, right.deck.cards, left.deck.size * sizeof(Slot)) == 0;
+}
+
 void play_to_completion(GameState state, std::uint64_t seed) {
     const InvariantBaseline baseline = capture_baseline(state);
     RandomBot bots[MAX_PLAYERS] = {
@@ -131,37 +174,45 @@ TEST_CASE("v2 determinize preserves public encoding and own hand", "[v2][determi
     CHECK(original.players[1].deck.size == sampled.players[1].deck.size);
 }
 
-TEST_CASE("v2 determinize resamples opponent hand across seeds", "[v2][determinize]") {
+TEST_CASE("v2 determinize changes opponent hidden zones while preserving their multiset", "[v2][determinize]") {
     GameState original = Game::new_game(determinize_setup(), 0xD373'0002ULL);
     seed_hidden_pool(original);
 
+    GameState sampled = original;
     bool saw_difference = false;
     for (std::uint64_t seed = 0; seed < 32U; ++seed) {
-        GameState sampled = original;
+        sampled = original;
         determinize(sampled, 0U, 0xD373'2000ULL + seed);
-        if (!hand_equal(original, sampled, 1U)) {
+        if (!hidden_zones_equal(original, sampled, 1U)) {
             saw_difference = true;
             break;
         }
     }
 
     REQUIRE(saw_difference);
+    CHECK(original.players[1].deck.size == sampled.players[1].deck.size);
+    CHECK(hidden_hand_size(original, 1U) == hidden_hand_size(sampled, 1U));
+    CHECK(hidden_zone_multiset(original, 1U) == hidden_zone_multiset(sampled, 1U));
 }
 
-TEST_CASE("v2 determinize preserves full v2 observations across mid-game states", "[v2][determinize]") {
+TEST_CASE("v2 determinize preserves v2 and v3 mover observations across mid-game states", "[v2][determinize]") {
     GameState state = Game::new_game(determinize_setup(), 0xD373'5001ULL);
     RandomBot bot(0xD373'6001ULL);
     int checked_states = 0;
 
     for (int step = 0; step < 28; ++step) {
-        const auto original = encoded_v2(state, 0U);
+        const PlayerId mover = Game::current_decision(state).player;
+        REQUIRE(mover < state.num_players);
+        const auto original_v2 = encoded_v2(state, mover);
+        const auto original_v3 = encoded_v3(state, mover);
         for (std::uint64_t sample = 0; sample < 4U; ++sample) {
             GameState determinized = state;
             determinize(
                 determinized,
-                0U,
+                mover,
                 0xD373'7000ULL + (static_cast<std::uint64_t>(step) * 4U) + sample);
-            CHECK(encoded_v2(determinized, 0U) == original);
+            CHECK(encoded_v2(determinized, mover) == original_v2);
+            CHECK(encoded_v3(determinized, mover) == original_v3);
         }
         ++checked_states;
         if (state.phase == static_cast<std::uint8_t>(Phase::Over)) {
@@ -171,6 +222,53 @@ TEST_CASE("v2 determinize preserves full v2 observations across mid-game states"
     }
 
     REQUIRE(checked_states >= 8);
+}
+
+TEST_CASE("v2 per-turn selfplay determinization seeds are stable within a turn", "[v2][determinize][selfplay]") {
+    constexpr std::uint64_t GAME_SEED = 0xD373'8001ULL;
+    constexpr PlayerId SEAT = 0U;
+    constexpr std::uint16_t TURN = 11U;
+    const std::uint64_t per_turn_first = selfplay_determinization_seed(
+        GAME_SEED,
+        SEAT,
+        3U,
+        TURN,
+        SelfPlayDeterminizeMode::PerTurn);
+    const std::uint64_t per_turn_repeat = selfplay_determinization_seed(
+        GAME_SEED,
+        SEAT,
+        91U,
+        TURN,
+        SelfPlayDeterminizeMode::PerTurn);
+    const std::uint64_t per_turn_next = selfplay_determinization_seed(
+        GAME_SEED,
+        SEAT,
+        92U,
+        static_cast<std::uint16_t>(TURN + 1U),
+        SelfPlayDeterminizeMode::PerTurn);
+    const std::uint64_t per_decision_next = selfplay_determinization_seed(
+        GAME_SEED,
+        SEAT,
+        4U,
+        TURN,
+        SelfPlayDeterminizeMode::PerDecision);
+
+    REQUIRE(per_turn_first == per_turn_repeat);
+    REQUIRE(per_turn_first != per_turn_next);
+    REQUIRE(per_turn_first != per_decision_next);
+
+    GameState original = Game::new_game(determinize_setup(), GAME_SEED);
+    seed_hidden_pool(original);
+    GameState first = original;
+    GameState repeat = original;
+    GameState next_turn = original;
+    determinize(first, SEAT, per_turn_first);
+    determinize(repeat, SEAT, per_turn_repeat);
+    determinize(next_turn, SEAT, per_turn_next);
+
+    REQUIRE(std::memcmp(&first, &repeat, sizeof(GameState)) == 0);
+    REQUIRE(hidden_zones_equal(first, repeat, 1U));
+    REQUIRE_FALSE(hidden_zones_equal(first, next_turn, 1U));
 }
 
 TEST_CASE("v2 original and determinized states can finish", "[v2][determinize]") {

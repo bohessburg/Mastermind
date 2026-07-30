@@ -1,5 +1,6 @@
 #include "v2/mcts/eval_runner.h"
 
+#include "v2/core/determinize.h"
 #include "v2/core/game.h"
 #include "v2/core/score.h"
 #include "v2/core/setup.h"
@@ -7,7 +8,9 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <array>
 #include <cstdint>
+#include <cstring>
 #include <vector>
 
 namespace {
@@ -44,6 +47,34 @@ void add_to_discard(GameState& state, PlayerId player_id, DefId def, std::uint8_
         player.discard.cards[player.discard.size] = slot;
         ++player.discard.size;
     }
+}
+
+[[nodiscard]] std::array<std::uint16_t, MAX_SLOTS> hidden_zone_multiset(
+    const GameState& state,
+    PlayerId player) noexcept {
+    std::array<std::uint16_t, MAX_SLOTS> counts{};
+    const PlayerState& owner = state.players[player];
+    for (Slot slot = 0U; slot < state.num_slots; ++slot) {
+        counts[slot] = owner.hand[slot];
+    }
+    for (std::uint8_t index = 0U; index < owner.deck.size; ++index) {
+        const Slot slot = owner.deck.cards[index];
+        if (slot < state.num_slots) {
+            ++counts[slot];
+        }
+    }
+    return counts;
+}
+
+[[nodiscard]] bool hidden_zones_equal(
+    const GameState& lhs,
+    const GameState& rhs,
+    PlayerId player) noexcept {
+    const PlayerState& left = lhs.players[player];
+    const PlayerState& right = rhs.players[player];
+    return std::memcmp(left.hand, right.hand, sizeof(left.hand)) == 0
+        && left.deck.size == right.deck.size
+        && std::memcmp(left.deck.cards, right.deck.cards, left.deck.size * sizeof(Slot)) == 0;
 }
 
 [[nodiscard]] GameState pile_clock_engine_chart_position(bool player_ahead) {
@@ -231,6 +262,63 @@ TEST_CASE("v2 eval runner mock evaluator completes games", "[v2][eval_runner]") 
     const EvalRunnerResult result = runner.result();
     REQUIRE(result.games >= 2U);
     REQUIRE(result.games == result.nn_wins + result.scripted_wins + result.ties);
+}
+
+TEST_CASE("v2 eval runner samples only the NN search root when honest", "[v2][eval_runner][determinize]") {
+    EvalRunnerConfig off_config = fixed_eval_config(1U, 4U, 4U, 0xE0A1'D371ULL);
+    EvalRunner off_runner(off_config);
+    REQUIRE(off_runner.collect_leaves(off_config.max_batch) > 0U);
+    const GameState* off_live = off_runner.active_state(0U);
+    const GameState* off_root = off_runner.active_search_root(0U);
+    REQUIRE(off_live != nullptr);
+    REQUIRE(off_root != nullptr);
+    // The default preserves the historical perfect-information reset exactly.
+    REQUIRE(std::memcmp(off_live, off_root, sizeof(GameState)) == 0);
+
+    bool found_resampled_root = false;
+    for (std::uint64_t offset = 0U; offset < 32U && !found_resampled_root; ++offset) {
+        EvalRunnerConfig honest_config = fixed_eval_config(
+            1U,
+            4U,
+            4U,
+            0xE0A1'D371ULL + offset);
+        honest_config.determinize = SelfPlayDeterminizeMode::PerDecision;
+        EvalRunner honest_runner(honest_config);
+        REQUIRE(honest_runner.collect_leaves(honest_config.max_batch) > 0U);
+        const GameState* live = honest_runner.active_state(0U);
+        const GameState* root = honest_runner.active_search_root(0U);
+        REQUIRE(live != nullptr);
+        REQUIRE(root != nullptr);
+
+        GameState expected = *live;
+        determinize(
+            expected,
+            0U,
+            selfplay_determinization_seed(
+                honest_config.seed,
+                0U,
+                0U,
+                live->turn_counter,
+                SelfPlayDeterminizeMode::PerDecision));
+        REQUIRE(std::memcmp(root, &expected, sizeof(GameState)) == 0);
+        if (!hidden_zones_equal(*live, *root, 1U)) {
+            found_resampled_root = true;
+            CHECK(hidden_zone_multiset(*live, 1U) == hidden_zone_multiset(*root, 1U));
+        }
+    }
+    REQUIRE(found_resampled_root);
+}
+
+TEST_CASE("v2 honest eval runner mock batch completes with sane results", "[v2][eval_runner][determinize]") {
+    EvalRunnerConfig config = fixed_eval_config(2U, 8U, 8U, 0xE0A1'D372ULL);
+    config.determinize = SelfPlayDeterminizeMode::PerTurn;
+    EvalRunner runner(config);
+    drive_until_games(runner, config.max_batch, 2U);
+
+    const EvalRunnerResult result = runner.result();
+    REQUIRE(result.games == 2U);
+    REQUIRE(result.games == result.nn_wins + result.scripted_wins + result.ties);
+    REQUIRE(result.truncated <= result.games);
 }
 
 TEST_CASE("v2 eval runner completes games against Thinner", "[v2][eval_runner][thinner]") {

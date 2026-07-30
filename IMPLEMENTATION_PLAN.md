@@ -677,6 +677,47 @@ pattern) against c18 checkpoints: the keep-inversion should disappear
 once select semantics are encoded; Militia/Bureaucrat kingdom win rates
 are the arena-side confirmation.
 
+### Phase T3 — The c20 restructure (2026-07-28/30; supersedes T2's c20/c21 rows)
+
+Premise (value-head engine probe + pre-c20 audit, `docs/training-log.md`
+2026-07-28/30 entries): the money attractor is multi-layer — outcome-data
+monoculture, saturated value-target geometry (±[0.8,1.0] only), search that
+strangles unvisited lines (legal-mask bug + no forced exploration),
+exploration that dies by turn ~5, and a clairvoyant training/eval regime
+(perfect info + known future draws everywhere except web/arena). One-lever
+campaigns kept failing because every layer independently favors money. T3
+fixes the layers together; c21 (neural exploiter league) remains deferred.
+
+Build order (all landed 2026-07-29/30 unless noted; each reviewed + full
+suites green; results in the training log):
+
+| # | Item | Status |
+|---|------|--------|
+| T3.1 | Honest-eval harness (`honest_eval.py`, serving-identical DecisionSearcher) + honest flagship re-baselines + honest sims curve | DONE — c15 44.9 / c19 47.7 vs engine3 @400/K2; honest depth flat 200–1600 |
+| T3.2 | True legal-mask recording (kills the `policy>0` reconstruction bug) | DONE |
+| T3.3 | Landscape-sentinel memset repair + encoder-generation guard + legacy shim (`--legacy-shim`; pre-fix checkpoints must never run bare on post-fix builds) | DONE — shim reproduces c15 probe means exactly |
+| T3.4 | Determinized self-play (`selfplay.determinize: off\|per_decision\|per_turn`) + honest eval/duel modes (`--honest`) | DONE — regime A/B: ~7–11% cost, identical trajectories |
+| T3.5 | Corpus quarantine + human-tuple exporter (111 real games → 12,734 human-seat tuples w/ raw margins) | DONE |
+| T3.6 | Imitation stack: BC pretrain + persistent anchor (floored, never annealed to zero) + optional AWR + `offline_fit --human-tuples` | DONE |
+| T3.7 | Probe suite as standing instruments (`scripts/probes/`, run_all) | DONE — new finding: Militia keep-inversion persists in c18/c19 |
+| T3.8 | Value-target geometry sweep (α ∈ {.6,.4,.2,0}, 3 seeds, exact margin inversion) | DONE — α=0.0 uniquely seed-stable, engine-parity pricing; Duchy probe = full-scale non-regression gate |
+| T3.9 | Forced playouts + policy-target pruning (KataGo) | DONE — config-gated, default on for c20 |
+| T3.10 | Per-seat decision-kind temperature schedule (`temp_mode: per_seat_buy`, buys τ=1 through turn ~14) | DONE |
+| T3.11 | Duel-validated engine curriculum pools (`configs/kingdom_pools_c20.json`; sentry_engine 94.5%, thin_engine 88.4% vs BM; draw-engine board REJECTED at 51.3%) | DONE |
+| T3.12 | Aux margin-distribution value head (KataGo decomposed targets) | in flight |
+| T3.13 | AdamW default (config-surfaced, legacy-safe resume) | DONE |
+| T3.14 | Serving-stack search parity (K=2 costs ~3.6 pts; ~6 pts residual vs EvalRunner suspected in within-decision batching; free deploy strength) | OPEN |
+| T3.15 | Data collection: Jack local sessions (gold), server auto-export on gameover + VPS redeploy, arena value-only tuple pipeline (blocked on regime flip) | OPEN |
+| T3.16 | `run_c20.json` assembly + pre-registration (Jack-gated; template/SIL disposition memo in task #20) | OPEN |
+
+Measurement doctrine after T3.1/T3.4: track BOTH bars — serving-harness
+honest (deployed config; c15 44.9 / c19 47.7 / duel 45.6) and
+EvalRunner-honest (~54). Clairvoyance itself is worth ~0 vs engine3
+(matched A/B); the old eval-vs-serving gap was stack quality, not
+information. The c19-era 1600-sim regression was a clairvoyant-regime
+artifact; honest depth is neutral and the value head is the binding
+ceiling.
+
 ### Phase 7 — Durations & mats (Seaside/Adventures core mechanics)
 
 | # | Task | Size |

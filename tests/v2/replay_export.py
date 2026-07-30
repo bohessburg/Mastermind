@@ -7,6 +7,8 @@ from typing import Any
 
 import dominion_v2_py as dz
 
+from src.v2.records.local import final_state_hash_matches
+
 
 def format_hash(value: int) -> str:
     return f"0x{int(value):016x}"
@@ -30,9 +32,10 @@ def verify_export_data(data: dict[str, Any]) -> int:
     second = replay_export_data(data)
     if first != second:
         raise AssertionError(f"nondeterministic replay: {format_hash(first)} != {format_hash(second)}")
-    expected = data.get("final_state_hash")
-    if expected is not None and format_hash(first) != str(expected).lower():
-        raise AssertionError(f"hash mismatch: replay {format_hash(first)} != export {expected}")
+    if not final_state_hash_matches(data, first):
+        raise AssertionError(
+            f"hash mismatch: replay {format_hash(first)} matches no recorded generation"
+        )
     return first
 
 

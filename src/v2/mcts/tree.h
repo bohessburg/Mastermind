@@ -55,6 +55,10 @@ struct MctsConfig {
     // When an adopted root already has visits, this guarantees a small
     // amount of new exploration after root-noise priors are applied.
     std::uint16_t min_new_sims = 64U;
+    // Training self-play only. The runner additionally marks each root that
+    // actually receives Dirichlet noise, so generic/eval MCTS remains inert.
+    bool forced_playouts = false;
+    float forced_playouts_k = 2.0F;
 };
 
 static_assert(std::is_trivially_copyable_v<MctsConfig>);
@@ -66,6 +70,12 @@ static_assert(std::is_standard_layout_v<MctsConfig>);
 [[nodiscard]] float mcts_effective_c_puct(
     const MctsConfig& config,
     std::uint32_t parent_visits) noexcept;
+// KataGo-style root exploration quota: ceil(sqrt(k * prior * total_visits)).
+// Invalid/non-positive inputs intentionally require no forced visits.
+[[nodiscard]] std::uint32_t mcts_forced_playout_visits(
+    float prior,
+    std::uint32_t total_visits,
+    float k) noexcept;
 
 struct MctsNode {
     std::uint32_t parent = MCTS_NULL;
@@ -123,6 +133,12 @@ public:
     // Re-normalizes priors only across the existing root children.  The
     // runner uses this when re-applying root exploration noise after reuse.
     void set_root_priors(const float* priors) noexcept;
+    // Set only by SelfPlayRunner after it has established whether this root
+    // uses Dirichlet exploration. Reset/adoption clear the marker so eval and
+    // direct MCTS searches cannot accidentally enable forced playouts.
+    void set_root_dirichlet_noise_active(bool active) noexcept {
+        root_dirichlet_noise_active_ = active;
+    }
 
     void add_virtual_loss(std::uint32_t node, float amount = 1.0F) noexcept;
     void revert_virtual_loss(std::uint32_t node, float amount = 1.0F) noexcept;
@@ -184,6 +200,7 @@ private:
     // Recorded against states_[retained_root_] when the runner commits an
     // action; adoption verifies both that stored child state and the live one.
     std::uint64_t retained_root_state_hash_ = 0;
+    bool root_dirichlet_noise_active_ = false;
     // Deterministic fallback for external-policy callers that do not pass
     // their search RNG into the tree.
     Xoshiro256pp expansion_rng_ = Xoshiro256pp::seeded(0x4D435453ULL);

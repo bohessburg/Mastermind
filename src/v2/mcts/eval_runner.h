@@ -41,6 +41,9 @@ struct EvalRunnerConfig {
     bool retain_finished_games = false;
     bool auto_play_treasures = false;
     bool prune_treasure_plays = false;
+    // Opt-in honest hidden-information root sampling for the NN seat.  The
+    // scripted opponent continues to act on the live game state.
+    SelfPlayDeterminizeMode determinize = SelfPlayDeterminizeMode::Off;
 };
 
 struct EvalRunnerResult {
@@ -67,6 +70,10 @@ public:
     [[nodiscard]] float total_virtual_loss() const noexcept;
     [[nodiscard]] PlayerId active_nn_player(std::uint32_t index) const noexcept;
     [[nodiscard]] std::uint64_t active_sequence(std::uint32_t index) const noexcept;
+    // Read-only diagnostics for runner invariants. The live state is the
+    // authoritative game; the search root can be a sampled hidden world.
+    [[nodiscard]] const GameState* active_state(std::uint32_t index) const noexcept;
+    [[nodiscard]] const GameState* active_search_root(std::uint32_t index) const noexcept;
     [[nodiscard]] Action last_scripted_action() const noexcept;
     std::vector<GameState> take_finished_games();
 

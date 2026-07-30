@@ -31,6 +31,23 @@ enum class SelfPlayValueTarget : std::uint8_t {
     MarginBlend,
 };
 
+// Root-sampling policy for training self-play.  Off preserves the historical
+// perfect-information search root exactly; the other modes sample one honest
+// hidden-information world before every NN search.
+enum class SelfPlayDeterminizeMode : std::uint8_t {
+    Off,
+    PerDecision,
+    PerTurn,
+};
+
+// Root-temperature policy for training self-play. Legacy retains the
+// historical global decision clock; PerSeatBuy gives buys, action plays, and
+// effect decisions separate exploration horizons.
+enum class SelfPlayTempMode : std::uint8_t {
+    Legacy,
+    PerSeatBuy,
+};
+
 // Training-only opponent mode. The policy implementation is shared with
 // EvalRunner so scripted data and eval use identical BigMoney/Engine/Random
 // behavior. EngineV3 keeps its per-game policy state in ScriptedPool's slot
@@ -78,7 +95,21 @@ struct SelfPlayConfig {
     float c_puct_base = 19652.0F;
     float dirichlet_alpha = 0.30F;
     float dirichlet_frac = 0.25F;
-    std::uint16_t temp_moves = 12;
+    // KataGo-style root exploration/pruning is opt-in to preserve legacy
+    // replay and checkpoint behavior exactly when omitted.
+    bool forced_playouts = false;
+    float forced_playouts_k = 2.0F;
+    // Legacy is intentionally the default so an explicit temp_moves setting
+    // continues to select moves on the exact historical global-ply clock.
+    std::uint16_t temp_moves = 20;
+    SelfPlayTempMode temp_mode = SelfPlayTempMode::Legacy;
+    // PerSeatBuy thresholds. Buy turns are one-based; action/effect clocks
+    // are zero-based completed-decision counts for the acting seat.
+    std::uint16_t temp_buy_turns = 14;
+    std::uint16_t temp_action_plies = 10;
+    std::uint16_t temp_effect_plies = 6;
+    // Used after the applicable schedule cutoff. Zero is ordinary argmax.
+    float temp_final = 0.0F;
     std::uint32_t max_batch = 256;
     std::uint64_t seed = 0x545241494EULL;
     ObsVersion obs_version = ObsVersion::V1;
@@ -109,6 +140,9 @@ struct SelfPlayConfig {
     // Training-only search-depth controls. Both remain opt-in so default
     // self-play and gate/eval behavior keep their established full trees.
     bool tree_reuse = false;
+    // Honest-information root sampling is opt-in so existing training runs
+    // retain their exact Phase-T.1 perfect-information behavior by default.
+    SelfPlayDeterminizeMode determinize = SelfPlayDeterminizeMode::Off;
     std::uint16_t min_new_sims = 64U;
     std::uint8_t expand_top_k = 0;
     // Opening templates are a self-play-runner concern, deliberately kept
@@ -144,6 +178,40 @@ struct SelfPlayConfig {
     float margin_scale,
     float margin_blend_alpha) noexcept;
 
+// Build the self-play training target after removing non-best visits that
+// were allocated solely to root forced playouts. The caller gates this to
+// training roots with both forced playouts and Dirichlet noise enabled.
+void selfplay_pruned_root_visit_policy(
+    const Mcts& search,
+    float forced_playouts_k,
+    float* out) noexcept;
+
+// Derive the dedicated root-sampling seed without consuming the game's action
+// sampling, Dirichlet-noise, or opening-template streams.  This is public so
+// deterministic runner fixtures can assert the PerDecision/PerTurn contract.
+[[nodiscard]] std::uint64_t selfplay_determinization_seed(
+    std::uint64_t game_seed,
+    PlayerId seat,
+    std::uint16_t move_index,
+    std::uint16_t turn_counter,
+    SelfPlayDeterminizeMode mode) noexcept;
+
+// Compute the root-sampling temperature for one decision. The caller passes
+// the legacy global move index, the acting seat's completed-decision count,
+// and its one-based turn number. This is public so schedule fixtures can test
+// the policy without driving a complete game.
+[[nodiscard]] float selfplay_temperature_for(
+    const SelfPlayConfig& config,
+    DecisionKind decision_kind,
+    std::uint16_t move_index,
+    std::uint16_t seat_decision_count,
+    std::uint16_t seat_turn_number) noexcept;
+
+// Convert the live two-player turn counter to the acting seat's one-based
+// turn number. turn_counter increments only after a completed player turn.
+[[nodiscard]] std::uint16_t selfplay_seat_turn_number(
+    std::uint16_t turn_counter) noexcept;
+
 // Resolve an opening-template preference for the current root decision. A_END
 // means that the template has no legal preference (including after its window
 // expires). This narrow, allocation-free helper is public for focused runner
@@ -167,7 +235,17 @@ void selfplay_mix_opening_prior(
 struct SelfPlayRecord {
     std::vector<float> observations;
     std::vector<float> policy_targets;
+    // C++ test/diagnostic metadata for selected root actions. It is separate
+    // from policy_targets, whose temperature-one semantics never change.
+    std::vector<Action> sampled_actions;
+    // One true root legal-action bitset per recorded decision. These are
+    // deliberately separate from visit policies: a legal action may receive
+    // zero simulations and therefore have a zero policy target.
+    std::vector<std::uint64_t> legal_mask_words;
     std::vector<float> values;
+    // Final signed score differential for each recorded decision's player.
+    // This remains independent of the scalar value-target convention.
+    std::vector<std::int16_t> margins;
     std::vector<PlayerId> players;
     DefId kingdom[MAX_KINGDOM_DEFS]{};
     std::uint8_t kingdom_count = 0;
@@ -267,10 +345,19 @@ private:
         const ActionMask& legal) const noexcept;
     [[nodiscard]] bool game_has_pending(std::uint32_t index) const noexcept;
     void maybe_finish_move(GameSlot& game) noexcept;
-    void record_decision(GameSlot& game, const float* policy) noexcept;
+    void record_decision(
+        GameSlot& game,
+        const float* policy,
+        const ActionMask& legal) noexcept;
     void finish_game(GameSlot& game) noexcept;
     [[nodiscard]] Setup setup_for(const GameSlot& game) const noexcept;
-    [[nodiscard]] float terminal_value_for(const GameState& state, PlayerId player) const noexcept;
+    // Keep the raw difference for scalar margin targets, whose configured
+    // scale may exceed the compact record-column saturation range.
+    [[nodiscard]] int terminal_margin_for(const GameState& state, PlayerId player) const noexcept;
+    [[nodiscard]] float terminal_value_for(
+        const GameState& state,
+        PlayerId player,
+        int terminal_margin) const noexcept;
     void normalize_policy(
         const float* logits,
         const ActionMask& legal,

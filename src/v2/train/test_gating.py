@@ -8,6 +8,7 @@ import pytest
 import torch
 
 import dominion_v2_py as dz
+from src.v2.encoder_compat import EncoderGenerationError
 
 from .config import TrainConfig
 from .gating import (
@@ -671,60 +672,15 @@ def test_league_observation_validation_allows_only_v3_to_v2_downgrade(tmp_path: 
         seed_league_checkpoints(v2_target, torch.device("cpu"))
 
 
-def test_v3_selfplay_serves_real_v2_league_checkpoint_with_downgraded_inputs(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Run a real v3 game against campaign15 and observe the v2 model input."""
+def test_v3_selfplay_refuses_real_legacy_league_checkpoint(tmp_path: Path) -> None:
+    """Native self-play cannot insert the Python encoder-generation-1 shim."""
     checkpoint = Path(__file__).resolve().parents[3] / "checkpoints/remote/campaign15/gen_0045.pt"
     assert checkpoint.is_file(), f"required real league checkpoint is missing: {checkpoint}"
 
     config = _card_transformer_config(tmp_path / "campaign18-smoke", obs_version=3)
-    config.selfplay.n_games = 1
-    config.selfplay.sims_per_move = 1
-    config.selfplay.max_batch = 4
-    config.selfplay.max_recorded_moves = 64
-    config.selfplay.max_tree_nodes = 256
     config.league_seed_checkpoints = [str(checkpoint)]
-    seeded = seed_league_checkpoints(config, torch.device("cpu"))
-
-    active, _, _ = build_objects(config, torch.device("cpu"))
-    opponent, _ = load_best_checkpoint(config, torch.device("cpu"), seeded[0])
-    active_widths: list[int] = []
-    observed_widths: list[int] = []
-    active_evaluate = active.evaluate
-    original_evaluate = opponent.evaluate
-
-    def spy_active(observations: torch.Tensor, masks: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        active_widths.append(int(observations.shape[1]))
-        return active_evaluate(observations, masks)
-
-    def spy_evaluate(observations: torch.Tensor, masks: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        observed_widths.append(int(observations.shape[1]))
-        return original_evaluate(observations, masks)
-
-    monkeypatch.setattr(active, "evaluate", spy_active)
-    monkeypatch.setattr(opponent, "evaluate", spy_evaluate)
-    stats, records = play_routed_games(
-        (active, opponent),
-        config.selfplay,
-        seed=config.seed,
-        device=torch.device("cpu"),
-        target_games=1,
-        league_opponent=seeded[0].name,
-    )
-
-    assert stats.games == 1
-    assert stats.league_by_opponent[seeded[0].name][0] == 1
-    assert active_widths
-    assert set(active_widths) == {dz.OBS_SIZE_V3}
-    assert observed_widths
-    assert set(observed_widths) == {dz.OBS_SIZE_V2}
-    assert len(records) == 1
-    record = records[0]
-    assert np.asarray(record["observations"]).shape[1] == dz.OBS_SIZE_V3
-    assert np.asarray(record["policy_targets"]).shape[0] == np.asarray(record["observations"]).shape[0]
-    assert np.asarray(record["values"]).shape[0] == np.asarray(record["observations"]).shape[0]
+    with pytest.raises(EncoderGenerationError, match=r"encoder generation 1.*encoder generation 2"):
+        seed_league_checkpoints(config, torch.device("cpu"))
 
 
 def test_ungated_league_schedule_uses_exact_per_generation_counts(tmp_path: Path) -> None:
@@ -753,7 +709,15 @@ def test_periodic_self_checkpoints_are_fifo_capped_without_evicting_seeds(tmp_pa
     cfg.league_self_every = 1
     source_model, source_optimizer, source_replay = build_objects(cfg, torch.device("cpu"))
     seeds = tmp_path / "seed.pt"
-    torch.save({"generation": 0, "config": cfg.to_dict(), "model": source_model.state_dict()}, seeds)
+    torch.save(
+        {
+            "generation": 0,
+            "config": cfg.to_dict(),
+            "encoder_generation": int(dz.ENCODER_GENERATION),
+            "model": source_model.state_dict(),
+        },
+        seeds,
+    )
     cfg.league_seed_checkpoints = [str(seeds)]
     seed_league_checkpoints(cfg, torch.device("cpu"))
 

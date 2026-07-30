@@ -3,6 +3,7 @@
 #include "v2/bots/scripted.h"
 #include "v2/mcts/pile_clock.h"
 
+#include "v2/core/determinize.h"
 #include "v2/core/game.h"
 #include "v2/core/score.h"
 #include "v2/core/turns.h"
@@ -119,6 +120,12 @@ struct DeckProfile {
         throw std::invalid_argument("EvalRunnerConfig.obs_version must be V1, V2, or V3");
     }
     return obs_size_for(version);
+}
+
+[[nodiscard]] constexpr bool valid_determinize_mode(SelfPlayDeterminizeMode mode) noexcept {
+    return mode == SelfPlayDeterminizeMode::Off
+        || mode == SelfPlayDeterminizeMode::PerDecision
+        || mode == SelfPlayDeterminizeMode::PerTurn;
 }
 
 [[nodiscard]] DefId def_for_slot(const GameState& state, Slot slot) noexcept {
@@ -657,6 +664,9 @@ struct EvalRunner::GameSlot {
     std::uint32_t sims_started = 0;
     std::uint32_t sims_completed = 0;
     std::uint32_t pending = 0;
+    // Counts NN-root decisions only. This mirrors scripted self-play, where
+    // only the NN seat starts external-policy searches.
+    std::uint16_t move_index = 0;
     PlayerId nn_player = 0;
     bool search_active = false;
     bool active = false;
@@ -841,6 +851,9 @@ EvalRunner::EvalRunner(const EvalRunnerConfig& config)
     if (!(config_.c_puct_base > 0.0F) || !std::isfinite(config_.c_puct_base)) {
         throw std::invalid_argument("EvalRunnerConfig.c_puct_base must be finite and positive");
     }
+    if (!valid_determinize_mode(config_.determinize)) {
+        throw std::invalid_argument("EvalRunnerConfig.determinize is invalid");
+    }
     if (config_.fixed_setup.num_players == 0U) {
         config_.fixed_setup = default_fixed_setup();
     }
@@ -1022,6 +1035,20 @@ std::uint64_t EvalRunner::active_sequence(std::uint32_t index) const noexcept {
     return index < config_.n_games ? games_[index].sequence : 0U;
 }
 
+const GameState* EvalRunner::active_state(std::uint32_t index) const noexcept {
+    if (index >= config_.n_games || !games_[index].active) {
+        return nullptr;
+    }
+    return &games_[index].state;
+}
+
+const GameState* EvalRunner::active_search_root(std::uint32_t index) const noexcept {
+    if (index >= config_.n_games || !games_[index].active || !games_[index].search_active) {
+        return nullptr;
+    }
+    return &games_[index].mcts.state_for(0U);
+}
+
 Action EvalRunner::last_scripted_action() const noexcept {
     return last_scripted_action_;
 }
@@ -1045,6 +1072,7 @@ void EvalRunner::reset_game(std::uint32_t index) noexcept {
         game.sims_started = 0;
         game.sims_completed = 0;
         game.pending = 0;
+        game.move_index = 0;
         game.nn_player = NONE;
         game.search_active = false;
         game.active = false;
@@ -1067,12 +1095,30 @@ void EvalRunner::reset_game(std::uint32_t index) noexcept {
     game.sims_started = 0;
     game.sims_completed = 0;
     game.pending = 0;
+    game.move_index = 0;
     game.search_active = false;
     game.active = true;
 }
 
 void EvalRunner::start_search(GameSlot& game) noexcept {
-    game.mcts.reset(game.state, decision_player(game.state));
+    const PlayerId player = decision_player(game.state);
+    if (config_.determinize != SelfPlayDeterminizeMode::Off) {
+        // Search a fresh sampled world, but commit the selected action only
+        // to the live state in maybe_finish_move().
+        GameState sampled = game.state;
+        determinize(
+            sampled,
+            player,
+            selfplay_determinization_seed(
+                game.seed,
+                player,
+                game.move_index,
+                game.state.turn_counter,
+                config_.determinize));
+        game.mcts.reset(sampled, player);
+    } else {
+        game.mcts.reset(game.state, player);
+    }
     game.sims_started = 0;
     game.sims_completed = 0;
     game.pending = 0;
@@ -1149,6 +1195,7 @@ void EvalRunner::maybe_finish_move(GameSlot& game) noexcept {
         action = legal_count > 0 ? legal.nth_set(0U) : A_PASS;
     }
     const bool done = Game::step(game.state, action);
+    ++game.move_index;
     game.search_active = false;
     if (done || game.state.phase == static_cast<std::uint8_t>(Phase::Over)) {
         finish_game(game);

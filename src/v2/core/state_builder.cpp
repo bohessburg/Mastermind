@@ -662,6 +662,19 @@ GameState build_game_from_snapshot(const Snapshot& snapshot) {
     state.num_players = snapshot.num_players;
     state.rng = Xoshiro256pp::seeded(0xA2E1'5A7E'B01D'0001ULL);
     state.trigger_table.dirty = 0U;
+    for (std::uint8_t i = 0U; i < MAX_LANDSCAPES; ++i) {
+        state.events[i] = NO_LANDSCAPE;
+        state.ways[i] = NO_LANDSCAPE;
+        state.landmarks[i] = NO_LANDSCAPE;
+        state.projects[i] = NO_LANDSCAPE;
+    }
+    state.prophecy = NO_LANDSCAPE;
+    for (Pile& pile : state.piles) {
+        pile.trait = NO_LANDSCAPE;
+    }
+    for (Pile& pile : state.nonsupply) {
+        pile.trait = NO_LANDSCAPE;
+    }
     for (int i = 0; i < NUM_ARTIFACTS; ++i) {
         state.artifact_holder[i] = NONE;
     }

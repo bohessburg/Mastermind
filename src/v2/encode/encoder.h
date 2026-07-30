@@ -12,6 +12,10 @@ enum class ObsVersion : std::uint16_t {
     V3 = 3,
 };
 
+// Encoder compatibility history: generation 1 predates the landscape/trait
+// sentinel fix; generation 2 encodes absent landscapes and pile traits as 0.
+inline constexpr std::uint16_t ENCODER_GENERATION = 2;
+
 // Compatibility aliases for callers and checkpoints built before observation
 // versioning. They deliberately continue to describe the v1/default layout.
 inline constexpr std::uint16_t OBS_VERSION = static_cast<std::uint16_t>(ObsVersion::V1);
@@ -22,7 +26,14 @@ inline constexpr std::size_t OBS_OWN_SIZE = OBS_OWN_ZONE_COUNT * MAX_SLOTS;
 inline constexpr std::size_t OBS_OPPONENT_BLOCK_SIZE_V1 = 75;
 inline constexpr std::size_t OBS_OPPONENT_SIZE_V1 = (MAX_PLAYERS - 1) * OBS_OPPONENT_BLOCK_SIZE_V1;
 inline constexpr std::size_t OBS_PILE_BLOCK_SIZE = 11;
+inline constexpr std::size_t OBS_PILE_COUNT_FIELD = 0;
+inline constexpr std::size_t OBS_PILE_BASE_FIELD = 2;
+inline constexpr std::size_t OBS_PILE_TRAIT_FIELD = 4;
 inline constexpr std::size_t OBS_SUPPLY_SIZE = MAX_PILES * OBS_PILE_BLOCK_SIZE;
+inline constexpr std::size_t OBS_LANDSCAPE_ID_SECTION_COUNT = 4;
+inline constexpr std::size_t OBS_LANDSCAPE_ID_SIZE = OBS_LANDSCAPE_ID_SECTION_COUNT * MAX_LANDSCAPES;
+inline constexpr std::size_t OBS_LANDSCAPE_PROJECT_BOUGHT_OFFSET = OBS_LANDSCAPE_ID_SIZE;
+inline constexpr std::size_t OBS_LANDSCAPE_PROPHECY_OFFSET = OBS_LANDSCAPE_PROJECT_BOUGHT_OFFSET + MAX_LANDSCAPES;
 inline constexpr std::size_t OBS_LANDSCAPE_SIZE = 27;
 inline constexpr std::size_t OBS_RESOURCE_SIZE = 12;
 inline constexpr std::size_t OBS_PHASE_COUNT = 5;

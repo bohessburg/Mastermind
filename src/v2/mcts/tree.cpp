@@ -12,6 +12,7 @@
 #include <cstddef>
 #include <cmath>
 #include <cstdint>
+#include <limits>
 #include <stdexcept>
 
 namespace {
@@ -965,6 +966,26 @@ float mcts_effective_c_puct(
     return config.c_puct_init + std::log(numerator / config.c_puct_base);
 }
 
+std::uint32_t mcts_forced_playout_visits(
+    float prior,
+    std::uint32_t total_visits,
+    float k) noexcept {
+    if (!(prior > 0.0F) || !std::isfinite(prior)
+        || !(k > 0.0F) || !std::isfinite(k)
+        || total_visits == 0U) {
+        return 0U;
+    }
+    const double quota = std::ceil(std::sqrt(
+        static_cast<double>(k)
+        * static_cast<double>(prior)
+        * static_cast<double>(total_visits)));
+    if (!std::isfinite(quota)
+        || quota >= static_cast<double>(std::numeric_limits<std::uint32_t>::max())) {
+        return std::numeric_limits<std::uint32_t>::max();
+    }
+    return static_cast<std::uint32_t>(quota);
+}
+
 std::uint64_t mcts_state_hash(const GameState& state) noexcept {
     constexpr std::uint64_t kOffset = 14695981039346656037ULL;
     constexpr std::uint64_t kPrime = 1099511628211ULL;
@@ -1174,6 +1195,9 @@ Mcts::Mcts(const MctsConfig& config)
     if (!(config_.c_puct_base > 0.0F) || !std::isfinite(config_.c_puct_base)) {
         throw std::invalid_argument("MctsConfig.c_puct_base must be finite and positive");
     }
+    if (!(config_.forced_playouts_k > 0.0F) || !std::isfinite(config_.forced_playouts_k)) {
+        throw std::invalid_argument("MctsConfig.forced_playouts_k must be finite and positive");
+    }
     if (config_.tree_reuse && safe_determinizations(config_) != 1U) {
         // Each root-sampled tree encodes a different hidden-information
         // world, so a retained child cannot safely represent their aggregate.
@@ -1254,6 +1278,7 @@ Action Mcts::choose(const GameState& root, PlayerId perspective) noexcept {
 
 void Mcts::reset(const GameState& root, PlayerId perspective) noexcept {
     clear_retained_root();
+    root_dirichlet_noise_active_ = false;
     node_count_ = 0;
     exhausted_ = false;
     root_perspective_ = perspective;
@@ -1309,6 +1334,7 @@ bool Mcts::adopt_retained_root(const GameState& root, PlayerId perspective) noex
     const std::uint32_t retained_root = retained_root_;
     const std::uint64_t retained_hash = retained_root_state_hash_;
     clear_retained_root();
+    root_dirichlet_noise_active_ = false;
 
     if (safe_determinizations(config_) != 1U || retained_root == MCTS_NULL
         || retained_root >= node_count_) {
@@ -1980,6 +2006,31 @@ bool Mcts::expand_with_priors(
 
 std::uint32_t Mcts::select_child(std::uint32_t node_index) const noexcept {
     const MctsNode& node = nodes_[node_index];
+    if (node_index == 0U && config_.forced_playouts && root_dirichlet_noise_active_) {
+        std::uint32_t forced_child = MCTS_NULL;
+        std::uint32_t greatest_deficit = 0U;
+        for (std::uint32_t child_index = node.first_child; child_index != MCTS_NULL;
+             child_index = nodes_[child_index].next_sibling) {
+            const MctsNode& child = nodes_[child_index];
+            const std::uint32_t required = mcts_forced_playout_visits(
+                child.prior,
+                node.visits,
+                config_.forced_playouts_k);
+            if (child.visits >= required) {
+                continue;
+            }
+            const std::uint32_t deficit = required - child.visits;
+            if (forced_child == MCTS_NULL || deficit > greatest_deficit) {
+                forced_child = child_index;
+                greatest_deficit = deficit;
+            }
+        }
+        if (forced_child != MCTS_NULL) {
+            // Treat any shortfall as infinite root urgency; ties retain the
+            // existing sibling-order determinism.
+            return forced_child;
+        }
+    }
     std::uint32_t best_child = node.first_child;
     float best_score = -1.0e30F;
     const float parent_visits = static_cast<float>(node.visits + 1U);

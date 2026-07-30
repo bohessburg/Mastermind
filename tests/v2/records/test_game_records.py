@@ -12,7 +12,7 @@ import pytest
 from src.v2.arena.archive import GameArchive, ResultSummary
 from src.v2.records.arena import convert_arena_archive
 from src.v2.records.convert import convert_paths, discover_sources
-from src.v2.records.local import PHASE_NAMES, convert_local_export
+from src.v2.records.local import PHASE_NAMES, convert_local_export, final_state_hash_matches
 from src.v2.records.model import GameRecord, validate_record
 from src.v2.web.server.defs import def_id, def_name
 
@@ -260,7 +260,9 @@ def _independent_replay(
         )
         game.step(int(action))
     assert max(item.turn_number or 0 for item in record.records) == max_turn
-    assert f"0x{game.state_hash():016x}" == source["final_state_hash"].lower()
+    # The landscape-sentinel repair changed state hashing with encoder generation 2;
+    # migrated legacy exports retain their generation-1 hash alongside gen2.
+    assert final_state_hash_matches(source, game.state_hash())
     return game
 
 

@@ -147,6 +147,32 @@ TEST_CASE("v2 encoder exposes version and expected shape", "[v2][encode]") {
     CHECK(obs_v2[OBS_V2_META_OFFSET + 1U] == static_cast<float>(OBS_SIZE_V2));
 }
 
+TEST_CASE("v2 encoder emits no landscapes or pile traits for a fresh base game", "[v2][encode]") {
+    const GameState state = Game::new_game(Setup{}, 0xE4C0'0042ULL);
+    const auto v1 = encoded(state, 0U);
+    const auto v2 = encoded_v2(state, 0U);
+    const auto v3 = encoded_v3(state, 0U);
+
+    for (const Pile& pile : state.piles) {
+        CHECK(pile.trait == NO_LANDSCAPE);
+    }
+    for (const Pile& pile : state.nonsupply) {
+        CHECK(pile.trait == NO_LANDSCAPE);
+    }
+    for (std::size_t index = 0U; index < OBS_LANDSCAPE_SIZE; ++index) {
+        CHECK(v1[OBS_LANDSCAPE_OFFSET + index] == 0.0F);
+        CHECK(v2[OBS_V2_LANDSCAPE_OFFSET + index] == 0.0F);
+        CHECK(v3[OBS_V2_LANDSCAPE_OFFSET + index] == 0.0F);
+    }
+    for (std::uint8_t pile = 0U; pile < state.num_piles; ++pile) {
+        const std::size_t v1_trait = OBS_SUPPLY_OFFSET + (pile * OBS_PILE_BLOCK_SIZE) + 4U;
+        const std::size_t v2_trait = OBS_V2_SUPPLY_OFFSET + (pile * OBS_PILE_BLOCK_SIZE) + 4U;
+        CHECK(v1[v1_trait] == 0.0F);
+        CHECK(v2[v2_trait] == 0.0F);
+        CHECK(v3[v2_trait] == 0.0F);
+    }
+}
+
 TEST_CASE("v3 encoder appends trash and select semantics without changing the v2 prefix", "[v2][encode]") {
     Setup setup{};
     setup.kingdom_count = 1U;

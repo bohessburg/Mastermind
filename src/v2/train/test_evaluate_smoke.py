@@ -6,12 +6,13 @@ import pytest
 import torch
 
 import dominion_v2_py as dz
+from src.v2.encoder_compat import EncoderGenerationError
 
 from . import evaluate
 from .config import load_config
 from .evaluate import classify_game_end, evaluate_checkpoint
 from .test_train_smoke import read_metrics, tiny_config
-from .train import build_objects, run_training, save_checkpoint, validated_eval_sentinels
+from .train import build_objects, load_full_checkpoint, run_training, save_checkpoint, validated_eval_sentinels
 
 
 def test_eval_progress_line_is_flushed_at_twenty_five_game_cadence(capsys) -> None:
@@ -29,6 +30,20 @@ def test_eval_progress_line_is_flushed_at_twenty_five_game_cadence(capsys) -> No
     now[0] = 30.0
     progress.record(50, 26, 20, 4)
     assert capsys.readouterr().out == "50/100 games, nn 26W-20L-4T, 18000 games/hr\n"
+
+
+def test_native_eval_refuses_unstamped_legacy_checkpoint(tmp_path: Path) -> None:
+    config = tiny_config(tmp_path, generations=1)
+    config.model.hidden_sizes = [8]
+    model, optimizer, replay = build_objects(config, torch.device("cpu"))
+    checkpoint = save_checkpoint(config, 1, model, optimizer, replay)
+    payload = load_full_checkpoint(checkpoint, "cpu")
+    del payload["encoder_generation"]
+    legacy = tmp_path / "legacy.pt"
+    torch.save(payload, legacy)
+
+    with pytest.raises(EncoderGenerationError, match=r"encoder generation 1.*encoder generation 2"):
+        evaluate.load_model(legacy, torch.device("cpu"), legacy_shim=True)
 
 
 def test_eval_sentinel_validator_accepts_engine3_engine2_and_thinner() -> None:
@@ -145,6 +160,39 @@ def test_checkpoint_eval_vs_phase6_mcts_smoke(tmp_path: Path) -> None:
     assert stats.end_province + stats.end_piles + stats.end_trunc == stats.games
 
 
+def test_evaluate_cli_honest_bigmoney_smoke(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    cfg = tiny_config(tmp_path, seed=9192, generations=1)
+    cfg.model.hidden_sizes = [8]
+    cfg.selfplay.max_tree_nodes = 256
+    model, optimizer, replay = build_objects(cfg, torch.device("cpu"))
+    checkpoint = save_checkpoint(cfg, 1, model, optimizer, replay)
+
+    assert evaluate.main(
+        [
+            "--checkpoint",
+            str(checkpoint),
+            "--opponent",
+            "bigmoney",
+            "--games",
+            "2",
+            "--sims",
+            "2",
+            "--kingdoms",
+            "fixed",
+            "--device",
+            "cpu",
+            "--n-games",
+            "1",
+            "--max-batch",
+            "8",
+            "--honest",
+        ]
+    ) == 0
+    output = capsys.readouterr().out
+    assert '"honest": true' in output
+    assert "bigmoney,2," in output
+
+
 def test_checkpoint_eval_auto_selects_v2_observation_width(tmp_path: Path) -> None:
     cfg = tiny_config(tmp_path, seed=9292, generations=1)
     cfg.model.hidden_sizes = [8]
@@ -198,6 +246,7 @@ def test_checkpoint_eval_inherits_treasure_collapse_options(
     assert captured["c_puct_schedule"] == "visit_scaled"
     assert captured["c_puct_init"] == 1.5
     assert captured["c_puct_base"] == 500.0
+    assert captured["honest"] is False
 
 
 def test_training_metrics_include_periodic_eval(tmp_path: Path) -> None:
@@ -214,6 +263,7 @@ def test_training_metrics_include_periodic_eval(tmp_path: Path) -> None:
     cfg.eval.eval_kingdoms = "fixed"
     cfg.eval.eval_n_games = 2
     cfg.eval.eval_max_batch = 8
+    cfg.eval.eval_honest = True
     cfg.eval.eval_sentinels = []
 
     run_training(cfg)

@@ -70,7 +70,12 @@ def test_scripted_runner_filters_to_nn_records_and_uses_nn_outcome_perspective(
     assert record["scripted_nn_player"] == nn_player
     assert record["players"].dtype == np.uint8
     assert set(record["players"].tolist()) == {nn_player}
-    assert record["observations"].shape[0] == record["policy_targets"].shape[0] == record["values"].shape[0]
+    assert (
+        record["observations"].shape[0]
+        == record["policy_targets"].shape[0]
+        == record["values"].shape[0]
+        == record["margins"].shape[0]
+    )
     winner = record["winner"]
     expected_value = 0.0 if winner is None else (1.0 if int(winner) == nn_player else -1.0)
     np.testing.assert_array_equal(

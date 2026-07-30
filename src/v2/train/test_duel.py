@@ -3,8 +3,12 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+import torch
 
+from src.v2.encoder_compat import EncoderGenerationError
 from . import duel
+from .test_train_smoke import tiny_config
+from .train import build_objects, save_checkpoint
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -34,65 +38,53 @@ def test_duel_progress_line_is_flushed_at_ten_game_cadence(capsys) -> None:
     not V2_CHECKPOINT.exists() or not V3_CHECKPOINT.exists(),
     reason="mixed-version remote checkpoints are not available locally",
 )
-def test_mixed_observation_checkpoint_duel_is_seeded_and_downgrades_v2(monkeypatch) -> None:
-    """A real v3-v2 match must route the v2 net the 1717-wide ABI."""
-    real_load_model = duel.load_model
-    v2_widths: list[int] = []
+def test_native_duel_refuses_legacy_checkpoints() -> None:
+    """SelfPlayRunner cannot intercept its native leaves with the Python shim."""
+    with pytest.raises(EncoderGenerationError, match=r"encoder generation 1.*encoder generation 2"):
+        duel.duel_checkpoints(
+            V3_CHECKPOINT,
+            V2_CHECKPOINT,
+            games=2,
+            sims=16,
+            kingdoms="random",
+            seed=0xD0E1,
+            device_name="cpu",
+            n_games=1,
+            max_batch=32,
+            legacy_shim=True,
+        )
 
-    def load_with_v2_spy(checkpoint, device):
-        model, config = real_load_model(checkpoint, device)
-        if Path(checkpoint) == V2_CHECKPOINT:
-            evaluate = model.evaluate
 
-            def spy(observations, masks):
-                v2_widths.append(int(observations.shape[-1]))
-                return evaluate(observations, masks)
+def test_duel_cli_honest_smoke_with_tiny_checkpoints(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    checkpoints: list[Path] = []
+    for index in range(2):
+        config = tiny_config(tmp_path / f"model_{index}", seed=0xD0E1 + index, generations=1)
+        config.model.hidden_sizes = [8]
+        config.selfplay.obs_version = 2
+        config.selfplay.max_tree_nodes = 256
+        model, optimizer, replay = build_objects(config, torch.device("cpu"))
+        checkpoints.append(save_checkpoint(config, 1, model, optimizer, replay))
 
-            model.evaluate = spy
-        return model, config
-
-    monkeypatch.setattr(duel, "load_model", load_with_v2_spy)
-    first, _, _, _ = duel.duel_checkpoints(
-        V3_CHECKPOINT,
-        V2_CHECKPOINT,
-        games=2,
-        sims=16,
-        kingdoms="random",
-        seed=0xD0E1,
-        device_name="cpu",
-        n_games=1,
-        max_batch=32,
-    )
-    second, _, _, _ = duel.duel_checkpoints(
-        V3_CHECKPOINT,
-        V2_CHECKPOINT,
-        games=2,
-        sims=16,
-        kingdoms="random",
-        seed=0xD0E1,
-        device_name="cpu",
-        n_games=1,
-        max_batch=32,
-    )
-
-    assert first.games == 2
-    assert first.wins_a + first.wins_b + first.ties == first.games
-    assert all(width == 1717 for width in v2_widths)
-    assert v2_widths
-    assert (
-        first.games,
-        first.wins_a,
-        first.wins_b,
-        first.ties,
-        first.truncated,
-        first.end_province,
-        first.end_piles,
-    ) == (
-        second.games,
-        second.wins_a,
-        second.wins_b,
-        second.ties,
-        second.truncated,
-        second.end_province,
-        second.end_piles,
-    )
+    assert duel.main(
+        [
+            "--a",
+            str(checkpoints[0]),
+            "--b",
+            str(checkpoints[1]),
+            "--games",
+            "2",
+            "--sims",
+            "2",
+            "--kingdoms",
+            "fixed",
+            "--device",
+            "cpu",
+            "--honest",
+        ]
+    ) == 0
+    output = capsys.readouterr().out
+    assert '"honest": true' in output
+    assert "2," in output

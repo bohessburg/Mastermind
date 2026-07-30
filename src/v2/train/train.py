@@ -12,7 +12,7 @@ import warnings
 from dataclasses import asdict
 from math import cos, isfinite, pi
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 import numpy as np
 import torch
@@ -23,17 +23,28 @@ try:
 except ModuleNotFoundError as exc:  # pragma: no cover - gives a clearer CLI error
     raise SystemExit("dominion_v2_py not found; run with PYTHONPATH=build") from exc
 
+from src.v2.encoder_compat import require_native_runner_encoder_compatibility
+
 if __package__ in (None, ""):
     sys.path.append(str(Path(__file__).resolve().parents[3]))
     from src.v2.train.config import (
         TrainConfig,
         add_config_args,
+        anchor_weight_for_generation,
         load_config,
         opening_template_schedule,
         save_config,
         scheduled_opening_selfplay_config,
+        validate_aux_margin_config,
+        validate_determinize_config,
         validate_deep_slice_config,
+        validate_forced_playouts_config,
+        validate_imitation_config,
         validate_opening_template_config,
+        validate_optim_config,
+        validate_optimizer_kind,
+        validate_temperature_config,
+        validate_value_target_config,
     )
     from src.v2.train.gating import (
         GateStats,
@@ -56,6 +67,8 @@ if __package__ in (None, ""):
         seed_league_checkpoints,
     )
     from src.v2.train.inference_server import InferenceServer, serialize_cpu_state_dict
+    from src.v2.train.card_transformer import margin_bucket_ids
+    from src.v2.train.human_data import HumanBatch, HumanTupleDataset, load_human_tuples
     from src.v2.train.model import build_model, count_parameters, masked_policy_loss, model_config_dict
     from src.v2.train.observation import obs_size_for_config, obs_size_for_version, obs_version_for_checkpoint
     from src.v2.train.progress import TrainingProgress
@@ -66,12 +79,21 @@ else:
     from .config import (
         TrainConfig,
         add_config_args,
+        anchor_weight_for_generation,
         load_config,
         opening_template_schedule,
         save_config,
         scheduled_opening_selfplay_config,
+        validate_aux_margin_config,
+        validate_determinize_config,
         validate_deep_slice_config,
+        validate_forced_playouts_config,
+        validate_imitation_config,
         validate_opening_template_config,
+        validate_optim_config,
+        validate_optimizer_kind,
+        validate_temperature_config,
+        validate_value_target_config,
     )
     from .gating import (
         GateStats,
@@ -94,6 +116,8 @@ else:
         seed_league_checkpoints,
     )
     from .inference_server import InferenceServer, serialize_cpu_state_dict
+    from .card_transformer import margin_bucket_ids
+    from .human_data import HumanBatch, HumanTupleDataset, load_human_tuples
     from .model import build_model, count_parameters, masked_policy_loss, model_config_dict
     from .observation import obs_size_for_config, obs_size_for_version, obs_version_for_checkpoint
     from .progress import TrainingProgress
@@ -130,10 +154,16 @@ def seed_everything(seed: int, deterministic: bool = True) -> None:
 def build_objects(config: TrainConfig, device: torch.device):
     # Keep direct callers on the same self-describing transformer-config path
     # as run_training()/checkpoint loading.
+    validate_aux_margin_config(config)
     validate_model_config(config)
+    validate_optim_config(config.optim)
     obs_size = obs_size_for_config(config)
     model = build_model(config.model, obs_size, dz.ACTION_SPACE_SIZE).to(device)
-    optimizer = torch.optim.Adam(
+    optimizer_class = {
+        "adamw": torch.optim.AdamW,
+        "adam": torch.optim.Adam,
+    }[config.optim.optimizer]
+    optimizer = optimizer_class(
         model.parameters(),
         lr=config.optim.lr,
         weight_decay=config.optim.weight_decay,
@@ -169,35 +199,344 @@ def validate_model_config(config: TrainConfig) -> None:
             raise ValueError("model.obs_version must match selfplay.obs_version for card_transformer")
 
 
+def hard_label_policy_loss(
+    logits: torch.Tensor,
+    legal_mask: torch.Tensor,
+    actions: torch.Tensor,
+    *,
+    weights: torch.Tensor | None = None,
+) -> torch.Tensor:
+    """Cross entropy for one demonstrated legal action per row."""
+    masked_logits = logits.masked_fill(~legal_mask, -1.0e9)
+    per_row = F.cross_entropy(masked_logits, actions.to(dtype=torch.long), reduction="none")
+    if weights is None:
+        return per_row.mean()
+    return (per_row * weights).mean()
+
+
+def anchor_awr_weights(
+    value_target: torch.Tensor,
+    value_prediction: torch.Tensor | None,
+    beta: float,
+) -> torch.Tensor:
+    """Return mean-one AWR weights for a human policy batch.
+
+    The value prediction is detached by the caller: this reweights the policy
+    objective without introducing a second, implicit value-gradient path.
+    Keeping the exponent's ceiling at three limits any single demonstration's
+    relative influence to a small, explicit bound.  Subtracting the maximum
+    before exponentiation is algebraically cancelled by batch normalization
+    and prevents underflow for very small positive beta.
+    """
+    if beta <= 0.0:
+        # This branch deliberately does not inspect ``value_prediction``.
+        # beta=0 is exactly the unweighted hard-label CE path.
+        return torch.ones_like(value_target)
+    if value_prediction is None:
+        raise ValueError("positive anchor_awr_beta requires a value prediction")
+    log_weights = torch.clamp((value_target - value_prediction) / float(beta), max=3.0)
+    stable_weights = torch.exp(log_weights - log_weights.max())
+    return stable_weights / stable_weights.mean()
+
+
+def _human_batch_tensors(batch: HumanBatch, device: torch.device) -> tuple[torch.Tensor, ...]:
+    return (
+        torch.as_tensor(batch.obs, dtype=torch.float32, device=device),
+        torch.as_tensor(batch.action, dtype=torch.long, device=device),
+        torch.as_tensor(batch.legal, dtype=torch.bool, device=device),
+        torch.as_tensor(batch.value, dtype=torch.float32, device=device),
+    )
+
+
+def human_imitation_losses(
+    model: torch.nn.Module,
+    batch: HumanBatch,
+    device: torch.device,
+    *,
+    anchor_awr_beta: float = 0.0,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Compute hard-action CE and value MSE for one human tuple batch."""
+    obs, actions, legal_mask, value_target = _human_batch_tensors(batch, device)
+    logits, value_prediction = model(obs)
+    if anchor_awr_beta > 0.0:
+        awr_weights = anchor_awr_weights(
+            value_target,
+            value_prediction.detach(),
+            anchor_awr_beta,
+        )
+        policy_loss = hard_label_policy_loss(logits, legal_mask, actions, weights=awr_weights)
+    else:
+        # Keep beta=0 on the ordinary CE reduction path, rather than merely
+        # multiplying it by an all-ones tensor.
+        policy_loss = hard_label_policy_loss(logits, legal_mask, actions)
+    value_loss = F.mse_loss(value_prediction, value_target)
+    return policy_loss, value_loss
+
+
+def _human_margin_tensor(batch: HumanBatch, device: torch.device) -> torch.Tensor:
+    if batch.margin is None:
+        raise ValueError("auxiliary margin training requires HumanBatch.margin")
+    margin = np.asarray(batch.margin, dtype=np.int16)
+    if margin.shape != np.asarray(batch.value).shape:
+        raise ValueError("HumanBatch.margin shape must match HumanBatch.value")
+    # Materialize labels directly as int64: CrossEntropy expects long class
+    # IDs and this also keeps the optional MPS path away from int16 tensors.
+    return torch.as_tensor(margin, dtype=torch.long, device=device)
+
+
+def _forward_with_aux(
+    model: torch.nn.Module,
+    obs: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    forward_with_aux = getattr(model, "forward_with_aux", None)
+    if not callable(forward_with_aux):
+        raise ValueError("auxiliary margin training requires a CardTokenNet with aux_margin_buckets")
+    logits, value, aux_logits = forward_with_aux(obs)
+    return logits, value, aux_logits
+
+
+def _aux_margin_cross_entropy(
+    model: torch.nn.Module,
+    aux_logits: torch.Tensor,
+    margins: torch.Tensor,
+) -> torch.Tensor:
+    buckets = getattr(model, "aux_margin_buckets", None)
+    if buckets is None:
+        raise ValueError("auxiliary margin training requires configured aux_margin_buckets")
+    labels = margin_bucket_ids(margins, int(buckets))
+    if aux_logits.ndim != 2 or aux_logits.shape != (labels.shape[0], int(buckets)):
+        raise ValueError("auxiliary margin head output shape does not match configured buckets")
+    return F.cross_entropy(aux_logits, labels)
+
+
+def human_imitation_losses_with_aux(
+    model: torch.nn.Module,
+    batch: HumanBatch,
+    device: torch.device,
+    *,
+    anchor_awr_beta: float = 0.0,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Compute one shared-context human policy/value/auxiliary objective."""
+
+    obs, actions, legal_mask, value_target = _human_batch_tensors(batch, device)
+    margins = _human_margin_tensor(batch, device)
+    logits, value_prediction, aux_logits = _forward_with_aux(model, obs)
+    if anchor_awr_beta > 0.0:
+        awr_weights = anchor_awr_weights(
+            value_target,
+            value_prediction.detach(),
+            anchor_awr_beta,
+        )
+        policy_loss = hard_label_policy_loss(logits, legal_mask, actions, weights=awr_weights)
+    else:
+        policy_loss = hard_label_policy_loss(logits, legal_mask, actions)
+    value_loss = F.mse_loss(value_prediction, value_target)
+    aux_loss = _aux_margin_cross_entropy(model, aux_logits, margins)
+    return policy_loss, value_loss, aux_loss
+
+
+def human_pretrain_step(
+    model: torch.nn.Module,
+    optimizer: torch.optim.Optimizer,
+    batch: HumanBatch,
+    device: torch.device,
+) -> dict[str, float]:
+    """Run one behavior-cloning optimizer step on human tuples."""
+    model.train()
+    policy_loss, value_loss = human_imitation_losses(model, batch, device)
+    loss = policy_loss + value_loss
+    optimizer.zero_grad(set_to_none=True)
+    loss.backward()
+    optimizer.step()
+    return {
+        "loss": float(loss.detach().cpu()),
+        "policy_loss": float(policy_loss.detach().cpu()),
+        "value_loss": float(value_loss.detach().cpu()),
+    }
+
+
+def run_human_pretrain(
+    model: torch.nn.Module,
+    optimizer: torch.optim.Optimizer,
+    batches: Iterator[HumanBatch],
+    *,
+    steps: int,
+    device: torch.device,
+    pretrain_lr: float | None = None,
+) -> list[dict[str, float]]:
+    """Run fresh-campaign behavior cloning with a flush-safe heartbeat."""
+    if steps <= 0:
+        return []
+    original_lrs = [float(group["lr"]) for group in optimizer.param_groups]
+    if pretrain_lr is not None:
+        set_optimizer_lr(optimizer, float(pretrain_lr))
+    history: list[dict[str, float]] = []
+    try:
+        for step in range(1, int(steps) + 1):
+            result = human_pretrain_step(model, optimizer, next(batches), device)
+            history.append(result)
+            # Long fresh runs must not appear stalled while pretraining before
+            # generation one.  Fifty optimizer steps is the project's normal
+            # compact heartbeat cadence.
+            if step % 50 == 0 or step == int(steps):
+                print(
+                    "imitation pretrain "
+                    f"step={step}/{int(steps)} loss={result['loss']:.6f} "
+                    f"policy={result['policy_loss']:.6f} value={result['value_loss']:.6f}",
+                    flush=True,
+                )
+    finally:
+        for group, lr in zip(optimizer.param_groups, original_lrs, strict=True):
+            group["lr"] = lr
+    return history
+
+
+def load_human_dataset_for_config(config: TrainConfig) -> HumanTupleDataset:
+    """Load tuple data aligned to the active model ABI and value convention."""
+    dataset = load_human_tuples(
+        config.imitation.human_tuples,
+        value_scheme=config.selfplay.value_target,
+        margin_blend_alpha=config.selfplay.margin_blend_alpha,
+        margin_scale=config.selfplay.margin_scale,
+        opponent_kinds=config.imitation.opponent_kinds or None,
+        seat_indices=config.imitation.seat_indices or None,
+    )
+    expected_obs_size = obs_size_for_config(config)
+    if dataset.obs_width != expected_obs_size:
+        raise ValueError(
+            f"human tuples have obs width {dataset.obs_width}, but this run uses obs width {expected_obs_size}"
+        )
+    if dataset.action_width != int(dz.ACTION_SPACE_SIZE):
+        raise ValueError(
+            f"human tuples have action width {dataset.action_width}, but this run uses action width {dz.ACTION_SPACE_SIZE}"
+        )
+    return dataset
+
+
 def train_step(
     model: torch.nn.Module,
     optimizer: torch.optim.Optimizer,
     replay: ReplayBuffer,
     batch_size: int,
     device: torch.device,
+    *,
+    human_batches: Iterator[HumanBatch] | None = None,
+    anchor_weight: float = 0.0,
+    anchor_awr_beta: float = 0.0,
+    aux_margin_weight: float = 0.0,
 ) -> dict[str, float]:
+    # Keep the established self-play-only code path literally separate. In
+    # particular, inactive anchor/aux objectives must not sample human data,
+    # consume an extra RNG draw, or change the legacy return dictionary.
+    if anchor_weight <= 0.0 and aux_margin_weight <= 0.0:
+        model.train()
+        batch = replay.sample(batch_size)
+        obs = torch.as_tensor(batch.obs, dtype=torch.float32, device=device)
+        policy_target = torch.as_tensor(batch.policy, dtype=torch.float32, device=device)
+        value_target = torch.as_tensor(batch.value, dtype=torch.float32, device=device)
+        legal_mask = torch.as_tensor(batch.legal_mask, dtype=torch.bool, device=device)
+
+        logits, value = model(obs)
+        policy_loss, entropy = masked_policy_loss(logits, legal_mask, policy_target)
+        value_loss = F.mse_loss(value, value_target)
+        loss = policy_loss + value_loss
+
+        optimizer.zero_grad(set_to_none=True)
+        loss.backward()
+        optimizer.step()
+
+        return {
+            "loss": float(loss.detach().cpu()),
+            "policy_loss": float(policy_loss.detach().cpu()),
+            "value_loss": float(value_loss.detach().cpu()),
+            "entropy": float(entropy.detach().cpu()),
+        }
+
+    # Retain the established anchor-only path as well. This remains useful for
+    # existing imitation experiments and keeps it independent of the new head.
+    if aux_margin_weight <= 0.0:
+        if human_batches is None:
+            raise ValueError("human_batches is required when anchor_weight is positive")
+        model.train()
+        batch = replay.sample(batch_size)
+        obs = torch.as_tensor(batch.obs, dtype=torch.float32, device=device)
+        policy_target = torch.as_tensor(batch.policy, dtype=torch.float32, device=device)
+        value_target = torch.as_tensor(batch.value, dtype=torch.float32, device=device)
+        legal_mask = torch.as_tensor(batch.legal_mask, dtype=torch.bool, device=device)
+
+        logits, value = model(obs)
+        policy_loss, entropy = masked_policy_loss(logits, legal_mask, policy_target)
+        value_loss = F.mse_loss(value, value_target)
+        anchor_policy_loss, anchor_value_loss = human_imitation_losses(
+            model,
+            next(human_batches),
+            device,
+            anchor_awr_beta=anchor_awr_beta,
+        )
+        loss = policy_loss + value_loss + float(anchor_weight) * (anchor_policy_loss + anchor_value_loss)
+
+        optimizer.zero_grad(set_to_none=True)
+        loss.backward()
+        optimizer.step()
+
+        return {
+            "loss": float(loss.detach().cpu()),
+            "policy_loss": float(policy_loss.detach().cpu()),
+            "value_loss": float(value_loss.detach().cpu()),
+            "entropy": float(entropy.detach().cpu()),
+            "anchor_policy_loss": float(anchor_policy_loss.detach().cpu()),
+            "anchor_value_loss": float(anchor_value_loss.detach().cpu()),
+        }
+
+    if anchor_weight > 0.0 and human_batches is None:
+        raise ValueError("human_batches is required when anchor_weight is positive")
     model.train()
     batch = replay.sample(batch_size)
     obs = torch.as_tensor(batch.obs, dtype=torch.float32, device=device)
     policy_target = torch.as_tensor(batch.policy, dtype=torch.float32, device=device)
     value_target = torch.as_tensor(batch.value, dtype=torch.float32, device=device)
     legal_mask = torch.as_tensor(batch.legal_mask, dtype=torch.bool, device=device)
+    margin = torch.as_tensor(batch.margin, dtype=torch.long, device=device)
 
-    logits, value = model(obs)
+    logits, value, aux_logits = _forward_with_aux(model, obs)
     policy_loss, entropy = masked_policy_loss(logits, legal_mask, policy_target)
     value_loss = F.mse_loss(value, value_target)
-    loss = policy_loss + value_loss
+    aux_margin_loss = _aux_margin_cross_entropy(model, aux_logits, margin)
+    if anchor_weight > 0.0:
+        assert human_batches is not None
+        anchor_policy_loss, anchor_value_loss, anchor_aux_margin_loss = human_imitation_losses_with_aux(
+            model,
+            next(human_batches),
+            device,
+            anchor_awr_beta=anchor_awr_beta,
+        )
+        # The anchor's auxiliary CE follows the same source weighting as its
+        # policy/value losses, while the reported metric remains in CE units.
+        aux_margin_loss = aux_margin_loss + float(anchor_weight) * anchor_aux_margin_loss
+        loss = (
+            policy_loss
+            + value_loss
+            + float(aux_margin_weight) * aux_margin_loss
+            + float(anchor_weight) * (anchor_policy_loss + anchor_value_loss)
+        )
+    else:
+        loss = policy_loss + value_loss + float(aux_margin_weight) * aux_margin_loss
 
     optimizer.zero_grad(set_to_none=True)
     loss.backward()
     optimizer.step()
 
-    return {
+    result = {
         "loss": float(loss.detach().cpu()),
         "policy_loss": float(policy_loss.detach().cpu()),
         "value_loss": float(value_loss.detach().cpu()),
         "entropy": float(entropy.detach().cpu()),
+        "aux_margin_loss": float(aux_margin_loss.detach().cpu()),
     }
+    if anchor_weight > 0.0:
+        result["anchor_policy_loss"] = float(anchor_policy_loss.detach().cpu())
+        result["anchor_value_loss"] = float(anchor_value_loss.detach().cpu())
+    return result
 
 
 def checkpoint_payload(
@@ -211,6 +550,7 @@ def checkpoint_payload(
     payload = {
         "generation": generation,
         "config": config.to_dict(),
+        "encoder_generation": int(dz.ENCODER_GENERATION),
         "model": model.state_dict(),
         "optimizer": optimizer.state_dict(),
         # RNG state is small generation metadata used for reproducible resume;
@@ -262,9 +602,15 @@ def resolve_resume_path(resume: str | Path | None, checkpoint_dir: str | Path) -
     return str(candidates[-1])
 
 
-def load_checkpoint(path: str | Path, device: torch.device):
+def load_checkpoint(
+    path: str | Path,
+    device: torch.device,
+    *,
+    optimizer_override: str | None = None,
+):
     checkpoint_path = Path(path)
     payload = load_full_checkpoint(checkpoint_path, device)
+    require_native_runner_encoder_compatibility(payload, checkpoint_path)
     cfg_dict = payload["config"]
     cfg = load_config(None)
     if __package__ in (None, ""):
@@ -273,7 +619,23 @@ def load_checkpoint(path: str | Path, device: torch.device):
         from .config import _merge_dataclass
 
     _merge_dataclass(cfg, cfg_dict)
+    # Checkpoints that predate the optimizer field were trained with Adam.
+    # A new config file without the field is deliberately AdamW by default,
+    # but a historical checkpoint must retain its coupled-L2 behavior.
+    checkpoint_optim = cfg_dict.get("optim")
+    if isinstance(checkpoint_optim, dict) and "optimizer" not in checkpoint_optim:
+        cfg.optim.optimizer = "adam"
+    validate_aux_margin_config(cfg)
     validate_model_config(cfg)
+    validate_optim_config(cfg.optim)
+    validate_imitation_config(cfg.imitation)
+    if optimizer_override is not None:
+        requested_optimizer = validate_optimizer_kind(optimizer_override)
+        if requested_optimizer != cfg.optim.optimizer:
+            raise ValueError(
+                f"resume optimizer mismatch for checkpoint {checkpoint_path}: checkpoint config records "
+                f"{cfg.optim.optimizer!r}, but the resume-time override requests {requested_optimizer!r}"
+            )
     model, optimizer, replay = build_objects(cfg, device)
     model.load_state_dict(payload["model"])
     optimizer.load_state_dict(payload["optimizer"])
@@ -327,6 +689,7 @@ def load_initial_weights(
     """
     checkpoint_path = Path(path)
     payload = load_full_checkpoint(checkpoint_path, device)
+    require_native_runner_encoder_compatibility(payload, checkpoint_path)
     checkpoint_model, checkpoint_selfplay = _initial_weights_config(payload, checkpoint_path)
 
     checkpoint_arch = checkpoint_model.get("arch", "mlp")
@@ -440,6 +803,9 @@ METRICS_FIELDNAMES = [
         "positions",
         "policy_loss",
         "value_loss",
+        "aux_margin_loss",
+        "anchor_policy_loss",
+        "anchor_value_loss",
         "entropy",
         "lr",
         "games_per_hour",
@@ -673,12 +1039,22 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
         raise ValueError("init_weights must be a checkpoint path string")
     if resume is not None and config.init_weights:
         raise ValueError("--resume and --init-weights cannot be used together")
+    validate_aux_margin_config(config)
     validate_model_config(config)
+    validate_optim_config(config.optim)
+    validate_imitation_config(config.imitation)
+    validate_value_target_config(config.selfplay)
+    validate_temperature_config(config.selfplay)
     device = select_device(config.device)
     seed_everything(config.seed, deterministic=device.type == "cpu")
     resume = resolve_resume_path(resume, requested.checkpoint_dir)
+    is_fresh_run = resume is None
     if resume is not None:
-        config, start_generation, model, optimizer, replay = load_checkpoint(resume, device)
+        config, start_generation, model, optimizer, replay = load_checkpoint(
+            resume,
+            device,
+            optimizer_override=requested.optim.optimizer,
+        )
         config.generations = requested.generations
         config.checkpoint_dir = requested.checkpoint_dir
         config.metrics_csv = requested.metrics_csv
@@ -715,7 +1091,11 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
         config.kingdom_curriculum = requested.kingdom_curriculum
         config.gate_warmup_generations = requested.gate_warmup_generations
         config.gate_force_accept_every = requested.gate_force_accept_every
+        validate_aux_margin_config(config)
         validate_model_config(config)
+        validate_imitation_config(config.imitation)
+        validate_value_target_config(config.selfplay)
+        validate_temperature_config(config.selfplay)
         if config.device == "auto":
             config.device = device.type
     else:
@@ -724,7 +1104,36 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
             load_initial_weights(config.init_weights, config, model, device)
         start_generation = 0
 
+    human_dataset: HumanTupleDataset | None = None
+    anchor_batches: Iterator[HumanBatch] | None = None
+
+    def ensure_human_dataset() -> HumanTupleDataset:
+        nonlocal human_dataset
+        if human_dataset is None:
+            human_dataset = load_human_dataset_for_config(config)
+        return human_dataset
+
+    # Behavior cloning happens only for a new campaign.  A resumed optimizer
+    # must continue from its checkpoint rather than replaying the pretraining
+    # phase, even if the checkpoint's imitation config remains enabled.
+    if is_fresh_run and config.imitation.pretrain_steps > 0:
+        pretrain_batches = ensure_human_dataset().minibatches(
+            config.imitation.pretrain_batch_size,
+            int(config.seed) ^ 0x4855_4D41_4E,
+        )
+        run_human_pretrain(
+            model,
+            optimizer,
+            pretrain_batches,
+            steps=config.imitation.pretrain_steps,
+            device=device,
+            pretrain_lr=config.imitation.pretrain_lr,
+        )
+
+    validate_determinize_config(config.selfplay)
+    validate_temperature_config(config.selfplay)
     validate_deep_slice_config(config.selfplay)
+    validate_forced_playouts_config(config.selfplay)
     validate_opening_template_config(config.selfplay)
     if not isinstance(config.server_selfplay, bool):
         raise ValueError("server_selfplay must be a boolean")
@@ -756,6 +1165,7 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
         raise ValueError("scripted_opponents must be an object mapping kind to fraction")
     effective_scripted_fractions(config.scripted_opponent_schedule, config.scripted_opponents, start_generation)
     effective_league_fraction(config.league_schedule, config.league_fraction, start_generation)
+    anchor_weight_for_generation(config.imitation, start_generation)
     if (
         not isinstance(config.league_opponents_per_gen, int)
         or isinstance(config.league_opponents_per_gen, bool)
@@ -855,6 +1265,7 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
                 config.selfplay.kingdom_mode,
                 generation,
             )
+            effective_anchor_weight = anchor_weight_for_generation(config.imitation, generation)
             use_segments = (
                 use_gating
                 or league_configured
@@ -990,15 +1401,58 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
                 server_evals_per_sec=server_metrics.get("server_evals_per_sec"),
             )
 
-            losses = {"policy_loss": float("nan"), "value_loss": float("nan"), "entropy": float("nan")}
+            losses = {
+                "policy_loss": float("nan"),
+                "value_loss": float("nan"),
+                "aux_margin_loss": float("nan"),
+                "anchor_policy_loss": float("nan"),
+                "anchor_value_loss": float("nan"),
+                "entropy": float("nan"),
+            }
             steps = config.optim.train_steps_per_generation
             if len(replay) > 0 and steps > 0:
-                accum = {"policy_loss": 0.0, "value_loss": 0.0, "entropy": 0.0}
+                anchor_active = effective_anchor_weight > 0.0
+                aux_active = float(config.aux_margin_weight) > 0.0
+                if anchor_active and anchor_batches is None:
+                    anchor_batches = ensure_human_dataset().minibatches(
+                        config.imitation.anchor_batch_size,
+                        int(config.seed) ^ 0x414E_4348_4F52,
+                    )
+                accum = {
+                    "policy_loss": 0.0,
+                    "value_loss": 0.0,
+                    "aux_margin_loss": 0.0,
+                    "anchor_policy_loss": 0.0,
+                    "anchor_value_loss": 0.0,
+                    "entropy": 0.0,
+                }
                 for _ in range(steps):
-                    step_losses = train_step(model, optimizer, replay, config.optim.batch_size, device)
-                    for key in accum:
+                    step_losses = train_step(
+                        model,
+                        optimizer,
+                        replay,
+                        config.optim.batch_size,
+                        device,
+                        human_batches=anchor_batches if anchor_active else None,
+                        anchor_weight=effective_anchor_weight if anchor_active else 0.0,
+                        anchor_awr_beta=config.imitation.anchor_awr_beta,
+                        aux_margin_weight=config.aux_margin_weight if aux_active else 0.0,
+                    )
+                    for key in ("policy_loss", "value_loss", "entropy"):
                         accum[key] += step_losses[key]
+                    if aux_active:
+                        accum["aux_margin_loss"] += step_losses["aux_margin_loss"]
+                    if anchor_active:
+                        accum["anchor_policy_loss"] += step_losses["anchor_policy_loss"]
+                        accum["anchor_value_loss"] += step_losses["anchor_value_loss"]
                 losses = {key: value / steps for key, value in accum.items()}
+                if not anchor_active:
+                    # NaN is this module's existing disabled/inactive metric
+                    # convention (the same value used when no train steps run).
+                    losses["anchor_policy_loss"] = float("nan")
+                    losses["anchor_value_loss"] = float("nan")
+                if not aux_active:
+                    losses["aux_margin_loss"] = float("nan")
 
             gate_row: dict[str, Any] = {}
             if use_gating:
@@ -1100,6 +1554,7 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
                     device_name=device.type,
                     n_games=config.eval.eval_n_games,
                     max_batch=config.eval.eval_max_batch,
+                    honest=config.eval.eval_honest,
                 )
                 eval_row = {
                     "eval_opponent": stats.opponent,
@@ -1125,6 +1580,7 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
                         device_name=device.type,
                         n_games=config.eval.eval_n_games,
                         max_batch=config.eval.eval_max_batch,
+                        honest=config.eval.eval_honest,
                     )
                     eval_row[f"sentinel_{opponent}_wins"] = sentinel_stats.wins
                     eval_row[f"sentinel_{opponent}_games"] = sentinel_stats.games
@@ -1134,6 +1590,9 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
                 "positions": sp_stats.positions,
                 "policy_loss": losses["policy_loss"],
                 "value_loss": losses["value_loss"],
+                "aux_margin_loss": losses["aux_margin_loss"],
+                "anchor_policy_loss": losses["anchor_policy_loss"],
+                "anchor_value_loss": losses["anchor_value_loss"],
                 "entropy": losses["entropy"],
                 "lr": lr,
                 "games_per_hour": sp_stats.games_per_hour,

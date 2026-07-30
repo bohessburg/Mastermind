@@ -2,6 +2,7 @@
 
 #include "v2/bots/scripted.h"
 #include "v2/core/actions.h"
+#include "v2/core/determinize.h"
 #include "v2/core/game.h"
 #include "v2/core/interp.h"
 #include "v2/core/score.h"
@@ -14,7 +15,9 @@
 #include <atomic>
 #include <cmath>
 #include <condition_variable>
+#include <cstdio>
 #include <cstring>
+#include <limits>
 #include <mutex>
 #include <stdexcept>
 #include <thread>
@@ -52,6 +55,29 @@ constexpr DefId IMPLEMENTED_KINGDOMS[] = {
 
 constexpr std::uint8_t IMPLEMENTED_KINGDOM_COUNT =
     static_cast<std::uint8_t>(sizeof(IMPLEMENTED_KINGDOMS) / sizeof(IMPLEMENTED_KINGDOMS[0]));
+
+constexpr std::uint64_t SELFPLAY_DETERMINIZATION_STREAM = 0x4454'4552'4D49'4E45ULL;
+constexpr std::uint64_t SPLITMIX_GOLDEN_RATIO = 0x9E37'79B9'7F4A'7C15ULL;
+constexpr std::uint64_t SELFPLAY_DETERMINIZATION_SEAT_MIX = 0xD1B5'4A32'D192'ED03ULL;
+constexpr std::uint64_t SELFPLAY_DETERMINIZATION_INDEX_MIX = 0x94D0'49BB'1331'11EBULL;
+
+[[nodiscard]] constexpr bool valid_determinize_mode(SelfPlayDeterminizeMode mode) noexcept {
+    return mode == SelfPlayDeterminizeMode::Off
+        || mode == SelfPlayDeterminizeMode::PerDecision
+        || mode == SelfPlayDeterminizeMode::PerTurn;
+}
+
+[[nodiscard]] constexpr bool valid_temp_mode(SelfPlayTempMode mode) noexcept {
+    return mode == SelfPlayTempMode::Legacy
+        || mode == SelfPlayTempMode::PerSeatBuy;
+}
+
+[[nodiscard]] constexpr std::uint64_t splitmix64(std::uint64_t value) noexcept {
+    value += SPLITMIX_GOLDEN_RATIO;
+    value = (value ^ (value >> 30U)) * 0xBF58'476D'1CE4'E5B9ULL;
+    value = (value ^ (value >> 27U)) * 0x94D0'49BB'1331'11EBULL;
+    return value ^ (value >> 31U);
+}
 
 [[nodiscard]] bool implemented_kingdom(DefId def) noexcept {
     for (const DefId implemented : IMPLEMENTED_KINGDOMS) {
@@ -580,6 +606,44 @@ constexpr OpeningTemplateBands OPENING_TEMPLATE_BANDS[SELFPLAY_OPENING_TEMPLATE_
 
 } // namespace
 
+std::uint64_t selfplay_determinization_seed(
+    std::uint64_t game_seed,
+    PlayerId seat,
+    std::uint16_t move_index,
+    std::uint16_t turn_counter,
+    SelfPlayDeterminizeMode mode) noexcept {
+    const std::uint64_t index = mode == SelfPlayDeterminizeMode::PerTurn
+        ? static_cast<std::uint64_t>(turn_counter)
+        : static_cast<std::uint64_t>(move_index);
+    std::uint64_t mixed = game_seed ^ SELFPLAY_DETERMINIZATION_STREAM;
+    mixed += SELFPLAY_DETERMINIZATION_SEAT_MIX * (static_cast<std::uint64_t>(seat) + 1U);
+    mixed ^= SELFPLAY_DETERMINIZATION_INDEX_MIX * (index + 1U);
+    return splitmix64(mixed);
+}
+
+float selfplay_temperature_for(
+    const SelfPlayConfig& config,
+    DecisionKind decision_kind,
+    std::uint16_t move_index,
+    std::uint16_t seat_decision_count,
+    std::uint16_t seat_turn_number) noexcept {
+    if (config.temp_mode == SelfPlayTempMode::Legacy) {
+        return move_index < config.temp_moves ? 1.0F : config.temp_final;
+    }
+
+    if (decision_kind == DecisionKind::PhaseBuy) {
+        return seat_turn_number <= config.temp_buy_turns ? 1.0F : config.temp_final;
+    }
+    if (decision_kind == DecisionKind::PhaseAction) {
+        return seat_decision_count < config.temp_action_plies ? 1.0F : config.temp_final;
+    }
+    return seat_decision_count < config.temp_effect_plies ? 1.0F : config.temp_final;
+}
+
+std::uint16_t selfplay_seat_turn_number(std::uint16_t turn_counter) noexcept {
+    return static_cast<std::uint16_t>((turn_counter / 2U) + 1U);
+}
+
 struct SelfPlayRunner::GameSlot {
     GameState state{};
     Setup setup{};
@@ -587,6 +651,8 @@ struct SelfPlayRunner::GameSlot {
     Xoshiro256pp rng{};
     std::vector<float> observations;
     std::vector<float> policy_targets;
+    std::vector<Action> sampled_actions;
+    std::vector<std::uint64_t> legal_mask_words;
     std::vector<PlayerId> players;
     SelfPlaySlotConfig slot{};
     std::uint64_t seed = 0;
@@ -598,6 +664,7 @@ struct SelfPlayRunner::GameSlot {
     std::uint32_t sims_completed = 0;
     std::uint32_t pending = 0;
     std::uint16_t move_index = 0;
+    std::uint16_t seat_decision_counts[MAX_PLAYERS]{};
     std::uint8_t seat_template_ids[MAX_PLAYERS]{};
     std::uint16_t opening_buy_counts[ACTION_DEF_COUNT]{};
     std::uint16_t unconstrained_buy_counts[SELFPLAY_OPENING_TELEMETRY_CARD_COUNT]{};
@@ -852,6 +919,26 @@ SelfPlayRunner::SelfPlayRunner(const SelfPlayConfig& config)
     if (!(config_.c_puct_base > 0.0F) || !std::isfinite(config_.c_puct_base)) {
         throw std::invalid_argument("SelfPlayConfig.c_puct_base must be finite and positive");
     }
+    if (!(config_.forced_playouts_k > 0.0F) || !std::isfinite(config_.forced_playouts_k)) {
+        throw std::invalid_argument("SelfPlayConfig.forced_playouts_k must be finite and positive");
+    }
+    if (!valid_determinize_mode(config_.determinize)) {
+        throw std::invalid_argument("SelfPlayConfig.determinize is invalid");
+    }
+    if (!valid_temp_mode(config_.temp_mode)) {
+        throw std::invalid_argument("SelfPlayConfig.temp_mode is invalid");
+    }
+    if (!(config_.temp_final >= 0.0F) || !std::isfinite(config_.temp_final)) {
+        throw std::invalid_argument("SelfPlayConfig.temp_final must be finite and non-negative");
+    }
+    if (config_.determinize != SelfPlayDeterminizeMode::Off && config_.tree_reuse) {
+        // A retained subtree belongs to the previous sampled hidden world.
+        // Keep legacy configs usable, but make the unsafe request visible.
+        std::fputs(
+            "SelfPlayRunner: disabling tree_reuse because selfplay.determinize is enabled\n",
+            stderr);
+        config_.tree_reuse = false;
+    }
     if (config_.kingdom_pool_count > MAX_SELFPLAY_KINGDOM_POOL) {
         throw std::invalid_argument("SelfPlayConfig.kingdom_pool has too many cards");
     }
@@ -949,6 +1036,8 @@ SelfPlayRunner::SelfPlayRunner(const SelfPlayConfig& config)
     mcts_config_.expand_top_k = config_.expand_top_k;
     mcts_config_.tree_reuse = config_.tree_reuse;
     mcts_config_.min_new_sims = config_.min_new_sims;
+    mcts_config_.forced_playouts = config_.forced_playouts;
+    mcts_config_.forced_playouts_k = config_.forced_playouts_k;
     if (mcts_config_.tree_reuse && mcts_config_.determinizations != 1U) {
         // A reused subtree belongs to one root-sampled hidden-information
         // world; K>1 trees aggregate different worlds below the root.
@@ -1032,6 +1121,9 @@ SelfPlayRunner::SelfPlayRunner(const SelfPlayConfig& config)
         game.observations.reserve(static_cast<std::size_t>(config_.max_recorded_moves) * obs_size_);
         game.policy_targets.reserve(
             static_cast<std::size_t>(config_.max_recorded_moves) * ACTION_SPACE_SIZE);
+        game.sampled_actions.reserve(config_.max_recorded_moves);
+        game.legal_mask_words.reserve(
+            static_cast<std::size_t>(config_.max_recorded_moves) * ACTION_MASK_WORDS);
         game.players.reserve(config_.max_recorded_moves);
         reset_game(i);
     }
@@ -1303,12 +1395,15 @@ void SelfPlayRunner::reset_game(std::uint32_t index) noexcept {
     }
     game.observations.clear();
     game.policy_targets.clear();
+    game.sampled_actions.clear();
+    game.legal_mask_words.clear();
     game.players.clear();
     game.sims_target = 0;
     game.sims_started = 0;
     game.sims_completed = 0;
     game.pending = 0;
     game.move_index = 0;
+    std::memset(game.seat_decision_counts, 0, sizeof(game.seat_decision_counts));
     game.nn_player = scripted_mode(game.slot.scripted_bot) ? game.slot.scripted_nn_player : NONE;
     game.search_active = false;
     game.retired = false;
@@ -1317,21 +1412,38 @@ void SelfPlayRunner::reset_game(std::uint32_t index) noexcept {
 }
 
 void SelfPlayRunner::start_search(GameSlot& game) noexcept {
-    /*
-     * Phase T.1 uses perfect-information self-play at search time. The
-     * generated observations still pass through the public encoder, so the
-     * model never sees opponent private zones; determinized search remains
-     * available for later imperfect-information evaluation.
-     */
     assert(game.pending == 0U);
     const PlayerId player = decision_player(game.state);
-    const bool reused = config_.tree_reuse
-        && game.mcts.adopt_retained_root(game.state, player);
-    if (reused) {
-        reapply_root_noise(game);
+    bool reused = false;
+    if (config_.determinize != SelfPlayDeterminizeMode::Off) {
+        // Search only in a freshly sampled world.  The live state remains the
+        // source of records and receives the selected root action below.
+        GameState sampled = game.state;
+        determinize(
+            sampled,
+            player,
+            selfplay_determinization_seed(
+                game.seed,
+                player,
+                game.move_index,
+                game.state.turn_counter,
+                config_.determinize));
+        // Tree reuse was disabled at construction: a retained child would
+        // encode a prior sampled world and cannot be hash-checked against the
+        // real state's hidden zones.
+        game.mcts.reset(sampled, player);
     } else {
-        game.mcts.reset(game.state, player);
+        reused = config_.tree_reuse
+            && game.mcts.adopt_retained_root(game.state, player);
+        if (reused) {
+            reapply_root_noise(game);
+        } else {
+            game.mcts.reset(game.state, player);
+        }
     }
+    // Forced root selection is meaningful only for the same training roots
+    // that received Dirichlet exploration. Eval and duel roots leave this off.
+    game.mcts.set_root_dirichlet_noise_active(config_.dirichlet_frac > 0.0F);
     // Keep the counters below strictly about newly started work so parked
     // leaves and batch completion remain balanced. Only a hash-gated adopted
     // root turns sims_per_move into a total root-visit target.
@@ -1628,6 +1740,65 @@ bool SelfPlayRunner::game_has_pending(std::uint32_t index) const noexcept {
     return index < slot_count_ && games_[index].pending != 0U;
 }
 
+void selfplay_pruned_root_visit_policy(
+    const Mcts& search,
+    float forced_playouts_k,
+    float* out) noexcept {
+    if (out == nullptr) {
+        return;
+    }
+    // Preserve Mcts's established zero-visit and degenerate-root fallbacks.
+    search.root_visit_policy(out, 1.0F);
+    if (search.node_count() == 0U) {
+        return;
+    }
+
+    const MctsNode& root = search.node(0U);
+    if (root.first_child == MCTS_NULL) {
+        return;
+    }
+    const Action best_action = search.best_root_action();
+    const std::uint32_t total_visits = root.visits;
+    double retained_sum = 0.0;
+    for (std::uint32_t child_index = root.first_child; child_index != MCTS_NULL;
+         child_index = search.node(child_index).next_sibling) {
+        const MctsNode& child = search.node(child_index);
+        std::uint32_t retained = child.visits;
+        if (child.action_from_parent != best_action) {
+            // Recompute rather than incrementally track quotas. Because root
+            // visits only grow, this final quota can slightly exceed what was
+            // actually forced during search; that upper-bound approximation is
+            // simpler and matches the spirit of KataGo's published rule.
+            const std::uint32_t forced = mcts_forced_playout_visits(
+                child.prior,
+                total_visits,
+                forced_playouts_k);
+            retained = child.visits > forced ? child.visits - forced : 0U;
+        }
+        retained_sum += static_cast<double>(retained);
+    }
+    if (retained_sum <= 0.0) {
+        // The raw-policy fallback above is already normalized when no child
+        // has visit mass left after pruning.
+        return;
+    }
+
+    const float scale = static_cast<float>(1.0 / retained_sum);
+    for (std::uint32_t child_index = root.first_child; child_index != MCTS_NULL;
+         child_index = search.node(child_index).next_sibling) {
+        const MctsNode& child = search.node(child_index);
+        std::uint32_t retained = child.visits;
+        if (child.action_from_parent != best_action) {
+            const std::uint32_t forced = mcts_forced_playout_visits(
+                child.prior,
+                total_visits,
+                forced_playouts_k);
+            retained = child.visits > forced ? child.visits - forced : 0U;
+        }
+        out[child.action_from_parent] = static_cast<float>(retained) * scale;
+    }
+}
+
 void SelfPlayRunner::maybe_finish_move(GameSlot& game) noexcept {
     if (!game.search_active || game.pending != 0U || game.sims_completed < game.sims_target) {
         return;
@@ -1636,18 +1807,36 @@ void SelfPlayRunner::maybe_finish_move(GameSlot& game) noexcept {
     float policy[ACTION_SPACE_SIZE]{};
     // Re-rooting preserves child visit counts. Policy targets intentionally
     // use those full inherited-plus-new counts as legitimate search evidence.
-    game.mcts.root_visit_policy(policy, 1.0F);
-    record_decision(game, policy);
-
-    const float temperature = game.move_index < config_.temp_moves ? 1.0F : 0.0F;
-    Action action = game.mcts.sample_root_action(temperature, game.rng);
+    if (config_.forced_playouts && config_.dirichlet_frac > 0.0F) {
+        selfplay_pruned_root_visit_policy(game.mcts, config_.forced_playouts_k, policy);
+    } else {
+        // Keep the historical target call path byte-identical when disabled.
+        game.mcts.root_visit_policy(policy, 1.0F);
+    }
     ActionMask legal{};
     const int legal_count = Game::legal_actions(game.state, legal);
+    record_decision(game, policy, legal);
+
+    const PlayerId player = decision_player(game.state);
+    const std::uint16_t seat_decision_count = player < MAX_PLAYERS
+        ? game.seat_decision_counts[player]
+        : 0U;
+    // turn_counter is incremented after a player cleans up. With the fixed
+    // two-player turn queue, counters 0/1 are the two players' first turns,
+    // 2/3 their second, and so on. Buy decisions always belong to that live
+    // turn, so this is the acting seat's one-based turn number.
+    const std::uint16_t seat_turn_number = selfplay_seat_turn_number(game.state.turn_counter);
+    const float temperature = selfplay_temperature_for(
+        config_,
+        static_cast<DecisionKind>(game.state.decision.kind),
+        game.move_index,
+        seat_decision_count,
+        seat_turn_number);
+    Action action = game.mcts.sample_root_action(temperature, game.rng);
     if (legal_count <= 0 || !legal.test(action)) {
         action = legal_count > 0 ? legal.nth_set(0U) : A_PASS;
     }
 
-    const PlayerId player = decision_player(game.state);
     if (action_is_buy(action)) {
         const DefId def = action_def(action, A_BUY_BASE);
         if (config_.opening_templates_enabled
@@ -1665,7 +1854,12 @@ void SelfPlayRunner::maybe_finish_move(GameSlot& game) noexcept {
         }
     }
 
+    game.sampled_actions.push_back(action);
     const bool done = Game::step(game.state, action);
+    if (player < MAX_PLAYERS
+        && game.seat_decision_counts[player] < std::numeric_limits<std::uint16_t>::max()) {
+        ++game.seat_decision_counts[player];
+    }
     if (config_.tree_reuse && !done
         && game.state.phase != static_cast<std::uint8_t>(Phase::Over)) {
         // Store the runner's post-step hash with the selected child. The next
@@ -1682,7 +1876,10 @@ void SelfPlayRunner::maybe_finish_move(GameSlot& game) noexcept {
     }
 }
 
-void SelfPlayRunner::record_decision(GameSlot& game, const float* policy) noexcept {
+void SelfPlayRunner::record_decision(
+    GameSlot& game,
+    const float* policy,
+    const ActionMask& legal) noexcept {
     const std::uint16_t recorded = static_cast<std::uint16_t>(game.players.size());
     if (recorded >= config_.max_recorded_moves) {
         return;
@@ -1693,6 +1890,9 @@ void SelfPlayRunner::record_decision(GameSlot& game, const float* policy) noexce
     }
     const std::size_t obs_offset = game.observations.size();
     game.observations.resize(obs_offset + obs_size_);
+    // This is intentionally the live, true state rather than the sampled
+    // search root. Determinize preserves this player's public observation;
+    // training records must never expose a sampled opponent arrangement.
     encode(game.state, player, game.observations.data() + obs_offset, config_.obs_version);
 
     const std::size_t policy_offset = game.policy_targets.size();
@@ -1701,6 +1901,10 @@ void SelfPlayRunner::record_decision(GameSlot& game, const float* policy) noexce
         game.policy_targets.data() + policy_offset,
         policy,
         sizeof(float) * ACTION_SPACE_SIZE);
+    game.legal_mask_words.insert(
+        game.legal_mask_words.end(),
+        legal.words,
+        legal.words + ACTION_MASK_WORDS);
     game.players.push_back(player);
 }
 
@@ -1711,11 +1915,19 @@ void SelfPlayRunner::finish_game(GameSlot& game) noexcept {
     SelfPlayRecord record{};
     record.observations = game.observations;
     record.policy_targets = game.policy_targets;
+    record.sampled_actions = game.sampled_actions;
+    record.legal_mask_words = game.legal_mask_words;
     record.players = game.players;
     record.moves = static_cast<std::uint16_t>(game.players.size());
     record.values.resize(record.moves);
+    record.margins.resize(record.moves);
     for (std::uint16_t i = 0; i < record.moves; ++i) {
-        record.values[i] = terminal_value_for(game.state, game.players[i]);
+        const int terminal_margin = terminal_margin_for(game.state, game.players[i]);
+        // Int16 is deliberate for replay density. Dominion score differences
+        // encountered in normal games are much smaller; retain a defined
+        // representation for pathological terminal states as well.
+        record.margins[i] = static_cast<std::int16_t>(std::clamp(terminal_margin, -127, 127));
+        record.values[i] = terminal_value_for(game.state, game.players[i], terminal_margin);
     }
     record.seed = game.seed;
     record.winner = winner_for(game.state);
@@ -1820,7 +2032,15 @@ Setup SelfPlayRunner::setup_for(const GameSlot& game) const noexcept {
     return setup;
 }
 
-float SelfPlayRunner::terminal_value_for(const GameState& state, PlayerId player) const noexcept {
+int SelfPlayRunner::terminal_margin_for(const GameState& state, PlayerId player) const noexcept {
+    const PlayerId opponent = static_cast<PlayerId>(player == 0U ? 1U : 0U);
+    return static_cast<int>(score(state, player)) - static_cast<int>(score(state, opponent));
+}
+
+float SelfPlayRunner::terminal_value_for(
+    const GameState& state,
+    PlayerId player,
+    int terminal_margin) const noexcept {
     const PlayerId winner = winner_for(state);
     if (config_.value_target == SelfPlayValueTarget::Margin) {
         // Truncated games have no training outcome. Keep record.winner based
@@ -1829,9 +2049,7 @@ float SelfPlayRunner::terminal_value_for(const GameState& state, PlayerId player
         if (state.truncated != 0U || winner == NONE) {
             return 0.0F;
         }
-        const PlayerId opponent = static_cast<PlayerId>(player == 0U ? 1U : 0U);
-        const float margin = static_cast<float>(
-            static_cast<int>(score(state, player)) - static_cast<int>(score(state, opponent)));
+        const float margin = static_cast<float>(terminal_margin);
         if (margin == 0.0F) {
             return 0.0F;
         }
@@ -1851,9 +2069,7 @@ float SelfPlayRunner::terminal_value_for(const GameState& state, PlayerId player
         if (state.truncated != 0U || winner == NONE) {
             return 0.0F;
         }
-        const PlayerId opponent = static_cast<PlayerId>(player == 0U ? 1U : 0U);
-        const float margin = static_cast<float>(
-            static_cast<int>(score(state, player)) - static_cast<int>(score(state, opponent)));
+        const float margin = static_cast<float>(terminal_margin);
         return selfplay_margin_blend_value(
             margin,
             config_.margin_scale,

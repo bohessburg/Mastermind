@@ -15,7 +15,10 @@ from .config import (
     SelfPlayConfig,
     validate_c_puct_config,
     validate_deep_slice_config,
+    validate_determinize_config,
+    validate_forced_playouts_config,
     validate_opening_template_config,
+    validate_temperature_config,
     validate_value_target_config,
 )
 from .observation import model_observation_version, observations_for_model, obs_version_for_width
@@ -110,6 +113,17 @@ def _value_target(value_target: str):
     if normalized == "margin_blend":
         return dz.SelfPlayValueTarget.MarginBlend
     raise ValueError(f"unknown value target: {value_target}")
+
+
+def _determinize_mode(mode: str):
+    normalized = mode.lower()
+    if normalized == "off":
+        return dz.SelfPlayDeterminizeMode.Off
+    if normalized == "per_decision":
+        return dz.SelfPlayDeterminizeMode.PerDecision
+    if normalized == "per_turn":
+        return dz.SelfPlayDeterminizeMode.PerTurn
+    raise ValueError(f"unknown selfplay determinize mode: {mode}")
 
 
 def _manifest_value(descriptor: object, name: str, default: Any) -> Any:
@@ -221,6 +235,9 @@ def make_runner_config(
     validate_deep_slice_config(config)
     validate_value_target_config(config)
     validate_c_puct_config(config)
+    validate_determinize_config(config)
+    validate_temperature_config(config)
+    validate_forced_playouts_config(config)
     validate_opening_template_config(config)
     if not math.isfinite(config.margin_scale) or config.margin_scale <= 0.0:
         raise ValueError("margin_scale must be finite and positive")
@@ -247,6 +264,11 @@ def make_runner_config(
         dirichlet_alpha=config.dirichlet_alpha,
         dirichlet_frac=config.dirichlet_frac,
         temp_moves=config.temp_moves,
+        temp_mode=config.temp_mode.lower(),
+        temp_buy_turns=config.temp_buy_turns,
+        temp_action_plies=config.temp_action_plies,
+        temp_effect_plies=config.temp_effect_plies,
+        temp_final=config.temp_final,
         max_batch=config.max_batch,
         seed=seed,
         obs_version=int(config.obs_version),
@@ -264,6 +286,9 @@ def make_runner_config(
         auto_play_treasures=config.auto_play_treasures,
         prune_treasure_plays=config.prune_treasure_plays,
         tree_reuse=config.tree_reuse,
+        determinize=_determinize_mode(config.determinize),
+        forced_playouts=config.forced_playouts,
+        forced_playouts_k=config.forced_playouts_k,
         min_new_sims=config.min_new_sims,
         expand_top_k=config.expand_top_k,
         value_target=_value_target(config.value_target),
@@ -280,6 +305,26 @@ def make_runner_config(
     return runner_config
 
 
+def _record_legal_mask(record: dict, policy: np.ndarray) -> np.ndarray:
+    if "legal_mask" not in record:
+        raise ValueError("self-play record is missing the true legal_mask field")
+    legal_mask = np.asarray(record["legal_mask"], dtype=np.bool_)
+    if legal_mask.shape != policy.shape:
+        raise ValueError("self-play record legal_mask shape does not match policy_targets")
+    return legal_mask
+
+
+def _record_margin(record: dict, value: np.ndarray) -> np.ndarray:
+    """Return native per-decision terminal margins with strict row alignment."""
+
+    if "margins" not in record:
+        raise ValueError("self-play record is missing the terminal margins field")
+    margins = np.asarray(record["margins"], dtype=np.int16)
+    if margins.shape != value.shape:
+        raise ValueError("self-play record margins shape does not match values")
+    return margins
+
+
 def _records_to_replay(records: list[dict], replay: ReplayBuffer) -> tuple[int, int]:
     games = 0
     positions = 0
@@ -287,10 +332,11 @@ def _records_to_replay(records: list[dict], replay: ReplayBuffer) -> tuple[int, 
         obs = np.asarray(record["observations"], dtype=np.float32)
         policy = np.asarray(record["policy_targets"], dtype=np.float32)
         value = np.asarray(record["values"], dtype=np.float32)
+        legal_mask = _record_legal_mask(record, policy)
+        margin = _record_margin(record, value)
         if obs.shape[0] == 0:
             continue
-        legal_mask = policy > 0.0
-        replay.add(obs, policy, value, legal_mask)
+        replay.add(obs, policy, value, legal_mask, margin)
         games += 1
         positions += obs.shape[0]
     return games, positions
@@ -523,6 +569,7 @@ def play_routed_games(
     kingdom_mode: str | None = None,
     sims_override: int = 0,
     league_opponent: str | None = None,
+    determinize: str | None = None,
     on_finished: Callable[[list[dict]], None] | None = None,
 ) -> tuple[SelfPlayStats, list[dict]]:
     """Generate an exact number of games while routing every leaf by seat."""
@@ -535,6 +582,8 @@ def play_routed_games(
     runner_config.n_games = max(1, min(int(config.n_games), int(target_games)))
     if kingdom_mode is not None:
         runner_config.kingdom_mode = kingdom_mode
+    if determinize is not None:
+        runner_config.determinize = determinize
     runner = dz.SelfPlayRunner(
         make_runner_config(
             runner_config,

@@ -98,6 +98,7 @@ def build_model(model_config: Mapping[str, Any] | Any, obs_size: int, action_siz
             ffn_multiplier=config.get("ffn_multiplier", 4),
             dropout=config.get("dropout", 0.0),
             obs_version=config.get("obs_version"),
+            aux_margin_buckets=config.get("aux_margin_buckets"),
         )
     else:
         raise ValueError(f"unknown model.arch {arch!r}; expected 'mlp' or 'card_transformer'")

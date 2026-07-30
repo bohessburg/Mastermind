@@ -43,13 +43,16 @@ from .observation import (
 )
 from .selfplay import (
     SelfPlayStats,
+    _record_legal_mask,
+    _record_margin,
     make_runner_config,
     record_opening_template_telemetry,
     route_leaf_evaluations,
 )
 
 
-PackedGameRecords = tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]
+PACKED_GAME_RECORDS_VERSION = 3
+PackedGameRecords = tuple[int, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]
 ModelStatePayload = bytes | tuple[bytes, dict[str, Any]]
 
 
@@ -281,15 +284,18 @@ def split_segments_by_quotas(
 
 def _empty_packed_records(obs_size: int) -> PackedGameRecords:
     return (
+        PACKED_GAME_RECORDS_VERSION,
         np.empty((0,), dtype=np.int32),
         np.empty((0, int(obs_size)), dtype=np.float32),
         np.empty((0, dz.ACTION_SPACE_SIZE), dtype=np.float32),
         np.empty((0,), dtype=np.float32),
+        np.empty((0, dz.ACTION_SPACE_SIZE), dtype=np.bool_),
+        np.empty((0,), dtype=np.int16),
     )
 
 
 def _pack_records(records: list[dict[str, Any]], obs_size: int) -> PackedGameRecords:
-    """Flatten finished-game dictionaries into four raw NumPy buffers.
+    """Flatten finished-game dictionaries into a versioned six-buffer packet.
 
     Queue messages carry only these contiguous arrays and a tiny tuple header,
     never the binding's large list-of-dicts game-record representation.
@@ -302,7 +308,17 @@ def _pack_records(records: list[dict[str, Any]], obs_size: int) -> PackedGameRec
     observations = [np.asarray(record["observations"], dtype=np.float32) for record in records]
     policies = [np.asarray(record["policy_targets"], dtype=np.float32) for record in records]
     values = [np.asarray(record["values"], dtype=np.float32) for record in records]
-    for record_index, (obs, policy, value) in enumerate(zip(observations, policies, values, strict=True)):
+    margins = [
+        _record_margin(record, value)
+        for record, value in zip(records, values, strict=True)
+    ]
+    legal_masks = [
+        _record_legal_mask(record, policy)
+        for record, policy in zip(records, policies, strict=True)
+    ]
+    for record_index, (obs, policy, value, margin, legal_mask) in enumerate(
+        zip(observations, policies, values, margins, legal_masks, strict=True)
+    ):
         if obs.ndim != 2 or obs.shape[1] != expected_obs_size:
             actual_width = obs.shape[1] if obs.ndim == 2 else None
             raise ValueError(
@@ -313,27 +329,47 @@ def _pack_records(records: list[dict[str, Any]], obs_size: int) -> PackedGameRec
             raise ValueError(f"packed self-play record {record_index} policy shape mismatch")
         if value.shape != (obs.shape[0],):
             raise ValueError(f"packed self-play record {record_index} value shape mismatch")
+        if margin.shape != value.shape:
+            raise ValueError(f"packed self-play record {record_index} margins shape mismatch")
+        if legal_mask.shape != policy.shape:
+            raise ValueError(f"packed self-play record {record_index} legal_mask shape mismatch")
     lengths = np.asarray([obs.shape[0] for obs in observations], dtype=np.int32)
     nonempty = lengths > 0
     if not np.any(nonempty):
         empty = _empty_packed_records(expected_obs_size)
-        return lengths, empty[1], empty[2], empty[3]
+        return empty[0], lengths, empty[2], empty[3], empty[4], empty[5], empty[6]
     return (
+        PACKED_GAME_RECORDS_VERSION,
         lengths,
         np.ascontiguousarray(np.concatenate(observations, axis=0), dtype=np.float32),
         np.ascontiguousarray(np.concatenate(policies, axis=0), dtype=np.float32),
         np.ascontiguousarray(np.concatenate(values, axis=0), dtype=np.float32),
+        np.ascontiguousarray(np.concatenate(legal_masks, axis=0), dtype=np.bool_),
+        np.ascontiguousarray(np.concatenate(margins, axis=0), dtype=np.int16),
     )
 
 
 def add_packed_records(replay: Any, packed: PackedGameRecords) -> tuple[int, int]:
     """Insert a worker message into the parent replay buffer."""
-    lengths, obs, policy, value = packed
+    if not isinstance(packed, tuple) or len(packed) != 7:
+        raise ValueError("packed self-play records are missing legal masks or margins or use an unsupported wire format")
+    version, lengths, obs, policy, value, legal_mask, margin = packed
+    if version != PACKED_GAME_RECORDS_VERSION:
+        raise ValueError(f"unsupported packed self-play record version: {version!r}")
     lengths = np.asarray(lengths, dtype=np.int32)
     obs = np.asarray(obs, dtype=np.float32)
     policy = np.asarray(policy, dtype=np.float32)
     value = np.asarray(value, dtype=np.float32)
-    if lengths.ndim != 1 or obs.ndim != 2 or policy.ndim != 2 or value.ndim != 1:
+    legal_mask = np.asarray(legal_mask, dtype=np.bool_)
+    margin = np.asarray(margin, dtype=np.int16)
+    if (
+        lengths.ndim != 1
+        or obs.ndim != 2
+        or policy.ndim != 2
+        or value.ndim != 1
+        or legal_mask.ndim != 2
+        or margin.ndim != 1
+    ):
         raise ValueError("packed self-play record buffers have invalid dimensions")
     replay_obs_size = getattr(replay, "obs_size", None)
     if replay_obs_size is not None and obs.shape[1] != int(replay_obs_size):
@@ -341,10 +377,17 @@ def add_packed_records(replay: Any, packed: PackedGameRecords) -> tuple[int, int
             f"packed self-play observation width {obs.shape[1]} does not match replay width {int(replay_obs_size)}"
         )
     positions = int(lengths.sum())
-    if positions != int(obs.shape[0]) or positions != int(policy.shape[0]) or positions != int(value.shape[0]):
+    if (
+        positions != int(obs.shape[0])
+        or positions != int(policy.shape[0])
+        or positions != int(value.shape[0])
+        or positions != int(legal_mask.shape[0])
+        or positions != int(margin.shape[0])
+        or legal_mask.shape != policy.shape
+    ):
         raise ValueError("packed self-play record lengths do not match their buffers")
     if positions > 0:
-        replay.add(obs, policy, value, policy > 0.0)
+        replay.add(obs, policy, value, legal_mask, margin)
     return int(lengths.shape[0]), positions
 
 
@@ -521,7 +564,7 @@ def _generate_games(
             return
         record_opening_template_telemetry(stats, records)
         packed = _pack_records(records, obs_size)
-        games, positions = int(packed[0].shape[0]), int(packed[0].sum())
+        games, positions = int(packed[1].shape[0]), int(packed[1].sum())
         # NumPy buffers keep queue serialization to raw array payloads instead
         # of pickling a large Python object graph for every game record.
         result_queue.put(("records", worker_index, generation, packed))
@@ -636,7 +679,7 @@ def _generate_games_exact(
         record_opening_template_telemetry(stats, records)
         _record_scripted_outcomes(stats, records, scripted_kind)
         packed = _pack_records(records, obs_size)
-        games, positions = int(packed[0].shape[0]), int(packed[0].sum())
+        games, positions = int(packed[1].shape[0]), int(packed[1].sum())
         if games:
             result_queue.put(("records", worker_index, generation, packed))
             sent += games
@@ -733,7 +776,7 @@ def _generate_routed_games(
         _record_scripted_outcomes(stats, records, scripted_kind)
         _record_league_outcomes(stats, records, league_opponent)
         packed = _pack_records(records, obs_size)
-        games, positions = int(packed[0].shape[0]), int(packed[0].sum())
+        games, positions = int(packed[1].shape[0]), int(packed[1].sum())
         if games:
             result_queue.put(("records", worker_index, generation, packed))
             sent += games
@@ -872,7 +915,7 @@ def _generate_manifest_games(
         _record_manifest_outcomes(stats, records, slots_by_game_index)
         seen_game_indices.update(int(record["game_index"]) for record in records)
         packed = _pack_records(records, obs_size)
-        games, positions = int(packed[0].shape[0]), int(packed[0].sum())
+        games, positions = int(packed[1].shape[0]), int(packed[1].sum())
         if games:
             result_queue.put(("records", worker_index, generation, packed))
             stats.games += games

@@ -9,11 +9,16 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import numpy as np
 
 import dominion_v2_py as dz
+from src.v2.encoder_compat import (
+    LEGACY_ENCODER_GENERATION,
+    checkpoint_encoder_generation,
+    generation_mismatch_message,
+)
 
 
 @dataclass
@@ -24,10 +29,113 @@ class NNPolicy:
     torch: Any
     obs_version: int
     device: str
+    encoder_generation: int
+    obs_transform: Callable[[Any], Any] | None = None
+
+    def transform_observations(self, observations: Any) -> Any:
+        """Apply the policy's checkpoint-specific input compatibility layer."""
+        return observations if self.obs_transform is None else self.obs_transform(observations)
+
+    def evaluate(self, observations: Any, legal_masks: Any) -> tuple[Any, Any]:
+        """Evaluate after applying the checkpoint-specific observation transform."""
+        return self.model.evaluate(self.transform_observations(observations), legal_masks)
 
 
 class NNCheckpointError(Exception):
     """A safe, user-facing failure while preparing an NN policy."""
+
+
+@dataclass(frozen=True)
+class _LegacyShimLayout:
+    """Native encoder.h-derived positions needed to restore generation-1 inputs."""
+
+    observation_size: int
+    supply_offset: int
+    supply_size: int
+    pile_block_size: int
+    pile_count_field: int
+    pile_base_field: int
+    pile_trait_field: int
+    landscape_offset: int
+    landscape_id_size: int
+    landscape_prophecy_offset: int
+
+
+def _legacy_shim_layout(obs_version: int) -> _LegacyShimLayout:
+    """Read the native layout rather than duplicating encoder.h offset arithmetic."""
+    raw = dz.encoder_layout(int(obs_version))
+    try:
+        return _LegacyShimLayout(
+            observation_size=int(dz.obs_size_for(int(obs_version))),
+            supply_offset=int(raw["supply_offset"]),
+            supply_size=int(raw["supply_size"]),
+            pile_block_size=int(raw["pile_block_size"]),
+            pile_count_field=int(raw["pile_count_field"]),
+            pile_base_field=int(raw["pile_base_field"]),
+            pile_trait_field=int(raw["pile_trait_field"]),
+            landscape_offset=int(raw["landscape_offset"]),
+            landscape_id_size=int(raw["landscape_id_size"]),
+            landscape_prophecy_offset=int(raw["landscape_prophecy_offset"]),
+        )
+    except (KeyError, TypeError, ValueError) as error:  # pragma: no cover - native ABI invariant
+        raise RuntimeError("native encoder layout metadata is invalid") from error
+
+
+def _validate_legacy_shim_observations(observations: Any, layout: _LegacyShimLayout) -> None:
+    if getattr(observations, "ndim", 0) < 1 or int(observations.shape[-1]) != layout.observation_size:
+        raise ValueError(
+            "legacy encoder shim expected observations ending in width "
+            f"{layout.observation_size}"
+        )
+
+
+def _restore_legacy_constants(observations: Any, layout: _LegacyShimLayout) -> Any:
+    """Copy observations and recreate generation-1 sentinel encodings.
+
+    The native layout identifies both the v1 offsets and the v2/v3 shared
+    prefix.  Only structurally populated supply rows receive the old trait
+    constant; unused rows were zero in both encoder generations.
+    """
+    _validate_legacy_shim_observations(observations, layout)
+    supply_stop = layout.supply_offset + layout.supply_size
+    landscape_ids = slice(layout.landscape_offset, layout.landscape_offset + layout.landscape_id_size)
+    prophecy_index = layout.landscape_offset + layout.landscape_prophecy_offset
+
+    if isinstance(observations, np.ndarray):
+        if not np.issubdtype(observations.dtype, np.floating):
+            raise TypeError("legacy encoder shim requires floating NumPy observations")
+        restored = observations.copy()
+        restored[..., landscape_ids] = 1.0
+        restored[..., prophecy_index] = 1.0
+        piles = restored[..., layout.supply_offset:supply_stop].reshape(
+            *restored.shape[:-1], -1, layout.pile_block_size
+        )
+        populated = (piles[..., layout.pile_count_field] != 0.0) | (
+            piles[..., layout.pile_base_field] != 0.0
+        )
+        traits = piles[..., layout.pile_trait_field]
+        traits[populated] = 1.0
+        return restored
+
+    if not bool(getattr(observations, "is_floating_point", lambda: False)()):
+        raise TypeError("legacy encoder shim requires floating Torch observations")
+    restored = observations.clone()
+    restored[..., landscape_ids] = 1.0
+    restored[..., prophecy_index] = 1.0
+    piles = restored[..., layout.supply_offset:supply_stop].reshape(
+        *restored.shape[:-1], -1, layout.pile_block_size
+    )
+    populated = (piles[..., layout.pile_count_field] != 0.0) | (
+        piles[..., layout.pile_base_field] != 0.0
+    )
+    traits = piles[..., layout.pile_trait_field]
+    traits[populated] = 1.0
+    return restored
+
+
+def _legacy_obs_transform(obs_version: int) -> Callable[[Any], Any]:
+    layout = _legacy_shim_layout(obs_version)
+    return lambda observations: _restore_legacy_constants(observations, layout)
 
 
 def load_policy(
@@ -35,11 +143,14 @@ def load_policy(
     *,
     obs_version: int | None = None,
     device: str = "cpu",
+    legacy_shim: bool = False,
 ) -> NNPolicy:
     """Load a local training checkpoint for policy serving.
 
     ``obs_version`` may validate the expected checkpoint observation layout;
     leaving it unset preserves the historical checkpoint-metadata inference.
+    ``legacy_shim`` opt-ins to the only known cross-generation adapter:
+    generation-1 checkpoint inputs on the generation-2 sentinel-fixed engine.
     """
     if not checkpoint_path.is_file():
         raise NNCheckpointError("neural-network checkpoint is unavailable")
@@ -55,6 +166,27 @@ def load_policy(
             checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
         except TypeError:  # pragma: no cover - older supported Torch versions
             checkpoint = torch.load(checkpoint_path, map_location=device)
+        if not isinstance(checkpoint, dict):
+            raise TypeError("checkpoint must be a dict")
+        checkpoint_generation = checkpoint_encoder_generation(checkpoint)
+        runtime_generation = int(dz.ENCODER_GENERATION)
+        use_legacy_shim = checkpoint_generation != runtime_generation
+        if use_legacy_shim:
+            mismatch = generation_mismatch_message(
+                checkpoint_path, checkpoint_generation, runtime_generation
+            )
+            if not legacy_shim:
+                raise NNCheckpointError(
+                    f"{mismatch}; pass legacy_shim=True to serve a generation-1 checkpoint "
+                    "with restored pre-sentinel-fix constants"
+                )
+            if not (
+                checkpoint_generation == LEGACY_ENCODER_GENERATION and runtime_generation == 2
+            ):
+                raise NNCheckpointError(
+                    f"{mismatch}; legacy_shim only supports generation-1 checkpoints on a "
+                    "generation-2 engine"
+                )
         config = checkpoint["config"]
         if not isinstance(config, dict):
             raise TypeError("checkpoint config must be a dict")
@@ -113,10 +245,19 @@ def load_policy(
         model.load_state_dict(checkpoint["model"])
         model.to(device)
         model.eval()
+    except NNCheckpointError:
+        raise
     except Exception as error:
         raise NNCheckpointError("neural-network checkpoint could not be loaded") from error
 
-    return NNPolicy(model=model, torch=torch, obs_version=obs_version, device=device)
+    return NNPolicy(
+        model=model,
+        torch=torch,
+        obs_version=obs_version,
+        device=device,
+        encoder_generation=checkpoint_generation,
+        obs_transform=_legacy_obs_transform(obs_version) if use_legacy_shim else None,
+    )
 
 
 def choose_nn_action(game: Any, seat: int, policy: NNPolicy) -> int:
@@ -126,7 +267,7 @@ def choose_nn_action(game: Any, seat: int, policy: NNPolicy) -> int:
         game.encode(seat, policy.obs_version), dtype=torch.float32, device=policy.device
     ).unsqueeze(0)
     legal_mask = torch.as_tensor(game.legal_mask(), dtype=torch.bool, device=policy.device).unsqueeze(0)
-    masked_logits, _ = policy.model.evaluate(observation, legal_mask)
+    masked_logits, _ = policy.evaluate(observation, legal_mask)
     return int(torch.argmax(masked_logits, dim=-1).item())
 
 
@@ -172,7 +313,7 @@ def choose_nnmcts_action(
         if obs.shape[0] == 0:
             continue
         with torch.no_grad():
-            logits, values = policy.model.evaluate(
+            logits, values = policy.evaluate(
                 torch.as_tensor(obs, dtype=torch.float32, device=policy.device),
                 torch.as_tensor(masks, dtype=torch.bool, device=policy.device),
             )

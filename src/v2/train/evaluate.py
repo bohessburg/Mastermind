@@ -18,11 +18,13 @@ except ModuleNotFoundError as exc:  # pragma: no cover - gives a clearer CLI err
 
 if __package__ in (None, ""):
     sys.path.append(str(Path(__file__).resolve().parents[3]))
+    from src.v2.encoder_compat import require_native_runner_encoder_compatibility
     from src.v2.train.config import TrainConfig, _merge_dataclass
     from src.v2.train.model import build_model, count_parameters
     from src.v2.train.observation import obs_size_for_version, obs_version_for_checkpoint
     from src.v2.train.train import load_full_checkpoint, seed_everything, select_device
 else:
+    from src.v2.encoder_compat import require_native_runner_encoder_compatibility
     from .config import TrainConfig, _merge_dataclass
     from .model import build_model, count_parameters
     from .observation import obs_size_for_version, obs_version_for_checkpoint
@@ -100,8 +102,20 @@ def _load_checkpoint_config(payload: dict[str, Any]) -> TrainConfig:
     return cfg
 
 
-def load_model(checkpoint: str | Path, device: torch.device) -> tuple[torch.nn.Module, TrainConfig]:
+def load_model(
+    checkpoint: str | Path,
+    device: torch.device,
+    *,
+    legacy_shim: bool = False,
+) -> tuple[torch.nn.Module, TrainConfig]:
+    """Load a model for EvalRunner after enforcing native encoder compatibility.
+
+    EvalRunner owns the encoded leaf buffer, so a Python legacy shim cannot
+    run between encoding and model evaluation.  Generation-1 checkpoints must
+    therefore be evaluated by a pre-sentinel-fix build.
+    """
     payload = load_full_checkpoint(checkpoint, device)
+    require_native_runner_encoder_compatibility(payload, checkpoint, legacy_shim=legacy_shim)
     cfg = _load_checkpoint_config(payload)
     # Legacy MLP checkpoints infer their layout from the first-layer width.
     # CardTokenNet records its v2/v3 tokenizer layout in model metadata; old
@@ -153,6 +167,14 @@ def _opponent_kind(name: str):
     raise ValueError(f"unknown opponent: {name}")
 
 
+def _eval_determinize_mode(honest: bool):
+    return (
+        dz.SelfPlayDeterminizeMode.PerDecision
+        if honest
+        else dz.SelfPlayDeterminizeMode.Off
+    )
+
+
 def classify_game_end(game: Any) -> str:
     """Classify a completed binding Game without adding engine end-state APIs."""
     if game.truncated():
@@ -182,6 +204,7 @@ def make_eval_runner_config(
     c_puct_schedule: str = "fixed",
     c_puct_init: float = 1.25,
     c_puct_base: float = 19652.0,
+    honest: bool = False,
 ):
     parallel_games = max(1, min(int(n_games), int(games)))
     return dz.EvalRunnerConfig(
@@ -202,6 +225,7 @@ def make_eval_runner_config(
         auto_play_treasures=bool(auto_play_treasures),
         prune_treasure_plays=bool(prune_treasure_plays),
         obs_version=int(obs_version),
+        determinize=_eval_determinize_mode(bool(honest)),
     )
 
 
@@ -225,6 +249,7 @@ def evaluate_model(
     auto_play_treasures: bool = False,
     prune_treasure_plays: bool = False,
     obs_version: int = 1,
+    honest: bool = False,
 ) -> EvalStats:
     if fixed_kingdom is None:
         fixed_kingdom = [
@@ -257,6 +282,7 @@ def evaluate_model(
             c_puct_schedule=c_puct_schedule,
             c_puct_init=c_puct_init,
             c_puct_base=c_puct_base,
+            honest=honest,
         )
     )
     model.eval()
@@ -332,10 +358,12 @@ def evaluate_checkpoint(
     max_batch: int = 512,
     auto_play_treasures: bool | None = None,
     prune_treasure_plays: bool | None = None,
+    honest: bool = False,
+    legacy_shim: bool = False,
 ) -> EvalStats:
     device = select_device(device_name)
     seed_everything(seed, deterministic=device.type == "cpu")
-    model, cfg = load_model(checkpoint, device)
+    model, cfg = load_model(checkpoint, device, legacy_shim=legacy_shim)
     if auto_play_treasures is None:
         auto_play_treasures = cfg.selfplay.auto_play_treasures
     if prune_treasure_plays is None:
@@ -359,6 +387,7 @@ def evaluate_checkpoint(
         auto_play_treasures=auto_play_treasures,
         prune_treasure_plays=prune_treasure_plays,
         obs_version=cfg.selfplay.obs_version,
+        honest=honest,
     )
 
 
@@ -404,6 +433,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-batch", type=int, default=512)
     parser.add_argument("--auto-play-treasures", action=argparse.BooleanOptionalAction, default=None)
     parser.add_argument("--prune-treasure-plays", action=argparse.BooleanOptionalAction, default=None)
+    parser.add_argument("--honest", action="store_true", help="sample an honest hidden-information root per NN decision")
+    parser.add_argument(
+        "--legacy-shim",
+        action="store_true",
+        help="native EvalRunner cannot apply this shim; legacy checkpoints require a generation-1 build",
+    )
     parser.add_argument("--ladder", action="store_true")
     parser.add_argument("--ladder-random-games", type=int, default=40)
     parser.add_argument("--ladder-bigmoney-games", type=int, default=100)
@@ -414,7 +449,7 @@ def main(argv: list[str] | None = None) -> int:
 
     device = select_device(args.device)
     seed_everything(args.seed, deterministic=device.type == "cpu")
-    model, cfg = load_model(args.checkpoint, device)
+    model, cfg = load_model(args.checkpoint, device, legacy_shim=args.legacy_shim)
     auto_play_treasures = (
         cfg.selfplay.auto_play_treasures
         if args.auto_play_treasures is None
@@ -433,6 +468,8 @@ def main(argv: list[str] | None = None) -> int:
                 "parameters": count_parameters(model),
                 "sims": args.sims,
                 "kingdoms": args.kingdoms,
+                "honest": bool(args.honest),
+                "legacy_shim": bool(args.legacy_shim),
             },
             sort_keys=True,
         )
@@ -461,6 +498,7 @@ def main(argv: list[str] | None = None) -> int:
                     auto_play_treasures=auto_play_treasures,
                     prune_treasure_plays=prune_treasure_plays,
                     obs_version=cfg.selfplay.obs_version,
+                    honest=args.honest,
                 )
             )
     else:
@@ -484,6 +522,7 @@ def main(argv: list[str] | None = None) -> int:
                 auto_play_treasures=auto_play_treasures,
                 prune_treasure_plays=prune_treasure_plays,
                 obs_version=cfg.selfplay.obs_version,
+                honest=args.honest,
             )
         )
     print_table(rows)

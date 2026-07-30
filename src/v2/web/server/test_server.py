@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from types import SimpleNamespace
@@ -11,6 +12,8 @@ import pytest
 
 import dominion_v2_py as dz
 
+from src.v2.records.corpus import classify_export_data
+from src.v2.records.local import is_complete_local_export_data
 from src.v2.web.server.main import (
     Seat,
     Session,
@@ -48,6 +51,12 @@ KINGDOM = [
     "Remodel",
 ]
 FIXTURE_THRONE_BANDIT = Path(__file__).with_name("fixtures_throne_bandit_replay.json")
+
+
+@pytest.fixture(autouse=True)
+def isolated_export_directory(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Keep games completed by websocket tests out of the live export corpus."""
+    monkeypatch.setenv("DOMINION_EXPORT_DIR", str(tmp_path / "exports"))
 
 
 @pytest.fixture
@@ -845,6 +854,22 @@ def finish_direct_game(game) -> None:
     raise AssertionError("direct game did not finish")
 
 
+def prepare_session_for_final_action(session: Session) -> tuple[int, int]:
+    """Replay a deterministic game up to its final action through the server."""
+    actions: list[int] = []
+    replay = dz.new_game(session.setup, session.seed)
+    while not replay.game_over():
+        action = direct_big_money_action(replay)
+        actions.append(action)
+        replay.step(action)
+    assert actions
+
+    for action in actions[:-1]:
+        session.game.step(action)
+    session.action_log = actions[:-1]
+    return int(session.game.current_decision()["player"]), actions[-1]
+
+
 def test_web_session_filters_validates_labels_and_broadcasts() -> None:
     sessions.clear()
     client = TestClient(app)
@@ -1352,6 +1377,7 @@ def test_export_endpoint_replays_deterministically() -> None:
     assert data["seats"] == ["human", "bot:random"]
     assert data["actions"]
     assert data["obs_version"] == dz.OBS_VERSION
+    assert "final_state_hash_gen2" not in data
     assert verify_export_data(data) == int(data["final_state_hash"], 16)
 
 
@@ -1381,6 +1407,124 @@ def test_export_file_endpoint_writes_finished_game() -> None:
     path = Path(export_response.json()["path"])
     assert path.exists()
     assert json.loads(path.read_text()) == client.get(f"/api/session/{session_id}/export").json()
+
+
+@pytest.mark.parametrize("seats", [("human", "human"), ("bot:bigmoney", "bot:bigmoney")])
+def test_gameover_auto_exports_complete_replay_and_ledger(tmp_path: Path, seats: tuple[str, str]) -> None:
+    sessions.clear()
+    client = TestClient(app)
+    response = client.post(
+        "/api/session",
+        json={"seats": list(seats), "kingdom": KINGDOM, "seed": 0x5130},
+    )
+    assert response.status_code == 200
+    created = response.json()
+    session = sessions[created["session_id"]]
+    final_seat, final_action = prepare_session_for_final_action(session)
+
+    with client.websocket_connect(f"/ws/{created['session_id']}/{created['seat_tokens'][final_seat]}") as websocket:
+        _ = read_initial(websocket)
+        websocket.send_json({"type": "act", "action": final_action})
+        updates = read_update(websocket)
+
+    gameover = by_type(updates, "gameover")
+    export_dir = tmp_path / "exports"
+    exports = list(export_dir.glob("*.json"))
+    assert len(exports) == 1
+    data = json.loads(exports[0].read_text())
+    assert is_complete_local_export_data(data)
+    assert classify_export_data(data) == "real"
+
+    ledger_entries = [json.loads(line) for line in (export_dir / "gameover_ledger.jsonl").read_text().splitlines()]
+    assert len(ledger_entries) == 1
+    ledger_entry = ledger_entries[0]
+    assert isinstance(ledger_entry.pop("timestamp"), str)
+    assert ledger_entry == {
+        "session_id": created["session_id"],
+        "seat_kinds": list(seats),
+        "winner_seat": gameover["winner"],
+        "scores": gameover["scores"],
+        "truncated": gameover["truncated"],
+    }
+
+
+def test_export_file_endpoint_reuses_auto_export(tmp_path: Path) -> None:
+    sessions.clear()
+    client = TestClient(app)
+    response = client.post(
+        "/api/session",
+        json={"seats": ["human", "human"], "kingdom": KINGDOM, "seed": 0x5131},
+    )
+    assert response.status_code == 200
+    created = response.json()
+    session = sessions[created["session_id"]]
+    final_seat, final_action = prepare_session_for_final_action(session)
+
+    with client.websocket_connect(f"/ws/{created['session_id']}/{created['seat_tokens'][final_seat]}") as websocket:
+        _ = read_initial(websocket)
+        websocket.send_json({"type": "act", "action": final_action})
+        assert by_type(read_update(websocket), "gameover")
+
+    exports = list((tmp_path / "exports").glob("*.json"))
+    assert len(exports) == 1
+    path = exports[0]
+    mtime_ns = path.stat().st_mtime_ns
+    export_response = client.post(f"/api/session/{created['session_id']}/export-file")
+    assert export_response.status_code == 200
+    assert export_response.json() == {"path": str(path)}
+    assert list((tmp_path / "exports").glob("*.json")) == [path]
+    assert path.stat().st_mtime_ns == mtime_ns
+
+
+def test_auto_export_failure_keeps_gameover_websocket_message(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    sessions.clear()
+    client = TestClient(app)
+    response = client.post(
+        "/api/session",
+        json={"seats": ["human", "human"], "kingdom": KINGDOM, "seed": 0x5132},
+    )
+    assert response.status_code == 200
+    created = response.json()
+    session = sessions[created["session_id"]]
+    final_seat, final_action = prepare_session_for_final_action(session)
+    blocked_export_dir = tmp_path / "not-a-directory"
+    blocked_export_dir.write_text("blocked")
+    monkeypatch.setenv("DOMINION_EXPORT_DIR", str(blocked_export_dir))
+
+    with caplog.at_level(logging.ERROR, logger="src.v2.web.server.main"):
+        with client.websocket_connect(f"/ws/{created['session_id']}/{created['seat_tokens'][final_seat]}") as websocket:
+            _ = read_initial(websocket)
+            websocket.send_json({"type": "act", "action": final_action})
+            updates = read_update(websocket)
+
+    assert by_type(updates, "gameover")["type"] == "gameover"
+    assert "automatic export failed" in caplog.text
+
+
+def test_disconnect_flushes_unexported_finished_game(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    sessions.clear()
+    client = TestClient(app)
+    response = client.post(
+        "/api/session",
+        json={"seats": ["human", "human"], "kingdom": KINGDOM, "seed": 0x5133},
+    )
+    assert response.status_code == 200
+    created = response.json()
+    session = sessions[created["session_id"]]
+    _, final_action = prepare_session_for_final_action(session)
+    session.game.step(final_action)
+    session.action_log.append(final_action)
+    assert session.game.game_over()
+
+    monkeypatch.setattr("src.v2.web.server.main._initial_messages", lambda _session, _seat: [{"type": "ready"}])
+    with client.websocket_connect(f"/ws/{created['session_id']}/{created['seat_tokens'][0]}") as websocket:
+        assert websocket.receive_json() == {"type": "ready"}
+
+    export_path = tmp_path / "exports" / f"{created['session_id']}.json"
+    assert is_complete_local_export_data(json.loads(export_path.read_text()))
+    assert len((tmp_path / "exports" / "gameover_ledger.jsonl").read_text().splitlines()) == 1
 
 
 def test_random_kingdom_is_seeded_and_valid() -> None:

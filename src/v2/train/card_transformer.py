@@ -53,6 +53,31 @@ A_CALL_BASE = A_OPTION_BASE + OPTION_ACTION_COUNT
 A_SPEND_BASE = A_CALL_BASE + ACTION_DEF_COUNT
 ACTION_SPACE_SIZE = A_SPEND_BASE + SPEND_ACTION_COUNT
 
+# The auxiliary score-margin distribution covers the same clipped score range
+# as the established scalar margin target. For the default 21 heads, bucket i
+# is the lower-edge pair [-20 + 2*i, -19 + 2*i], with the final +20 endpoint
+# retained in bucket 20 after clamping. Thus -20/-1/0/+1/+20 map to
+# 0/9/10/10/20 respectively.
+AUX_MARGIN_MIN = -20
+AUX_MARGIN_MAX = 20
+DEFAULT_AUX_MARGIN_BUCKETS = 21
+
+
+def margin_bucket_ids(margins: torch.Tensor, n_buckets: int = DEFAULT_AUX_MARGIN_BUCKETS) -> torch.Tensor:
+    """Map signed terminal margins to clamped lower-edge distribution bins.
+
+    The default 21-bin geometry has edges ``[-20, -18, ..., 20]``. Integer
+    margins are clamped to ``[-20, 20]`` then assigned by lower edge, so the
+    central bucket covers ``[0, 1]`` and the final endpoint remains bucket 20.
+    Other configured counts retain the same inclusive range with evenly
+    scaled lower-edge IDs.
+    """
+
+    if isinstance(n_buckets, bool) or not isinstance(n_buckets, int) or n_buckets < 2:
+        raise ValueError("aux_margin_buckets must be an integer of at least two")
+    clipped = margins.to(dtype=torch.long).clamp(min=AUX_MARGIN_MIN, max=AUX_MARGIN_MAX)
+    return ((clipped - AUX_MARGIN_MIN) * (n_buckets - 1)) // (AUX_MARGIN_MAX - AUX_MARGIN_MIN)
+
 
 @dataclass(frozen=True)
 class TokenizedCards:
@@ -118,6 +143,7 @@ class CardTokenNet(nn.Module):
         num_card_defs: int = ACTION_DEF_COUNT,
         action_def_count: int = ACTION_DEF_COUNT,
         obs_version: int | None = None,
+        aux_margin_buckets: int | None = None,
     ):
         super().__init__()
         if int(obs_size) == OBS_SIZE_V2:
@@ -144,6 +170,12 @@ class CardTokenNet(nn.Module):
             )
         if int(action_size) != ACTION_SPACE_SIZE:
             raise ValueError(f"CardTokenNet requires action size {ACTION_SPACE_SIZE}, got {action_size}")
+        if aux_margin_buckets is not None and (
+            isinstance(aux_margin_buckets, bool)
+            or not isinstance(aux_margin_buckets, int)
+            or aux_margin_buckets < 2
+        ):
+            raise ValueError("aux_margin_buckets must be null or an integer of at least two")
 
         self.obs_size = int(obs_size)
         self.obs_version = inferred_obs_version
@@ -151,6 +183,7 @@ class CardTokenNet(nn.Module):
         self.d_model = int(d_model)
         self.num_card_defs = int(num_card_defs)
         self.action_def_count = int(action_def_count)
+        self.aux_margin_buckets = None if aux_margin_buckets is None else int(aux_margin_buckets)
 
         self.card_feature_size = (
             self.CARD_FEATURE_SIZE_V3 if self.obs_version == 3 else self.CARD_FEATURE_SIZE_V2
@@ -202,6 +235,13 @@ class CardTokenNet(nn.Module):
             nn.GELU(),
             nn.Linear(self.d_model, 1),
             nn.Tanh(),
+        )
+        # Deliberately omit this module entirely for absent config so legacy
+        # CardTokenNet state_dicts and forward behavior remain byte-identical.
+        self.aux_margin_head = (
+            nn.Linear(self.d_model, self.aux_margin_buckets)
+            if self.aux_margin_buckets is not None
+            else None
         )
 
     @staticmethod
@@ -412,8 +452,29 @@ class CardTokenNet(nn.Module):
         encoded_tokens = self.encode_tokens(tokenized)
         return self.policy_logits(encoded_tokens, tokenized), self.value_head(encoded_tokens[:, 0]).squeeze(-1)
 
+    def forward_tokenized_with_aux(
+        self,
+        tokenized: TokenizedCards,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Evaluate policy, scalar value, and configured margin logits together."""
+
+        if self.aux_margin_head is None:
+            raise RuntimeError("forward_with_aux requires configured aux_margin_buckets")
+        encoded_tokens = self.encode_tokens(tokenized)
+        global_token = encoded_tokens[:, 0]
+        return (
+            self.policy_logits(encoded_tokens, tokenized),
+            self.value_head(global_token).squeeze(-1),
+            self.aux_margin_head(global_token),
+        )
+
     def forward(self, obs: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         return self.forward_tokenized(self.tokenize(obs))
+
+    def forward_with_aux(self, obs: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Opt-in auxiliary output without changing ``forward``'s ABI."""
+
+        return self.forward_tokenized_with_aux(self.tokenize(obs))
 
     @torch.no_grad()
     def evaluate(self, obs: torch.Tensor, legal_mask: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:

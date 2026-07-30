@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import random
 import secrets
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -87,12 +89,15 @@ class Session:
     scripted_bots: list[Any | None] = field(default_factory=list)
     nn_policies: dict[int, NNPolicy] = field(default_factory=dict)
     thinking_delay_ms: int = 60
+    export_path: str | None = None
+    auto_export_ledger_written: bool = False
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
 
 app = FastAPI(title="DominionZero v2 Web Server")
 sessions: dict[str, Session] = {}
 SEAT_KINDS = {"human", "bot", "bot:engine3", "bot:thinner", "bot:bigmoney", "bot:random"}
+LOGGER = logging.getLogger(__name__)
 
 
 def _make_setup(players: int, kingdom: list[int]) -> dz.Setup:
@@ -164,7 +169,7 @@ def _nn_checkpoint_path(kind: str) -> Path:
 
 def _load_nn_policies(seat_kinds: list[str]) -> dict[int, NNPolicy]:
     return {
-        index: load_policy(_nn_checkpoint_path(kind))
+        index: load_policy(_nn_checkpoint_path(kind), legacy_shim=True)
         for index, kind in enumerate(seat_kinds)
         if _is_neural_kind(kind)
     }
@@ -305,20 +310,59 @@ def _export_payload(session: Session) -> dict[str, Any]:
     }
 
 
-def _persist_export(session: Session) -> str | None:
-    """Write finished games to disk so exports survive server restarts."""
-    out_dir = Path("exports")
+def _export_directory() -> Path:
+    """Return the configured destination for finished web-game exports.
+
+    Production keeps the historical relative ``exports/`` destination.  Tests
+    and isolated deployments can set ``DOMINION_EXPORT_DIR`` to keep their
+    exports out of that shared corpus.
+    """
+    return Path(os.environ.get("DOMINION_EXPORT_DIR", "exports"))
+
+
+def _persist_export(session: Session) -> str:
+    """Write a finished game once and return its stable export path."""
+    if session.export_path is not None:
+        return session.export_path
+    out_dir = _export_directory()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / f"{session.session_id}.json"
+    path.write_text(json.dumps(_export_payload(session)))
+    session.export_path = str(path)
+    return session.export_path
+
+
+def _append_gameover_ledger(session: Session, export_path: str) -> None:
+    """Record metadata for an automatically persisted finished game."""
+    scores = [int(session.game.score(player)) for player in range(session.game.num_players())]
+    entry = {
+        "session_id": session.session_id,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "seat_kinds": [seat.kind for seat in session.seats],
+        "winner_seat": session.game.winner(),
+        "scores": scores,
+        "truncated": bool(session.game.truncated()),
+    }
+    ledger_path = Path(export_path).parent / "gameover_ledger.jsonl"
+    with ledger_path.open("a", encoding="utf-8") as ledger:
+        ledger.write(json.dumps(entry, sort_keys=True) + "\n")
+
+
+def _auto_export_finished_game(session: Session) -> None:
+    """Best-effort game-over persistence that cannot interrupt websocket updates."""
+    if session.auto_export_ledger_written:
+        return
     try:
-        out_dir.mkdir(exist_ok=True)
-        path = out_dir / f"{session.session_id}.json"
-        path.write_text(json.dumps(_export_payload(session)))
-        return str(path)
-    except OSError:
-        return None  # persistence is best-effort; never break the game flow
+        export_path = _persist_export(session)
+        _append_gameover_ledger(session, export_path)
+    except Exception:
+        LOGGER.exception("automatic export failed for finished session %s", session.session_id)
+        return
+    session.auto_export_ledger_written = True
 
 
 def _gameover_message(session: Session) -> dict[str, Any]:
-    _persist_export(session)
+    _auto_export_finished_game(session)
     scores = [session.game.score(player) for player in range(session.game.num_players())]
     return {
         "type": "gameover",
@@ -724,8 +768,9 @@ async def export_session_file(session_id: str) -> dict[str, str]:
     async with session.lock:
         if not session.game.game_over():
             raise HTTPException(status_code=409, detail="game is not over")
-        path = _persist_export(session)
-        if path is None:
+        try:
+            path = _persist_export(session)
+        except OSError:
             raise HTTPException(status_code=500, detail="export could not be written")
         return {"path": path}
 
@@ -853,6 +898,8 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, seat_token: 
     except WebSocketDisconnect:
         async with session.lock:
             if session.connections.get(seat_token) is websocket:
+                if session.game.game_over() and not session.auto_export_ledger_written:
+                    _auto_export_finished_game(session)
                 session.connections.pop(seat_token, None)
                 pending = session.pending_undo
                 if pending is not None:

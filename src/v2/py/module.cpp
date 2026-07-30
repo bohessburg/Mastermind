@@ -152,6 +152,24 @@ private:
     return static_cast<int>(version);
 }
 
+[[nodiscard]] py::dict encoder_layout(int version) {
+    const ObsVersion obs_version = parse_obs_version(version);
+    const bool is_v1 = obs_version == ObsVersion::V1;
+    py::dict layout;
+    // These values intentionally come from encoder.h's section arithmetic so
+    // Python compatibility consumers cannot drift from the native layout.
+    layout["supply_offset"] = py::int_(is_v1 ? OBS_SUPPLY_OFFSET : OBS_V2_SUPPLY_OFFSET);
+    layout["supply_size"] = py::int_(OBS_SUPPLY_SIZE);
+    layout["pile_block_size"] = py::int_(OBS_PILE_BLOCK_SIZE);
+    layout["pile_count_field"] = py::int_(OBS_PILE_COUNT_FIELD);
+    layout["pile_base_field"] = py::int_(OBS_PILE_BASE_FIELD);
+    layout["pile_trait_field"] = py::int_(OBS_PILE_TRAIT_FIELD);
+    layout["landscape_offset"] = py::int_(is_v1 ? OBS_LANDSCAPE_OFFSET : OBS_V2_LANDSCAPE_OFFSET);
+    layout["landscape_id_size"] = py::int_(OBS_LANDSCAPE_ID_SIZE);
+    layout["landscape_prophecy_offset"] = py::int_(OBS_LANDSCAPE_PROPHECY_OFFSET);
+    return layout;
+}
+
 [[nodiscard]] MctsCPuctSchedule parse_c_puct_schedule(const std::string& schedule) {
     if (schedule == "fixed") {
         return MctsCPuctSchedule::Fixed;
@@ -170,6 +188,26 @@ private:
         return "visit_scaled";
     }
     throw std::invalid_argument("native c_puct_schedule is invalid");
+}
+
+[[nodiscard]] SelfPlayTempMode parse_selfplay_temp_mode(const std::string& mode) {
+    if (mode == "legacy") {
+        return SelfPlayTempMode::Legacy;
+    }
+    if (mode == "per_seat_buy") {
+        return SelfPlayTempMode::PerSeatBuy;
+    }
+    throw std::invalid_argument("temp_mode must be 'legacy' or 'per_seat_buy'");
+}
+
+[[nodiscard]] const char* selfplay_temp_mode_name(SelfPlayTempMode mode) {
+    if (mode == SelfPlayTempMode::Legacy) {
+        return "legacy";
+    }
+    if (mode == SelfPlayTempMode::PerSeatBuy) {
+        return "per_seat_buy";
+    }
+    throw std::invalid_argument("native temp_mode is invalid");
 }
 
 [[nodiscard]] PlayerId turn_player_id(const GameState& state) noexcept {
@@ -1414,8 +1452,23 @@ void selfplay_provide(
             static_cast<py::ssize_t>(record.moves),
             static_cast<py::ssize_t>(ACTION_SPACE_SIZE),
         });
+        py::array_t<bool> legal_masks({
+            static_cast<py::ssize_t>(record.moves),
+            static_cast<py::ssize_t>(ACTION_SPACE_SIZE),
+        });
         py::array_t<float> values(static_cast<py::ssize_t>(record.moves));
+        py::array_t<std::int16_t> margins(static_cast<py::ssize_t>(record.moves));
         py::array_t<std::uint8_t> players(static_cast<py::ssize_t>(record.moves));
+        py::array_t<std::uint32_t> sampled_actions(
+            static_cast<py::ssize_t>(record.sampled_actions.size()));
+        const std::size_t expected_mask_words =
+            static_cast<std::size_t>(record.moves) * ACTION_MASK_WORDS;
+        if (record.legal_mask_words.size() != expected_mask_words) {
+            throw std::runtime_error("self-play record legal-mask buffer has an invalid size");
+        }
+        if (record.margins.size() != record.moves) {
+            throw std::runtime_error("self-play record margin buffer has an invalid size");
+        }
         if (record.moves != 0U) {
             std::memcpy(
                 obs.mutable_data(),
@@ -1430,9 +1483,21 @@ void selfplay_provide(
                 record.values.data(),
                 static_cast<std::size_t>(record.moves) * sizeof(float));
             std::memcpy(
+                margins.mutable_data(),
+                record.margins.data(),
+                static_cast<std::size_t>(record.moves) * sizeof(std::int16_t));
+            std::memcpy(
                 players.mutable_data(),
                 record.players.data(),
                 static_cast<std::size_t>(record.moves) * sizeof(PlayerId));
+            bool* legal_mask_data = legal_masks.mutable_data();
+            for (std::size_t move = 0U; move < record.moves; ++move) {
+                for (Action action = 0U; action < ACTION_SPACE_SIZE; ++action) {
+                    legal_mask_data[(move * ACTION_SPACE_SIZE) + action] =
+                        (record.legal_mask_words[(move * ACTION_MASK_WORDS) + (action >> 6U)]
+                         & (std::uint64_t{1} << (action & 63U))) != 0U;
+                }
+            }
         }
         py::list kingdom;
         for (std::uint8_t i = 0; i < record.kingdom_count; ++i) {
@@ -1440,8 +1505,14 @@ void selfplay_provide(
         }
         dict["observations"] = obs;
         dict["policy_targets"] = policies;
+        dict["legal_mask"] = legal_masks;
         dict["values"] = values;
+        dict["margins"] = margins;
         dict["players"] = players;
+        for (std::size_t index = 0U; index < record.sampled_actions.size(); ++index) {
+            sampled_actions.mutable_data()[index] = record.sampled_actions[index];
+        }
+        dict["sampled_actions"] = sampled_actions;
         py::array_t<std::int16_t> scores(MAX_PLAYERS);
         std::memcpy(
             scores.mutable_data(),
@@ -1844,6 +1915,11 @@ PYBIND11_MODULE(dominion_v2_py, module) {
         .value("Margin", SelfPlayValueTarget::Margin)
         .value("MarginBlend", SelfPlayValueTarget::MarginBlend);
 
+    py::enum_<SelfPlayDeterminizeMode>(module, "SelfPlayDeterminizeMode")
+        .value("Off", SelfPlayDeterminizeMode::Off)
+        .value("PerDecision", SelfPlayDeterminizeMode::PerDecision)
+        .value("PerTurn", SelfPlayDeterminizeMode::PerTurn);
+
     py::enum_<SelfPlayScriptedBotKind>(module, "SelfPlayScriptedBotKind")
         .value("None_", SelfPlayScriptedBotKind::None)
         .value("BigMoney", SelfPlayScriptedBotKind::BigMoney)
@@ -1904,7 +1980,15 @@ PYBIND11_MODULE(dominion_v2_py, module) {
             bool opening_templates_enabled,
             float opening_lambda,
             std::int32_t opening_turn_window,
-            py::object template_weights) {
+            py::object template_weights,
+            SelfPlayDeterminizeMode determinize,
+            bool forced_playouts,
+            float forced_playouts_k,
+            const std::string& temp_mode,
+            std::uint16_t temp_buy_turns,
+            std::uint16_t temp_action_plies,
+            std::uint16_t temp_effect_plies,
+            float temp_final) {
             SelfPlayConfig config{};
             config.n_games = n_games;
             config.sims_per_move = sims_per_move;
@@ -1938,6 +2022,14 @@ PYBIND11_MODULE(dominion_v2_py, module) {
             config.opening_templates_enabled = opening_templates_enabled;
             config.opening_lambda = opening_lambda;
             config.opening_turn_window = opening_turn_window;
+            config.determinize = determinize;
+            config.forced_playouts = forced_playouts;
+            config.forced_playouts_k = forced_playouts_k;
+            config.temp_mode = parse_selfplay_temp_mode(temp_mode);
+            config.temp_buy_turns = temp_buy_turns;
+            config.temp_action_plies = temp_action_plies;
+            config.temp_effect_plies = temp_effect_plies;
+            config.temp_final = temp_final;
             if (!template_weights.is_none()) {
                 set_selfplay_template_weights(config, template_weights);
             }
@@ -1956,7 +2048,7 @@ PYBIND11_MODULE(dominion_v2_py, module) {
             py::arg("c_puct") = 1.25F,
             py::arg("dirichlet_alpha") = 0.30F,
             py::arg("dirichlet_frac") = 0.25F,
-            py::arg("temp_moves") = 12,
+            py::arg("temp_moves") = 20,
             py::arg("max_batch") = 256,
             py::arg("seed") = 0x545241494EULL,
             py::arg("kingdom_mode") = SelfPlayKingdomMode::Random,
@@ -1986,7 +2078,15 @@ PYBIND11_MODULE(dominion_v2_py, module) {
             py::arg("opening_templates_enabled") = false,
             py::arg("opening_lambda") = 0.6F,
             py::arg("opening_turn_window") = 8,
-            py::arg("template_weights") = py::none())
+            py::arg("template_weights") = py::none(),
+            py::arg("determinize") = SelfPlayDeterminizeMode::Off,
+            py::arg("forced_playouts") = false,
+            py::arg("forced_playouts_k") = 2.0F,
+            py::arg("temp_mode") = "legacy",
+            py::arg("temp_buy_turns") = 14U,
+            py::arg("temp_action_plies") = 10U,
+            py::arg("temp_effect_plies") = 6U,
+            py::arg("temp_final") = 0.0F)
         .def_readwrite("n_games", &SelfPlayConfig::n_games)
         .def_readwrite("sims_per_move", &SelfPlayConfig::sims_per_move)
         .def_readwrite("c_puct", &SelfPlayConfig::c_puct)
@@ -2003,6 +2103,18 @@ PYBIND11_MODULE(dominion_v2_py, module) {
         .def_readwrite("dirichlet_alpha", &SelfPlayConfig::dirichlet_alpha)
         .def_readwrite("dirichlet_frac", &SelfPlayConfig::dirichlet_frac)
         .def_readwrite("temp_moves", &SelfPlayConfig::temp_moves)
+        .def_property(
+            "temp_mode",
+            [](const SelfPlayConfig& config) {
+                return std::string(selfplay_temp_mode_name(config.temp_mode));
+            },
+            [](SelfPlayConfig& config, const std::string& mode) {
+                config.temp_mode = parse_selfplay_temp_mode(mode);
+            })
+        .def_readwrite("temp_buy_turns", &SelfPlayConfig::temp_buy_turns)
+        .def_readwrite("temp_action_plies", &SelfPlayConfig::temp_action_plies)
+        .def_readwrite("temp_effect_plies", &SelfPlayConfig::temp_effect_plies)
+        .def_readwrite("temp_final", &SelfPlayConfig::temp_final)
         .def_readwrite("max_batch", &SelfPlayConfig::max_batch)
         .def_readwrite("seed", &SelfPlayConfig::seed)
         .def_property(
@@ -2025,6 +2137,9 @@ PYBIND11_MODULE(dominion_v2_py, module) {
         .def_readwrite("auto_play_treasures", &SelfPlayConfig::auto_play_treasures)
         .def_readwrite("prune_treasure_plays", &SelfPlayConfig::prune_treasure_plays)
         .def_readwrite("tree_reuse", &SelfPlayConfig::tree_reuse)
+        .def_readwrite("determinize", &SelfPlayConfig::determinize)
+        .def_readwrite("forced_playouts", &SelfPlayConfig::forced_playouts)
+        .def_readwrite("forced_playouts_k", &SelfPlayConfig::forced_playouts_k)
         .def_readwrite("min_new_sims", &SelfPlayConfig::min_new_sims)
         .def_readwrite("expand_top_k", &SelfPlayConfig::expand_top_k)
         .def_readwrite("opening_templates_enabled", &SelfPlayConfig::opening_templates_enabled)
@@ -2080,7 +2195,8 @@ PYBIND11_MODULE(dominion_v2_py, module) {
             int obs_version,
             const std::string& c_puct_schedule,
             float c_puct_init,
-            float c_puct_base) {
+            float c_puct_base,
+            SelfPlayDeterminizeMode determinize) {
             EvalRunnerConfig config{};
             config.n_games = n_games;
             config.sims_per_move = sims_per_move;
@@ -2098,6 +2214,7 @@ PYBIND11_MODULE(dominion_v2_py, module) {
             config.auto_play_treasures = auto_play_treasures;
             config.prune_treasure_plays = prune_treasure_plays;
             config.obs_version = parse_obs_version(obs_version);
+            config.determinize = determinize;
             if (!kingdom.is_none()) {
                 PySetup setup(2, kingdom, false);
                 config.fixed_setup = setup.setup;
@@ -2120,7 +2237,8 @@ PYBIND11_MODULE(dominion_v2_py, module) {
             py::arg("obs_version") = static_cast<int>(ObsVersion::V1),
             py::arg("c_puct_schedule") = "fixed",
             py::arg("c_puct_init") = 1.25F,
-            py::arg("c_puct_base") = 19652.0F)
+            py::arg("c_puct_base") = 19652.0F,
+            py::arg("determinize") = SelfPlayDeterminizeMode::Off)
         .def_readwrite("n_games", &EvalRunnerConfig::n_games)
         .def_readwrite("sims_per_move", &EvalRunnerConfig::sims_per_move)
         .def_readwrite("c_puct", &EvalRunnerConfig::c_puct)
@@ -2146,7 +2264,8 @@ PYBIND11_MODULE(dominion_v2_py, module) {
         .def_readwrite("opponent", &EvalRunnerConfig::opponent)
         .def_readwrite("retain_finished_games", &EvalRunnerConfig::retain_finished_games)
         .def_readwrite("auto_play_treasures", &EvalRunnerConfig::auto_play_treasures)
-        .def_readwrite("prune_treasure_plays", &EvalRunnerConfig::prune_treasure_plays);
+        .def_readwrite("prune_treasure_plays", &EvalRunnerConfig::prune_treasure_plays)
+        .def_readwrite("determinize", &EvalRunnerConfig::determinize);
 
     py::class_<EvalRunner>(module, "EvalRunner")
         .def(py::init<const EvalRunnerConfig&>(), py::arg("config"))
@@ -2180,6 +2299,7 @@ PYBIND11_MODULE(dominion_v2_py, module) {
     });
 
     module.attr("OBS_VERSION") = py::int_(OBS_VERSION);
+    module.attr("ENCODER_GENERATION") = py::int_(ENCODER_GENERATION);
     module.attr("OBS_SIZE") = py::int_(OBS_SIZE);
     module.attr("OBS_SIZE_V1") = py::int_(OBS_SIZE_V1);
     module.attr("OBS_SIZE_V2") = py::int_(OBS_SIZE_V2);
@@ -2187,6 +2307,11 @@ PYBIND11_MODULE(dominion_v2_py, module) {
     module.def("obs_size_for", [](int version) {
         return py::int_(obs_size_for(parse_obs_version(version)));
     }, py::arg("version"));
+    module.def(
+        "encoder_layout",
+        &encoder_layout,
+        py::arg("obs_version"),
+        "Return native encoder section offsets and field positions for one observation version.");
     module.attr("ACTION_SPACE_SIZE") = py::int_(ACTION_SPACE_SIZE);
     module.attr("A_PASS") = py::int_(A_PASS);
     module.attr("A_PLAY_BASE") = py::int_(A_PLAY_BASE);

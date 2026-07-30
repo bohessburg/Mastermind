@@ -1170,3 +1170,163 @@ must change the OUTCOME DATA the value head trains on — engine wins
 must actually occur in training games (human-game imitation; curated
 engine-kingdom phases); policy-only guidance cannot work. Input to the
 pre-c20 architecture audit.
+
+HONEST RE-BASELINE — FIRST DETERMINIZED-SEARCH READS (2026-07-28,
+local, new harness src/v2/train/honest_eval.py): the pre-c20 audit
+found ALL training self-play AND every EvalRunner/duel.py number in
+this log runs PERFECT-INFORMATION search — the tree sees opponent
+hands and, via each node's cloned RNG, the exact future shuffle/draw
+outcomes (deliberate Phase-T.1 scaffolding, selfplay.cpp ~1320-1333,
+eval_runner.cpp:854; determinize() is reached only by the web/arena
+DecisionSearcher paths and the scaffold bot). First honest reads at
+the deployed operating point (400 sims, K=2 per-decision
+determinization, 200g each, seat-blocked, seed 20260728, 0 errors):
+  c15 gen_0045 vs engine3:      44.9% (88-108-4)   [clairvoyant 56.1]
+  c19 gen_0040 vs engine3:      47.7% (95-104-1)   [clairvoyant 55.3]
+  c19 gen_0040 vs c15 gen_0045: 45.6% (88-105-7)   [clairvoyant peak 47.7]
+FINDINGS: (1) CLAIRVOYANCE GAP ~8-11 pts vs engine3 (~3 sigma at
+n=200): both flagships are BELOW engine3 parity in the regime they
+actually play — finally consistent with the arena's 39% vs humans.
+(2) The NN-vs-NN duel is nearly unchanged (both seats cheated equally
+before): RELATIVE reads in this log survive; ABSOLUTE reads vs
+scripted opponents do not. (3) THE SEAT STRUCTURE IS REGIME-INVARIANT
+and not a duel artifact: first/second-seat = 52.5/37.1 (c15 vs
+engine3), 58.6/37.0 (c19 vs engine3), 53.1/37.9 (duel) — the
+second-seat collapse reproduces against a scripted opponent under
+honest information. (4) Ending mix healthy (province-majority 155/157
+of 200 vs engine3; duel 105/95), zero truncations, mean turns 46-51.
+Harness: serving-identical per-decision DecisionSearcher, 10 CPU
+workers, 911 / 274 / 187 games/hr (c15 / c19 / duel). Honest sims
+curve queued (c15 at 200/800/1600 + c19 at 1600; 400-point reuses the
+baseline run — same seed, same boards). Results JSONs under
+bench/honest_eval/.
+
+HONEST SIMS CURVE (2026-07-29 overnight, honest_eval.py, 200g/point,
+K=2, seed 20260728 — same boards as the re-baseline): c15 gen_0045 vs
+engine3 by sims — 200: 48.7 | 400: 44.9 | 800: 47.7 | 1600: 45.5.
+c19 gen_0040 @1600: 47.0 (vs 47.7 @400). One sigma ~3.5, zero errors.
+FINDINGS: (1) THE DEEP-SEARCH REGRESSION DOES NOT REPRODUCE UNDER
+HONEST SEARCH. The clairvoyant sweep's collapse past 1000 sims (39.7
+@1600, 2026-07-20, 500g/point) was a perfect-information-regime
+artifact — deep search over-exploiting a KNOWN future through a
+miscalibrated value head. Under per-decision K=2 determinization the
+curve is FLAT 200->1600 for both flagships. The standing
+"depth-as-research-problem" conclusion is REVISED: honest depth is
+neutral, not harmful; visit-scaled PUCT / c_puct-at-depth work was
+chasing a cheat-regime pathology. (2) Neutral is its own message: 8x
+sims buys ZERO points — the value head, not search budget, is the
+binding ceiling on honest strength (independent confirmation of the
+value-probe finding, from the search side). (3) Operating point: 400
+sims stands (cheapest defensible point on a flat curve; 200 read
+highest at 48.7 but within noise — candidate cost lever for the c20
+regime A/B). (4) Seat structure invariant at every depth (54/37 c15,
+56/38 c19 @1600) — see re-baseline entry; net second-seat deficit vs
+engine3's own mirror splits (~58/41-43) is ~4-6 pts, not the raw
+13-pt read. c19@1600 costs 66 games/hr on 10 CPU workers.
+
+RESTRUCTURE BUILD WAVES 1-2 LANDED (2026-07-29 night, all Codex
+delegations reviewed + suites re-run locally, 169 C++ / 166-168 py
+green): (1) determinized self-play mode (selfplay.determinize =
+off|per_decision|per_turn; fresh sample of the true state per search;
+per_turn seeds by turn for hop damping; tree reuse auto-disabled;
+encode-equivalence invariant tested; default off = legacy bit-exact);
+(2) honest modes for EvalRunner/evaluate.py/duel.py (--honest;
+default clairvoyant until c20); (3) TRUE legal-mask recording (the
+policy>0 reconstruction bug is dead: legal-but-unvisited actions now
+reach the CE denominator; crafted-case test shows loss 0 -> log 2);
+(4) landscape-sentinel memset repair (see COMPAT WARNING below;
+golden replay hashes legitimately regenerated — action sequences
+byte-identical, hash-line-only diffs); (5) AdamW default (config
+optimizer field, legacy adam for resumes, mismatch guard); (6) corpus
+quarantine (109 real local + 2 hetzner games; 123 pytest artifacts +
+92 stubs + 9 corrupt excluded; converter defaults clean; server tests
+now export to tmp) + human-tuple exporter (12,734 human-seat tuples
+with raw margins, exports/tuples/); (7) imitation stack in train.py
+(BC pretrain, persistent anchor loss with schedule floor, optional
+AWR, offline_fit --human-tuples/--human-only; anchor-off path
+literally separate = legacy identical).
+
+ENCODER COMPAT WARNING (2026-07-29, consequence of the sentinel
+repair): pre-fix checkpoints (c13..c19, incl. the DEPLOYED c15
+flagship) trained on ~34 constant-1.0 landscape/trait floats that now
+correctly encode 0.0. Serving/probing them on post-fix builds is
+OFF-DISTRIBUTION: c15's value probe collapses +0.897/+0.717/-0.032 ->
++0.076/-0.049/-0.378 (ordering survives, calibration destroyed). DO
+NOT redeploy legacy checkpoints on post-fix engine builds (current
+Hetzner image is safe — old build baked in). Legacy probe/benchmark
+reference values are pre-fix-build-only. Guard task opened
+(encoder-generation tag + legacy shim); c20 starts a fresh reference
+series on the fixed encoder.
+
+VALUE-TARGET GEOMETRY SWEEP (2026-07-29/30 overnight, task #15,
+bench/value_target_sweep/): margin_blend alpha in {0.6 ctrl, 0.4,
+0.2, 0.0}, c19 replay 250K slice (values EXACTLY inverted to raw
+margins — the alpha=0.6 labels are bijective in-range), 13%
+human-tuple mixing at matching alpha, 3 seeds x 3000 steps per arm,
+identical init/data across arms, d192 CardTokenNet, probes via the
+legacy shim (fits trained on pre-fix-encoder obs). Aggregate
+(mean±sd over seeds; money/engine/junk = value-probe means):
+  a=0.6: money +0.25±0.65  engine +0.53±0.31  junk -0.61±0.51  duchyDV -0.113±0.069
+  a=0.4: money -0.31±0.79  engine +0.02±0.71  junk -0.91±0.05  duchyDV -0.022±0.007
+  a=0.2: money +0.26±0.87  engine +0.17±0.82  junk -0.36±0.81  duchyDV -0.059±0.032
+  a=0.0: money +0.87±0.16  engine +0.89±0.09  junk -0.26±0.75  duchyDV -0.057±0.020
+READ: (1) PURE MARGIN (a=0.0) is uniquely SEED-STABLE and prices the
+built engine deck AT PARITY with money on the engine board — the
+exact property the restructure chases — replicated across seeds;
+every alpha>=0.2 arm is seed-chaotic on these OOD-ish states (sd up
+to ±0.87). Mid-range supervision stabilizes OOD behavior, consistent
+with the saturation-cliff hypothesis. (2) The a=0.6 control shows the
+WORST Duchy value-distortion at this scale, inverting the full-scale
+c17 rationale; the c17 Duchy fix must be re-verified at campaign
+scale whatever alpha ships — the Duchy probe is a pre-registered
+non-regression gate for c20's early gens. (3) Caveat: quarter-scale
+3000-step fits; comparative geometry read only, not a strength claim.
+RECOMMENDATION to carry into c20 assembly: alpha=0.0 (pure margin)
+as the leading candidate, 0.2-0.4 as fallback if the Duchy gate
+trips. Pilot (single-seed, no humans, pre-shim) archived in
+sweep_results.json; replication in sweep2_aggregate.json.
+
+HONEST-GAP ATTRIBUTION REVISED (2026-07-29 night, matched-board
+discriminators after the #9 honest-eval-mode build): (1) EvalRunner
+matched A/B, same seed/scheduler, 200g each: clairvoyant 54.0 vs
+honest-per-decision 54.8 — CLAIRVOYANCE IS WORTH ~ZERO vs engine3
+(the divergence tests confirm hidden zones really are resampled; the
+information just doesn't convert to strength against a chart bot at
+400 sims). (2) Harness K=1 vs K=2 on the SAME boards (seed 20260728):
+48.5 vs 44.9 — K=2 world-splitting costs ~3.6 pts (~1 sigma, mild).
+(3) Residual ~6 pts between harness-K1 (48.5) and EvalRunner-honest
+(54.8) is a STACK effect, not information — different samplers/seeds
+so not yet matched-solid; prime suspect is DecisionSearcher's
+within-decision leaf batching / virtual-loss waves (EvalRunner fills
+batches across 128 games, ~few leaves per tree per pass; the serving
+searcher must extract whole batches from one decision). CORRECTION to
+the 2026-07-28 re-baseline entry: those numbers stand as
+DEPLOYED-CONFIG reads, but attributing the eval-vs-serving gap to
+perfect information was wrong — it is mostly serving-stack search
+quality + K-splitting. Two consequences: (a) the deployed bot may be
+leaving ~6-10 pts on the table at serve time (new investigation task:
+serving-stack search parity; K=1 deploy candidate); (b) the c19-era
+deep-search-regression story stays revised as before (EvalRunner-
+clairvoyant-only pathology). c20 bars restated: ~45-48 (serving
+harness, deployed config) AND ~54 (EvalRunner honest) — track both.
+
+PROBE SUITE CODIFIED + MILITIA FINDING (2026-07-29, scripts/probes/):
+the five standing behavior probes are now permanent instruments
+(value_probe, chapel_probe, militia_probe, duchy_probe,
+human_record_probe + run_all.py; one JSON + scorecard per checkpoint).
+Validation against banked checkpoints: value probe reproduces the
+2026-07-28 logged means EXACTLY (c15 +0.897/+0.717/-0.032; c18
++0.819/-0.686/-0.948; c19 -0.861/-0.976/-0.995); chapel probe matches
+(champ flat 0.036). NEW FINDING: the MILITIA KEEP-INVERSION PERSISTS
+IN c18 AND c19 (raw policy AND 400-sim search on the rebuilt hands) —
+the obs-v3 select-semantic one-hot gave the net the INPUT to
+distinguish keep-vs-discard but no training pressure ever taught it
+to use the flag; self-play mirrors still never punish junk-keeps.
+Same lesson as everything else this phase: representation without
+outcome data does not convert. Human-record probe v1 baselines
+(policy mass on winning humans' action buys / money-default rate):
+c15 .110/53.5%, c18 .105/49.6%, c19 .122/46.8% — i.e. on decisions
+where a winning human bought an action card, the nets' argmax buy is
+still a treasure roughly half the time. Duchy-injection reference on
+the NEW fixed states (longitudinal baseline going forward): c15
++0.89pts, c18 +2.42pts, c19 +0.40pts.

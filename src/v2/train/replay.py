@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -15,6 +16,7 @@ class ReplayBatch:
     policy: np.ndarray
     value: np.ndarray
     legal_mask: np.ndarray
+    margin: np.ndarray
 
 
 class ReplayBuffer:
@@ -28,6 +30,7 @@ class ReplayBuffer:
         self.policy = np.zeros((self.capacity, self.action_size), dtype=np.float32)
         self.value = np.zeros((self.capacity,), dtype=np.float32)
         self.legal_mask = np.zeros((self.capacity, self.action_size), dtype=np.bool_)
+        self.margin = np.zeros((self.capacity,), dtype=np.int16)
         self.write = 0
         self.size = 0
         self.rng = np.random.default_rng(seed)
@@ -35,11 +38,24 @@ class ReplayBuffer:
     def __len__(self) -> int:
         return self.size
 
-    def add(self, obs: np.ndarray, policy: np.ndarray, value: np.ndarray, legal_mask: np.ndarray) -> None:
+    def add(
+        self,
+        obs: np.ndarray,
+        policy: np.ndarray,
+        value: np.ndarray,
+        legal_mask: np.ndarray,
+        margin: np.ndarray | None = None,
+    ) -> None:
         obs = np.asarray(obs, dtype=np.float32)
         policy = np.asarray(policy, dtype=np.float32)
         value = np.asarray(value, dtype=np.float32)
         legal_mask = np.asarray(legal_mask, dtype=np.bool_)
+        if margin is None:
+            # Keep pre-aux callers source-compatible. Fresh self-play paths
+            # always provide the native terminal margin explicitly.
+            margin = np.zeros(value.shape, dtype=np.int16)
+        else:
+            margin = np.asarray(margin, dtype=np.int16)
         if obs.ndim != 2 or obs.shape[1] != self.obs_size:
             raise ValueError("obs shape mismatch")
         if policy.shape != (obs.shape[0], self.action_size):
@@ -48,6 +64,8 @@ class ReplayBuffer:
             raise ValueError("value shape mismatch")
         if legal_mask.shape != (obs.shape[0], self.action_size):
             raise ValueError("legal_mask shape mismatch")
+        if margin.shape != (obs.shape[0],):
+            raise ValueError("margin shape mismatch")
 
         n = obs.shape[0]
         for start in range(0, n):
@@ -56,6 +74,7 @@ class ReplayBuffer:
             self.policy[idx] = policy[start]
             self.value[idx] = value[start]
             self.legal_mask[idx] = legal_mask[start]
+            self.margin[idx] = margin[start]
             self.write = (self.write + 1) % self.capacity
             self.size = min(self.size + 1, self.capacity)
 
@@ -68,6 +87,7 @@ class ReplayBuffer:
             policy=self.policy[indices].copy(),
             value=self.value[indices].copy(),
             legal_mask=self.legal_mask[indices].copy(),
+            margin=self.margin[indices].copy(),
         )
 
     def state_dict(self) -> dict[str, Any]:
@@ -81,6 +101,7 @@ class ReplayBuffer:
             "policy": self.policy[: self.size].copy(),
             "value": self.value[: self.size].copy(),
             "legal_mask": self.legal_mask[: self.size].copy(),
+            "margin": self.margin[: self.size].copy(),
             "rng_state": self.rng.bit_generator.state,
         }
 
@@ -95,10 +116,19 @@ class ReplayBuffer:
         self.policy.fill(0.0)
         self.value.fill(0.0)
         self.legal_mask.fill(False)
+        self.margin.fill(0)
         self.obs[: self.size] = state["obs"]
         self.policy[: self.size] = state["policy"]
         self.value[: self.size] = state["value"]
         self.legal_mask[: self.size] = state["legal_mask"]
+        if "margin" in state:
+            self.margin[: self.size] = state["margin"]
+        else:
+            warnings.warn(
+                "replay state has no margin column; auxiliary margin training needs fresh data and has been zero-filled",
+                RuntimeWarning,
+                stacklevel=2,
+            )
         self.rng.bit_generator.state = state["rng_state"]
 
 
@@ -129,6 +159,7 @@ def save_replay_state(replay: ReplayBuffer, path: str | Path) -> Path:
                 policy=state["policy"],
                 value=state["value"],
                 legal_mask=state["legal_mask"],
+                margin=state["margin"],
             )
             handle.flush()
             os.fsync(handle.fileno())
@@ -158,4 +189,13 @@ def load_replay_state(replay: ReplayBuffer, path: str | Path) -> None:
             "value": archive["value"].copy(),
             "legal_mask": archive["legal_mask"].copy(),
         }
+        if "margin" in archive.files:
+            state["margin"] = archive["margin"].copy()
+        else:
+            state["margin"] = np.zeros((int(metadata["size"]),), dtype=np.int16)
+            warnings.warn(
+                "replay state has no margin column; auxiliary margin training needs fresh data and has been zero-filled",
+                RuntimeWarning,
+                stacklevel=2,
+            )
     replay.load_state_dict(state)

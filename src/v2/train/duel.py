@@ -9,6 +9,10 @@ Run from the repository root, for example::
 The game runner always uses the newest observation protocol required by the
 two checkpoints.  A v2 model in a v3 game is served through the same exact
 v3-to-v2 downgrade used by league and gate games.
+
+The native SelfPlayRunner owns its encoded leaf buffers. It cannot apply the
+Python legacy shim, so generation-1 checkpoints must be duelled on a
+pre-sentinel-fix encoder-generation-1 build.
 """
 
 from __future__ import annotations
@@ -150,6 +154,7 @@ def make_duel_runner_config(
     obs_version: int,
     n_games: int = 64,
     max_batch: int = 512,
+    honest: bool = False,
 ) -> SelfPlayConfig:
     """Create uniform evaluation conditions without mutating checkpoint config."""
     if games <= 0:
@@ -174,6 +179,7 @@ def make_duel_runner_config(
     config.deep_slice_sims = 0
     config.opening_templates_enabled = False
     config.tree_reuse = False
+    config.determinize = "per_decision" if honest else "off"
     # Keep treasure handling/search pruning a fixed game convention rather
     # than inheriting either checkpoint's training-time values.  These are the
     # standard campaign15/campaign18 evaluation settings.
@@ -284,6 +290,7 @@ def duel_loaded_checkpoints(
     device: torch.device,
     n_games: int = 64,
     max_batch: int = 512,
+    honest: bool = False,
 ) -> DuelStats:
     """Duel two already-loaded checkpoint models under fixed eval conditions."""
     runner_obs_version = _require_servable_observations(a.obs_version, b.obs_version)
@@ -295,6 +302,7 @@ def duel_loaded_checkpoints(
         obs_version=runner_obs_version,
         n_games=n_games,
         max_batch=max_batch,
+        honest=honest,
     )
     progress = _DuelProgress(games)
     match = run_seat_swapped_match(
@@ -304,6 +312,7 @@ def duel_loaded_checkpoints(
         games=int(games),
         seed=int(seed),
         device=device,
+        determinize=runner_config.determinize,
         progress_callback=progress.record,
     )
     return _duel_stats(match)
@@ -320,12 +329,18 @@ def duel_checkpoints(
     device_name: str = "auto",
     n_games: int = 64,
     max_batch: int = 512,
+    honest: bool = False,
+    legacy_shim: bool = False,
 ) -> tuple[DuelStats, LoadedDuelCheckpoint, LoadedDuelCheckpoint, torch.device]:
     """Load two self-describing checkpoints and run their seat-swapped duel."""
     device = select_device(device_name)
     seed_everything(int(seed), deterministic=True)
-    model_a, config_a = load_model(checkpoint_a, device)
-    model_b, config_b = load_model(checkpoint_b, device)
+    if legacy_shim:
+        model_a, config_a = load_model(checkpoint_a, device, legacy_shim=True)
+        model_b, config_b = load_model(checkpoint_b, device, legacy_shim=True)
+    else:
+        model_a, config_a = load_model(checkpoint_a, device)
+        model_b, config_b = load_model(checkpoint_b, device)
     a = LoadedDuelCheckpoint(str(checkpoint_a), model_a, config_a)
     b = LoadedDuelCheckpoint(str(checkpoint_b), model_b, config_b)
     stats = duel_loaded_checkpoints(
@@ -338,6 +353,7 @@ def duel_checkpoints(
         device=device,
         n_games=n_games,
         max_batch=max_batch,
+        honest=honest,
     )
     return stats, a, b, device
 
@@ -363,6 +379,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--device", default="auto")
     parser.add_argument("--seed", type=int, default=0x4455454C)
     parser.add_argument("--kingdoms", choices=["random", "fixed"], default="random")
+    parser.add_argument("--honest", action="store_true", help="sample an honest hidden-information root per decision")
+    parser.add_argument(
+        "--legacy-shim",
+        action="store_true",
+        help="native SelfPlayRunner cannot apply this shim; legacy checkpoints require a generation-1 build",
+    )
     args = parser.parse_args(argv)
 
     stats, a, b, device = duel_checkpoints(
@@ -373,6 +395,8 @@ def main(argv: list[str] | None = None) -> int:
         kingdoms=args.kingdoms,
         seed=args.seed,
         device_name=args.device,
+        honest=args.honest,
+        legacy_shim=args.legacy_shim,
     )
     print(
         json.dumps(
@@ -380,6 +404,8 @@ def main(argv: list[str] | None = None) -> int:
                 "a": {"arch": a.arch, "checkpoint": a.path, "obs_version": a.obs_version},
                 "b": {"arch": b.arch, "checkpoint": b.path, "obs_version": b.obs_version},
                 "device": device.type,
+                "honest": bool(args.honest),
+                "legacy_shim": bool(args.legacy_shim),
                 "sims": int(args.sims),
             },
             sort_keys=True,

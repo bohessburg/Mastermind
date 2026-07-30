@@ -1,0 +1,18 @@
+{
+  "_comment": "Engine-dominant curriculum pools for c20 (task #19), duel-validated 2026-07-29 via v2_botduel engine3-vs-bigmoney, 4000 games, seed 4242, seat-adjusted. Selection rule: pools qualify only if committed scripted engine play beats money decisively (>=85%), i.e. boards where even mediocre engine piloting is rewarded. Rejected candidate on record: classic draw-engine board (Village,Smithy,Laboratory,Council Room,Throne Room,Chapel,Market,Cellar,Moat,Witch) scored only 51.3% - intuition fails, duel-validate every pool. Money-control sanity board (Library,Workshop,Council Room,Vassal,Festival,Gardens,Bureaucrat,Mine,Moat,Harbinger) scored 43.4% as expected.",
+  "pools": {
+    "thin_engine": {
+      "cards": ["Chapel", "Sentry", "Village", "Smithy", "Laboratory", "Market", "Festival", "Moneylender", "Militia", "Witch"],
+      "engine3_vs_bigmoney_seat_adjusted": 88.4
+    },
+    "sentry_engine": {
+      "cards": ["Sentry", "Moneylender", "Village", "Laboratory", "Market", "Festival", "Smithy", "Merchant", "Poacher", "Witch"],
+      "engine3_vs_bigmoney_seat_adjusted": 94.5
+    }
+  },
+  "suggested_curriculum": [
+    {"start": 1, "end": 20, "mode": "pool", "pool": "sentry_engine", "pool_fraction": 0.5, "_note": "phase fractions/spans are c20-assembly decisions (task #21, Jack-gated); this file records the validated pools and a starting-point shape only"},
+    {"start": 21, "end": 40, "mode": "pool", "pool": "thin_engine", "pool_fraction": 0.35},
+    {"start": 41, "end": 100, "mode": "pool", "pool": "thin_engine", "pool_fraction": 0.15, "_note": "permanent floor - never anneal to zero (c18/c19 lesson)"}
+  ]
+}
