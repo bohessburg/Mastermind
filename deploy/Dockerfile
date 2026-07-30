@@ -57,6 +57,8 @@ RUN apt-get update \
 
 COPY --from=engine /app/build/dominion_v2_py*.so /app/build/
 COPY --from=engine /app/src/v2/train/ /app/src/v2/train/
+COPY --from=engine /app/src/v2/arena/ /app/src/v2/arena/
+COPY --from=engine /app/src/v2/encoder_compat.py /app/src/v2/encoder_compat.py
 COPY --from=engine /app/src/v2/web/server/ /app/src/v2/web/server/
 COPY --from=engine /app/src/v2/web/client-data/ /app/src/v2/web/client-data/
 COPY --from=client /app/src/v2/web/client/dist/ /app/src/v2/web/client/dist/
