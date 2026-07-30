@@ -1,5 +1,5 @@
 {
-  "_comment": "Campaign 20 — the restructure campaign (assembled 2026-07-30; Jack's calls: pure-margin targets, imitation-anchor-only, SIL built-but-off, 256 sims max games). From-scratch d320/5L/8H on obs-v3, NATIVE encoder generation 2. Honest per_turn determinized self-play (no tree reuse); forced playouts + policy-target pruning; per-seat buy-phase temperature (buys tau=1 through own turn 14); duel-validated engine-dominant curriculum (sentry_engine 94.5 / thin_engine 88.4 vs BM) with a PERMANENT 15% floor — never annealed to zero; BC pretrain + floored persistent anchor on the 12.7K-tuple human corpus; aux margin-distribution head. League ancestors (legacy encoder gen 1) require the league legacy-constant restoration — do not launch before that delegation lands and Jack signs off. Pre-registration + cut rules: docs/training-log.md c20 entry. sil_weight lands with the SIL delegation (launch value 0.0).",
+  "_comment": "Campaign 20 \u2014 the restructure campaign (assembled 2026-07-30; Jack's calls: pure-margin targets, imitation-anchor-only, SIL built-but-off, 256 sims max games). From-scratch d320/5L/8H on obs-v3, NATIVE encoder generation 2. Honest per_turn determinized self-play (no tree reuse); forced playouts + policy-target pruning; per-seat buy-phase temperature (buys tau=1 through own turn 14); duel-validated engine-dominant curriculum (sentry_engine 94.5 / thin_engine 88.4 vs BM) with a PERMANENT 15% floor \u2014 never annealed to zero; BC pretrain + floored persistent anchor on the 12.7K-tuple human corpus; aux margin-distribution head. League ancestors (legacy encoder gen 1) require the league legacy-constant restoration \u2014 do not launch before that delegation lands and Jack signs off. Pre-registration + cut rules: docs/training-log.md c20 entry. sil_weight lands with the SIL delegation (launch value 0.0).",
   "seed": 20260731,
   "generations": 100,
   "init_weights": "",
@@ -12,14 +12,80 @@
   "league_pool_size": 16,
   "league_seed_checkpoints": [],
   "league_self_every": 10,
-  "league_schedule": [[10, 0.15], [30, 0.25]],
+  "league_schedule": [
+    [
+      10,
+      0.15
+    ],
+    [
+      30,
+      0.25
+    ]
+  ],
   "league_opponents_per_gen": 3,
   "scripted_opponents": {},
   "scripted_opponent_schedule": {},
   "kingdom_curriculum": [
-    {"generations": [1, 20], "mode": "pool", "pool": ["Sentry", "Moneylender", "Village", "Laboratory", "Market", "Festival", "Smithy", "Merchant", "Poacher", "Witch"], "pool_fraction": 0.5},
-    {"generations": [21, 40], "mode": "pool", "pool": ["Chapel", "Sentry", "Village", "Smithy", "Laboratory", "Market", "Festival", "Moneylender", "Militia", "Witch"], "pool_fraction": 0.35},
-    {"generations": [41, 100], "mode": "pool", "pool": ["Chapel", "Sentry", "Village", "Smithy", "Laboratory", "Market", "Festival", "Moneylender", "Militia", "Witch"], "pool_fraction": 0.15}
+    {
+      "generations": [
+        1,
+        20
+      ],
+      "mode": "pool",
+      "pool": [
+        "Sentry",
+        "Moneylender",
+        "Village",
+        "Laboratory",
+        "Market",
+        "Festival",
+        "Smithy",
+        "Merchant",
+        "Poacher",
+        "Witch"
+      ],
+      "pool_fraction": 0.5
+    },
+    {
+      "generations": [
+        21,
+        40
+      ],
+      "mode": "pool",
+      "pool": [
+        "Chapel",
+        "Sentry",
+        "Village",
+        "Smithy",
+        "Laboratory",
+        "Market",
+        "Festival",
+        "Moneylender",
+        "Militia",
+        "Witch"
+      ],
+      "pool_fraction": 0.35
+    },
+    {
+      "generations": [
+        41,
+        100
+      ],
+      "mode": "pool",
+      "pool": [
+        "Chapel",
+        "Sentry",
+        "Village",
+        "Smithy",
+        "Laboratory",
+        "Market",
+        "Festival",
+        "Moneylender",
+        "Militia",
+        "Witch"
+      ],
+      "pool_fraction": 0.15
+    }
   ],
   "model": {
     "arch": "card_transformer",
@@ -37,13 +103,29 @@
     "pretrain_steps": 1000,
     "pretrain_batch_size": 512,
     "anchor_weight": 0.1,
-    "anchor_weight_schedule": [[1, 0.1], [20, 0.05]],
+    "anchor_weight_schedule": [
+      [
+        1,
+        0.1
+      ],
+      [
+        20,
+        0.05
+      ]
+    ],
     "anchor_batch_size": 128,
     "anchor_awr_beta": 0.0
   },
   "server_compile": true,
   "server_autocast_bf16": true,
-  "server_batch_buckets": [128, 256, 512, 1024, 2048, 4096],
+  "server_batch_buckets": [
+    128,
+    256,
+    512,
+    1024,
+    2048,
+    4096
+  ],
   "selfplay": {
     "n_games": 64,
     "sims_per_move": 256,
@@ -93,9 +175,19 @@
     "eval_n_games": 128,
     "eval_max_batch": 4096,
     "eval_sentinels": [
-      {"opponent": "bigmoney", "games": 100},
-      {"opponent": "engine3", "games": 200},
-      {"opponent": "thinner", "games": 200}
+      {
+        "opponent": "bigmoney",
+        "games": 100
+      },
+      {
+        "opponent": "engine3",
+        "games": 200
+      },
+      {
+        "opponent": "thinner",
+        "games": 200
+      }
     ]
-  }
+  },
+  "server_response_timeout_s": 900.0
 }
