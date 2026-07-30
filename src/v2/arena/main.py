@@ -138,7 +138,7 @@ def _load_policy_or_raise(config: ArenaConfig) -> Any:
             "Set checkpoint_path in the arena config to an available checkpoint."
         )
     try:
-        return load_policy(checkpoint, obs_version=config.obs_version)
+        return load_policy(checkpoint, obs_version=config.obs_version, legacy_shim="auto")
     except NNCheckpointError as error:
         raise RuntimeError(
             f"arena checkpoint could not be loaded from {checkpoint}: {error}"

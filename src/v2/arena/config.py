@@ -102,7 +102,11 @@ class ArenaConfig:
             ),
             obs_version=obs_version,
             sims=int(search.get("sims", 400)),
-            determinizations=int(search.get("determinizations", 2)),
+            determinizations=_positive_env_int(
+                env,
+                "NN_MCTS_DETERMINIZATIONS",
+                default=int(search.get("determinizations", 2)),
+            ),
             wall_clock_cap_seconds=cap,
             stall_watchdog_seconds=float(
                 raw.get("stall_watchdog_seconds", 120.0)
@@ -244,4 +248,23 @@ def _boolean(
     value = raw.get(key, default)
     if not isinstance(value, bool):
         raise ValueError(f"arena config {key!r} must be a boolean")
+    return value
+
+
+def _positive_env_int(
+    environ: Mapping[str, str],
+    key: str,
+    *,
+    default: int,
+) -> int:
+    """Read an optional positive integer environment override."""
+    raw = environ.get(key)
+    if raw is None:
+        return default
+    try:
+        value = int(raw)
+    except ValueError as error:
+        raise ValueError(f"{key} must be an integer greater than or equal to 1") from error
+    if value < 1:
+        raise ValueError(f"{key} must be greater than or equal to 1")
     return value

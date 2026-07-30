@@ -70,6 +70,8 @@ Open the URL Vite prints (typically `http://localhost:5173`).
 - Leave `NN_MCTS_SIMS` at the default 400. Raising it does NOT strengthen
   the bot — a measured sims sweep shows play is flat from 200-1000 sims and
   degrades beyond that (see `docs/training-log.md`).
+- `NN_MCTS_DETERMINIZATIONS` defaults to 2 and must be at least 1; it controls hidden-information re-deals per NN-MCTS decision.
+- `DOMINION_LEGACY_SHIM=0` rejects legacy encoder-generation-1 checkpoints; unset (or `=1`) serves them through the logged compatibility shim.
 
 ## Troubleshooting
 

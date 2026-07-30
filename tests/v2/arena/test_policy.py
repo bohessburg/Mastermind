@@ -8,6 +8,8 @@ import torch
 
 import dominion_v2_py as dz
 from src.v2.arena.bot.policy import NNCheckpointError, _legacy_obs_transform, load_policy
+from src.v2.arena.config import ArenaConfig
+from src.v2.arena.main import _load_policy_or_raise
 from src.v2.train.config import TrainConfig
 from src.v2.train.train import build_objects, load_full_checkpoint, save_checkpoint
 
@@ -94,3 +96,27 @@ def test_stamped_current_checkpoint_loads_without_shim(tmp_path: Path) -> None:
     policy = load_policy(checkpoint)
     assert policy.encoder_generation == int(dz.ENCODER_GENERATION)
     assert policy.obs_transform is None
+
+
+def test_arena_policy_loader_auto_shims_legacy_checkpoint(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    checkpoint = _checkpoint(tmp_path)
+    payload = load_full_checkpoint(checkpoint, "cpu")
+    del payload["encoder_generation"]
+    legacy = tmp_path / "legacy.pt"
+    torch.save(payload, legacy)
+    caplog.set_level("WARNING", logger="src.v2.arena.bot.policy")
+
+    policy = _load_policy_or_raise(
+        ArenaConfig(checkpoint_path=legacy, obs_version=2)
+    )
+
+    assert policy.encoder_generation == 1
+    assert policy.obs_transform is not None
+    expected = (
+        f"legacy checkpoint {legacy} (encoder generation 1) served via "
+        "compatibility shim on generation 2 engine"
+    )
+    assert [record.getMessage() for record in caplog.records].count(expected) == 1

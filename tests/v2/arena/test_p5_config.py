@@ -35,6 +35,26 @@ def test_default_arena_config_loads_credentials_only_from_environment() -> None:
     assert config.actuation_mode == "protocol"
 
 
+def test_arena_config_reads_positive_determinizations_environment_override() -> None:
+    config = ArenaConfig.load(
+        "configs/arena.json",
+        environ={"NN_MCTS_DETERMINIZATIONS": "3"},
+    )
+
+    assert config.determinizations == 3
+
+
+@pytest.mark.parametrize("value", ["0", "not-a-number"])
+def test_arena_config_rejects_invalid_determinizations_environment_override(
+    value: str,
+) -> None:
+    with pytest.raises(ValueError, match="NN_MCTS_DETERMINIZATIONS"):
+        ArenaConfig.load(
+            "configs/arena.json",
+            environ={"NN_MCTS_DETERMINIZATIONS": value},
+        )
+
+
 def test_arena_config_rejects_invalid_pacing(tmp_path: Path) -> None:
     path = tmp_path / "arena.json"
     path.write_text(

@@ -169,7 +169,7 @@ def _nn_checkpoint_path(kind: str) -> Path:
 
 def _load_nn_policies(seat_kinds: list[str]) -> dict[int, NNPolicy]:
     return {
-        index: load_policy(_nn_checkpoint_path(kind), legacy_shim=True)
+        index: load_policy(_nn_checkpoint_path(kind), legacy_shim="auto")
         for index, kind in enumerate(seat_kinds)
         if _is_neural_kind(kind)
     }
@@ -505,6 +505,15 @@ def _nn_mcts_sims() -> int:
     return sims if sims > 0 else 400
 
 
+def _nn_mcts_determinizations() -> int:
+    """Read the interactive hidden-information search count safely."""
+    try:
+        determinizations = int(os.environ.get("NN_MCTS_DETERMINIZATIONS", "2"))
+    except ValueError:
+        return 2
+    return determinizations if determinizations >= 1 else 2
+
+
 def _choose_bot_action(session: Session, seat: int) -> int:
     legal = _legal_actions(session.game)
     if not legal:
@@ -517,7 +526,7 @@ def _choose_bot_action(session: Session, seat: int) -> int:
             seat,
             session.nn_policies[seat],
             sims=_nn_mcts_sims(),
-            determinizations=2,
+            determinizations=_nn_mcts_determinizations(),
         )
     if _is_nn_kind(kind):
         return choose_nn_action(session.game, seat, session.nn_policies[seat])

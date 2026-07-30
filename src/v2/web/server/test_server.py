@@ -12,6 +12,8 @@ import pytest
 
 import dominion_v2_py as dz
 
+import src.v2.web.server.main as server_main
+
 from src.v2.records.corpus import classify_export_data
 from src.v2.records.local import is_complete_local_export_data
 from src.v2.web.server.main import (
@@ -1050,6 +1052,58 @@ def test_human_vs_nn_bot_completes_with_legal_nn_actions(tiny_nn_checkpoint: Pat
     assert nn_actions
 
 
+@pytest.mark.parametrize("override", [None, "1"])
+def test_nn_bot_auto_shims_legacy_checkpoint_and_logs_once(
+    monkeypatch: pytest.MonkeyPatch,
+    tiny_nn_checkpoint: Path,
+    caplog: pytest.LogCaptureFixture,
+    override: str | None,
+) -> None:
+    sessions.clear()
+    if override is None:
+        monkeypatch.delenv("DOMINION_LEGACY_SHIM", raising=False)
+    else:
+        monkeypatch.setenv("DOMINION_LEGACY_SHIM", override)
+    caplog.set_level(logging.WARNING, logger="src.v2.arena.bot.policy")
+
+    response = TestClient(app).post(
+        "/api/session",
+        json={
+            "seats": ["human", f"bot:nn:{tiny_nn_checkpoint}"],
+            "kingdom": KINGDOM,
+            "seed": 0x5105,
+        },
+    )
+
+    assert response.status_code == 200
+    expected = (
+        f"legacy checkpoint {tiny_nn_checkpoint} (encoder generation 1) served via "
+        "compatibility shim on generation 2 engine"
+    )
+    assert [record.getMessage() for record in caplog.records].count(expected) == 1
+
+
+def test_nn_bot_legacy_checkpoint_can_be_strictly_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+    tiny_nn_checkpoint: Path,
+) -> None:
+    sessions.clear()
+    monkeypatch.setenv("DOMINION_LEGACY_SHIM", "0")
+
+    response = TestClient(app).post(
+        "/api/session",
+        json={
+            "seats": ["human", f"bot:nn:{tiny_nn_checkpoint}"],
+            "kingdom": KINGDOM,
+            "seed": 0x5105,
+        },
+    )
+
+    assert response.status_code == 400
+    assert "encoder generation 1" in response.json()["detail"]
+    assert "traceback" not in response.text.lower()
+
+
 def test_human_vs_v2_nn_bot_plays_turns_without_encoding_error(tiny_v2_nn_checkpoint: Path) -> None:
     sessions.clear()
     client = TestClient(app)
@@ -1139,6 +1193,42 @@ def test_human_vs_nnmcts_bot_completes_with_legal_search_actions(
     assert session.game.game_over()
     assert replay.game_over()
     assert nnmcts_actions
+
+
+def test_nnmcts_determinizations_environment_reaches_searcher(
+    monkeypatch: pytest.MonkeyPatch,
+    tiny_nn_checkpoint: Path,
+) -> None:
+    sessions.clear()
+    monkeypatch.setenv("NN_MCTS_SIMS", "7")
+    monkeypatch.setenv("NN_MCTS_DETERMINIZATIONS", "3")
+    captured: dict[str, int] = {}
+
+    def choose_spy(
+        game: object,
+        seat: int,
+        policy: object,
+        *,
+        sims: int,
+        determinizations: int,
+    ) -> int:
+        captured.update(sims=sims, determinizations=determinizations)
+        return int(dz.A_PASS)
+
+    monkeypatch.setattr(server_main, "choose_nnmcts_action", choose_spy)
+    response = TestClient(app).post(
+        "/api/session",
+        json={
+            "seats": ["human", f"bot:nnmcts:{tiny_nn_checkpoint}"],
+            "kingdom": KINGDOM,
+            "seed": 0x5108,
+        },
+    )
+
+    assert response.status_code == 200
+    session = sessions[response.json()["session_id"]]
+    assert server_main._choose_bot_action(session, 1) == int(dz.A_PASS)
+    assert captured == {"sims": 7, "determinizations": 3}
 
 
 def test_nn_bot_uses_configured_default_checkpoint(

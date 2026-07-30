@@ -6,10 +6,12 @@ checkpoint reconstruction and parked-leaf NN-MCTS decisions stay identical.
 
 from __future__ import annotations
 
+import logging
+import os
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Literal
 
 import numpy as np
 
@@ -19,6 +21,9 @@ from src.v2.encoder_compat import (
     checkpoint_encoder_generation,
     generation_mismatch_message,
 )
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass
@@ -138,19 +143,42 @@ def _legacy_obs_transform(obs_version: int) -> Callable[[Any], Any]:
     return lambda observations: _restore_legacy_constants(observations, layout)
 
 
+def _legacy_shim_enabled(legacy_shim: bool | Literal["auto"]) -> tuple[bool, bool]:
+    """Resolve whether a mismatched checkpoint may use the compatibility shim.
+
+    The second return value marks automatic serving mode, which is deliberately
+    logged so operators cannot miss that a legacy model is in use.
+    """
+    if isinstance(legacy_shim, bool):
+        return legacy_shim, False
+    if legacy_shim != "auto":
+        raise NNCheckpointError("legacy_shim must be True, False, or 'auto'")
+
+    override = os.environ.get("DOMINION_LEGACY_SHIM")
+    if override is None or override == "1":
+        return True, True
+    if override == "0":
+        return False, True
+    raise NNCheckpointError("DOMINION_LEGACY_SHIM must be '0' or '1'")
+
+
 def load_policy(
     checkpoint_path: Path,
     *,
     obs_version: int | None = None,
     device: str = "cpu",
-    legacy_shim: bool = False,
+    legacy_shim: bool | Literal["auto"] = False,
 ) -> NNPolicy:
     """Load a local training checkpoint for policy serving.
 
     ``obs_version`` may validate the expected checkpoint observation layout;
     leaving it unset preserves the historical checkpoint-metadata inference.
-    ``legacy_shim`` opt-ins to the only known cross-generation adapter:
+    ``legacy_shim=True`` opt-ins to the only known cross-generation adapter:
     generation-1 checkpoint inputs on the generation-2 sentinel-fixed engine.
+    ``"auto"`` is for interactive serving only: it enables that adapter unless
+    ``DOMINION_LEGACY_SHIM=0`` disables it; ``=1`` forces it on.  Explicit
+    boolean callers retain their existing behavior and ignore that environment
+    override.
     """
     if not checkpoint_path.is_file():
         raise NNCheckpointError("neural-network checkpoint is unavailable")
@@ -171,11 +199,13 @@ def load_policy(
         checkpoint_generation = checkpoint_encoder_generation(checkpoint)
         runtime_generation = int(dz.ENCODER_GENERATION)
         use_legacy_shim = checkpoint_generation != runtime_generation
+        automatic_shim = False
         if use_legacy_shim:
             mismatch = generation_mismatch_message(
                 checkpoint_path, checkpoint_generation, runtime_generation
             )
-            if not legacy_shim:
+            shim_enabled, automatic_shim = _legacy_shim_enabled(legacy_shim)
+            if not shim_enabled:
                 raise NNCheckpointError(
                     f"{mismatch}; pass legacy_shim=True to serve a generation-1 checkpoint "
                     "with restored pre-sentinel-fix constants"
@@ -249,6 +279,15 @@ def load_policy(
         raise
     except Exception as error:
         raise NNCheckpointError("neural-network checkpoint could not be loaded") from error
+
+    if use_legacy_shim and automatic_shim:
+        LOGGER.warning(
+            "legacy checkpoint %s (encoder generation %s) served via compatibility shim "
+            "on generation %s engine",
+            checkpoint_path,
+            checkpoint_generation,
+            runtime_generation,
+        )
 
     return NNPolicy(
         model=model,

@@ -104,6 +104,10 @@ Once started it needs no clicks:
 | `undo.auto_deny` | `true` | only supported policy |
 | `timeout.claim_grace_seconds` | 30 | wait before claiming an expired clock |
 
+`NN_MCTS_DETERMINIZATIONS` overrides `search.determinizations` (default 2; minimum 1) for environment-managed arena serving.
+
+`DOMINION_LEGACY_SHIM=0` rejects legacy encoder-generation-1 checkpoints; unset (or `=1`) serves them through the logged compatibility shim.
+
 ## Exit codes
 
 The process exits with a machine-readable code and writes `exit.json` into
