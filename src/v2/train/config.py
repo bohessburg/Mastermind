@@ -161,6 +161,11 @@ class ImitationConfig:
 @dataclass
 class ReplayConfig:
     capacity: int = 200_000
+    # Self-imitation replay is deliberately dormant unless a campaign opts
+    # in. A nonzero weight enables the priority pass and mixed sampler.
+    sil_weight: float = 0.0
+    sil_fraction: float = 0.25
+    sil_alpha: float = 0.6
 
 
 @dataclass
@@ -424,6 +429,19 @@ def validate_aux_margin_config(config: TrainConfig) -> None:
         raise ValueError("auxiliary margin distribution is supported only by model.arch='card_transformer'")
 
 
+def validate_replay_config(config: ReplayConfig) -> None:
+    """Validate optional SIL-style prioritized replay without changing its off path."""
+    if not isinstance(config.capacity, int) or isinstance(config.capacity, bool) or config.capacity <= 0:
+        raise ValueError("replay.capacity must be a positive integer")
+    weight = _finite_nonnegative(config.sil_weight, "replay.sil_weight")
+    fraction = _opening_unit_interval(config.sil_fraction, "replay.sil_fraction")
+    alpha = _finite_nonnegative(config.sil_alpha, "replay.sil_alpha")
+    # Retain normalized values in case a JSON config supplied integral values.
+    config.sil_weight = weight
+    config.sil_fraction = fraction
+    config.sil_alpha = alpha
+
+
 def effective_anchor_weight(schedule: list, anchor_weight: float, generation: int) -> float:
     """Resolve imitation-anchor breakpoints with league-schedule semantics."""
     fixed_weight = _finite_nonnegative(anchor_weight, "anchor_weight")
@@ -646,6 +664,7 @@ def load_config(path: str | Path | None) -> TrainConfig:
     validate_forced_playouts_config(cfg.selfplay)
     validate_optim_config(cfg.optim)
     validate_aux_margin_config(cfg)
+    validate_replay_config(cfg.replay)
     validate_imitation_config(cfg.imitation)
     validate_deep_slice_config(cfg.selfplay)
     validate_opening_template_config(cfg.selfplay)

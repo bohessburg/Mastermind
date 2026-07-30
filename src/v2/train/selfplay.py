@@ -21,8 +21,83 @@ from .config import (
     validate_temperature_config,
     validate_value_target_config,
 )
-from .observation import model_observation_version, observations_for_model, obs_version_for_width
+from .observation import (
+    model_encoder_generation,
+    model_observation_version,
+    observations_for_model,
+    obs_version_for_width,
+)
 from .replay import ReplayBuffer
+
+
+SIL_PRIORITY_EPSILON = 1.0e-6
+SIL_PRIORITY_BATCH_SIZE = 4096
+
+
+def compute_sil_priorities(
+    model: torch.nn.Module,
+    observations: np.ndarray,
+    value_targets: np.ndarray,
+    device: torch.device,
+    *,
+    batch_size: int = SIL_PRIORITY_BATCH_SIZE,
+) -> np.ndarray:
+    """Compute ``max(epsilon, z - v_theta(s))`` in batched no-grad forwards."""
+    obs = np.asarray(observations, dtype=np.float32)
+    targets = np.asarray(value_targets, dtype=np.float32)
+    if obs.ndim != 2 or targets.shape != (obs.shape[0],):
+        raise ValueError("SIL observations and value targets must have aligned rows")
+    if not isinstance(batch_size, int) or isinstance(batch_size, bool) or batch_size <= 0:
+        raise ValueError("SIL priority batch_size must be a positive integer")
+    predictions = np.empty((obs.shape[0],), dtype=np.float32)
+    was_training = model.training
+    model.eval()
+    try:
+        with torch.no_grad():
+            for start in range(0, obs.shape[0], batch_size):
+                stop = min(start + batch_size, obs.shape[0])
+                outputs = model(torch.as_tensor(obs[start:stop], dtype=torch.float32, device=device))
+                if not isinstance(outputs, tuple) or len(outputs) < 2:
+                    raise ValueError("SIL priority model forward must return policy logits and values")
+                values = outputs[1]
+                if tuple(values.shape) != (stop - start,):
+                    raise ValueError("SIL priority model value head shape mismatch")
+                predictions[start:stop] = values.detach().cpu().numpy().astype(np.float32, copy=False)
+    finally:
+        model.train(was_training)
+    return np.maximum(SIL_PRIORITY_EPSILON, targets - predictions).astype(np.float32, copy=False)
+
+
+def refresh_sil_priorities(
+    replay: ReplayBuffer,
+    model: torch.nn.Module,
+    device: torch.device,
+    *,
+    start_write: int,
+    inserted_positions: int,
+    batch_size: int = SIL_PRIORITY_BATCH_SIZE,
+) -> None:
+    """Refresh priorities for exactly the rows inserted by one self-play pass.
+
+    This lives at the trainer-side insertion boundary: workers only transport
+    records, while the current training model remains resident in the parent.
+    The dormant path returns before inspecting the model, preserving legacy
+    collection and RNG behavior exactly.
+    """
+    if not replay.sil_enabled or inserted_positions <= 0:
+        return
+    retained = min(int(inserted_positions), replay.capacity, len(replay))
+    if retained <= 0:
+        return
+    first = (int(start_write) + int(inserted_positions) - retained) % replay.capacity
+    indices = (first + np.arange(retained, dtype=np.int64)) % replay.capacity
+    replay.priority[indices] = compute_sil_priorities(
+        model,
+        replay.obs[indices],
+        replay.value[indices],
+        device,
+        batch_size=batch_size,
+    )
 
 
 @dataclass
@@ -484,6 +559,7 @@ def route_leaf_evaluations(
             model_obs,
             source_version,
             model_observation_version(model, source_version),
+            model_encoder_generation(model),
         )
         obs_tensor = torch.as_tensor(adapted_obs, dtype=torch.float32, device=device)
         mask_tensor = torch.as_tensor(masks, dtype=torch.bool, device=device)
@@ -546,6 +622,7 @@ def route_leaf_evaluations(
                 obs[indices],
                 source_version,
                 model_observation_version(model, source_version),
+                model_encoder_generation(model),
             )
             obs_tensor = torch.as_tensor(adapted_obs, dtype=torch.float32, device=device)
             mask_tensor = torch.as_tensor(masks[indices], dtype=torch.bool, device=device)

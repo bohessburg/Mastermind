@@ -21,7 +21,9 @@ from typing import Any, Callable
 
 import torch
 
-from src.v2.encoder_compat import require_native_runner_encoder_compatibility
+from src.v2.encoder_compat import (
+    require_league_encoder_compatibility,
+)
 
 from .config import (
     SCRIPTED_OPPONENT_KINDS,
@@ -249,7 +251,7 @@ def save_best_checkpoint(config: TrainConfig, generation: int, model: torch.nn.M
         {
             "generation": int(generation),
             "config": config.to_dict(),
-            "encoder_generation": int(dz.ENCODER_GENERATION),
+            "encoder_generation": int(getattr(model, "_dominion_encoder_generation", dz.ENCODER_GENERATION)),
             "model": _cpu_state_dict(model),
         },
         destination,
@@ -259,7 +261,7 @@ def save_best_checkpoint(config: TrainConfig, generation: int, model: torch.nn.M
 
 def load_best_checkpoint(config: TrainConfig, device: torch.device, path: str | Path) -> tuple[torch.nn.Module, int]:
     payload = _load_checkpoint_payload(path, device)
-    require_native_runner_encoder_compatibility(payload, path)
+    encoder_generation = require_league_encoder_compatibility(payload, path)
     model_version = _validate_league_checkpoint_observation(config, payload, path)
     # Action-space dimensions come from the native protocol; import lazily to
     # keep this module usable by its pure persistence/sampling tests without
@@ -273,6 +275,11 @@ def load_best_checkpoint(config: TrainConfig, device: torch.device, path: str | 
     ).to(device)
     model.load_state_dict(payload["model"])
     model.eval()
+    model._dominion_encoder_generation = encoder_generation  # type: ignore[attr-defined]
+    model._dominion_model_config = {  # type: ignore[attr-defined]
+        **model_config_dict(getattr(model, "_dominion_model_config", {})),
+        "encoder_generation": encoder_generation,
+    }
     return model, int(payload["generation"])
 
 
@@ -285,7 +292,7 @@ def _load_league_seed_checkpoint(config: TrainConfig, device: torch.device, path
     external opponent.
     """
     payload = _load_checkpoint_payload(path, device)
-    require_native_runner_encoder_compatibility(payload, path)
+    require_league_encoder_compatibility(payload, path)
     if not isinstance(payload, dict) or "model" not in payload or "config" not in payload:
         raise ValueError(
             f"league seed checkpoint {path} must use the standard payload format "
@@ -362,6 +369,9 @@ def clone_model(config: TrainConfig, source: torch.nn.Module, device: torch.devi
     clone = build_model(config.model, obs_size_for_config(config), dz.ACTION_SPACE_SIZE).to(device)
     clone.load_state_dict(source.state_dict())
     clone.eval()
+    clone._dominion_encoder_generation = int(  # type: ignore[attr-defined]
+        getattr(source, "_dominion_encoder_generation", 2)
+    )
     return clone
 
 

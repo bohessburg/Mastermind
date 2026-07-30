@@ -1258,6 +1258,43 @@ reference values are pre-fix-build-only. Guard task opened
 (encoder-generation tag + legacy shim); c20 starts a fresh reference
 series on the fixed encoder.
 
+C20 PRE-REGISTRATION (2026-07-30, assembled with Jack; config
+configs/run_c20.json, validated against the loader): from-scratch
+CardTokenNet d320/5L/8H + aux margin head (21 buckets, weight 0.3),
+obs-v3 NATIVE encoder gen 2. Self-play: determinize per_turn (no tree
+reuse), 256 sims, 2048 games/gen, forced playouts k=2 with pruned
+targets, temp per_seat_buy (buys tau=1 thru own turn 14), treasure
+collapse, PURE MARGIN value targets (scale 20). Imitation: BC pretrain
+1000 steps + persistent anchor 0.1 -> FLOOR 0.05 at gen 20 (never
+zero), AWR off. Curriculum: sentry_engine 50% g1-20, thin_engine 35%
+g21-40, thin_engine 15% PERMANENT FLOOR g41+. League: SELF-SNAPSHOTS
+ONLY (Jack's correction, 2026-07-30: the ancestor seeds are the money
+monoculture the diagnosis indicts — importing them dilutes the
+curriculum/imitation signal; the c1-c5 "collapse insurance" rationale
+doesn't survive BC-pretrained init and the c13 no-league precedent).
+League enters at g10 (first snapshot), cap 25%. c15 gen_0045 remains
+the MEASUREMENT opponent (honest duels) only. The league legacy-shim
+work lands as general infrastructure but is no longer a launch
+blocker. AdamW, lr 2e-4 cosine, batch 2048, 750 steps/gen, replay
+3M. Templates DORMANT (flip-ready if unforced trasher/engine buys
+flat by ~g15). SIL sampler built, launch weight 0.0 (first
+mid-campaign intervention if engine wins appear but fail to compound).
+PRE-REGISTERED BARS: honest engine3 sentinel (eval_honest) — c15/c19
+zone is 45-48, sustained >50 = progress, >55 = clear break; honest
+duel vs c15 gen_0045 (--legacy-shim) at 10-gen milestones — >50% =
+first crossing in project history; VALUE PROBE (native, fresh
+reference series) — first checkpoint pricing the engine deck >= money
+deck is THE breakthrough signal, ahead of any win rate. KILL-GATES:
+Duchy probe delta_P > +3pts or delta_V < -0.15 at any milestone ->
+patch alpha upward (0.2) at next resume, log the trip; helplessness
+(value pinning) or entropy collapse -> stop and diagnose. Cut rule:
+if honest engine3 flat/declining across 3 consecutive evals AND the
+value probe shows no engine-pricing movement by g30, cut and convene.
+Milestone routine: probes (scripts/probes/run_all.py) + honest duel +
+sentinels every 5-10 gens; short metrics report every gen per
+standing instruction. Launch awaits: SIL/league-shim delegation
+green, Jack sign-off, box provisioning.
+
 VALUE-TARGET GEOMETRY SWEEP (2026-07-29/30 overnight, task #15,
 bench/value_target_sweep/): margin_blend alpha in {0.6 ctrl, 0.4,
 0.2, 0.0}, c19 replay 250K slice (values EXACTLY inverted to raw

@@ -24,6 +24,11 @@ from src.v2.train.card_transformer import (
 from src.v2.train.human_data import HumanBatch
 from src.v2.train.model import DominionNet, build_model
 from src.v2.train.replay import ReplayBuffer, load_replay_state, save_replay_state
+from src.v2.train.selfplay import (
+    SIL_PRIORITY_EPSILON,
+    compute_sil_priorities,
+    refresh_sil_priorities,
+)
 from src.v2.train.train import train_step
 
 
@@ -196,3 +201,140 @@ def test_legacy_transformer_config_still_builds_without_aux_parameters() -> None
     assert not any(name.startswith("aux_margin_head") for name in legacy.state_dict())
     for name, tensor in direct.state_dict().items():
         torch.testing.assert_close(legacy.state_dict()[name], tensor, rtol=0.0, atol=0.0)
+
+
+class _CountingValueModel(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.calls: list[int] = []
+        self.grad_enabled: list[bool] = []
+
+    def forward(self, obs: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        self.calls.append(int(obs.shape[0]))
+        self.grad_enabled.append(torch.is_grad_enabled())
+        values = obs[:, 0] * 0.25 - 0.5
+        return torch.zeros((obs.shape[0], 3), dtype=obs.dtype, device=obs.device), values
+
+
+def _sil_replay(*, seed: int, sil_weight: float) -> ReplayBuffer:
+    replay = ReplayBuffer(
+        capacity=16,
+        obs_size=2,
+        action_size=2,
+        seed=seed,
+        sil_weight=sil_weight,
+        sil_fraction=1.0,
+        sil_alpha=0.6,
+    )
+    obs = np.arange(12, dtype=np.float32).reshape(6, 2)
+    policy = np.zeros((6, 2), dtype=np.float32)
+    policy[:, 0] = 1.0
+    legal = np.ones((6, 2), dtype=np.bool_)
+    replay.add(obs, policy, np.linspace(-1.0, 1.0, 6, dtype=np.float32), legal)
+    return replay
+
+
+def test_sil_off_path_preserves_legacy_sampling_and_skips_priority_forward() -> None:
+    replay = _sil_replay(seed=711, sil_weight=0.0)
+    expected_rng = np.random.default_rng(711)
+    expected_indices = expected_rng.integers(0, len(replay), size=9, endpoint=False)
+
+    batch = replay.sample(9)
+    np.testing.assert_array_equal(batch.obs, replay.obs[expected_indices])
+    np.testing.assert_array_equal(batch.policy, replay.policy[expected_indices])
+    np.testing.assert_array_equal(batch.value, replay.value[expected_indices])
+    np.testing.assert_array_equal(batch.legal_mask, replay.legal_mask[expected_indices])
+    np.testing.assert_array_equal(batch.margin, replay.margin[expected_indices])
+    assert np.isnan(replay.last_sampled_priority_mean)
+    assert np.isnan(replay.last_sampled_priority_max)
+
+    model = _CountingValueModel()
+    refresh_sil_priorities(
+        replay,
+        model,
+        torch.device("cpu"),
+        start_write=0,
+        inserted_positions=len(replay),
+    )
+    assert model.calls == []
+
+
+def test_sil_sampling_statistically_favors_high_priority_rows() -> None:
+    replay = ReplayBuffer(
+        capacity=2,
+        obs_size=1,
+        action_size=1,
+        seed=712,
+        sil_weight=1.0,
+        sil_fraction=1.0,
+        sil_alpha=0.6,
+    )
+    replay.add(
+        np.zeros((2, 1), dtype=np.float32),
+        np.ones((2, 1), dtype=np.float32),
+        np.asarray([0.0, 1.0], dtype=np.float32),
+        np.ones((2, 1), dtype=np.bool_),
+        priority=np.asarray([1.0, 16.0], dtype=np.float32),
+    )
+
+    sampled = replay.sample(10_000)
+    high_rate = float(np.mean(sampled.value == 1.0))
+    expected_rate = 16.0**0.6 / (1.0 + 16.0**0.6)
+    assert abs(high_rate - expected_rate) < 0.025
+    assert replay.last_sampled_priority_max == 16.0
+
+
+def test_sil_priority_forward_is_batched_and_matches_hand_computation() -> None:
+    model = _CountingValueModel()
+    model.train()
+    obs = np.asarray([[0.0], [2.0], [4.0], [6.0], [8.0]], dtype=np.float32)
+    targets = np.asarray([-1.0, 0.0, 0.75, 0.25, 2.0], dtype=np.float32)
+    priorities = compute_sil_priorities(
+        model,
+        obs,
+        targets,
+        torch.device("cpu"),
+        batch_size=2,
+    )
+    expected = np.maximum(SIL_PRIORITY_EPSILON, targets - (obs[:, 0] * 0.25 - 0.5))
+    np.testing.assert_allclose(priorities, expected.astype(np.float32), rtol=0.0, atol=0.0)
+    assert model.calls == [2, 2, 1]
+    assert model.grad_enabled == [False, False, False]
+    assert model.training
+
+    replay = ReplayBuffer(8, 1, 1, seed=713, sil_weight=1.0)
+    replay.add(obs, np.ones((5, 1), dtype=np.float32), targets, np.ones((5, 1), dtype=np.bool_))
+    refresh_sil_priorities(
+        replay,
+        model,
+        torch.device("cpu"),
+        start_write=0,
+        inserted_positions=5,
+        batch_size=2,
+    )
+    np.testing.assert_allclose(replay.priority[:5], expected.astype(np.float32), rtol=0.0, atol=0.0)
+
+
+def test_replay_priority_roundtrip_and_legacy_absence_warning(tmp_path: Path) -> None:
+    source = _sil_replay(seed=714, sil_weight=1.0)
+    source.priority[: len(source)] = np.linspace(0.25, 1.5, len(source), dtype=np.float32)
+    current = save_replay_state(source, tmp_path / "priority-current.npz")
+    restored = ReplayBuffer(16, 2, 2, seed=715, sil_weight=1.0)
+    load_replay_state(restored, current)
+    np.testing.assert_array_equal(restored.priority[: len(source)], source.priority[: len(source)])
+
+    legacy = tmp_path / "priority-legacy.npz"
+    with np.load(current, allow_pickle=False) as archive:
+        np.savez_compressed(
+            legacy,
+            metadata=archive["metadata"],
+            obs=archive["obs"],
+            policy=archive["policy"],
+            value=archive["value"],
+            legal_mask=archive["legal_mask"],
+            margin=archive["margin"],
+        )
+    legacy_restored = ReplayBuffer(16, 2, 2, seed=716, sil_weight=1.0)
+    with pytest.warns(RuntimeWarning, match="no priority column"):
+        load_replay_state(legacy_restored, legacy)
+    np.testing.assert_array_equal(legacy_restored.priority[: len(source)], np.ones(len(source), dtype=np.float32))

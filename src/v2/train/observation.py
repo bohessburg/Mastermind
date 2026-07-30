@@ -7,6 +7,11 @@ from typing import Any, Mapping
 import numpy as np
 import torch
 
+from src.v2.encoder_compat import (
+    LEGACY_ENCODER_GENERATION,
+    restore_legacy_constants_for_observation_version,
+)
+
 
 # Keep these literals local instead of importing the optional native binding:
 # model loading and the pure downgrade helper are also used by checkpoint-only
@@ -79,6 +84,7 @@ def observations_for_model(
     observations: np.ndarray | torch.Tensor,
     source_version: int,
     model_version: int,
+    encoder_generation: int = 2,
 ) -> np.ndarray | torch.Tensor:
     """Adapt a runner batch for one model's known observation protocol.
 
@@ -89,13 +95,19 @@ def observations_for_model(
     source = int(source_version)
     target = int(model_version)
     if source == target:
-        return observations
-    if source == 3 and target == 2:
-        return downgrade_v3_observations(observations)
-    raise ValueError(
-        f"cannot serve obs-v{source} observations to an obs-v{target} model; "
-        "only the exact v3-to-v2 downgrade is supported"
-    )
+        adapted = observations
+    elif source == 3 and target == 2:
+        adapted = downgrade_v3_observations(observations)
+    else:
+        raise ValueError(
+            f"cannot serve obs-v{source} observations to an obs-v{target} model; "
+            "only the exact v3-to-v2 downgrade is supported"
+        )
+    if int(encoder_generation) == LEGACY_ENCODER_GENERATION:
+        # This is intentionally after a possible v3->v2 slice: each model
+        # receives generation-1 constants at positions in its own input ABI.
+        return restore_legacy_constants_for_observation_version(adapted, target)
+    return adapted
 
 
 def model_observation_version(model: Any, fallback_version: int) -> int:
@@ -108,6 +120,24 @@ def model_observation_version(model: Any, fallback_version: int) -> int:
     if not isinstance(raw_version, int) or isinstance(raw_version, bool) or raw_version not in (1, 2, 3):
         raise ValueError(f"model has an invalid obs_version {raw_version!r}")
     return int(raw_version)
+
+
+def model_encoder_generation(model: Any, fallback_generation: int = 2) -> int:
+    """Read model routing metadata, treating live training models as generation 2."""
+    raw_generation = getattr(model, "_dominion_encoder_generation", None)
+    if raw_generation is None:
+        config = getattr(model, "_dominion_model_config", None)
+        if isinstance(config, Mapping):
+            raw_generation = config.get("encoder_generation")
+    if raw_generation is None:
+        raw_generation = fallback_generation
+    if (
+        not isinstance(raw_generation, int)
+        or isinstance(raw_generation, bool)
+        or raw_generation < 1
+    ):
+        raise ValueError(f"model has an invalid encoder_generation {raw_generation!r}")
+    return int(raw_generation)
 
 
 def obs_version_for_checkpoint(payload: Mapping[str, Any]) -> int:

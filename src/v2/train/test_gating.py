@@ -8,8 +8,6 @@ import pytest
 import torch
 
 import dominion_v2_py as dz
-from src.v2.encoder_compat import EncoderGenerationError
-
 from .config import TrainConfig
 from .gating import (
     GateStats,
@@ -672,15 +670,19 @@ def test_league_observation_validation_allows_only_v3_to_v2_downgrade(tmp_path: 
         seed_league_checkpoints(v2_target, torch.device("cpu"))
 
 
-def test_v3_selfplay_refuses_real_legacy_league_checkpoint(tmp_path: Path) -> None:
-    """Native self-play cannot insert the Python encoder-generation-1 shim."""
+def test_v3_league_loads_real_legacy_checkpoint_with_generation_metadata(tmp_path: Path) -> None:
+    """League routing can apply the Python generation-1 constant restoration."""
     checkpoint = Path(__file__).resolve().parents[3] / "checkpoints/remote/campaign15/gen_0045.pt"
     assert checkpoint.is_file(), f"required real league checkpoint is missing: {checkpoint}"
+    payload = torch.load(checkpoint, map_location="cpu", weights_only=False)
+    assert "encoder_generation" not in payload
 
     config = _card_transformer_config(tmp_path / "campaign18-smoke", obs_version=3)
     config.league_seed_checkpoints = [str(checkpoint)]
-    with pytest.raises(EncoderGenerationError, match=r"encoder generation 1.*encoder generation 2"):
-        seed_league_checkpoints(config, torch.device("cpu"))
+    copied = seed_league_checkpoints(config, torch.device("cpu"))
+    model, _ = load_best_checkpoint(config, torch.device("cpu"), copied[0])
+    assert model._dominion_encoder_generation == 1
+    assert model._dominion_model_config["encoder_generation"] == 1
 
 
 def test_ungated_league_schedule_uses_exact_per_generation_counts(tmp_path: Path) -> None:

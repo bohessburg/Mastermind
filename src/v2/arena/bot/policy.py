@@ -20,6 +20,7 @@ from src.v2.encoder_compat import (
     LEGACY_ENCODER_GENERATION,
     checkpoint_encoder_generation,
     generation_mismatch_message,
+    restore_legacy_constants_for_observation_version,
 )
 
 
@@ -50,97 +51,8 @@ class NNCheckpointError(Exception):
     """A safe, user-facing failure while preparing an NN policy."""
 
 
-@dataclass(frozen=True)
-class _LegacyShimLayout:
-    """Native encoder.h-derived positions needed to restore generation-1 inputs."""
-
-    observation_size: int
-    supply_offset: int
-    supply_size: int
-    pile_block_size: int
-    pile_count_field: int
-    pile_base_field: int
-    pile_trait_field: int
-    landscape_offset: int
-    landscape_id_size: int
-    landscape_prophecy_offset: int
-
-
-def _legacy_shim_layout(obs_version: int) -> _LegacyShimLayout:
-    """Read the native layout rather than duplicating encoder.h offset arithmetic."""
-    raw = dz.encoder_layout(int(obs_version))
-    try:
-        return _LegacyShimLayout(
-            observation_size=int(dz.obs_size_for(int(obs_version))),
-            supply_offset=int(raw["supply_offset"]),
-            supply_size=int(raw["supply_size"]),
-            pile_block_size=int(raw["pile_block_size"]),
-            pile_count_field=int(raw["pile_count_field"]),
-            pile_base_field=int(raw["pile_base_field"]),
-            pile_trait_field=int(raw["pile_trait_field"]),
-            landscape_offset=int(raw["landscape_offset"]),
-            landscape_id_size=int(raw["landscape_id_size"]),
-            landscape_prophecy_offset=int(raw["landscape_prophecy_offset"]),
-        )
-    except (KeyError, TypeError, ValueError) as error:  # pragma: no cover - native ABI invariant
-        raise RuntimeError("native encoder layout metadata is invalid") from error
-
-
-def _validate_legacy_shim_observations(observations: Any, layout: _LegacyShimLayout) -> None:
-    if getattr(observations, "ndim", 0) < 1 or int(observations.shape[-1]) != layout.observation_size:
-        raise ValueError(
-            "legacy encoder shim expected observations ending in width "
-            f"{layout.observation_size}"
-        )
-
-
-def _restore_legacy_constants(observations: Any, layout: _LegacyShimLayout) -> Any:
-    """Copy observations and recreate generation-1 sentinel encodings.
-
-    The native layout identifies both the v1 offsets and the v2/v3 shared
-    prefix.  Only structurally populated supply rows receive the old trait
-    constant; unused rows were zero in both encoder generations.
-    """
-    _validate_legacy_shim_observations(observations, layout)
-    supply_stop = layout.supply_offset + layout.supply_size
-    landscape_ids = slice(layout.landscape_offset, layout.landscape_offset + layout.landscape_id_size)
-    prophecy_index = layout.landscape_offset + layout.landscape_prophecy_offset
-
-    if isinstance(observations, np.ndarray):
-        if not np.issubdtype(observations.dtype, np.floating):
-            raise TypeError("legacy encoder shim requires floating NumPy observations")
-        restored = observations.copy()
-        restored[..., landscape_ids] = 1.0
-        restored[..., prophecy_index] = 1.0
-        piles = restored[..., layout.supply_offset:supply_stop].reshape(
-            *restored.shape[:-1], -1, layout.pile_block_size
-        )
-        populated = (piles[..., layout.pile_count_field] != 0.0) | (
-            piles[..., layout.pile_base_field] != 0.0
-        )
-        traits = piles[..., layout.pile_trait_field]
-        traits[populated] = 1.0
-        return restored
-
-    if not bool(getattr(observations, "is_floating_point", lambda: False)()):
-        raise TypeError("legacy encoder shim requires floating Torch observations")
-    restored = observations.clone()
-    restored[..., landscape_ids] = 1.0
-    restored[..., prophecy_index] = 1.0
-    piles = restored[..., layout.supply_offset:supply_stop].reshape(
-        *restored.shape[:-1], -1, layout.pile_block_size
-    )
-    populated = (piles[..., layout.pile_count_field] != 0.0) | (
-        piles[..., layout.pile_base_field] != 0.0
-    )
-    traits = piles[..., layout.pile_trait_field]
-    traits[populated] = 1.0
-    return restored
-
-
 def _legacy_obs_transform(obs_version: int) -> Callable[[Any], Any]:
-    layout = _legacy_shim_layout(obs_version)
-    return lambda observations: _restore_legacy_constants(observations, layout)
+    return lambda observations: restore_legacy_constants_for_observation_version(observations, obs_version)
 
 
 def _legacy_shim_enabled(legacy_shim: bool | Literal["auto"]) -> tuple[bool, bool]:

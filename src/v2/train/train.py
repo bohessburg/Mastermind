@@ -43,6 +43,7 @@ if __package__ in (None, ""):
         validate_opening_template_config,
         validate_optim_config,
         validate_optimizer_kind,
+        validate_replay_config,
         validate_temperature_config,
         validate_value_target_config,
     )
@@ -73,7 +74,12 @@ if __package__ in (None, ""):
     from src.v2.train.observation import obs_size_for_config, obs_size_for_version, obs_version_for_checkpoint
     from src.v2.train.progress import TrainingProgress
     from src.v2.train.replay import ReplayBuffer, load_replay_state, save_replay_state
-    from src.v2.train.selfplay import SelfPlayStats, run_routed_self_play_generation, run_self_play_generation
+    from src.v2.train.selfplay import (
+        SelfPlayStats,
+        refresh_sil_priorities,
+        run_routed_self_play_generation,
+        run_self_play_generation,
+    )
     from src.v2.train.workers import ParallelSelfPlayPool
 else:
     from .config import (
@@ -92,6 +98,7 @@ else:
         validate_opening_template_config,
         validate_optim_config,
         validate_optimizer_kind,
+        validate_replay_config,
         validate_temperature_config,
         validate_value_target_config,
     )
@@ -122,7 +129,7 @@ else:
     from .observation import obs_size_for_config, obs_size_for_version, obs_version_for_checkpoint
     from .progress import TrainingProgress
     from .replay import ReplayBuffer, load_replay_state, save_replay_state
-    from .selfplay import SelfPlayStats, run_routed_self_play_generation, run_self_play_generation
+    from .selfplay import SelfPlayStats, refresh_sil_priorities, run_routed_self_play_generation, run_self_play_generation
     from .workers import ParallelSelfPlayPool
 
 
@@ -157,8 +164,10 @@ def build_objects(config: TrainConfig, device: torch.device):
     validate_aux_margin_config(config)
     validate_model_config(config)
     validate_optim_config(config.optim)
+    validate_replay_config(config.replay)
     obs_size = obs_size_for_config(config)
     model = build_model(config.model, obs_size, dz.ACTION_SPACE_SIZE).to(device)
+    model._dominion_encoder_generation = int(dz.ENCODER_GENERATION)  # type: ignore[attr-defined]
     optimizer_class = {
         "adamw": torch.optim.AdamW,
         "adam": torch.optim.Adam,
@@ -168,7 +177,15 @@ def build_objects(config: TrainConfig, device: torch.device):
         lr=config.optim.lr,
         weight_decay=config.optim.weight_decay,
     )
-    replay = ReplayBuffer(config.replay.capacity, obs_size, dz.ACTION_SPACE_SIZE, config.seed ^ 0xA11CE)
+    replay = ReplayBuffer(
+        config.replay.capacity,
+        obs_size,
+        dz.ACTION_SPACE_SIZE,
+        config.seed ^ 0xA11CE,
+        sil_weight=config.replay.sil_weight,
+        sil_fraction=config.replay.sil_fraction,
+        sil_alpha=config.replay.sil_alpha,
+    )
     return model, optimizer, replay
 
 
@@ -807,6 +824,8 @@ METRICS_FIELDNAMES = [
         "anchor_policy_loss",
         "anchor_value_loss",
         "entropy",
+        "sampled_priority_mean",
+        "sampled_priority_max",
         "lr",
         "games_per_hour",
         "leaves_per_sec",
@@ -1274,6 +1293,7 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
                 or bool(config.kingdom_curriculum)
                 or float(config.selfplay.deep_slice_fraction) > 0.0
             )
+            replay_write_before_selfplay = replay.write
             if not use_segments:
                 # Keep the legacy default path and its seed derivation intact.
                 if pool is None:
@@ -1342,9 +1362,14 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
                     payloads = [
                         (
                             serialize_cpu_state_dict(active_model),
-                            model_config_dict(
-                                getattr(active_model, "_dominion_model_config", config.model)
-                            ),
+                            {
+                                **model_config_dict(
+                                    getattr(active_model, "_dominion_model_config", config.model)
+                                ),
+                                "encoder_generation": int(
+                                    getattr(active_model, "_dominion_encoder_generation", dz.ENCODER_GENERATION)
+                                ),
+                            },
                         )
                     ]
                     opponent_device = torch.device("cpu") if inference_server is not None else device
@@ -1353,9 +1378,14 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
                         payloads.append(
                             (
                                 serialize_cpu_state_dict(opponent),
-                                model_config_dict(
-                                    getattr(opponent, "_dominion_model_config", config.model)
-                                ),
+                                {
+                                    **model_config_dict(
+                                        getattr(opponent, "_dominion_model_config", config.model)
+                                    ),
+                                    "encoder_generation": int(
+                                        getattr(opponent, "_dominion_encoder_generation", dz.ENCODER_GENERATION)
+                                    ),
+                                },
                             )
                         )
                     parallel_result = pool.generate(
@@ -1370,6 +1400,13 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
                     sp_stats = parallel_result.stats
                     aggregate_games_per_hour = parallel_result.aggregate_games_per_hour
                     planned_league_games = parallel_result.league_games
+            refresh_sil_priorities(
+                replay,
+                model,
+                device,
+                start_write=replay_write_before_selfplay,
+                inserted_positions=sp_stats.positions,
+            )
             for opponent, (games, wins) in sp_stats.league_by_opponent.items():
                 # Use the most recently observed per-opponent rate for the
                 # following draw; unplayed opponents retain their last rate.
@@ -1408,6 +1445,8 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
                 "anchor_policy_loss": float("nan"),
                 "anchor_value_loss": float("nan"),
                 "entropy": float("nan"),
+                "sampled_priority_mean": float("nan"),
+                "sampled_priority_max": float("nan"),
             }
             steps = config.optim.train_steps_per_generation
             if len(replay) > 0 and steps > 0:
@@ -1425,6 +1464,8 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
                     "anchor_policy_loss": 0.0,
                     "anchor_value_loss": 0.0,
                     "entropy": 0.0,
+                    "sampled_priority_mean": 0.0,
+                    "sampled_priority_max": 0.0,
                 }
                 for _ in range(steps):
                     step_losses = train_step(
@@ -1445,6 +1486,9 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
                     if anchor_active:
                         accum["anchor_policy_loss"] += step_losses["anchor_policy_loss"]
                         accum["anchor_value_loss"] += step_losses["anchor_value_loss"]
+                    if replay.sil_enabled:
+                        accum["sampled_priority_mean"] += replay.last_sampled_priority_mean
+                        accum["sampled_priority_max"] += replay.last_sampled_priority_max
                 losses = {key: value / steps for key, value in accum.items()}
                 if not anchor_active:
                     # NaN is this module's existing disabled/inactive metric
@@ -1453,6 +1497,9 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
                     losses["anchor_value_loss"] = float("nan")
                 if not aux_active:
                     losses["aux_margin_loss"] = float("nan")
+                if not replay.sil_enabled:
+                    losses["sampled_priority_mean"] = float("nan")
+                    losses["sampled_priority_max"] = float("nan")
 
             gate_row: dict[str, Any] = {}
             if use_gating:
@@ -1594,6 +1641,8 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
                 "anchor_policy_loss": losses["anchor_policy_loss"],
                 "anchor_value_loss": losses["anchor_value_loss"],
                 "entropy": losses["entropy"],
+                "sampled_priority_mean": losses["sampled_priority_mean"],
+                "sampled_priority_max": losses["sampled_priority_max"],
                 "lr": lr,
                 "games_per_hour": sp_stats.games_per_hour,
                 "leaves_per_sec": sp_stats.leaves_per_sec,

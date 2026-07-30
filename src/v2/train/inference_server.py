@@ -573,6 +573,7 @@ class _PinnedStaging:
         requests: list[_Request],
         source_obs_version: int,
         model_obs_version: int,
+        encoder_generation: int,
     ) -> int:
         offset = 0
         for request in requests:
@@ -581,6 +582,7 @@ class _PinnedStaging:
                 request.obs,
                 source_obs_version,
                 model_obs_version,
+                encoder_generation,
             )
             self.obs_np[offset:end] = adapted_obs
             self.masks_np[offset:end] = request.masks
@@ -719,6 +721,7 @@ class _ResidentModel:
 
     config: dict[str, Any]
     obs_version: int
+    encoder_generation: int
     model: torch.nn.Module
     evaluator: torch.nn.Module | None
     staging: _PinnedStaging
@@ -751,6 +754,9 @@ def _build_resident_model(
     obs_version = int(config.selfplay.obs_version if configured_version is None else configured_version)
     if obs_version not in (1, 2, 3):
         raise ValueError(f"server model has invalid obs_version {obs_version!r}")
+    encoder_generation = int(model_config.get("encoder_generation", 2))
+    if encoder_generation < 1:
+        raise ValueError(f"server model has invalid encoder_generation {encoder_generation!r}")
     model = build_model(
         model_config,
         obs_size_for_version(obs_version),
@@ -758,6 +764,7 @@ def _build_resident_model(
     ).to(device)
     model.eval()
     normalized_config = model_config_dict(getattr(model, "_dominion_model_config", model_config))
+    normalized_config["encoder_generation"] = encoder_generation
     staging = _PinnedStaging(
         device,
         max(int(config.server_max_batch), max(batch_buckets, default=0)),
@@ -773,7 +780,7 @@ def _build_resident_model(
         batch_buckets,
         int(config.server_max_batch),
     )
-    return _ResidentModel(normalized_config, obs_version, model, evaluator, staging)
+    return _ResidentModel(normalized_config, obs_version, encoder_generation, model, evaluator, staging)
 
 
 def _server_device(name: str) -> torch.device:
@@ -1165,6 +1172,7 @@ def _server_main(
                 requests,
                 source_obs_version,
                 resident.obs_version,
+                resident.encoder_generation,
             ) == batch_size
             in_flight = resident.staging.launch(
                 resident.model,

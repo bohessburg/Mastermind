@@ -35,6 +35,7 @@ from .inference_server import (
 )
 from .model import build_model, model_config_dict
 from .observation import (
+    model_encoder_generation,
     model_observation_version,
     observations_for_model,
     obs_size_for_config,
@@ -144,6 +145,15 @@ def _unpack_model_state_payload(
     ):
         return payload[0], dict(payload[1])
     raise TypeError("model state payload must be bytes or (bytes, model_config)")
+
+
+def _model_routing_config(model: torch.nn.Module, fallback_model_config: object) -> dict[str, Any]:
+    """Return existing worker model metadata plus its checkpoint encoder generation."""
+    config = model_config_dict(getattr(model, "_dominion_model_config", fallback_model_config))
+    config["encoder_generation"] = int(
+        getattr(model, "_dominion_encoder_generation", config.get("encoder_generation", 2))
+    )
+    return config
 
 
 def game_quotas(total_games: int, workers: int) -> list[int]:
@@ -387,6 +397,9 @@ def add_packed_records(replay: Any, packed: PackedGameRecords) -> tuple[int, int
     ):
         raise ValueError("packed self-play record lengths do not match their buffers")
     if positions > 0:
+        # The parent owns the current training model, so the optional SIL
+        # forward runs immediately after collection. New rows deliberately
+        # enter here with ReplayBuffer's default priority of 1.0.
         replay.add(obs, policy, value, legal_mask, margin)
     return int(lengths.shape[0]), positions
 
@@ -812,6 +825,7 @@ def _evaluate_manifest_model_groups(
                 obs[rows],
                 source_version,
                 model_observation_version(model, source_version),
+                model_encoder_generation(model),
             )
             obs_tensor = torch.as_tensor(adapted_obs, dtype=torch.float32, device=device)
             mask_tensor = torch.as_tensor(masks[rows], dtype=torch.bool, device=device)
@@ -1124,8 +1138,11 @@ def _worker_main(
                 primary_payload = model_state_payloads[0] if model_state_payloads else state_payload
                 if primary_payload is None:
                     raise RuntimeError("local self-play is missing a model state payload")
-                primary_state, _ = _unpack_model_state_payload(primary_payload, config.model)
+                primary_state, primary_config = _unpack_model_state_payload(primary_payload, config.model)
                 model.load_state_dict(deserialize_cpu_state_dict(primary_state))
+                model._dominion_encoder_generation = int(  # type: ignore[attr-defined]
+                    primary_config.get("encoder_generation", 2)
+                )
                 model.eval()
                 model_table.append(model)
                 for payload in model_state_payloads[1:]:
@@ -1312,7 +1329,7 @@ class ParallelSelfPlayPool:
             server_payloads = worker_model_payloads or [
                 (
                     serialize_cpu_state_dict(model),
-                    model_config_dict(getattr(model, "_dominion_model_config", self.config.model)),
+                    _model_routing_config(model, self.config.model),
                 )
             ]
             if segments is not None:
