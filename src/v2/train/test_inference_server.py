@@ -753,3 +753,39 @@ def test_parallel_v3_selfplay_with_v2_league_model_matches_eager_aggregates(
     eval_ratio = server_result.stats.nn_evals / eager_result.stats.nn_evals
     assert 0.25 <= position_ratio <= 4.0
     assert 0.25 <= eval_ratio <= 4.0
+
+
+def test_sync_models_reuses_resident_on_unchanged_config(tmp_path: Path) -> None:
+    """Regression: encoder_generation normalization must keep the reuse check
+    symmetric — an unchanged model re-synced across a generation boundary must
+    reuse the resident (the c20 gen-2 recompile-blackout incident)."""
+    cfg = server_config(tmp_path, generations=1)
+    cfg.server_transport = "queue"
+    cfg.selfplay.obs_version = 3
+    torch.manual_seed(2020)
+    current, _, _ = build_objects(cfg, torch.device("cpu"))
+    current.eval()
+    payload = (
+        serialize_cpu_state_dict(current),
+        model_config_dict(current._dominion_model_config),
+    )
+    obs = np.zeros((2, obs_size_for_version(3)), dtype=np.float32)
+    obs[:, 0] = 3.0
+    obs[:, 1] = float(obs_size_for_version(3))
+    masks = np.ones((2, current.policy_head.out_features), dtype=np.bool_)
+    ids = np.zeros(2, dtype=np.uint32)
+    server = InferenceServer(cfg, worker_count=1)
+    views = []
+    try:
+        server.sync_models([payload], generation=1)
+        evaluator, view = _server_evaluator(server.endpoints, 0)
+        if view is not None:
+            views.append(view)
+        first_logits, _ = _evaluate_manifest_server_groups(evaluator, obs, masks, ids)
+        server.sync_models([payload], generation=2)
+        second_logits, _ = _evaluate_manifest_server_groups(evaluator, obs, masks, ids)
+        np.testing.assert_allclose(first_logits, second_logits, rtol=1e-4, atol=1e-4)
+    finally:
+        for view in views:
+            view.close()
+        server.close()

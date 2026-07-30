@@ -956,6 +956,13 @@ def _server_main(
                 )
                 requested_config = dict(requested_config)
                 requested_config["obs_version"] = requested_version
+                # Mirror _build_resident_model's normalization or the reuse
+                # comparison below can never match and every sync rebuilds and
+                # recompiles the resident (minutes of serve blackout at each
+                # generation boundary — the c20 gen-2 fleet-death incident).
+                requested_config["encoder_generation"] = int(
+                    requested_config.get("encoder_generation", 2)
+                )
                 reusable = resident_models[model_id] if model_id < len(resident_models) else None
                 if reusable is not None and reusable.config == requested_config:
                     resident = reusable
