@@ -708,7 +708,7 @@ function GameOverOverlay({
 function JoinScreen({ onJoin }: { onJoin: (credentials: Credentials) => void }) {
   const [sessionId, setSessionId] = useState('');
   const [seatToken, setSeatToken] = useState('');
-  const [mode, setMode] = useState<'human-bot' | 'human-thinner' | 'human-nn' | 'human-nnmcts' | 'human-human'>('human-bot');
+  const [mode, setMode] = useState<'human-bot' | 'human-nnmcts'>('human-bot');
   const [kingdomMode, setKingdomMode] = useState<'preset' | 'random'>('preset');
   const [seed, setSeed] = useState('2026');
   const [created, setCreated] = useState<CreatedSession | undefined>();
@@ -717,15 +717,7 @@ function JoinScreen({ onJoin }: { onJoin: (credentials: Credentials) => void }) 
   async function createSession() {
     setError(undefined);
     const seats: SeatKind[] =
-      mode === 'human-bot'
-        ? ['human', 'bot:engine3']
-        : mode === 'human-thinner'
-          ? ['human', 'bot:thinner']
-        : mode === 'human-nn'
-          ? ['human', 'bot:nn']
-          : mode === 'human-nnmcts'
-            ? ['human', 'bot:nnmcts']
-            : ['human', 'human'];
+      mode === 'human-bot' ? ['human', 'bot:engine3'] : ['human', 'bot:nnmcts'];
     const response = await fetch('/api/session', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -760,14 +752,11 @@ function JoinScreen({ onJoin }: { onJoin: (credentials: Credentials) => void }) 
             <select
               value={mode}
               onChange={(event) =>
-                setMode(event.target.value as 'human-bot' | 'human-thinner' | 'human-nn' | 'human-nnmcts' | 'human-human')
+                setMode(event.target.value as 'human-bot' | 'human-nnmcts')
               }
             >
               <option value="human-bot">Human vs EngineBot (scripted)</option>
-              <option value="human-thinner">Human vs Thinner (scripted)</option>
-              <option value="human-nn">Human vs neural net</option>
               <option value="human-nnmcts">Human vs neural net + search</option>
-              <option value="human-human">Human vs human</option>
             </select>
           </label>
           <label>
