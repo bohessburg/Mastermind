@@ -1258,6 +1258,29 @@ reference values are pre-fix-build-only. Guard task opened
 (encoder-generation tag + legacy shim); c20 starts a fresh reference
 series on the fixed encoder.
 
+C20 GEN-5 PROBE MILESTONE — THE PRE-REGISTERED BREAKTHROUGH SIGNAL
+(2026-07-31 ~02:30, gen_0005.pt, native gen-2 encoder, no shim):
+VALUE PROBE: money +0.684 | ENGINE +0.778 | junk -0.208 — THE BUILT
+ENGINE DECK PRICES ABOVE THE MONEY DECK. First checkpoint in project
+history (c13..c19 all inverted or saturated; champ read
++0.897/+0.717; c19 read -0.86/-0.98). The restructure's headline
+instrument fired at GENERATION FIVE. Supporting: human-record probe
+policy mass on winning humans' action buys 0.362 (legacy lineage
+0.105-0.122, ~3x) with money-default rate 22.4% (legacy 47-54%,
+halved); chapel unforced 0.049-0.060 (champ 0.036) with Chapel not
+even in the current curriculum pool. WATCH ITEM: duchy_probe
+value-delta -0.103 (inside the -0.15 kill-gate but close; ΔP +0.18pts
+is clean) — gen-10 re-read is the confirmation point for the alpha=0
+target. Campaign health at the milestone: honest engine3 22.3 → 24.0
+→ 29.9 (g1/2/3, evals every gen 1-3 then 5-cadence); vloss 0.234 →
+0.076 falling; ENTROPY RISING 0.72 → 1.01 (forced playouts + deep
+buy-phase temperature holding exploration open where every prior
+campaign collapsed); anchor healthy; 251-254 positions/game; 1,819
+games/hr / 62.8K evals/s at 152 slimmed workers (torch-free worker
+RSS ~0.5GB under load vs 1.5GB, commit 773940c). Box 2: 246 real
+cores / 259GB / 5090, supervisor-managed with auto-resume; gen
+boundaries 2→3→4→5 all clean post-resync-fix.
+
 C20 LAUNCH NIGHT + BOX-1 INCIDENT (2026-07-30, box ssh -p 11520
 root@104.188.171.133, RTX 5090 / 123 real cores / 125GB — RETIRED for
 RAM): gen 1 completed clean and healthy — BC pretrain loss 0.53->0.057
