@@ -1457,3 +1457,27 @@ where a winning human bought an action card, the nets' argmax buy is
 still a treasure roughly half the time. Duchy-injection reference on
 the NEW fixed states (longitudinal baseline going forward): c15
 +0.89pts, c18 +2.42pts, c19 +0.40pts.
+
+C20 GEN-15 MILESTONE (2026-07-31, local honest harness + box sentinel):
+engine3 sentinel 36.7% (72-124-4, box EvalRunner honest 256 sims) —
+CAMPAIGN HIGH, the g10 ~33.5 plateau broke without intervention.
+Champ duel (200g, 400 sims, K=2, --legacy-shim): 70W-123L-7T = 36.3%
+excl ties — FLAT vs g10's 36.5 (1 sigma ~3.4). Seat split 41/29
+(g10: 37/33). Mean 50.3 turns, 131 province / 69 piles / 0 trunc.
+League internal: 58.6% vs own g10 snapshot. Entropy 1.055 holding;
+vloss 0.051; trash 13.8/game and rising.
+PROBE RE-READ (the g10 drift-vs-regression tiebreaker): value probe
+FULLY SATURATED at g15 — engine -0.998 / money -0.998 / junk -1.0
+(g5: +0.778/+0.684/-0.208; g10: -0.644/-0.006/-0.736). All three
+archetypes pinned at -1 while real strength rose => VERDICT:
+INSTRUMENT DRIFT, not regression. The synthetic probe states
+(hand-built finished decks injected mid-game) are OOD for the honest
+determinized net; the g10 "engine reversal" was the leading edge of
+the whole family going OOD. Probe suite needs recalibration for c20+
+nets: resample probe states from real self-play games (task noted;
+until then value_probe is champ/legacy-only). Duchy gate QUIET
+(+0.18pts, dV -0.007). Human-record agreement mass drifting down
+.36/.29/.24 (g5/g10/g15) with anchor losses stable — watch item,
+anchor floor 0.05 lands at g20.
+Ops: milestone duels move to box 2 from g20 (90 idle cores; champ
+checkpoint staged) — local Mac run was the bottleneck (72 min).
