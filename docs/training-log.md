@@ -1258,6 +1258,33 @@ reference values are pre-fix-build-only. Guard task opened
 (encoder-generation tag + legacy shim); c20 starts a fresh reference
 series on the fixed encoder.
 
+C20 GEN-10 MILESTONE (2026-07-31): HONEST CHAMPIONSHIP DUEL 36.5%
+(70-122-8, 400 sims K=2 deployed config, champ via legacy shim) — the
+BEST gen-10 champ-relative read in project history by ~9 points (c18
+27.1 / c19 27.6, both CLAIRVOYANT), in the harder honest regime. Seat
+split 39.8/33.3 — the second-seat gap compressed to ~6.5pts vs the
+legacy ~20pt structure. Endings 137 province / 63 piles. Engine3
+sentinel 33.5 (vs 34.7 g5 — noise-flat; consolidation, and the
+self-league arrived gen 11 as scheduled, 317 games vs the gen-10
+snapshot). PROBE CAUTION LOGGED: the gen-10 value probe REVERSED
+gen-5's engine-over-money ordering (money -0.006 / engine -0.644 /
+junk -0.736, all deflated toward zero) while human-line mass eased
+0.362 -> 0.293. Given the duel + live buy behavior (gen-5 vibe game:
+11 action buys incl 2 Sentry, 10 trashes — correct thinning
+priorities, one own-Merchant misplay), the working read is VALUE-HEAD
+CALIBRATION DRIFT on synthetic probe states under margin compression
+(closer self-play games -> all absolute values deflate), NOT strategy
+regression — but the gen-5 "breakthrough" headline now carries an
+asterisk: the probe is noisier per-checkpoint on a live campaign than
+the 3-seed offline sweep implied. Duchy gate PRISTINE at gen 10
+(dP +0.75pts / dV -0.007 — the alpha=0 risk is quiet). Militia
+inversion still present (2 fixture cases) — imitation pressure not
+yet sufficient there. Pre-registered verdict: CONTINUE (no cut/
+intervention criteria met; next checkpoint gen 15: eval + probe
+re-read; SIL activation remains the staged response if engine wins
+stop compounding). Box telemetry: ~2,000 games/hr, 60-65K evals/s,
+memory creep ~2.5GB/gen (preventive restart penciled ~gen 40).
+
 C20 GEN-5 PROBE MILESTONE — THE PRE-REGISTERED BREAKTHROUGH SIGNAL
 (2026-07-31 ~02:30, gen_0005.pt, native gen-2 encoder, no shim):
 VALUE PROBE: money +0.684 | ENGINE +0.778 | junk -0.208 — THE BUILT
