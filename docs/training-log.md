@@ -1258,6 +1258,46 @@ reference values are pre-fix-build-only. Guard task opened
 (encoder-generation tag + legacy shim); c20 starts a fresh reference
 series on the fixed encoder.
 
+C20 LAUNCH NIGHT + BOX-1 INCIDENT (2026-07-30, box ssh -p 11520
+root@104.188.171.133, RTX 5090 / 123 real cores / 125GB — RETIRED for
+RAM): gen 1 completed clean and healthy — BC pretrain loss 0.53->0.057
+on the human tuples; honest engine3 eval 22.3% at gen 1 (c19's
+CLAIRVOYANT gen-1 was 21.1; c18's was 1.0); ploss 0.735 / vloss 0.234
+/ entropy 0.716 (pure-margin targets doing real work — c19's 0.029
+vloss was the saturated geometry memorizing); anchor live (0.116/
+0.040), aux margin CE 1.44 and falling; 232 positions/game on the
+engine curriculum (2x c19); 1,460 games/hr at 112 workers. Then a
+cascade of four stacked failures, each root-caused and fixed:
+(1) RESYNC-RECOMPILE BUG: the encoder_generation key was injected
+into the server's resident model config but not the incoming sync
+payload, so the reuse equality NEVER matched — every generation
+boundary rebuilt + recompiled all CUDA-graph buckets (minutes of
+serve blackout) and the 112 live workers died at their timeout. Fixed
+(commit 8d97c46: normalize incoming config symmetrically + resync
+regression test). (2) 30s WORKER TIMEOUT cannot survive even
+legitimate compile windows (cold resume has no pretrain to hide
+warmup behind): server_response_timeout_s -> 900 (commit 58b6ae3).
+(3) ORPHAN-BLIND STOP TOOLING: spawned workers retitle to
+dominion-selfplay-N (cmdline = spawn_main) — pattern-killing
+src.v2.train missed them ALL; three recovery cycles accumulated 135
+orphans x ~0.9GB = 121GB RSS and the kernel OOM-SIGKILLed (rc=137)
+every restart at torch import, mimicking fresh crashes. Fixed:
+stop_train.sh kills every .venv python by explicit PID list; verify
+MEMORY (cgroup rss), not process counts. (4) RAM-BLIND WORKER
+SIZING: sized 112 workers to the CPU quota; measured per-worker RSS
+under load is ~1.5GB (idle baseline 0.9GB — do NOT size on idle) →
+72 workers hit 124GB RSS with the replay still empty; the c14-era
+runbook already said >=192GB for this architecture and the 125GB box
+should have been flagged at provisioning. Final stable config on
+box 1: 48 workers / 2M replay / buckets <=2048 (~430 games/hr).
+DECISION (Jack): retire box 1, provision >=192GB. Ops rules added:
+size workers to min(cpu quota, RAM/1.5GB) with replay+server priced
+in; supervisor-managed trainer with always-resume-latest wrapper
+(auto-recovery); box config edits are local-build + rsync + grep-
+verify ONLY (three silent inline-edit failures tonight); macOS-side:
+no setsid (nohup+disown), no timeout binary. gen_0001.pt + metrics +
+console banked local; campaign resumes from gen_0001 on box 2.
+
 C20 PRE-REGISTRATION (2026-07-30, assembled with Jack; config
 configs/run_c20.json, validated against the loader): from-scratch
 CardTokenNet d320/5L/8H + aux margin head (21 buckets, weight 0.3),
