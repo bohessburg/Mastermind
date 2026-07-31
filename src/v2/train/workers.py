@@ -17,23 +17,22 @@ import random
 import time
 import traceback
 from dataclasses import dataclass, replace
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 import numpy as np
-import torch
+
+if TYPE_CHECKING:
+    import torch
+
+    from .inference_server import InferenceServer
 
 import dominion_v2_py as dz
 
 from .config import TrainConfig
-from .gating import SelfPlaySegment
-from .inference_server import (
-    InferenceServer,
+from .inference_protocol import (
     InferenceServerEndpoints,
     WorkerSharedMemoryViews,
-    deserialize_cpu_state_dict,
-    serialize_cpu_state_dict,
 )
-from .model import build_model, model_config_dict
 from .observation import (
     model_encoder_generation,
     model_observation_version,
@@ -42,6 +41,7 @@ from .observation import (
     obs_size_for_version,
     obs_version_for_width,
 )
+from .selfplay_segments import SelfPlaySegment
 from .selfplay import (
     SelfPlayStats,
     _record_legal_mask,
@@ -136,6 +136,8 @@ def _unpack_model_state_payload(
 ) -> tuple[bytes, dict[str, Any]]:
     """Accept legacy state-only payloads and architecture-aware new payloads."""
     if isinstance(payload, bytes):
+        from .model import model_config_dict
+
         return payload, model_config_dict(fallback_model_config)
     if (
         isinstance(payload, tuple)
@@ -149,11 +151,20 @@ def _unpack_model_state_payload(
 
 def _model_routing_config(model: torch.nn.Module, fallback_model_config: object) -> dict[str, Any]:
     """Return existing worker model metadata plus its checkpoint encoder generation."""
+    from .model import model_config_dict
+
     config = model_config_dict(getattr(model, "_dominion_model_config", fallback_model_config))
     config["encoder_generation"] = int(
         getattr(model, "_dominion_encoder_generation", config.get("encoder_generation", 2))
     )
     return config
+
+
+def _serialize_cpu_state_dict(model: Any) -> bytes:
+    """Load the Torch-backed serializer only in a parent or local worker path."""
+    from .inference_server import serialize_cpu_state_dict
+
+    return serialize_cpu_state_dict(model)
 
 
 def game_quotas(total_games: int, workers: int) -> list[int]:
@@ -405,6 +416,8 @@ def add_packed_records(replay: Any, packed: PackedGameRecords) -> tuple[int, int
 
 
 def _worker_device(name: str) -> torch.device:
+    import torch
+
     requested = name.lower()
     if requested not in {"cpu", "cuda"}:
         raise ValueError("worker_device must be 'cpu' or 'cuda'")
@@ -427,6 +440,8 @@ def _seed_worker(seed: int, device: torch.device | None) -> None:
         # Server-mode workers must not touch CUDA at all; the dedicated server
         # is the sole owner of that context and of Torch model state.
         return
+    import torch
+
     torch.manual_seed(seed)
     if device.type == "cuda":
         torch.cuda.manual_seed_all(seed)
@@ -438,6 +453,8 @@ def _seed_worker(seed: int, device: torch.device | None) -> None:
 
 
 def _local_evaluator(model: torch.nn.Module, device: torch.device) -> Callable[[np.ndarray, np.ndarray], tuple[np.ndarray, np.ndarray]]:
+    import torch
+
     def evaluate(obs: np.ndarray, masks: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         with torch.no_grad():
             obs_tensor = torch.as_tensor(obs, dtype=torch.float32, device=device)
@@ -807,6 +824,8 @@ def _evaluate_manifest_model_groups(
     device: torch.device,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Evaluate each required model once and restore runner leaf order."""
+    import torch
+
     ids = np.asarray(model_ids, dtype=np.uint32)
     if ids.ndim != 1 or ids.shape[0] != obs.shape[0]:
         raise ValueError("leaf model attribution must have one entry per observation")
@@ -1078,6 +1097,9 @@ def _worker_main(
             collect_max_batch = inference_endpoints.request_batch_size
             model: torch.nn.Module | None = None
         else:
+            from .inference_server import deserialize_cpu_state_dict
+            from .model import build_model
+
             assert device is not None
             model = build_model(config.model, obs_size, dz.ACTION_SPACE_SIZE).to(device)
             model.eval()
@@ -1309,7 +1331,7 @@ class ParallelSelfPlayPool:
             # below.  Do not also pickle the primary model in the legacy slot.
             state_payload = None
         else:
-            state_payload = serialize_cpu_state_dict(model)
+            state_payload = _serialize_cpu_state_dict(model)
         if segments is not None:
             # Index once before quota splitting. Reserved deep/league blocks
             # may move between workers, but their slot seeds keep this global
@@ -1318,7 +1340,7 @@ class ParallelSelfPlayPool:
             if sum(segment.n_games for segment in segments) != self.config.selfplay.games_per_generation:
                 raise ValueError("self-play segments must cover exactly one generation")
             if self.inference_server is None:
-                worker_model_payloads = worker_model_payloads or [serialize_cpu_state_dict(model)]
+                worker_model_payloads = worker_model_payloads or [_serialize_cpu_state_dict(model)]
                 if not worker_model_payloads:
                     raise ValueError("local self-play segments require a best-model payload")
             per_worker_segments = split_segments_by_quotas(segments, self.quotas)
@@ -1328,7 +1350,7 @@ class ParallelSelfPlayPool:
         if self.inference_server is not None:
             server_payloads = worker_model_payloads or [
                 (
-                    serialize_cpu_state_dict(model),
+                    _serialize_cpu_state_dict(model),
                     _model_routing_config(model, self.config.model),
                 )
             ]

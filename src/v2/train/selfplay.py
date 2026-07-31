@@ -4,10 +4,12 @@ import math
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any, Callable, Sequence
+from typing import TYPE_CHECKING, Any, Callable, Sequence
 
 import numpy as np
-import torch
+
+if TYPE_CHECKING:
+    import torch
 
 import dominion_v2_py as dz
 
@@ -43,6 +45,8 @@ def compute_sil_priorities(
     batch_size: int = SIL_PRIORITY_BATCH_SIZE,
 ) -> np.ndarray:
     """Compute ``max(epsilon, z - v_theta(s))`` in batched no-grad forwards."""
+    import torch
+
     obs = np.asarray(observations, dtype=np.float32)
     targets = np.asarray(value_targets, dtype=np.float32)
     if obs.ndim != 2 or targets.shape != (obs.shape[0],):
@@ -496,6 +500,8 @@ def run_self_play_generation(
     seed: int,
     device: torch.device,
 ) -> SelfPlayStats:
+    import torch
+
     runner = dz.SelfPlayRunner(make_runner_config(config, seed))
     model.eval()
     stats = SelfPlayStats()
@@ -550,6 +556,8 @@ def route_leaf_evaluations(
     When both seats reference the same model table entry, callers select the
     full-batch fast path and deliberately do not fetch player attribution.
     """
+    import torch
+
     if len(seat_models) != 2:
         raise ValueError("two seat models are required")
     source_version = obs_version_for_width(int(obs.shape[-1]))

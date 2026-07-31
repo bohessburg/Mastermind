@@ -15,8 +15,14 @@ from pathlib import Path
 from typing import Any, Iterator
 
 import numpy as np
-import torch
-import torch.nn.functional as F
+
+# ``spawn`` re-executes the parent's main module as ``__mp_main__`` before it
+# imports a process target. Server-mode self-play targets do not need trainer
+# state, so avoid rebuilding the full Torch training import graph in those
+# workers. Their target module owns the server-safe imports instead.
+if __name__ != "__mp_main__":
+    import torch
+    import torch.nn.functional as F
 
 try:
     import dominion_v2_py as dz
@@ -25,7 +31,9 @@ except ModuleNotFoundError as exc:  # pragma: no cover - gives a clearer CLI err
 
 from src.v2.encoder_compat import require_native_runner_encoder_compatibility
 
-if __package__ in (None, ""):
+if __name__ == "__mp_main__":
+    pass
+elif __package__ in (None, ""):
     sys.path.append(str(Path(__file__).resolve().parents[3]))
     from src.v2.train.config import (
         TrainConfig,

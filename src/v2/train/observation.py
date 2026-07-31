@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Any, Mapping
+from typing import TYPE_CHECKING, Any, Mapping
 
 import numpy as np
-import torch
+
+if TYPE_CHECKING:
+    import torch
 
 from src.v2.encoder_compat import (
     LEGACY_ENCODER_GENERATION,
@@ -68,6 +70,8 @@ def downgrade_v3_observations(observations: np.ndarray | torch.Tensor) -> np.nda
         downgraded[..., 0] = 2.0
         downgraded[..., 1] = float(OBS_SIZE_V2)
         return downgraded
+    import torch
+
     if isinstance(observations, torch.Tensor):
         if not observations.is_floating_point():
             raise TypeError("v3 observations must use a floating Torch dtype")
