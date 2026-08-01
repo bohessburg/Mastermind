@@ -1530,3 +1530,15 @@ relaunched); gen-29 metrics row lost in resize restart (cosmetic);
 184-worker resize verdict deferred to a clean gen; server sharding
 (server_shards=2) built by Codex, reviewed, 21 tests green, staged
 for the gen-31 boundary.
+
+C20 GEN-30 DUEL (2026-08-01, box, after champ-ckpt restaging): 36.8%
+(71-122-7). Curve g10..g30: 36.5/36.3/32.3/38.7/36.8 — flat-in-noise
+vs champ while engine3 sentinel climbs (49.5 same gen). Seat split
+46/25: FIRST seat now beats champ-level nearly even; SECOND seat is
+the entire gap and sagged again. Reads as archetype-specific: the
+champ is money+ATTACKS — connects to the g30 vibe finding (crushed
+4-42 by Militia pressure on own board; dead one-card hands; Militia
+keep-inversion unresolved) and to imitation data as the targeted fix.
+Vibe margins vs engine3 keep shrinking: -26/-19/-11/-5 at
+g10/15/25/30 (sentry board); gen-30 skipped Sentry, played
+Festival-money-Witch, timed greening with the race.
