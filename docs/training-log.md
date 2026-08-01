@@ -1514,3 +1514,19 @@ positions/game ~157 (shorter thin-board games), duchy gate quiet
 floor — watch). Lesson for c21/config: a 10-card "pool" = one fixed
 kingdom; phase-1 50% share overfits by g20 — widen pools to 12-14
 cards (sample 10) or cap fixed-share exposure earlier.
+
+DUCHY GATE TRIP + ADJUDICATION (2026-08-01, gen 30): duchy probe
+dV = -0.257 (threshold -0.15; dP +0.52pts fine) — FIRST GATE TRIP of
+c20. Confound: gens 26-30 = box-recovery window (cold replay buffer,
+league accidentally off); chapel + human-agreement probes wobbled in
+the same window while strength hit 3 consecutive campaign highs
+(sentinel 42.1 -> 46.4 -> 49.5 at g25/26/30 — the 49.5 is 1pt from
+the pre-registered ">50 sustained = progress" bar). Jack's call:
+DEFER WITH TRIPWIRE — re-run duchy probe at gen 32 on warm buffer;
+if dV < -0.15 again, apply alpha 0.0 -> 0.2 immediately per the
+signed response; if recovered, log as recovery artifact. Also gen-30
+ops: champ duel errored (champ ckpt missing on rebuilt box — restaged,
+relaunched); gen-29 metrics row lost in resize restart (cosmetic);
+184-worker resize verdict deferred to a clean gen; server sharding
+(server_shards=2) built by Codex, reviewed, 21 tests green, staged
+for the gen-31 boundary.
