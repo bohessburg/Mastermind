@@ -32,3 +32,10 @@ __pycache__/
 exports/
 arena-recordings/
 arena-profile/
+.env
+.env.*
+dgames-profile/
+data/dominion_games/raw/
+data/dominion_games/recon/captures/
+data/dominion_games/recon/yield/
+data/dominion_games/recon/concurrency/

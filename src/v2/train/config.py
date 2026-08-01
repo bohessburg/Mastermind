@@ -211,6 +211,9 @@ class TrainConfig:
     # Used only when shared server self-play is enabled. The server owns all
     # resident model inference contexts while workers remain CPU-only runners.
     server_device: str = "cuda"
+    # Replicate the shared inference service across this many processes. Each
+    # worker is pinned to one shard, so one remains the legacy topology.
+    server_shards: int = 1
     server_max_batch: int = 8192
     # Cross-worker serving waits until one model reaches this many live rows,
     # every worker has submitted, or the bounded deadline below expires.
@@ -648,6 +651,13 @@ def validate_deep_slice_config(config: SelfPlayConfig) -> None:
         raise ValueError("deep_slice_sims must exceed sims_per_move when deep_slice_fraction is positive")
 
 
+def validate_server_shards(config: TrainConfig) -> None:
+    """Validate the shared-server process count before process startup."""
+    shards = config.server_shards
+    if not isinstance(shards, int) or isinstance(shards, bool) or shards <= 0:
+        raise ValueError("server_shards must be a positive integer")
+
+
 def load_config(path: str | Path | None) -> TrainConfig:
     cfg = TrainConfig()
     if path is None:
@@ -668,6 +678,7 @@ def load_config(path: str | Path | None) -> TrainConfig:
     validate_imitation_config(cfg.imitation)
     validate_deep_slice_config(cfg.selfplay)
     validate_opening_template_config(cfg.selfplay)
+    validate_server_shards(cfg)
     return cfg
 
 
@@ -680,6 +691,7 @@ def add_config_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--resume", type=str, default=None)
     parser.add_argument("--init-weights", type=str, default=None)
     parser.add_argument("--device", type=str, default=None)
+    parser.add_argument("--server-shards", type=int, default=None)
     parser.add_argument("--checkpoint-dir", type=str, default=None)
     parser.add_argument("--profile", action="store_true")
     parser.add_argument("--smoke", action="store_true")

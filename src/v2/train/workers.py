@@ -1071,6 +1071,7 @@ def _worker_main(
     command_queue: Any,
     result_queue: Any,
     inference_endpoints: InferenceServerEndpoints | None,
+    inference_worker_index: int | None,
 ) -> None:
     """Worker entry point. Kept module-level for the spawn start method."""
     parent_pid = os.getppid()
@@ -1093,7 +1094,8 @@ def _worker_main(
         obs_size = obs_size_for_config(config)
         if server_mode:
             assert inference_endpoints is not None
-            evaluate, shared_views = _server_evaluator(inference_endpoints, worker_index)
+            assert inference_worker_index is not None
+            evaluate, shared_views = _server_evaluator(inference_endpoints, inference_worker_index)
             collect_max_batch = inference_endpoints.request_batch_size
             model: torch.nn.Module | None = None
         else:
@@ -1296,17 +1298,32 @@ class ParallelSelfPlayPool:
         if server_mode != (inference_server is not None):
             raise ValueError("shared server self-play requires exactly one inference server")
         self.inference_server = inference_server
-        endpoints = inference_server.endpoints if inference_server is not None else None
+        worker_server_routes = [
+            inference_server.endpoints_for_worker(index)
+            if inference_server is not None
+            else (None, None)
+            for index in range(len(self.quotas))
+        ]
         context = mp.get_context("spawn")
         self.result_queue = context.Queue(maxsize=max(2, config.parallel_workers * 2))
         self.command_queues = [context.Queue(maxsize=1) for _ in self.quotas]
         self.processes = [
             context.Process(
                 target=_worker_main,
-                args=(self.config, index, quota, command_queue, self.result_queue, endpoints),
+                args=(
+                    self.config,
+                    index,
+                    quota,
+                    command_queue,
+                    self.result_queue,
+                    server_route[0],
+                    server_route[1],
+                ),
                 name=f"dominion-selfplay-{index}",
             )
-            for index, (quota, command_queue) in enumerate(zip(self.quotas, self.command_queues))
+            for index, (quota, command_queue, server_route) in enumerate(
+                zip(self.quotas, self.command_queues, worker_server_routes)
+            )
         ]
         for process in self.processes:
             process.start()

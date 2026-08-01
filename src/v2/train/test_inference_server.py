@@ -309,6 +309,20 @@ def test_shared_cpu_inference_server_selfplay_smoke(tmp_path: Path) -> None:
     assert all(float(row["server_batch_wait_p99_ms"]) >= float(row["server_batch_wait_p50_ms"]) for row in rows)
 
 
+def test_sharded_cpu_inference_server_selfplay_smoke(tmp_path: Path) -> None:
+    cfg = server_config(tmp_path, generations=1)
+    cfg.server_shards = 2
+    cfg.server_transport = "queue"
+    result = run_training(cfg)
+
+    assert result["config"]["server_shards"] == 2
+    assert result["metrics"][0]["games"] == 2
+    rows = read_metrics(Path(cfg.metrics_csv))
+    assert float(rows[0]["server_evals_per_sec"]) > 0.0
+    assert float(rows[0]["server_mean_batch_size"]) > 0.0
+    assert float(rows[0]["server_batch_wait_p99_ms"]) >= float(rows[0]["server_batch_wait_p50_ms"])
+
+
 @pytest.mark.parametrize("poll", ["queue", "spin"])
 def test_inference_server_routes_fixed_weight_requests_under_concurrent_load(
     tmp_path: Path,
@@ -788,4 +802,120 @@ def test_sync_models_reuses_resident_on_unchanged_config(tmp_path: Path) -> None
     finally:
         for view in views:
             view.close()
+        server.close()
+
+
+def test_sharded_server_routes_modulo_workers_and_aggregates_metrics(tmp_path: Path) -> None:
+    cfg = server_config(tmp_path, generations=1)
+    cfg.server_shards = 2
+    cfg.server_transport = "queue"
+    cfg.server_max_batch = 8
+    cfg.server_coalesce_target_rows = 1
+    cfg.selfplay.obs_version = 2
+    torch.manual_seed(5151)
+    model, _, _ = build_objects(cfg, torch.device("cpu"))
+    model.eval()
+    obs = np.linspace(
+        -1.0,
+        1.0,
+        2 * model.trunk[0].in_features,
+        dtype=np.float32,
+    ).reshape(2, model.trunk[0].in_features)
+    masks = np.ones((obs.shape[0], model.policy_head.out_features), dtype=np.bool_)
+    with torch.no_grad():
+        expected_policy, expected_value = model.evaluate(
+            torch.from_numpy(obs),
+            torch.from_numpy(masks),
+        )
+
+    server = InferenceServer(cfg, worker_count=4)
+    evaluators: list[tuple[object, WorkerSharedMemoryViews | None]] = []
+    try:
+        assert len(server.processes) == 2
+        routes = [server.endpoints_for_worker(worker_index) for worker_index in range(4)]
+        assert routes[0][0] is routes[2][0] is server.shard_endpoints[0]
+        assert routes[1][0] is routes[3][0] is server.shard_endpoints[1]
+        assert [route[1] for route in routes] == [0, 0, 1, 1]
+
+        server.sync_weights(model, generation=1)
+        for endpoints, shard_worker_index in routes:
+            evaluator, views = _server_evaluator(endpoints, shard_worker_index)
+            evaluators.append((evaluator, views))
+            policy, value = evaluator(obs, masks)
+            np.testing.assert_allclose(policy, expected_policy.numpy(), rtol=1.0e-4, atol=1.0e-4)
+            np.testing.assert_allclose(value, expected_value.numpy(), rtol=1.0e-4, atol=1.0e-4)
+
+        metrics = server.collect_metrics(generation=1, include_totals=True)
+        assert metrics["_server_total_evals"] == float(4 * obs.shape[0])
+        assert metrics["_server_total_batches"] == 4.0
+        assert metrics["server_mean_batch_size"] == pytest.approx(float(obs.shape[0]))
+        assert metrics["server_evals_per_sec"] > 0.0
+    finally:
+        for _, views in evaluators:
+            if views is not None:
+                views.close()
+        server.close()
+
+
+def test_sharded_sync_models_updates_and_reuses_every_resident(tmp_path: Path) -> None:
+    cfg = server_config(tmp_path, generations=1)
+    cfg.server_shards = 2
+    cfg.server_transport = "queue"
+    cfg.selfplay.obs_version = 3
+    torch.manual_seed(6262)
+    model, _, _ = build_objects(cfg, torch.device("cpu"))
+    model.eval()
+    obs = np.zeros((2, obs_size_for_version(3)), dtype=np.float32)
+    obs[:, 0] = 3.0
+    obs[:, 1] = float(obs_size_for_version(3))
+    masks = np.ones((2, model.policy_head.out_features), dtype=np.bool_)
+
+    server = InferenceServer(cfg, worker_count=2)
+    evaluators: list[tuple[object, WorkerSharedMemoryViews | None]] = []
+    try:
+        evaluators = [
+            _server_evaluator(*server.endpoints_for_worker(worker_index))
+            for worker_index in range(2)
+        ]
+        initial_payload = [
+            (
+                serialize_cpu_state_dict(model),
+                model_config_dict(model._dominion_model_config),
+            )
+        ]
+        server.sync_models(initial_payload, generation=1)
+        initial_results = [evaluator(obs, masks) for evaluator, _ in evaluators]
+
+        with torch.no_grad():
+            for parameter in model.parameters():
+                parameter.add_(0.125)
+            expected_policy, expected_value = model.evaluate(
+                torch.from_numpy(obs),
+                torch.from_numpy(masks),
+            )
+        updated_payload = [
+            (
+                serialize_cpu_state_dict(model),
+                model_config_dict(model._dominion_model_config),
+            )
+        ]
+        server.sync_models(updated_payload, generation=2)
+        updated_results = [evaluator(obs, masks) for evaluator, _ in evaluators]
+        for initial, updated in zip(initial_results, updated_results, strict=True):
+            policy, value = updated
+            np.testing.assert_allclose(policy, expected_policy.numpy(), rtol=1.0e-4, atol=1.0e-4)
+            np.testing.assert_allclose(value, expected_value.numpy(), rtol=1.0e-4, atol=1.0e-4)
+            assert not np.allclose(initial[0], policy)
+
+        # Same normalized config on a later boundary must keep both shard
+        # residents rather than rebuilding/recompiling either one.
+        server.sync_models(updated_payload, generation=3)
+        for evaluator, _ in evaluators:
+            policy, value = evaluator(obs, masks)
+            np.testing.assert_allclose(policy, expected_policy.numpy(), rtol=1.0e-4, atol=1.0e-4)
+            np.testing.assert_allclose(value, expected_value.numpy(), rtol=1.0e-4, atol=1.0e-4)
+    finally:
+        for _, views in evaluators:
+            if views is not None:
+                views.close()
         server.close()

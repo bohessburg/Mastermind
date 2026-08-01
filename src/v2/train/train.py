@@ -52,6 +52,7 @@ elif __package__ in (None, ""):
         validate_optim_config,
         validate_optimizer_kind,
         validate_replay_config,
+        validate_server_shards,
         validate_temperature_config,
         validate_value_target_config,
     )
@@ -107,6 +108,7 @@ else:
         validate_optim_config,
         validate_optimizer_kind,
         validate_replay_config,
+        validate_server_shards,
         validate_temperature_config,
         validate_value_target_config,
     )
@@ -1072,6 +1074,7 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
     validate_imitation_config(config.imitation)
     validate_value_target_config(config.selfplay)
     validate_temperature_config(config.selfplay)
+    validate_server_shards(config)
     device = select_device(config.device)
     seed_everything(config.seed, deterministic=device.type == "cpu")
     resume = resolve_resume_path(resume, requested.checkpoint_dir)
@@ -1090,6 +1093,7 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
         config.worker_device = requested.worker_device
         config.server_selfplay = requested.server_selfplay
         config.server_device = requested.server_device
+        config.server_shards = requested.server_shards
         config.server_max_batch = requested.server_max_batch
         config.server_coalesce_target_rows = requested.server_coalesce_target_rows
         config.server_coalesce_ms = requested.server_coalesce_ms
@@ -1123,6 +1127,7 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
         validate_imitation_config(config.imitation)
         validate_value_target_config(config.selfplay)
         validate_temperature_config(config.selfplay)
+        validate_server_shards(config)
         if config.device == "auto":
             config.device = device.type
     else:
@@ -1739,6 +1744,8 @@ def main(argv: list[str] | None = None) -> int:
         config.init_weights = args.init_weights
     if args.device is not None:
         config.device = args.device
+    if args.server_shards is not None:
+        config.server_shards = args.server_shards
     if args.checkpoint_dir is not None:
         config.checkpoint_dir = args.checkpoint_dir
         config.metrics_csv = str(Path(args.checkpoint_dir) / "metrics.csv")

@@ -188,6 +188,7 @@ class _GenerationMetrics:
         if include_totals:
             metrics["_server_total_evals"] = float(self.evals)
             metrics["_server_total_batches"] = float(self.batches)
+            metrics["_server_total_waits"] = float(len(self.batch_waits_s))
         return metrics
 
 
@@ -1094,32 +1095,20 @@ def _server_main(
             view.close()
 
 
-class InferenceServer:
-    """Parent-side lifecycle, transport allocation, and generation barriers."""
+class _InferenceServerShard:
+    """One private serving process plus worker-local transport resources."""
 
-    def __init__(self, config: TrainConfig, worker_count: int):
-        if worker_count <= 0:
-            raise ValueError("worker_count must be positive")
-        if (
-            not isinstance(config.server_coalesce_target_rows, int)
-            or isinstance(config.server_coalesce_target_rows, bool)
-            or config.server_coalesce_target_rows <= 0
-        ):
-            raise ValueError("server_coalesce_target_rows must be a positive integer")
-        if (
-            isinstance(config.server_coalesce_ms, bool)
-            or not isinstance(config.server_coalesce_ms, (int, float))
-            or not math.isfinite(float(config.server_coalesce_ms))
-            or float(config.server_coalesce_ms) < 0.0
-        ):
-            raise ValueError("server_coalesce_ms must be finite and non-negative")
-        self.config = copy.deepcopy(config)
-        requested_transport = config.server_transport.lower()
-        if requested_transport not in {"shm", "queue"}:
-            raise ValueError("server_transport must be 'shm' or 'queue'")
-        requested_poll = config.server_poll.lower()
-        if requested_poll not in {"queue", "spin"}:
-            raise ValueError("server_poll must be 'queue' or 'spin'")
+    def __init__(
+        self,
+        config: TrainConfig,
+        worker_count: int,
+        shard_index: int,
+        shard_count: int,
+    ) -> None:
+        self.config = config
+        self.worker_count = int(worker_count)
+        self.shard_index = int(shard_index)
+        self.shard_count = int(shard_count)
         context = mp.get_context("spawn")
         self.request_queue = context.Queue(maxsize=max(4, worker_count * 4))
         self.response_queues = [context.Queue(maxsize=2) for _ in range(worker_count)]
@@ -1130,8 +1119,13 @@ class InferenceServer:
         self.telemetry_queue = context.Queue(maxsize=2)
         self.latest_evals_per_sec = 0.0
         self.alive_event = context.Event()
-        request_batch_size = max(1, min(config.selfplay.max_batch, config.server_max_batch // worker_count))
+        request_batch_size = max(
+            1,
+            min(config.selfplay.max_batch, config.server_max_batch // worker_count),
+        )
         obs_size = obs_size_for_config(config)
+        requested_transport = config.server_transport.lower()
+        requested_poll = config.server_poll.lower()
         self.shared_transport: SharedMemoryTransport | None = None
         self.transport = requested_transport
         if requested_transport == "shm":
@@ -1168,33 +1162,38 @@ class InferenceServer:
             shared_memory_specs=self.shared_transport.specs if self.shared_transport is not None else None,
             poll=self.poll,
         )
+        process_name = (
+            "dominion-inference-server"
+            if shard_count == 1
+            else f"dominion-inference-server-{shard_index}"
+        )
         self.process = context.Process(
             target=_server_main,
-            args=(self.config, self.endpoints, self.command_queue, self.status_queue, self.telemetry_queue),
-            name="dominion-inference-server",
+            args=(config, self.endpoints, self.command_queue, self.status_queue, self.telemetry_queue),
+            name=process_name,
         )
+        self._closed = False
         try:
             self.process.start()
         except BaseException:
-            self.request_queue.close()
-            self.command_queue.close()
-            self.status_queue.close()
-            self.telemetry_queue.close()
-            for response_queue in self.response_queues:
-                response_queue.close()
-            if self.shared_transport is not None:
-                self.shared_transport.close()
+            self._close_resources()
             raise
 
     @property
     def shared_memory_names(self) -> list[str]:
         return self.shared_transport.names if self.shared_transport is not None else []
 
-    def __enter__(self) -> InferenceServer:
-        return self
+    @property
+    def _label(self) -> str:
+        if self.shard_count == 1:
+            return "inference server"
+        return f"inference server shard {self.shard_index}"
 
-    def __exit__(self, *_: Any) -> None:
-        self.close()
+    @property
+    def _status_label(self) -> str:
+        if self.shard_count == 1:
+            return "inference-server"
+        return f"inference-server shard {self.shard_index}"
 
     def ensure_alive(self) -> None:
         if self.process.is_alive():
@@ -1206,55 +1205,36 @@ class InferenceServer:
                 detail = f"\n{payload}"
         except queue.Empty:
             pass
-        raise RuntimeError(f"inference server exited unexpectedly (exitcode={self.process.exitcode}){detail}")
+        raise RuntimeError(f"{self._label} exited unexpectedly (exitcode={self.process.exitcode}){detail}")
 
-    def _wait_for_status(self, expected_kind: str, generation: int, timeout_s: float | None = None) -> Any:
+    def wait_for_status(
+        self,
+        expected_kind: str,
+        generation: int,
+        timeout_s: float | None = None,
+    ) -> Any:
         effective = float(self.config.server_response_timeout_s) if timeout_s is None else float(timeout_s)
         deadline = time.monotonic() + max(5.0, effective)
         while True:
             self.ensure_alive()
             remaining = deadline - time.monotonic()
             if remaining <= 0.0:
-                raise RuntimeError(f"timed out waiting for inference-server {expected_kind} acknowledgement")
+                raise RuntimeError(
+                    f"timed out waiting for {self._status_label} {expected_kind} acknowledgement"
+                )
             try:
                 kind, message_generation, payload = self.status_queue.get(timeout=min(0.25, remaining))
             except queue.Empty:
                 continue
             if kind == "error":
-                raise RuntimeError(f"inference server failed:\n{payload}")
+                raise RuntimeError(f"{self._label} failed:\n{payload}")
             if kind == expected_kind and message_generation == generation:
                 return payload
-            raise RuntimeError(f"unexpected inference-server status: {kind} for generation {message_generation}")
-
-    def sync_weights(self, model: torch.nn.Module, generation: int) -> None:
-        self.ensure_alive()
-        self.command_queue.put(("weights", generation, serialize_cpu_state_dict(model)))
-        self._wait_for_status("weights", generation)
-
-    def sync_models(
-        self,
-        payloads: list[bytes | tuple[bytes, dict[str, Any]]],
-        generation: int,
-    ) -> None:
-        """Atomically replace the generation's resident model table."""
-
-        if not payloads:
-            raise ValueError("inference server requires at least one model payload")
-        self.ensure_alive()
-        self.command_queue.put(("models", generation, list(payloads)))
-        installed = self._wait_for_status(
-            "models", generation, timeout_s=getattr(self.config, "server_install_timeout_s", 900.0)
-        )
-        if int(installed) != len(payloads):
-            raise RuntimeError("inference server installed an incomplete model table")
-
-    def collect_metrics(self, generation: int, include_totals: bool = False) -> dict[str, float]:
-        self.ensure_alive()
-        self.command_queue.put(("metrics", generation, include_totals))
-        return self._wait_for_status("metrics", generation)
+            raise RuntimeError(
+                f"unexpected {self._status_label} status: {kind} for generation {message_generation}"
+            )
 
     def drain_telemetry(self) -> float:
-        """Return the latest server rate without sending it a command."""
         while True:
             try:
                 summary = self.telemetry_queue.get_nowait()
@@ -1263,16 +1243,7 @@ class InferenceServer:
             if isinstance(summary, dict):
                 self.latest_evals_per_sec = float(summary.get("evals_per_sec", 0.0))
 
-    def close(self) -> None:
-        if self.process.is_alive():
-            try:
-                self.command_queue.put(("stop",), timeout=1.0)
-            except (queue.Full, ValueError, OSError):
-                pass
-            self.process.join(timeout=10.0)
-            if self.process.is_alive():
-                self.process.terminate()
-                self.process.join(timeout=10.0)
+    def _close_resources(self) -> None:
         self.alive_event.clear()
         self.request_queue.close()
         self.command_queue.close()
@@ -1282,6 +1253,227 @@ class InferenceServer:
             response_queue.close()
         if self.shared_transport is not None:
             self.shared_transport.close()
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        if self.process.is_alive():
+            try:
+                self.command_queue.put(("stop",), timeout=1.0)
+            except (queue.Full, ValueError, OSError):
+                pass
+            self.process.join(timeout=10.0)
+            if self.process.is_alive():
+                self.process.terminate()
+                self.process.join(timeout=10.0)
+        self._close_resources()
+
+
+class InferenceServer:
+    """Parent-side lifecycle, transport allocation, and generation barriers."""
+
+    def __init__(self, config: TrainConfig, worker_count: int):
+        if worker_count <= 0:
+            raise ValueError("worker_count must be positive")
+        if (
+            not isinstance(config.server_coalesce_target_rows, int)
+            or isinstance(config.server_coalesce_target_rows, bool)
+            or config.server_coalesce_target_rows <= 0
+        ):
+            raise ValueError("server_coalesce_target_rows must be a positive integer")
+        if (
+            isinstance(config.server_coalesce_ms, bool)
+            or not isinstance(config.server_coalesce_ms, (int, float))
+            or not math.isfinite(float(config.server_coalesce_ms))
+            or float(config.server_coalesce_ms) < 0.0
+        ):
+            raise ValueError("server_coalesce_ms must be finite and non-negative")
+        if (
+            not isinstance(config.server_shards, int)
+            or isinstance(config.server_shards, bool)
+            or config.server_shards <= 0
+        ):
+            raise ValueError("server_shards must be a positive integer")
+        if config.server_shards > worker_count:
+            raise ValueError("server_shards cannot exceed worker_count")
+        requested_transport = config.server_transport.lower()
+        if requested_transport not in {"shm", "queue"}:
+            raise ValueError("server_transport must be 'shm' or 'queue'")
+        requested_poll = config.server_poll.lower()
+        if requested_poll not in {"queue", "spin"}:
+            raise ValueError("server_poll must be 'queue' or 'spin'")
+
+        self.config = copy.deepcopy(config)
+        self.worker_count = int(worker_count)
+        self.server_shards = int(config.server_shards)
+        self._shards: list[_InferenceServerShard] = []
+        self._worker_routes = [
+            (worker_index % self.server_shards, worker_index // self.server_shards)
+            for worker_index in range(worker_count)
+        ]
+        try:
+            for shard_index in range(self.server_shards):
+                shard_worker_count = len(range(shard_index, worker_count, self.server_shards))
+                self._shards.append(
+                    _InferenceServerShard(
+                        self.config,
+                        shard_worker_count,
+                        shard_index,
+                        self.server_shards,
+                    )
+                )
+        except BaseException:
+            for shard in self._shards:
+                shard.close()
+            raise
+
+        # Preserve the established one-server surface for callers and tests.
+        # Multi-shard workers use endpoints_for_worker() below instead.
+        primary = self._shards[0]
+        self.request_queue = primary.request_queue
+        self.response_queues = primary.response_queues
+        self.command_queue = primary.command_queue
+        self.status_queue = primary.status_queue
+        self.telemetry_queue = primary.telemetry_queue
+        self.alive_event = primary.alive_event
+        self.shared_transport = primary.shared_transport
+        self.transport = primary.transport
+        self.poll = primary.poll
+        self.endpoints = primary.endpoints
+        self.process = primary.process
+        self.processes = [shard.process for shard in self._shards]
+        self.shard_endpoints = [shard.endpoints for shard in self._shards]
+        self.latest_evals_per_sec = 0.0
+        self._closed = False
+
+    @property
+    def shared_memory_names(self) -> list[str]:
+        return [name for shard in self._shards for name in shard.shared_memory_names]
+
+    def __enter__(self) -> InferenceServer:
+        return self
+
+    def __exit__(self, *_: Any) -> None:
+        self.close()
+
+    def endpoints_for_worker(self, worker_index: int) -> tuple[InferenceServerEndpoints, int]:
+        """Return one worker's shard-local endpoint and response-queue index."""
+        if (
+            not isinstance(worker_index, int)
+            or isinstance(worker_index, bool)
+            or not 0 <= worker_index < self.worker_count
+        ):
+            raise ValueError("worker_index is outside the inference-server worker range")
+        shard_index, shard_worker_index = self._worker_routes[worker_index]
+        return self._shards[shard_index].endpoints, shard_worker_index
+
+    def ensure_alive(self) -> None:
+        for shard in self._shards:
+            shard.ensure_alive()
+
+    def _wait_for_status(self, expected_kind: str, generation: int, timeout_s: float | None = None) -> Any:
+        """Compatibility wrapper for the established single-server API."""
+        return self._shards[0].wait_for_status(expected_kind, generation, timeout_s)
+
+    def sync_weights(self, model: torch.nn.Module, generation: int) -> None:
+        self.ensure_alive()
+        payload = serialize_cpu_state_dict(model)
+        for shard in self._shards:
+            shard.command_queue.put(("weights", generation, payload))
+        for shard in self._shards:
+            shard.wait_for_status("weights", generation)
+
+    def sync_models(
+        self,
+        payloads: list[bytes | tuple[bytes, dict[str, Any]]],
+        generation: int,
+    ) -> None:
+        """Atomically replace every shard's generation resident-model table."""
+
+        if not payloads:
+            raise ValueError("inference server requires at least one model payload")
+        self.ensure_alive()
+        for shard in self._shards:
+            shard.command_queue.put(("models", generation, list(payloads)))
+        timeout_s = getattr(self.config, "server_install_timeout_s", 900.0)
+        for shard in self._shards:
+            installed = shard.wait_for_status("models", generation, timeout_s=timeout_s)
+            if int(installed) != len(payloads):
+                raise RuntimeError("inference server installed an incomplete model table")
+
+    @staticmethod
+    def _weighted_average(
+        snapshots: list[dict[str, float]],
+        metric: str,
+        weight: str,
+    ) -> float:
+        total_weight = sum(float(snapshot.get(weight, 0.0)) for snapshot in snapshots)
+        if total_weight <= 0.0:
+            return 0.0
+        return sum(
+            float(snapshot.get(metric, 0.0)) * float(snapshot.get(weight, 0.0))
+            for snapshot in snapshots
+        ) / total_weight
+
+    def collect_metrics(self, generation: int, include_totals: bool = False) -> dict[str, float]:
+        self.ensure_alive()
+        if self.server_shards == 1:
+            # Keep the legacy command payload and returned metric shape
+            # literally unchanged for existing single-server campaigns.
+            primary = self._shards[0]
+            primary.command_queue.put(("metrics", generation, include_totals))
+            metrics = primary.wait_for_status("metrics", generation)
+            metrics.pop("_server_total_waits", None)
+            return metrics
+        # Parent aggregation needs counts even when the public caller does
+        # not request them. They remain private and are omitted below.
+        for shard in self._shards:
+            shard.command_queue.put(("metrics", generation, True))
+        snapshots = [
+            shard.wait_for_status("metrics", generation)
+            for shard in self._shards
+        ]
+        metrics = {
+            "server_evals_per_sec": sum(
+                float(snapshot.get("server_evals_per_sec", 0.0)) for snapshot in snapshots
+            ),
+            "server_mean_batch_size": self._weighted_average(
+                snapshots,
+                "server_mean_batch_size",
+                "_server_total_batches",
+            ),
+            "server_batch_wait_p50_ms": self._weighted_average(
+                snapshots,
+                "server_batch_wait_p50_ms",
+                "_server_total_waits",
+            ),
+            "server_batch_wait_p99_ms": self._weighted_average(
+                snapshots,
+                "server_batch_wait_p99_ms",
+                "_server_total_waits",
+            ),
+        }
+        if include_totals:
+            metrics["_server_total_evals"] = sum(
+                float(snapshot.get("_server_total_evals", 0.0)) for snapshot in snapshots
+            )
+            metrics["_server_total_batches"] = sum(
+                float(snapshot.get("_server_total_batches", 0.0)) for snapshot in snapshots
+            )
+        return metrics
+
+    def drain_telemetry(self) -> float:
+        """Return the latest aggregate serving rate without a command round trip."""
+        self.latest_evals_per_sec = sum(shard.drain_telemetry() for shard in self._shards)
+        return self.latest_evals_per_sec
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        for shard in self._shards:
+            shard.close()
 
 
 def _bench_worker_main(
