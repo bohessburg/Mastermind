@@ -1481,3 +1481,19 @@ until then value_probe is champ/legacy-only). Duchy gate QUIET
 anchor floor 0.05 lands at g20.
 Ops: milestone duels move to box 2 from g20 (90 idle cores; champ
 checkpoint staged) — local Mac run was the bottleneck (72 min).
+
+C20 GEN-20 MILESTONE (2026-08-01, duel run ON BOX 2 — 48 workers, 34
+min, new standard): champ duel 63W-132L-5T = 32.3% excl ties (g10
+36.5, g15 36.3). Seat split 44/19 — second seat collapsed (g15 41/29).
+Engine3 sentinel same gen: 32.5% (36.7 at g15). Both instruments
+dipped together ~4pts => likely a real soft patch, not noise alone.
+Candidate cause: late-phase-1 board overfit (20 gens at 50% fixed
+sentry pool; both instruments play RANDOM boards) — phase 2 cuts pool
+weight to 35% and swaps in thin_engine, so g25 reads on the new mix
+are the test. No intervention (phase flip just landed; single-variable
+discipline). Health otherwise: vloss 0.0488 (new low), entropy 1.061
+STILL rising, trash 13.8/game, anchor floor 0.05 active from g20.
+Probes: value probe still saturated (~-0.98, instrument-drift verdict
+stands), duchy gate quiet (+0.33pts, dV -0.032), human-agreement mass
+0.217 (g15 0.235) — floor now active, expect stabilization.
+CHAPEL PHASE (thin_engine 35%) LIVE from gen 21.
