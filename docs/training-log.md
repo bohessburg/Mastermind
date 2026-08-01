@@ -1497,3 +1497,20 @@ Probes: value probe still saturated (~-0.98, instrument-drift verdict
 stands), duchy gate quiet (+0.33pts, dV -0.032), human-agreement mass
 0.217 (g15 0.235) — floor now active, expect stabilization.
 CHAPEL PHASE (thin_engine 35%) LIVE from gen 21.
+
+C20 GEN-25 MILESTONE (2026-08-01): THE G20 DIP WAS BOARD OVERFIT —
+CONFIRMED BY RECOVERY. Engine3 sentinel 42.1% (82-113-5) = NEW
+CAMPAIGN HIGH by +5 (curve 34.7/33.5/36.7/32.5/42.1 at g5..g25).
+Champ duel (box, 48 workers, 31 min): 75W-119L-6T = 38.7% excl ties =
+NEW CAMPAIGN HIGH (36.5/36.3/32.3 at g10/15/20). Seat split 46/29 —
+second seat recovered from g20's 19. Four gens of phase 2 (fixed-pool
+share 50->35%, thin_engine board) reversed both instruments; the
+single-variable read is clean since nothing else changed. Chapel
+uptake: probe attack-present 0.064 (g20) -> 0.085 (g22) -> 0.078
+(g25), no-attack flat — early, directionally right, opposite of c18
+avoidance drift. Health: vloss 0.0440 (new low), entropy 1.078,
+positions/game ~157 (shorter thin-board games), duchy gate quiet
+(+0.63pts), human-agreement mass 0.200 (easing despite g20 anchor
+floor — watch). Lesson for c21/config: a 10-card "pool" = one fixed
+kingdom; phase-1 50% share overfits by g20 — widen pools to 12-14
+cards (sample 10) or cap fixed-share exposure earlier.
