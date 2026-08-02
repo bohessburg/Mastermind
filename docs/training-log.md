@@ -1663,3 +1663,13 @@ g40 is SIL-free (no specialization exposure), posted the cleanest
 probe set of the campaign at its milestone (zero self-trash vibe
 pair), and its 40.4 champ read is untainted. c20 flagship of record:
 checkpoints/campaign20/gen_0040.pt.
+
+C21 BC SIZING ABLATION (2026-08-02, box GPU, 65,523-tuple corpus,
+game-disjoint 62,195/3,328 split): d192/4L/6H (1.97M params) BEATS
+d320/5L/8H (6.64M) on held-out human val — 0.870 vs 0.884 best val
+loss, identical 80.1% human-action top-1 accuracy, big net
+early-stopped sooner (memorization signature as predicted). C21 DIMS
+LOCKED: d192/4L/6H. Ablation cost: <3 min GPU — re-run at every
+corpus milestone. BC-init strength eval vs engine3 queued as the
+pre-selfplay baseline. Tooling: scripts/c21_merge_corpus.py,
+scripts/c21_bc_ablation.py (Codex-built, reviewed).
