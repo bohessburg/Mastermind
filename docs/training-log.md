@@ -1584,3 +1584,12 @@ on random boards) but champ-relative strength stopped compounding at
 g25. SIL is the designated first mid-campaign intervention.
 Activation proposed to Jack (weight + pre-registered success bar to
 be signed before deploy).
+
+SIL ACTIVATION SIGNED (2026-08-02, Jack: "Do it"): replay.sil_weight
+0.0 -> 0.25 (sil_fraction 0.25 / sil_alpha 0.6 as built), deploying
+at the gen-48 boundary. PRE-REGISTERED BAR: champ duel >= 42%
+(clear of the 37-40 band top) by gen 55, else revert sil_weight to
+0.0 at gen 55 — single variable, mechanical exit. Rationale: the
+signed activation condition ("engine wins appear but fail to
+compound") adjudicated met at g45 (20 flat gens at champ-minus-10
+with healthy internals).
