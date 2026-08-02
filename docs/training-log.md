@@ -1703,3 +1703,14 @@ guard already fired -> cut and convene.
 MILESTONES: every 5 gens — box duel vs champ, probe suite, human
 val re-read, vibe pair at 10s. Ops: per-gen checkpoint auto-pull,
 supervisor auto-resume, boundary restarts wait for the metrics row.
+
+=== C21 LAUNCHED (2026-08-02) ===
+Box: same 208-core/5090 instance, env intact from c20. POOL
+VALIDATION PASSED after iteration: sentry_engine_wide 12 cards 86.2%
+(Throne Room dropped — the Cellar/Harbinger/TR trio displaced core
+power cards, worst-kingdom 40%), thin_engine_wide 11 cards 85.4%
+(Harbinger also dropped). bench/c21_pool_validation.json. Init:
+checkpoints/c21_ablation/bc_a.pt (1,965,947 params, BC val 0.870,
+80.1% human-action acc). 160 workers, 2 shards, supervisor
+auto-resume (resume21.sh: init-weights on first launch, resume
+latest after). Monitor + per-gen auto-pull armed. First milestone g5.
