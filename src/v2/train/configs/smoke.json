@@ -14,6 +14,7 @@
     "max_batch": 64,
     "dirichlet_frac": 0.0,
     "temp_moves": 4,
+    "max_turns": 0,
     "kingdom_mode": "fixed",
     "max_recorded_moves": 256,
     "max_tree_nodes": 1024

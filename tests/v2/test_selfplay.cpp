@@ -171,6 +171,8 @@ void require_same_records(const std::vector<SelfPlayRecord>& lhs, const std::vec
     for (std::size_t index = 0U; index < lhs.size(); ++index) {
         REQUIRE(lhs[index].seed == rhs[index].seed);
         REQUIRE(lhs[index].moves == rhs[index].moves);
+        REQUIRE(lhs[index].turn_counter == rhs[index].turn_counter);
+        REQUIRE(lhs[index].truncated == rhs[index].truncated);
         REQUIRE(lhs[index].winner == rhs[index].winner);
         REQUIRE(lhs[index].kingdom_count == rhs[index].kingdom_count);
         REQUIRE(std::memcmp(lhs[index].kingdom, rhs[index].kingdom, sizeof(lhs[index].kingdom)) == 0);
@@ -549,6 +551,36 @@ TEST_CASE("v2 selfplay finished records have normalized policies and terminal va
         REQUIRE(sum == Catch::Approx(1.0F).margin(0.0001F));
         REQUIRE((record.values[move] == -1.0F || record.values[move] == 0.0F || record.values[move] == 1.0F));
     }
+}
+
+TEST_CASE("v2 selfplay turn cap truncates records and zeroes value targets", "[v2][selfplay]") {
+    SelfPlayConfig config = fixed_config(1U, 2U, 8U, 0x5E1F'CA20ULL);
+    config.selfplay_max_turns = 20U;
+    config.auto_play_treasures = true;
+    config.prune_treasure_plays = true;
+
+    const std::vector<SelfPlayRecord> records = run_until_finished(config, 1U);
+    REQUIRE(records.size() == 1U);
+
+    const SelfPlayRecord& record = records.front();
+    REQUIRE(record.turn_counter == 20U);
+    REQUIRE(record.truncated);
+    REQUIRE_FALSE(record.values.empty());
+    for (const float value : record.values) {
+        REQUIRE(value == 0.0F);
+    }
+}
+
+TEST_CASE("v2 selfplay validates the training turn cap", "[v2][selfplay]") {
+    SelfPlayConfig config = fixed_config(1U, 2U, 8U, 0x5E1F'CA21ULL);
+    config.selfplay_max_turns = 0U;
+    REQUIRE_NOTHROW(SelfPlayRunner(config));
+
+    config.selfplay_max_turns = 10U;
+    REQUIRE_THROWS_AS(SelfPlayRunner(config), std::invalid_argument);
+
+    config.selfplay_max_turns = 201U;
+    REQUIRE_THROWS_AS(SelfPlayRunner(config), std::invalid_argument);
 }
 
 TEST_CASE("v2 selfplay records final margins from each recorded seat perspective", "[v2][selfplay][margin]") {

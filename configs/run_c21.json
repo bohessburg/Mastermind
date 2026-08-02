@@ -4,7 +4,7 @@
   "generations": 100,
   "init_weights": "",
   "device": "auto",
-  "parallel_workers": 160,
+  "parallel_workers": 184,
   "server_selfplay": true,
   "gate_games": 0,
   "checkpoint_dir": "checkpoints/campaign21",
@@ -155,7 +155,8 @@
     "value_target": "margin",
     "margin_scale": 20.0,
     "obs_version": 3,
-    "opening_templates_enabled": false
+    "opening_templates_enabled": false,
+    "max_turns": 100
   },
   "replay": {
     "capacity": 3000000,

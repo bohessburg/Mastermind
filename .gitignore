@@ -35,7 +35,10 @@ arena-profile/
 .env
 .env.*
 dgames-profile/
+dgames-profiles/
 data/dominion_games/raw/
+data/dominion_games/coord/
+data/dominion_games/fleet.accounts.json
 data/dominion_games/recon/captures/
 data/dominion_games/recon/yield/
 data/dominion_games/recon/concurrency/

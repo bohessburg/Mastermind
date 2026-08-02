@@ -121,6 +121,9 @@ struct SelfPlayConfig {
     DefId kingdom_pool[MAX_SELFPLAY_KINGDOM_POOL]{};
     std::uint8_t kingdom_pool_count = 0;
     std::uint16_t max_recorded_moves = 512;
+    // Zero preserves the engine-only turn cap. A positive value is a
+    // training self-play cap applied with the engine truncation semantics.
+    std::uint16_t selfplay_max_turns = 0;
     std::uint32_t max_tree_nodes = 4096;
     std::uint32_t scaffold_sims = 400;
     // Zero keeps the endgame budget for the whole game. A positive value is
@@ -251,6 +254,8 @@ struct SelfPlayRecord {
     std::uint8_t kingdom_count = 0;
     std::uint64_t seed = 0;
     std::uint16_t moves = 0;
+    std::uint16_t turn_counter = 0;
+    bool truncated = false;
     // Read-only outcome metadata for Python-side head-to-head evaluation.
     // It is not consumed by self-play search or replay generation.
     PlayerId winner = NONE;

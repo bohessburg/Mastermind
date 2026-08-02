@@ -64,6 +64,9 @@ class SelfPlayConfig:
     temp_action_plies: int = 10
     temp_effect_plies: int = 6
     temp_final: float = 0.0
+    # Zero leaves the engine-wide 200-turn cap as the only limit. A positive
+    # value caps training self-play only after a completed player turn.
+    max_turns: int = 0
     # v1 remains the default so existing campaigns and checkpoints retain
     # their exact model input shape until a run explicitly opts into v2.
     obs_version: int = 1
@@ -379,6 +382,13 @@ def validate_temperature_config(config: SelfPlayConfig) -> None:
         raise ValueError("temp_final must be a finite non-negative number")
 
 
+def validate_selfplay_max_turns_config(config: SelfPlayConfig) -> None:
+    """Validate the optional training-only self-play turn cap."""
+    value = config.max_turns
+    if not isinstance(value, int) or isinstance(value, bool) or (value != 0 and not 20 <= value <= 200):
+        raise ValueError("selfplay.max_turns must be zero or an integer between 20 and 200")
+
+
 def validate_forced_playouts_config(config: SelfPlayConfig) -> None:
     """Validate opt-in KataGo-style root forced-playout settings."""
     if not isinstance(config.forced_playouts, bool):
@@ -671,6 +681,7 @@ def load_config(path: str | Path | None) -> TrainConfig:
     validate_c_puct_config(cfg.selfplay)
     validate_determinize_config(cfg.selfplay)
     validate_temperature_config(cfg.selfplay)
+    validate_selfplay_max_turns_config(cfg.selfplay)
     validate_forced_playouts_config(cfg.selfplay)
     validate_optim_config(cfg.optim)
     validate_aux_margin_config(cfg)

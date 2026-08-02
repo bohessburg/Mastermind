@@ -34,6 +34,7 @@
     "dirichlet_alpha": 0.3,
     "dirichlet_frac": 0.25,
     "temp_moves": 12,
+    "max_turns": 0,
     "kingdom_mode": "random",
     "max_recorded_moves": 512,
     "max_tree_nodes": 4096

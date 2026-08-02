@@ -1521,6 +1521,8 @@ void selfplay_provide(
         dict["scores"] = scores;
         dict["kingdom"] = kingdom;
         dict["seed"] = py::int_(record.seed);
+        dict["turn_counter"] = py::int_(record.turn_counter);
+        dict["truncated"] = py::bool_(record.truncated);
         dict["winner"] = record.winner == NONE
             ? py::object(py::none())
             : py::object(py::int_(record.winner));
@@ -1988,7 +1990,8 @@ PYBIND11_MODULE(dominion_v2_py, module) {
             std::uint16_t temp_buy_turns,
             std::uint16_t temp_action_plies,
             std::uint16_t temp_effect_plies,
-            float temp_final) {
+            float temp_final,
+            std::uint16_t selfplay_max_turns) {
             SelfPlayConfig config{};
             config.n_games = n_games;
             config.sims_per_move = sims_per_move;
@@ -2003,6 +2006,7 @@ PYBIND11_MODULE(dominion_v2_py, module) {
             config.seed = seed;
             config.kingdom_mode = kingdom_mode;
             config.max_recorded_moves = max_recorded_moves;
+            config.selfplay_max_turns = selfplay_max_turns;
             config.max_tree_nodes = max_tree_nodes;
             config.scripted_bot = scripted_bot;
             config.scripted_nn_player = scripted_nn_player;
@@ -2086,7 +2090,8 @@ PYBIND11_MODULE(dominion_v2_py, module) {
             py::arg("temp_buy_turns") = 14U,
             py::arg("temp_action_plies") = 10U,
             py::arg("temp_effect_plies") = 6U,
-            py::arg("temp_final") = 0.0F)
+            py::arg("temp_final") = 0.0F,
+            py::arg("selfplay_max_turns") = 0U)
         .def_readwrite("n_games", &SelfPlayConfig::n_games)
         .def_readwrite("sims_per_move", &SelfPlayConfig::sims_per_move)
         .def_readwrite("c_puct", &SelfPlayConfig::c_puct)
@@ -2124,6 +2129,7 @@ PYBIND11_MODULE(dominion_v2_py, module) {
         .def_readwrite("kingdom_mode", &SelfPlayConfig::kingdom_mode)
         .def_property("kingdom_pool", &selfplay_kingdom_pool, &set_selfplay_kingdom_pool)
         .def_readwrite("max_recorded_moves", &SelfPlayConfig::max_recorded_moves)
+        .def_readwrite("selfplay_max_turns", &SelfPlayConfig::selfplay_max_turns)
         .def_readwrite("max_tree_nodes", &SelfPlayConfig::max_tree_nodes)
         .def_readwrite("scaffold_sims", &SelfPlayConfig::scaffold_sims)
         .def_readwrite("scaffold_sims_opening", &SelfPlayConfig::scaffold_sims_opening)

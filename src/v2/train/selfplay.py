@@ -20,6 +20,7 @@ from .config import (
     validate_determinize_config,
     validate_forced_playouts_config,
     validate_opening_template_config,
+    validate_selfplay_max_turns_config,
     validate_temperature_config,
     validate_value_target_config,
 )
@@ -316,6 +317,7 @@ def make_runner_config(
     validate_c_puct_config(config)
     validate_determinize_config(config)
     validate_temperature_config(config)
+    validate_selfplay_max_turns_config(config)
     validate_forced_playouts_config(config)
     validate_opening_template_config(config)
     if not math.isfinite(config.margin_scale) or config.margin_scale <= 0.0:
@@ -348,6 +350,7 @@ def make_runner_config(
         temp_action_plies=config.temp_action_plies,
         temp_effect_plies=config.temp_effect_plies,
         temp_final=config.temp_final,
+        selfplay_max_turns=config.max_turns,
         max_batch=config.max_batch,
         seed=seed,
         obs_version=int(config.obs_version),

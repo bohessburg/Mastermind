@@ -72,6 +72,15 @@ constexpr std::uint64_t SELFPLAY_DETERMINIZATION_INDEX_MIX = 0x94D0'49BB'1331'11
         || mode == SelfPlayTempMode::PerSeatBuy;
 }
 
+void apply_selfplay_turn_cap(GameState& state, std::uint16_t max_turns) noexcept {
+    if (max_turns != 0U && state.turn_counter >= max_turns) {
+        // Match the core turn-cap state transition without changing the
+        // engine-wide MAX_TURNS shared by web, arena, and replay paths.
+        state.truncated = 1U;
+        state.phase = static_cast<std::uint8_t>(Phase::Over);
+    }
+}
+
 [[nodiscard]] constexpr std::uint64_t splitmix64(std::uint64_t value) noexcept {
     value += SPLITMIX_GOLDEN_RATIO;
     value = (value ^ (value >> 30U)) * 0xBF58'476D'1CE4'E5B9ULL;
@@ -910,6 +919,10 @@ SelfPlayRunner::SelfPlayRunner(const SelfPlayConfig& config)
     if (config_.sims_per_move == 0U) {
         throw std::invalid_argument("SelfPlayConfig.sims_per_move must be positive");
     }
+    if (config_.selfplay_max_turns != 0U
+        && (config_.selfplay_max_turns < 20U || config_.selfplay_max_turns > MAX_TURNS)) {
+        throw std::invalid_argument("SelfPlayConfig.selfplay_max_turns must be zero or between 20 and 200");
+    }
     if (!mcts_is_valid_c_puct_schedule(config_.c_puct_schedule)) {
         throw std::invalid_argument("SelfPlayConfig.c_puct_schedule is invalid");
     }
@@ -1545,6 +1558,7 @@ void SelfPlayRunner::auto_play_treasures(GameSlot& game) noexcept {
             return;
         }
         const bool done = Game::step(game.state, action);
+        apply_selfplay_turn_cap(game.state, config_.selfplay_max_turns);
         game.mcts.clear_retained_root();
         ++guard;
         if (done || game.state.phase == static_cast<std::uint8_t>(Phase::Over)) {
@@ -1586,6 +1600,7 @@ void SelfPlayRunner::drive_scripted(GameSlot& game) noexcept {
             action = legal.nth_set(0U);
         }
         const bool done = Game::step(game.state, action);
+        apply_selfplay_turn_cap(game.state, config_.selfplay_max_turns);
         game.mcts.clear_retained_root();
         ++guard;
         if (done || game.state.phase == static_cast<std::uint8_t>(Phase::Over)) {
@@ -1650,6 +1665,7 @@ void SelfPlayRunner::drive_scaffold(GameSlot& game, Mcts& scratch) noexcept {
             action = legal.nth_set(0U);
         }
         const bool done = Game::step(game.state, action);
+        apply_selfplay_turn_cap(game.state, config_.selfplay_max_turns);
         game.mcts.clear_retained_root();
         ++guard;
         if (done || game.state.phase == static_cast<std::uint8_t>(Phase::Over)) {
@@ -1856,6 +1872,7 @@ void SelfPlayRunner::maybe_finish_move(GameSlot& game) noexcept {
 
     game.sampled_actions.push_back(action);
     const bool done = Game::step(game.state, action);
+    apply_selfplay_turn_cap(game.state, config_.selfplay_max_turns);
     if (player < MAX_PLAYERS
         && game.seat_decision_counts[player] < std::numeric_limits<std::uint16_t>::max()) {
         ++game.seat_decision_counts[player];
@@ -1919,6 +1936,8 @@ void SelfPlayRunner::finish_game(GameSlot& game) noexcept {
     record.legal_mask_words = game.legal_mask_words;
     record.players = game.players;
     record.moves = static_cast<std::uint16_t>(game.players.size());
+    record.turn_counter = game.state.turn_counter;
+    record.truncated = game.state.truncated != 0U;
     record.values.resize(record.moves);
     record.margins.resize(record.moves);
     for (std::uint16_t i = 0; i < record.moves; ++i) {
@@ -2042,13 +2061,16 @@ float SelfPlayRunner::terminal_value_for(
     PlayerId player,
     int terminal_margin) const noexcept {
     const PlayerId winner = winner_for(state);
+    // A configured self-play cap has no training outcome. Keep the legacy
+    // Outcome target for the engine-only cap when this option is disabled;
+    // Margin targets have always assigned zero to any truncated game.
+    if (winner == NONE
+        || (state.truncated != 0U
+            && (config_.selfplay_max_turns != 0U
+                || config_.value_target != SelfPlayValueTarget::Outcome))) {
+        return 0.0F;
+    }
     if (config_.value_target == SelfPlayValueTarget::Margin) {
-        // Truncated games have no training outcome. Keep record.winner based
-        // on the final board for counters and gates, but do not turn that
-        // partial score into a value target.
-        if (state.truncated != 0U || winner == NONE) {
-            return 0.0F;
-        }
         const float margin = static_cast<float>(terminal_margin);
         if (margin == 0.0F) {
             return 0.0F;
@@ -2063,20 +2085,11 @@ float SelfPlayRunner::terminal_value_for(
         return sign * (0.5F + 0.5F * graded);
     }
     if (config_.value_target == SelfPlayValueTarget::MarginBlend) {
-        // Truncated games have no training outcome. Keep record.winner based
-        // on the final board for counters and gates, but do not turn that
-        // partial score into a value target.
-        if (state.truncated != 0U || winner == NONE) {
-            return 0.0F;
-        }
         const float margin = static_cast<float>(terminal_margin);
         return selfplay_margin_blend_value(
             margin,
             config_.margin_scale,
             config_.margin_blend_alpha);
-    }
-    if (winner == NONE) {
-        return 0.0F;
     }
     return winner == player ? 1.0F : -1.0F;
 }
