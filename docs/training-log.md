@@ -1593,3 +1593,15 @@ at the gen-48 boundary. PRE-REGISTERED BAR: champ duel >= 42%
 signed activation condition ("engine wins appear but fail to
 compound") adjudicated met at g45 (20 flat gens at champ-minus-10
 with healthy internals).
+
+C20 GEN-50 MILESTONE (2026-08-02, SIL gen 2): champ duel 41.1%
+(79-113-8) — above the whole pre-SIL band (37-40), tied-or-better
+than every prior read; seat 43/36 — SECOND SEAT 36/100 IS THE BEST
+OF THE CAMPAIGN (was 19 at g20, ~30 since). Sentinel 44.4 (band).
+Probes: gate clear -0.091 (hover broke), chapel steady, hr won-mass
+0.139, militia canonical case still inverted (expected — SIL has no
+counterfactual discard data). SIL bar: >=42% by g55 — 41.1 at g50 is
+0.9 short with 5 gens to run; trajectory consistent with the bar.
+Jack's scraper corpus hit 56K tuples (~4.4x); plan: swap into BC+
+anchor at next natural restart or c21; 500K = real pretrain phase;
+frame-type tagging requested for attack-response counts.
