@@ -1621,3 +1621,36 @@ if it returns in c21; (2) "sentinel up + duel down" = documented
 specialization signature; (3) the sentinel alone can no longer gate
 progress claims. sil_weight reverted 0.25 -> 0.0 at the gen-56
 boundary; pre-SIL trajectory is the continuing baseline.
+
+=== C20 CUT (2026-08-02, Jack: "time to kill the run") ===
+Cut at gen 56 (of nominal 100). FLAGSHIP: gen_0040 pending the
+flagship duel (g40 vs g50, 200g, running on the box post-cut — g50
+posted the higher champ read 41.1 but carries 2 SIL gens). Final
+curves: champ duel 36.5/36.3/32.3/38.7/36.8/38.9/40.4/37.0/41.1/34.8
+(g10..g55) — peak 41.1 (g50), plateau ~38 from g25; engine3 sentinel
+plateau ~46 (g25-50), SIL-specialized outlier 53.6 at g55. c15
+gen_0045 remains overall champion; c20 closed ~60% of the honest gap
+(22->41) from scratch in a regime with zero clairvoyance.
+WHAT C20 PROVED: honest determinized selfplay trains stably; entropy
+can RISE for 45+ gens (no collapse — first ever); engine play emerges
+and transfers to random boards (14 trashes/game, board-adaptive
+plans, first vibe wins ever incl. the Chapel board); curriculum
+phases work (g20 dip = fixed-board overfit, recovered on schedule);
+aux margin head + pure-margin targets + AdamW stable throughout;
+per-gen auto-pull + supervisor ops mature.
+WHAT C20 COULD NOT DO: cross the champ (peak 41.1 vs bar 50);
+crack the reveal-and-judge frames (Militia keep-inversion + Sentry
+self-trash — value-head "holding green = winning" correlation,
+mirrors cannot generate the counterfactuals); SIL failed as tested
+(style amplifier, not capability builder — reverted per bar).
+VERDICT: the ceiling is DATA INFORMATION, not capacity, sims, or
+scale. Hence c21: 2M-class net + human-SL pretraining (65,523-tuple
+corpus banked: 52,789 scraped dominion.games + 12,734 seeded local).
+
+=== C21 PREP OPENED (2026-08-02) ===
+Signed inputs: 2M-class CardTokenNet (d192/4L/6H draft ~2.1M params;
+exact dims via BC ablation), human-corpus BC pretrain + persistent
+anchor, 12-14-card curriculum pools sampling 10 per game, SIL off,
+honest regime + forced playouts + temp schedule + aux margin head
+carried over. Draft config: configs/run_c21_draft.json. Pre-launch
+build/validation tasks tracked in the task list.
