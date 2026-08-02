@@ -1605,3 +1605,19 @@ counterfactual discard data). SIL bar: >=42% by g55 — 41.1 at g50 is
 Jack's scraper corpus hit 56K tuples (~4.4x); plan: swap into BC+
 anchor at next natural restart or c21; 500K = real pretrain phase;
 frame-type tagging requested for attack-response counts.
+
+C20 GEN-55: SIL VERDICT = FAIL, REVERTED (2026-08-02). Champ duel
+final below; bar was >=42. Same-gen engine3 sentinel 53.6% (104-90-6)
+= FIRST >50 IN PROJECT HISTORY — the two instruments diverged hard.
+Mechanism (vibe-confirmed): SIL over-replayed the net's own fast-thin
+blitz wins -> policy sharpened into one gear (entropy fell 1.067 ->
+1.030 over the SIL window); sharpened blitz farms the fixed scripted
+opponent (sentinel breakout) but loses flexibility vs the adaptive
+champ archetype (duel collapse; chapel-board vibe: 7 curses cleared +
+2 provinces by T12, then OVERTHINNED to one-card turns, trashed own
+Chapel, lost 22-31). LESSONS: (1) SIL-as-tested amplifies style, not
+capability — needs a diversity guard (entropy floor / off-policy mix)
+if it returns in c21; (2) "sentinel up + duel down" = documented
+specialization signature; (3) the sentinel alone can no longer gate
+progress claims. sil_weight reverted 0.25 -> 0.0 at the gen-56
+boundary; pre-SIL trajectory is the continuing baseline.
