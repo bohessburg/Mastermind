@@ -1542,3 +1542,17 @@ keep-inversion unresolved) and to imitation data as the targeted fix.
 Vibe margins vs engine3 keep shrinking: -26/-19/-11/-5 at
 g10/15/25/30 (sentry board); gen-30 skipped Sentry, played
 Festival-money-Witch, timed greening with the race.
+
+C20 GEN-35 MILESTONE (2026-08-01): champ duel 38.9% (75-118-7) = NEW
+CAMPAIGN HIGH (curve g10..g35: 36.5/36.3/32.3/38.7/36.8/38.9); seat
+44/31 — second seat recovering. Sentinel 43.7% (87-112-1); last four
+evals 49.5/47.0/43.7 band ~46-47, above the c15/c19 flagship zone.
+Probes ALL CLEAN: chapel attack-differentiation restored 0.070/0.042
+(g30 flattening = recovery noise), duchy dV -0.045 (gate quiet, third
+confirmation the g30 -0.257 was artifact), hr won-mass stabilized
+0.16 (anchor floor holding). THROUGHPUT SAGA CLOSED (task #29):
+selfplay is worker-CPU-bound ~4,000 games/hr in-phase across all
+topologies (152x26 / 184x21.8 / 160x24.9); final topology 160 workers
++ 2 server shards (lowest serve latency, 48 free cores for
+milestones); serving is no longer the ceiling — relevant to #25 and
+any bigger-net c21. Duels now 24 min on-box.
