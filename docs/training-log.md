@@ -1673,3 +1673,33 @@ LOCKED: d192/4L/6H. Ablation cost: <3 min GPU — re-run at every
 corpus milestone. BC-init strength eval vs engine3 queued as the
 pre-selfplay baseline. Tooling: scripts/c21_merge_corpus.py,
 scripts/c21_bc_ablation.py (Codex-built, reviewed).
+
+=== C21 PRE-REGISTRATION (2026-08-02, launch ordered by Jack) ===
+CONFIG: configs/run_c21_draft.json -> run_c21.json at launch.
+d192/4L/6H (1.97M, ablation-locked), native encoder gen 2, obs v3.
+BC PRETRAIN: 5000 steps (early-stop on exports/tuples_all/val) on the
+65,523-tuple corpus, then honest per_turn determinized selfplay, 256
+sims, forced playouts k=2, per-seat buy temp (as c20), pure-margin
+value target, aux margin head, AdamW, persistent human anchor
+(0.1 -> floor 0.05 at g20), SIL OFF. League: self-snapshots every 10
+gens, 15% -> 25% at g30. CURRICULUM: widened 13-card pools sampling
+10/game (286 kingdoms per pool; kills the c20 fixed-board overfit
+vector), schedule 50% sentry_engine_wide g1-20, 35% thin_engine_wide
+g21-40, 15% g41-100. POOL VALIDATION REQUIRED PRE-LAUNCH (>=85%
+engine-dominant across sampled kingdoms).
+BARS: BC-init baseline 13.4% honest engine3 (logged). Beat the c20
+flagship trajectory: >41% champ duel (c15 gen_0045, --legacy-shim)
+by g30; >50% = the crossing, any milestone. Sentinel reference band:
+c20 ran ~46. HUMAN-RETENTION GUARD (new, the c21 thesis metric):
+held-out human val loss re-measured at every milestone; if it
+exceeds the post-BC baseline by >15% while the Militia canonical
+case (copper_copper_estate_silver) regresses to inverted, the anchor
+weight doubles at next resume — pre-committed, single response.
+KILL-GATES: duchy dP > +3pts or dV < -0.30 (provisional pending
+probe recalibration #34; engine-shaped baseline ~-0.14); entropy
+< 0.5 or value pinning -> stop and diagnose. CUT RULE: champ duel
+flat/declining across 3 consecutive milestones AND human-retention
+guard already fired -> cut and convene.
+MILESTONES: every 5 gens — box duel vs champ, probe suite, human
+val re-read, vibe pair at 10s. Ops: per-gen checkpoint auto-pull,
+supervisor auto-resume, boundary restarts wait for the metrics row.

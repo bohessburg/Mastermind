@@ -42,7 +42,10 @@
         "Smithy",
         "Merchant",
         "Poacher",
-        "Witch"
+        "Witch",
+        "Cellar",
+        "Harbinger",
+        "Throne Room"
       ],
       "pool_fraction": 0.5
     },
@@ -62,7 +65,10 @@
         "Festival",
         "Moneylender",
         "Militia",
-        "Witch"
+        "Witch",
+        "Cellar",
+        "Harbinger",
+        "Throne Room"
       ],
       "pool_fraction": 0.35
     },
@@ -82,7 +88,10 @@
         "Festival",
         "Moneylender",
         "Militia",
-        "Witch"
+        "Witch",
+        "Cellar",
+        "Harbinger",
+        "Throne Room"
       ],
       "pool_fraction": 0.15
     }
