@@ -1556,3 +1556,14 @@ topologies (152x26 / 184x21.8 / 160x24.9); final topology 160 workers
 + 2 server shards (lowest serve latency, 48 free cores for
 milestones); serving is no longer the ceiling — relevant to #25 and
 any bigger-net c21. Duels now 24 min on-box.
+
+C20 GEN-40 MILESTONE (2026-08-02): champ duel 40.4% (76-112-12) = NEW
+CAMPAIGN HIGH, first crack of the 40s (curve g10..g40:
+36.5/36.3/32.3/38.7/36.8/38.9/40.4); seat 46/30. Sentinel 45.4%
+(band mean ~46 since g25). At the same age c19 read 47.7 clairvoyant
+vs champ and NEVER crossed; c20's honest 40.4 keeps CLIMBING with 60
+gens of runway. Probes: chapel steady (attack 0.071, no-attack up to
+0.057), duchy gate NOT tripped but near-line dV -0.143 (watch: g45
+mechanical rule stands), hr won-mass 0.145 still easing at the floor.
+PHASE 3 LIVE from g41 (15% share, broad pool, to g100). Duels now 18
+min on-box. Memory 140GB mid-duel — watch trend post-duel.
