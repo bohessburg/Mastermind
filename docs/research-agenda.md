@@ -68,8 +68,19 @@ militia probe `copper_copper_estate_silver`. Candidate fixes ranked:
 - Training sims 512+ (sharper targets; c20 used 256; AZ used 800).
 - Distributed selfplay: 3-4 CPU boxes into one trainer/GPU — workers
   are already torch-free clients; moderate build.
-- Bigger net only alongside the above (6.6M is not capacity-starved
-  on current evidence).
+- MODEL SIZE DECIDED (Jack, 2026-08-02): c21 is 2M-parameter class.
+  Keep CardTokenNet shape, shrink width/depth (d160/3L ballpark);
+  exact dims tuned by the offline BC ablation on the human corpus
+  (held-out human val + probes + throughput column). Rationale:
+  capacity not binding on base set (c15 existence proof); ~3.3x
+  faster in every CPU-inference context (measured: c15 911 games/hr
+  vs c19-class 274 in the honest harness) -> faster evals, duels,
+  deployment sims; better data-efficiency at 56K-500K corpus scale.
+  Corrected cost model: training-loop throughput is dominated by the
+  honest-regime machinery (no tree reuse under per-turn
+  determinization; c19 ran 18-20K games/hr clairvoyant WITH the big
+  net) — the small net does NOT refund that; it refunds CPU-side
+  inference everywhere else.
 - SIL verdict pending (c20 g55 bar >= 42%): if cleared, SIL weight
   becomes a standing c21 knob.
 - Value-probe instrument must be recalibrated per-campaign from real
