@@ -1654,3 +1654,12 @@ anchor, 12-14-card curriculum pools sampling 10 per game, SIL off,
 honest regime + forced playouts + temp schedule + aux margin head
 carried over. Draft config: configs/run_c21_draft.json. Pre-launch
 build/validation tasks tracked in the task list.
+
+C20 FLAGSHIP DUEL (2026-08-02, post-cut, box): gen_0040 vs gen_0050
+head-to-head 98W-94L-8T = 51.0% for g40 — a statistical dead heat
+(200g, 1 sigma ~3.6). The early 22-12 lead regressed to even.
+RULING: gen_0040 is the c20 FLAGSHIP — dead-even head-to-head, but
+g40 is SIL-free (no specialization exposure), posted the cleanest
+probe set of the campaign at its milestone (zero self-trash vibe
+pair), and its 40.4 champ read is untainted. c20 flagship of record:
+checkpoints/campaign20/gen_0040.pt.
