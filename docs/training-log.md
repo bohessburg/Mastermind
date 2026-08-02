@@ -1567,3 +1567,20 @@ gens of runway. Probes: chapel steady (attack 0.071, no-attack up to
 mechanical rule stands), hr won-mass 0.145 still easing at the floor.
 PHASE 3 LIVE from g41 (15% share, broad pool, to g100). Duels now 18
 min on-box. Memory 140GB mid-duel — watch trend post-duel.
+
+C20 GEN-45 MILESTONE (2026-08-02): champ duel 37.0% (71-121-8), seat
+41/30. HONEST ADJUDICATION — THE CLIMB WAS BAND NOISE: duel curve
+g25..g45 = 38.7/36.8/38.9/40.4/37.0 (flat ~38); sentinel
+42.1/46.4/49.5/47.0/43.7/45.4/45.1 (flat ~46 since g26). Twenty
+generations champ-relative FLAT at champ-minus-~10. Probes: duchy
+gate CLEAR by the letter (dV -0.144, second consecutive near-line
+read; dP ~0 — no duchy-rush behavior; note: -0.14 on an engine-shaped
+deck may be CORRECT dead-card pricing, thresholds were calibrated on
+money-era nets); chapel affinity rising (0.078/0.062); hr won-mass
+0.137 still easing. vloss 0.027 new low; entropy ~1.065 healthy.
+PRE-REGISTERED SIL CONDITION MET: "engine wins appear but fail to
+compound" — engine play is everywhere (46% sentinel, thin-fast style
+on random boards) but champ-relative strength stopped compounding at
+g25. SIL is the designated first mid-campaign intervention.
+Activation proposed to Jack (weight + pre-registered success bar to
+be signed before deploy).
