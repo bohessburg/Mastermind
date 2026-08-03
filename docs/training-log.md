@@ -1755,3 +1755,17 @@ VIBE: g8 first-ever sweep (30-18, 47-15), g9 sweep (39-36, 48-15),
 g10 split (45-28 W sentry, 25-49 L chapel).
 Bars: crossing needs 50% at any milestone — 5.2pts away at gen 10
 with 90 gens of runway.
+
+DUCHY GATE RE-ADJUDICATED ON CALIBRATED INSTRUMENT (2026-08-03, task
+#34 complete, Codex-built): probe states now sampled from REAL c21
+self-play games (40/bucket money-engine-junk, replay-verified).
+On the sampled instrument gen_0010 reads dV -0.077 — the HEALTHIEST
+of the reference set (g1 -0.121, g5 -0.103, g10 -0.077: value-head
+duchy calibration IMPROVING with training). The synthetic-state
+-0.305 was instrument artifact (~4x inflation), as suspected. GATE:
+CLEAR. New standing gate (c21 pre-reg amendment): sampled-state
+duchy dV threshold -0.154 (reference mean -0.100 - 3*std 0.018);
+policy side reference band dPts 2.2-2.9 on sampled states (synthetic
++3 line wrong scale — provisional sampled policy line +4.0pts).
+Synthetic mode retained for cross-era comparability only. Milestones
+run BOTH going forward. Alpha patch: not applied, not needed.

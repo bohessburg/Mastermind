@@ -286,6 +286,74 @@ def write_json(path: str | Path, payload: Mapping[str, Any]) -> Path:
     return destination
 
 
+def checked_step(game: Any, action: int, *, context: str = "probe") -> None:
+    """Advance one native game action after checking the public legal mask.
+
+    The native binding validates this too, but probes should fail at the
+    decision that produced a bad action rather than silently recording a
+    replay recipe which can never be reconstructed.
+    """
+    action = int(action)
+    legal = game.legal_mask()
+    if action < 0 or action >= int(dz.ACTION_SPACE_SIZE) or not bool(legal[action]):
+        raise RuntimeError(f"{context} selected illegal action {action}")
+    game.step(action)
+
+
+def replay_recipe(recipe: Mapping[str, Any]) -> Any:
+    """Reconstruct a sampled state from its deterministic action history.
+
+    The pybind module deliberately does not expose a persistent GameState
+    serializer.  Probe fixtures therefore use this portable recipe instead of
+    depending on ``Game.clone()`` or any in-memory state representation.
+    """
+    try:
+        seed = int(recipe["seed"])
+        kingdom = [int(def_id) for def_id in recipe["kingdom_def_ids"]]
+        actions = [int(action) for action in recipe["actions"]]
+        ply_index = int(recipe["ply_index"])
+    except (KeyError, TypeError, ValueError) as error:
+        raise ValueError("invalid replay recipe") from error
+    if ply_index < 0 or ply_index > len(actions):
+        raise ValueError("replay recipe ply_index is outside its action list")
+
+    game = dz.new_game(dz.Setup(players=2, kingdom=kingdom), seed)
+    for ply, action in enumerate(actions[:ply_index]):
+        checked_step(game, action, context=f"replay ply {ply}")
+    return game
+
+
+def read_sampled_states(path: str | Path) -> list[dict[str, Any]]:
+    """Read either a per-bucket or combined sampled-probe JSON document."""
+    source = Path(path)
+    try:
+        payload = json.loads(source.read_text(encoding="utf-8"))
+    except OSError as error:
+        raise RuntimeError(f"could not read sampled states: {source}") from error
+    except json.JSONDecodeError as error:
+        raise ValueError(f"sampled states JSON is invalid: {source}") from error
+    if not isinstance(payload, dict):
+        raise ValueError("sampled states JSON must contain an object")
+
+    states = payload.get("states")
+    if states is None and isinstance(payload.get("buckets"), dict):
+        states = [
+            state
+            for bucket_states in payload["buckets"].values()
+            if isinstance(bucket_states, list)
+            for state in bucket_states
+        ]
+    if not isinstance(states, list) or not states:
+        raise ValueError("sampled states JSON contains no states")
+
+    normalized: list[dict[str, Any]] = []
+    for index, state in enumerate(states):
+        if not isinstance(state, dict) or not isinstance(state.get("replay"), dict):
+            raise ValueError(f"sampled state {index} has no replay recipe")
+        normalized.append(state)
+    return normalized
+
+
 def default_output(checkpoint: str | Path, stem: str) -> Path:
     checkpoint_name = Path(checkpoint).stem
     return Path("artifacts") / "probes" / f"{stem}-{checkpoint_name}.json"

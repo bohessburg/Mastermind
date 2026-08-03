@@ -1,0 +1,54 @@
+{
+  "checkpoints": [
+    {
+      "checkpoint": "checkpoints/campaign21/gen_0001.pt",
+      "dP": 0.027592016573180445,
+      "dPts": 2.7592016573180445,
+      "dV": -0.12075033518485725,
+      "healthy_reference": true,
+      "legacy_shim": false,
+      "obs_version": 3,
+      "states": 40
+    },
+    {
+      "checkpoint": "checkpoints/campaign21/gen_0005.pt",
+      "dP": 0.021796470382832923,
+      "dPts": 2.179647038283292,
+      "dV": -0.10286303777247667,
+      "healthy_reference": true,
+      "legacy_shim": false,
+      "obs_version": 3,
+      "states": 40
+    },
+    {
+      "checkpoint": "checkpoints/campaign21/gen_0010.pt",
+      "dP": 0.029000843269750477,
+      "dPts": 2.9000843269750476,
+      "dV": -0.0769148686900735,
+      "healthy_reference": true,
+      "legacy_shim": false,
+      "obs_version": 3,
+      "states": 40
+    }
+  ],
+  "healthy_reference": {
+    "checkpoints": [
+      "checkpoints/campaign21/gen_0001.pt",
+      "checkpoints/campaign21/gen_0005.pt",
+      "checkpoints/campaign21/gen_0010.pt"
+    ],
+    "dV_mean": -0.10017608054913581,
+    "dV_std": 0.017996329904434685,
+    "n": 3,
+    "recommended_trip_threshold": -0.15416507026243986,
+    "rule": "dV_mean - 3 * dV_std",
+    "std_ddof": 0
+  },
+  "measurement": {
+    "counterfactual": "opponent collection Duchy count +2 (+6 VP)",
+    "dPts": "mean injected P(Buy Duchy) minus base probability, in percentage points",
+    "dV": "mean injected value minus base value"
+  },
+  "probe": "duchy_calibration",
+  "states_file": "bench/probe_states_money.json"
+}

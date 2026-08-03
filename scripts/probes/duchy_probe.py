@@ -26,6 +26,8 @@ from _common import (
     evaluate_observation,
     fixed_buy_states,
     load_checkpoint,
+    read_sampled_states,
+    replay_recipe,
     seed_everything,
     write_json,
 )
@@ -60,23 +62,61 @@ def _reference(checkpoint: str | Path) -> dict[str, float] | None:
     return next((value for key, value in REFERENCE.items() if key in lowered), None)
 
 
-def run(checkpoint: str | Path, *, legacy_shim: bool = False) -> dict[str, Any]:
+def _replayed_states(path: str | Path) -> list[tuple[Any, int, dict[str, Any]]]:
+    """Load sampled probe recipes and replay each one to its recorded ply."""
+    replayed: list[tuple[Any, int, dict[str, Any]]] = []
+    for index, record in enumerate(read_sampled_states(path)):
+        game = replay_recipe(record["replay"])
+        decision_seat = int(game.current_decision()["player"])
+        seat = int(record.get("acting_seat", decision_seat))
+        if seat != decision_seat:
+            raise RuntimeError(
+                f"sampled state {index} replayed to player {decision_seat}, expected {seat}"
+            )
+        expected_hash = record.get("state_hash")
+        actual_hash = f"0x{int(game.state_hash()):016x}"
+        if expected_hash is not None and str(expected_hash).lower() != actual_hash:
+            raise RuntimeError(
+                f"sampled state {index} replay hash mismatch: {actual_hash} != {expected_hash}"
+            )
+        duchy_action = buy_action("Duchy")
+        if not bool(game.legal_mask()[duchy_action]):
+            raise RuntimeError(f"sampled state {index} is not a Duchy-legal buy decision")
+        replayed.append((game, seat, record))
+    return replayed
+
+
+def run(
+    checkpoint: str | Path,
+    *,
+    legacy_shim: bool = False,
+    states_path: str | Path | None = None,
+) -> dict[str, Any]:
     seed_everything(SEED)
     policy = load_checkpoint(checkpoint, legacy_shim=legacy_shim)
     if policy.obs_version == 1:
         raise RuntimeError("duchy probe requires v2/v3 opponent collection observations")
-    states = fixed_buy_states(
-        kingdom=ENGINE_KINGDOM,
-        seeds=STATE_SEEDS,
-        min_player_turn=10,
-        max_player_turn=None,
-        wanted=STATE_COUNT,
-    )
+    sampled_records: list[dict[str, Any] | None]
+    if states_path is None:
+        # Preserve the historical synthetic protocol byte-for-byte when the
+        # new sampled-state switch is absent.
+        states = fixed_buy_states(
+            kingdom=ENGINE_KINGDOM,
+            seeds=STATE_SEEDS,
+            min_player_turn=10,
+            max_player_turn=None,
+            wanted=STATE_COUNT,
+        )
+        sampled_records = [None] * len(states)
+    else:
+        replayed = _replayed_states(states_path)
+        states = [(game, seat) for game, seat, _record in replayed]
+        sampled_records = [record for _game, _seat, record in replayed]
     duchy_action = buy_action("Duchy")
     rows: list[dict[str, Any]] = []
     deltas_probability: list[float] = []
     deltas_value: list[float] = []
-    for index, (game, seat) in enumerate(states):
+    for index, ((game, seat), sampled_record) in enumerate(zip(states, sampled_records)):
         observation = game.encode(seat, policy.obs_version)
         legal = game.legal_mask()
         base_probs, base_value = evaluate_observation(policy, observation, legal)
@@ -87,28 +127,30 @@ def run(checkpoint: str | Path, *, legacy_shim: bool = False) -> dict[str, Any]:
         v_delta = float(injected_value - base_value)
         deltas_probability.append(p_delta)
         deltas_value.append(v_delta)
-        rows.append(
-            {
-                "index": index,
-                "state_hash": f"0x{int(game.state_hash()):016x}",
-                "turn_counter": int(game.turn()),
-                "player_turn": int(game.turn()) // 2 + 1,
-                "acting_seat": seat,
-                "duchy_legal": bool(legal[duchy_action]),
-                "base_p_buy_duchy": float(base_probs[duchy_action]),
-                "injected_p_buy_duchy": float(injected_probs[duchy_action]),
-                "p_buy_duchy_delta": p_delta,
-                "base_value": base_value,
-                "injected_value": injected_value,
-                "value_delta": v_delta,
-            }
-        )
+        row: dict[str, Any] = {
+            "index": index,
+            "state_hash": f"0x{int(game.state_hash()):016x}",
+            "turn_counter": int(game.turn()),
+            "player_turn": int(game.turn()) // 2 + 1,
+            "acting_seat": seat,
+            "duchy_legal": bool(legal[duchy_action]),
+            "base_p_buy_duchy": float(base_probs[duchy_action]),
+            "injected_p_buy_duchy": float(injected_probs[duchy_action]),
+            "p_buy_duchy_delta": p_delta,
+            "base_value": base_value,
+            "injected_value": injected_value,
+            "value_delta": v_delta,
+        }
+        if sampled_record is not None:
+            row["sampled_bucket"] = sampled_record.get("bucket")
+            row["replay"] = sampled_record["replay"]
+        rows.append(row)
     means = {
         "p_buy_duchy_delta": float(np.mean(deltas_probability)),
         "p_buy_duchy_delta_points": float(100.0 * np.mean(deltas_probability)),
         "value_delta": float(np.mean(deltas_value)),
     }
-    return {
+    result = {
         "probe": "duchy_probe",
         "checkpoint": str(checkpoint),
         "obs_version": policy.obs_version,
@@ -123,6 +165,15 @@ def run(checkpoint: str | Path, *, legacy_shim: bool = False) -> dict[str, Any]:
         "reference": _reference(checkpoint),
         "states": rows,
     }
+    if states_path is not None:
+        result["protocol"] = {
+            "states": len(states),
+            "counterfactual": "opponent collection Duchy count +2 (+6 VP)",
+            "mode": "raw policy/value heads only",
+            "state_source": str(states_path),
+            "state_reconstruction": "replay recipe (seed, kingdom IDs, actions, ply)",
+        }
+    return result
 
 
 def scorecard(result: dict[str, Any]) -> str:
@@ -145,9 +196,14 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--checkpoint", required=True, type=Path)
     parser.add_argument("--legacy-shim", action="store_true")
+    parser.add_argument(
+        "--states",
+        type=Path,
+        help="sampled-state JSON from sample_states.py; omitting preserves synthetic mode",
+    )
     parser.add_argument("--out", type=Path)
     args = parser.parse_args()
-    result = run(args.checkpoint, legacy_shim=args.legacy_shim)
+    result = run(args.checkpoint, legacy_shim=args.legacy_shim, states_path=args.states)
     output = write_json(args.out or default_output(args.checkpoint, "duchy_probe"), result)
     print(scorecard(result))
     print(f"json={output}")
