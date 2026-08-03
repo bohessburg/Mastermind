@@ -1817,3 +1817,20 @@ contamination). Ops note: deploy-chain ssh truncation recurred
 PENDING DECISION (Jack): league share is scheduled to rise 15% -> 25%
 at g30. Options: freeze at 15 / cut below 15 / let it rise. Evidence
 is mixed (duel recovering, frames+style degrading).
+
+=== C21 GEN-25 MILESTONE (2026-08-03) ===
+CHAMP DUEL: 43.2% (80-105-15), seat 49/31 — recovery continues
+(curve g5..g25: 43.1/44.8/37.8/40.0/43.2; the g15-20 dip is closed).
+Sentinel 45.5 (band high region; 47.4 at g21). TIDE TURNED across
+the board: chapel-board vibe WON 63-12 (after four declining losses
+16-52 worst — the Chapel phase bit in 4 gens), sentry vibe won 31-23
+(sweep); VAL-LOSS DRIFT REVERSED for the first time (1.157 -> 1.071)
+— flat 0.2 anchor + chapel boards pulling toward the corpus while
+strength rises; anchor row-loss 0.435 campaign-best. Militia frames
+still mixed (lagging indicator, as before). Duchy gate clear
+(-0.094). hr won-mass 0.192.
+NARRATIVE: the g15-20 dip = late-phase-1 + league-onset turbulence,
+corrected by phase 2 + the flat-anchor amendment. LEAGUE DECISION:
+recommend FREEZE at 15% (cancel the g30 rise to 25%) as light-touch
+insurance — the suspect force stays constant while the corrective
+forces (chapel boards + anchor) do their work. Awaiting Jack.
