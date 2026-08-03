@@ -177,11 +177,17 @@ corpus at millions of all-expansion games is the biggest single lever.
   monoculture; 1M human games supply engine-win outcomes on natural
   board distribution at the source. Costs removed: fixed-board
   overfit vector, phase wobble, train/eval distribution mismatch.
-  HOLSTERED REMEDY (pre-register in the c22 doc): if the c21 drift
-  signature reappears (champ-duel dip + trash-discipline fade + frame
-  oscillation), a validated-pool curriculum phase is the named
-  intervention — machinery and pools retained, deployed only on
-  instrument evidence.
+  DIAGNOSIS REFINED (Jack, 2026-08-03): the c21 chapel-board collapse
+  was a CORPUS COVERAGE GAP, not evidence a curriculum is inherently
+  needed — Chapel is an expert's card, under-and-badly-represented in
+  547 all-comers games; the BC prior was shallow because the teaching
+  was. Therefore: PRE-LAUNCH CORPUS AUDIT AS A LAUNCH GATE — per-card
+  positive-example counts vs the coverage floors (trashers and
+  attack-response cards especially); under-floor cards mean targeted
+  collection before launch, not scaffolding after. Rating-weighted
+  policy targets amplify the well-played exemplars of expert cards.
+  The pool machinery is retained in the repo as a last-resort lever
+  but is NOT part of the c22 pre-registration.
 - Carry-forward from c21 evidence: flat anchor (no step-down
   schedules), league capped at 15%, 80-turn selfplay cap, sampled-
   state probe calibration per-campaign, milestone battery every 5
