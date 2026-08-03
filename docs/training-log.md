@@ -1798,3 +1798,22 @@ the Militia frames); risks asymmetric vs an unsupported over-
 constraint worry. Deploys at the g20 bank with the milestone. Note:
 gen 20 itself trained partly under the old schedule's 0.1 step —
 one-gen contamination, logged.
+
+=== C21 GEN-20 MILESTONE (2026-08-03) ===
+CHAMP DUEL: 40.0% (78-117-5), seat 48/30 — PARTIAL RECOVERY from
+g15's 37.8. Curve g5..g20: 43.1/44.8/37.8/40.0 — reads as band
+oscillation around ~41, not a slide. Sentinel 40.6 band. BUT the
+soft signals worsened: MILITIA FRAMES RE-INVERTED (canonical keeps
+Estate again, control G/E/E; g15 had all three correct with the SAME
+0.2 anchor — the frames oscillate under a counter-force, league
+suspected), vibe swept 0-2 (31-44, 25-46, dead hands + Duchy-stack
+patterns), hr won-mass 0.249 -> 0.199 steady decline. Val 1.157
+flat; duchy gate CLEAR (-0.079 sampled, healthiest read).
+AMENDMENT DEPLOYED: anchor held flat 0.2 (step-down cancelled) from
+gen 21 (gen 20 caught one 0.1-anchor training pass — logged
+contamination). Ops note: deploy-chain ssh truncation recurred
+(training briefly STOPPED, restarted within minutes; duel relaunched)
+— all future deploys split into separate verified steps.
+PENDING DECISION (Jack): league share is scheduled to rise 15% -> 25%
+at g30. Options: freeze at 15 / cut below 15 / let it rise. Evidence
+is mixed (duel recovering, frames+style degrading).
