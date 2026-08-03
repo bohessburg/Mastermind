@@ -44,6 +44,66 @@ the Militia fix) — converter should tag frame types in the manifest.
 dominion.games plays all expansions: the corpus generalizes to the
 full-game future. See docs/dominion-games-scraper-handoff.md.
 
+## Skill-weighted corpus (rating-weighted policy, unweighted value)
+
+Decided 2026-08-02. Scraped games are all-comers, so imitation targets
+vary in quality. WEIGHT rather than filter: hard-filtering to top-decile
+play would gut per-card coverage (Bureaucrat is already the limiting
+card at 67 buys in 642 games; a decile cut leaves ~7).
+
+Key asymmetry — **weight the POLICY target by rating, not the VALUE
+target.** A weak player's chosen action is a poor imitation target, but
+their game's OUTCOME is objective ground truth, and real engine-win
+outcomes are exactly the c20 gap this corpus exists to fill.
+Down-weighting outcomes by skill discards the signal we built the
+pipeline for. Caveat: weak games visit states strong players never
+reach, so the value head sees a broader, partly off-distribution state
+space — argued to be good for calibration breadth, but be deliberate.
+
+Implementation is a load-time join, not a reconversion: tuple rows
+already carry `player_id` and `seat_index`, and ratings live in a
+decoupled sidecar (`data/dominion_games/ratings/`), so the weighting
+curve can be re-tuned without touching the corpus.
+
+Open decisions, both blocked on measuring leaderboard coverage:
+- Weight for UNRATED players — a default, never zero; they are likely
+  most of the corpus. If coverage is thin, this weighting does little.
+- Curve shape. Start gentle and monotonic in `level`; the ratings are
+  Glicko-style and carry `deviation`, so discount uncertain ratings.
+
+Tooling exists but has never run live (needs its own account — one
+session per account, so it would evict the collector):
+`scripts/dgames_ratings.py` (leaderboard poller, append-only time
+series) and `scripts/dgames_ratings_join.py` (nearest-in-time join).
+Protocol re-derived in `data/dominion_games/recon/RECON.md`. NOTE: no
+per-player rating lookup exists in the protocol — coverage depends
+entirely on leaderboard depth, which is UNMEASURED.
+
+## Per-card / per-pair coverage as the corpus sizing metric
+
+Measured 2026-08-02 over 642 scraped games. Kingdom selection is
+random, so games-present is uniform (214-288 per base card) and is NOT
+the binding constraint. POSITIVE EXAMPLES are: buys per game-present
+ranges 0.26 (Bureaucrat) to 4.9 (Festival), an 18x spread. Size the
+corpus for the RAREST card or the model plays Festival well and
+guesses at Bureaucrat.
+
+At a ~1,000-positive-examples-per-card floor:
+| rarest-card buys | total games |
+|---|---|
+| 500 | ~4,800 |
+| 1,000 | ~9,600 |
+| 2,000 | ~19,200 |
+
+So **~10K games for base-set mastery**. A card sits in 40% of base
+kingdoms but only 2% of 500-card kingdoms, so full-pool single-card
+coverage needs **~20x more, ~200K games**; pairwise interactions
+(C(500,2) = 125K pairs) are far beyond that.
+
+Also measured: 642 games gave 640 DISTINCT kingdoms, 99.7% seen
+exactly once. Dominion is a generalization problem, not a memorization
+one — C(26,10) = 5.3M base kingdoms, C(500,10) = 2.46e20.
+
 ## The keep/discard discrimination problem (Militia inversion family)
 
 Root cause established (g40-g50 probes): the VALUE HEAD itself prices
@@ -106,3 +166,25 @@ corpus at millions of all-expansion games is the biggest single lever.
 - #24 arena bot-seat value tuples.
 - #13 human-data collection push (superseded in scale by the scraper,
   still relevant for exact-replay seeded games).
+
+## c22 design decisions (accumulating, 2026-08-03)
+
+- TRIGGER: 1M human tuples (~8-10K games; per-card coverage floor met).
+- From-scratch relaunch, d192/4L class, genuine SL pretrain phase with
+  held-out validation (by game), then honest selfplay per c21 recipe.
+- NO KINGDOM CURRICULUM (Jack, 2026-08-03): 100% natural random
+  kingdoms. The curriculum was a prosthetic for the c20 outcome-data
+  monoculture; 1M human games supply engine-win outcomes on natural
+  board distribution at the source. Costs removed: fixed-board
+  overfit vector, phase wobble, train/eval distribution mismatch.
+  HOLSTERED REMEDY (pre-register in the c22 doc): if the c21 drift
+  signature reappears (champ-duel dip + trash-discipline fade + frame
+  oscillation), a validated-pool curriculum phase is the named
+  intervention — machinery and pools retained, deployed only on
+  instrument evidence.
+- Carry-forward from c21 evidence: flat anchor (no step-down
+  schedules), league capped at 15%, 80-turn selfplay cap, sampled-
+  state probe calibration per-campaign, milestone battery every 5
+  gens (duel + dual probes + skill-aware retention val + vibe pair).
+- Retention val metric must be skill-weighted (ratings sidecar) to
+  separate "forgetting" from "surpassing" — the c21 g15 lesson.
