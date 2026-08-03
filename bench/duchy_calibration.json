@@ -29,18 +29,51 @@
       "legacy_shim": false,
       "obs_version": 3,
       "states": 40
+    },
+    {
+      "checkpoint": "checkpoints/campaign21/gen_0012.pt",
+      "dP": 0.02972487723454833,
+      "dPts": 2.972487723454833,
+      "dV": -0.19704112196341156,
+      "healthy_reference": true,
+      "legacy_shim": false,
+      "obs_version": 3,
+      "states": 40
+    },
+    {
+      "checkpoint": "checkpoints/campaign21/gen_0013.pt",
+      "dP": 0.022315736557357014,
+      "dPts": 2.2315736557357013,
+      "dV": -0.14509514527162537,
+      "healthy_reference": true,
+      "legacy_shim": false,
+      "obs_version": 3,
+      "states": 40
+    },
+    {
+      "checkpoint": "checkpoints/campaign21/gen_0014.pt",
+      "dP": 0.03176287504611537,
+      "dPts": 3.1762875046115373,
+      "dV": -0.08577975705265999,
+      "healthy_reference": true,
+      "legacy_shim": false,
+      "obs_version": 3,
+      "states": 40
     }
   ],
   "healthy_reference": {
     "checkpoints": [
       "checkpoints/campaign21/gen_0001.pt",
       "checkpoints/campaign21/gen_0005.pt",
-      "checkpoints/campaign21/gen_0010.pt"
+      "checkpoints/campaign21/gen_0010.pt",
+      "checkpoints/campaign21/gen_0012.pt",
+      "checkpoints/campaign21/gen_0013.pt",
+      "checkpoints/campaign21/gen_0014.pt"
     ],
-    "dV_mean": -0.10017608054913581,
-    "dV_std": 0.017996329904434685,
-    "n": 3,
-    "recommended_trip_threshold": -0.15416507026243986,
+    "dV_mean": -0.1214073776558507,
+    "dV_std": 0.040568478245705926,
+    "n": 6,
+    "recommended_trip_threshold": -0.2431128123929685,
     "rule": "dV_mean - 3 * dV_std",
     "std_ddof": 0
   },

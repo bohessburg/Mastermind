@@ -1769,3 +1769,23 @@ policy side reference band dPts 2.2-2.9 on sampled states (synthetic
 +3 line wrong scale — provisional sampled policy line +4.0pts).
 Synthetic mode retained for cross-era comparability only. Milestones
 run BOTH going forward. Alpha patch: not applied, not needed.
+
+=== C21 GEN-15 MILESTONE (2026-08-03) ===
+CHAMP DUEL: 37.8% (71-117-12) — FIRST DIP (43.1 -> 44.8 -> 37.8);
+seat 46/25, the second seat gave back its gains (37 -> 25). Sentinel
+40.6 (flat vs 41.5). MILITIA FRAMES: ALL THREE CORRECT — first time
+ever, exceeds even the BC init; the doubled anchor won the discard
+war outright. Val loss 1.153 (+11%/5gens re-acceleration) BUT with
+frames healed the metric now conflates forgetting with SURPASSING
+the all-comers corpus — guard correctly did not fire (conjunctive);
+future fix: skill-weighted val via the ratings sidecar. DUCHY GATE:
+sampled dV -0.157; reference EXTENDED to n=6 (healthy variance much
+wider than n=3 suggested: g12 hit -0.197 in normal training) -> firmed
+threshold -0.243, gate CLEAR within 1 sigma. Vibe: split, both
+razor-thin (34-37 L sentry, 31-30 W chapel).
+DIP HYPOTHESIS: league (active since g11, share rising to 25% at
+g30) sharpens vs SELF at some champ-matchup cost — a mild echo of
+the SIL specialization signature (sentinel flat + duel down + second
+seat regressed). Watch g20: if the duel drops again while sentinel
+holds, consider league share freeze at 15% (would be a pre-reg
+amendment for Jack). No action now — one milestone is noise-grade.
