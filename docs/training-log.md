@@ -1853,3 +1853,12 @@ on (cheap, still improving, may cross anyway) as the strength bank +
 instrument testbed; C22 TRIGGER = corpus at ~500K tuples (real SL
 phase, from-scratch relaunch, same recipe otherwise). Scraper session
 continues collection.
+
+C22 TRIGGER SET (2026-08-03, Jack): ONE MILLION tuples (~8-10K games
+at ~120 tuples/game) — upgraded from the 500K working figure. This
+lands almost exactly on the coverage math's base-set mastery point
+(~10K games = ~1,000 positive examples for the rarest card). At that
+scale the BC phase becomes a genuine SL curriculum rather than
+memorized flashcards, and per-card coverage floors are met. c21 runs
+on until then as strength bank + instrument testbed. League freeze
+(15%) deployed at g27 boundary; clean 3-step deploy, no truncation.
