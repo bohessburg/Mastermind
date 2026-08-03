@@ -106,15 +106,15 @@
     "human_tuples": "exports/tuples_all/train",
     "pretrain_steps": 0,
     "pretrain_batch_size": 512,
-    "anchor_weight": 0.1,
+    "anchor_weight": 0.2,
     "anchor_weight_schedule": [
       [
         1,
-        0.1
+        0.2
       ],
       [
         20,
-        0.05
+        0.1
       ]
     ],
     "anchor_batch_size": 128,
