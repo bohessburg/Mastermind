@@ -1841,3 +1841,15 @@ FROZEN at 15% — the g30 rise to 25% cancelled (league_schedule
 recovery achieved at 15% — hold the suspect force constant while
 chapel phase + flat anchor keep working. Revisit at g40 from
 strength. Deploys at the g27 boundary.
+
+WORKING THESIS ADOPTED (2026-08-03, Jack): 65K tuples is NOT ENOUGH —
+c21 is the experiment demonstrating the corpus-tier hypothesis. The
+BC init bought ~30 gens of head start and installable frames, but
+547 static (memorized) games cannot outweigh 2,048 fresh selfplay
+games/gen: hence the oscillating frames, style drift, and val
+tug-of-war. Coverage math pre-registered this: ~10K games (~1.2-1.5M
+tuples) for base-set mastery; 65K = anchor tier only. PLAN: c21 runs
+on (cheap, still improving, may cross anyway) as the strength bank +
+instrument testbed; C22 TRIGGER = corpus at ~500K tuples (real SL
+phase, from-scratch relaunch, same recipe otherwise). Scraper session
+continues collection.
