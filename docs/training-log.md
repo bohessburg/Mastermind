@@ -1834,3 +1834,10 @@ corrected by phase 2 + the flat-anchor amendment. LEAGUE DECISION:
 recommend FREEZE at 15% (cancel the g30 rise to 25%) as light-touch
 insurance — the suspect force stays constant while the corrective
 forces (chapel boards + anchor) do their work. Awaiting Jack.
+
+C21 PRE-REG AMENDMENT (2026-08-03, Jack: "Ok freeze"): league share
+FROZEN at 15% — the g30 rise to 25% cancelled (league_schedule
+[[10,0.15]]). Rationale: g15-20 dip coincided with league onset;
+recovery achieved at 15% — hold the suspect force constant while
+chapel phase + flat anchor keep working. Revisit at g40 from
+strength. Deploys at the g27 boundary.
