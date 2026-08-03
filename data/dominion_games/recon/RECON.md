@@ -1,5 +1,79 @@
 # dominion.games Protocol Recon (Milestone 0)
 
+## Leaderboard / ratings protocol re-derivation (2026-08-02) — PROVEN
+
+This section is newer than the ordinal table below.  It was re-derived from
+the deployed `dominion-webclient-body-2.2.9.min.js` response named by the live
+`https://dominion.games` index (the saved Chromium HTTP response has `Date:
+Sun, 02 Aug 2026 21:51:00 GMT`, `Content-Type: application/javascript`, and
+`Content-Encoding: br`).  The body was Brotli-decoded and beautified before
+reading the implementations below.  Re-derive again when the body version
+changes: both ids are positional.
+
+### Outbound `REQUEST_LEADERBOARD`
+
+`ClientToServerIds.REQUEST_LEADERBOARD` is **ordinal 28** in 2.2.9.  The actual
+`serverMessenger.requestLeaderboard` implementation is:
+
+```js
+n.writeInt(getOrdinal(ClientToServerIds, ClientToServerIds.REQUEST_LEADERBOARD));
+n.writeInt(count);       // default 50 in the stock UI
+n.writeBoolean(flag);    // stock UI calls requestLeaderboard(50, true)
+```
+
+So one outbound WebSocket frame is exactly:
+
+```
+[int32 type=28][int32 count][boolean flag]
+```
+
+The client source does not give the boolean a semantic name; record it as a
+flag rather than guessing.  The ratings poller sends `count=2147483647` and
+`flag=true`, leaving the server to enforce its own maximum.
+
+### Inbound message 25: current `Leaderboard`, not the old four-field stub
+
+Inbound processor slot **25** is `r.leaderboard`, which calls
+`Leaderboard.parse(reader)`.  Its wire layout is an enum-to-object map, not a
+flat `RankedPlayer[]`:
+
+```
+[int32 ratingTypeMapCount]
+repeat ratingTypeMapCount times:
+  [int32 RatingTypes ordinal]
+  [int32 entryCount]
+  repeat entryCount times:
+    [int32 namedId.id][string namedId.name]
+    [int32 rank]
+    [double level][double levelChange]
+    [double skill][double deviation][double volatility]
+    [double convertedSkill][double convertedDeviation]
+    [int32 gameCount]
+```
+
+`RatingTypes` is ordered `{RATINGS_2P=0, RATINGS_3P=1,
+RATINGS_2P_BLITZ=2, RATINGS_3P_BLITZ=3}`.  The displayed leaderboard rating is
+`level` and its trend is `levelChange`; those are stored as `rating` and
+`trend` by `scripts/dgames_ratings.py`, while the raw Glicko-related fields are
+also retained for future analysis.
+
+The bundle still defines an unused `RankedPlayer(namedId, rank, rating,
+trend)` UI class near the leaderboard component, but it has no parser and is
+**not** the message-25 handler.  The earlier `{namedId, rank, rating, trend}`
+description is therefore incomplete for 2.2.9.
+
+### Per-player lookup investigation
+
+**No dedicated per-player rating/profile lookup was found.** The complete 55
+entry `ClientToServerIds` object contains no `REQUEST_PLAYER`,
+`REQUEST_PROFILE`, or equivalent rating command.  The only player-name query
+near this feature is `REQUEST_CARD_STATS` (ordinal 53; `double minLevel,
+string playerName, string version`) and its `CardStats` reply contains card
+statistics, not a rating.  `REQUEST_CARD_PER_TURN` (54) is likewise card
+statistics.  Friend/blacklist commands accept `NamedId`, but their replies are
+relationship updates, not a player profile.  Coverage must therefore come from
+repeated broad leaderboard snapshots keyed by the stable numeric `namedId.id`.
+
 Static reverse-engineering of the public web client, 2026-07-31.
 Source: `https://dominion.games/js/dominion-webclient-{head,body}-2.2.9.min.js`,
 beautified and read. **No server contact was made for this note** — every

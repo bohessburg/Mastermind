@@ -37,6 +37,7 @@ arena-profile/
 dgames-profile/
 dgames-profiles/
 data/dominion_games/raw/
+data/dominion_games/ratings/
 data/dominion_games/coord/
 data/dominion_games/fleet.accounts.json
 data/dominion_games/recon/captures/

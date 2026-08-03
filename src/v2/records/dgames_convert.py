@@ -541,6 +541,13 @@ class _ShardAccumulator:
             winner=winners,
             seat_index=np.asarray([row.seat_index for row, _, _ in rows], dtype=np.int16),
             game_index=np.asarray([game_index for _, _, game_index in rows], dtype=np.int32),
+            # Stable dominion.games identity for the seat that acted on this
+            # row.  Ratings remain external/temporal in the ratings sidecar;
+            # this immutable key is all a later training filter needs here.
+            player_id=np.asarray(
+                [outcome.seats[row.seat_index].player_id for row, outcome, _ in rows],
+                dtype=np.int64,
+            ),
             ply_index=np.asarray([row.ply_index for row, _, _ in rows], dtype=np.int32),
             turn_number=np.asarray([row.turn_number for row, _, _ in rows], dtype=np.int32),
             # Spectator-specific labels.  ``margin`` is deliberately zero for
@@ -721,6 +728,7 @@ def convert_dgames_corpus(
                 "source_path": _relative_path(root, converted.source_path),
                 "source_tag": SOURCE_TAG,
                 "seat_kinds": ["human" for _ in converted.outcome.seats],
+                "player_ids": [seat.player_id for seat in converted.outcome.seats],
                 "player_names": list(converted.player_names),
                 "kingdom": list(converted.kingdom),
                 "decision_counts": list(converted.per_seat_decisions),
@@ -784,7 +792,7 @@ def convert_dgames_corpus(
     quarantine_path = destination / "quarantine.json"
     quarantine_path.write_text(json.dumps(quarantine_json, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     result = {
-        "schema_version": 2,
+        "schema_version": 3,
         "source_tag": SOURCE_TAG,
         "obs_version": OBS_VERSION,
         "obs_width": OBS_WIDTH,
@@ -824,9 +832,22 @@ def convert_dgames_corpus(
                 str(OBSERVATION_PARTIALLY_INFERRED): "partially_inferred: a required private offered zone was sampled or this is a public-history buy row",
                 str(OBSERVATION_FULLY_OBSERVED): "fully_observed: the actor's decision-relevant hand/reveal transition was visible; hidden deck allocation is not a label source",
             },
-            "arrays": ["decision_type", "observation_quality", "source_event_index"],
+            "arrays": [
+                "decision_type",
+                "observation_quality",
+                "source_event_index",
+                "player_id",
+            ],
         },
         "games": games,
+        # Keep the immutable tuple-to-capture join explicit.  A training
+        # reader combines this with each row's player_id and the mutable
+        # data/dominion_games/ratings/game_ratings.json sidecar; ratings must
+        # never be copied into these NPZ shards because they change over time.
+        "game_index_to_game_id": {
+            str(game["index"]): str(game["id"])
+            for game in games
+        },
         "shards": [
             {"path": path.name, "tuples": _shard_tuple_count(path)} for path in shard_paths
         ],
