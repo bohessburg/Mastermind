@@ -42,3 +42,6 @@ data/dominion_games/fleet.accounts.json
 data/dominion_games/recon/captures/
 data/dominion_games/recon/yield/
 data/dominion_games/recon/concurrency/
+bench/.box3_mrows
+*.pt
+*.npz

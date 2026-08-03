@@ -1,0 +1,10 @@
+{"checkpoint": "checkpoints/remote/campaign15/gen_0045.pt", "device": "mps", "honest": false, "kingdoms": "random", "parameters": 1515302, "sims": 400}
+25/200 games, nn 14W-11L-0T, 1514 games/hr
+50/200 games, nn 29W-21L-0T, 2112 games/hr
+75/200 games, nn 41W-34L-0T, 2189 games/hr
+100/200 games, nn 58W-42L-0T, 2150 games/hr
+125/200 games, nn 73W-52L-0T, 2350 games/hr
+150/200 games, nn 86W-63L-1T, 2409 games/hr
+175/200 games, nn 98W-75L-2T, 2494 games/hr
+opponent,games,wins,losses,ties,truncated,end_province,end_piles,end_trunc,win_pct_excl_ties,games_per_hour
+engine3,200,107,91,2,0,158,42,0,54.04,2217.79

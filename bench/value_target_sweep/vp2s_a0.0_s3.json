@@ -1,0 +1,241 @@
+{
+  "acceptance": {
+    "checked": false
+  },
+  "checkpoint": "bench/value_target_sweep/fit2_a0.0_s3.pt",
+  "means": {
+    "engine": 0.7600611235414233,
+    "junk": 0.7712500715362174,
+    "money": 0.9670926332473755
+  },
+  "obs_version": 3,
+  "probe": "value_probe",
+  "protocol": {
+    "kingdom": [
+      "Village",
+      "Smithy",
+      "Laboratory",
+      "Market",
+      "Chapel",
+      "Festival",
+      "Council Room",
+      "Moat",
+      "Militia",
+      "Witch"
+    ],
+    "minimum_turn_counter": 10,
+    "mode": "raw value head; encoded deck+discard counterfactual only",
+    "state_seeds": [
+      5000,
+      5001,
+      5002,
+      5003,
+      5004,
+      5005,
+      5006,
+      5007,
+      5008,
+      5009,
+      5010,
+      5011,
+      5012,
+      5013
+    ],
+    "states": 14,
+    "variants": {
+      "engine": {
+        "Chapel": 1,
+        "Copper": 3,
+        "Estate": 3,
+        "Laboratory": 2,
+        "Market": 1,
+        "Silver": 2,
+        "Smithy": 2,
+        "Village": 2
+      },
+      "junk": {
+        "Copper": 9,
+        "Curse": 4,
+        "Estate": 3,
+        "Silver": 1
+      },
+      "money": {
+        "Copper": 7,
+        "Estate": 3,
+        "Gold": 2,
+        "Silver": 3
+      }
+    }
+  },
+  "seed": 659918,
+  "states": [
+    {
+      "acting_seat": 0,
+      "index": 0,
+      "seed": 5000,
+      "state_hash": "0xa391d8aa0d8de0aa",
+      "turn_counter": 10,
+      "values": {
+        "engine": 0.5302266478538513,
+        "junk": 0.2567116618156433,
+        "money": 0.9250566363334656
+      }
+    },
+    {
+      "acting_seat": 0,
+      "index": 1,
+      "seed": 5001,
+      "state_hash": "0xbff35d94b15a49d5",
+      "turn_counter": 10,
+      "values": {
+        "engine": 0.7679510712623596,
+        "junk": 0.9035186171531677,
+        "money": 0.9878962635993958
+      }
+    },
+    {
+      "acting_seat": 0,
+      "index": 2,
+      "seed": 5002,
+      "state_hash": "0x068c6af217925938",
+      "turn_counter": 10,
+      "values": {
+        "engine": 0.7775179147720337,
+        "junk": 0.9050991535186768,
+        "money": 0.988348662853241
+      }
+    },
+    {
+      "acting_seat": 0,
+      "index": 3,
+      "seed": 5003,
+      "state_hash": "0xcb287ad78009a073",
+      "turn_counter": 10,
+      "values": {
+        "engine": 0.7852454781532288,
+        "junk": 0.8590649366378784,
+        "money": 0.9637095928192139
+      }
+    },
+    {
+      "acting_seat": 0,
+      "index": 4,
+      "seed": 5004,
+      "state_hash": "0x35b5abaaefdb7765",
+      "turn_counter": 10,
+      "values": {
+        "engine": 0.7961090803146362,
+        "junk": 0.8727982640266418,
+        "money": 0.9556962251663208
+      }
+    },
+    {
+      "acting_seat": 0,
+      "index": 5,
+      "seed": 5005,
+      "state_hash": "0x5a7418f66def68f2",
+      "turn_counter": 10,
+      "values": {
+        "engine": 0.7395512461662292,
+        "junk": 0.8483179211616516,
+        "money": 0.9740464687347412
+      }
+    },
+    {
+      "acting_seat": 0,
+      "index": 6,
+      "seed": 5006,
+      "state_hash": "0x65752cba00b61555",
+      "turn_counter": 10,
+      "values": {
+        "engine": 0.7105286717414856,
+        "junk": -0.05505409464240074,
+        "money": 0.9361010789871216
+      }
+    },
+    {
+      "acting_seat": 0,
+      "index": 7,
+      "seed": 5007,
+      "state_hash": "0xb8e9fd1e93bd4a45",
+      "turn_counter": 10,
+      "values": {
+        "engine": 0.7718828916549683,
+        "junk": 0.8986826539039612,
+        "money": 0.9876046180725098
+      }
+    },
+    {
+      "acting_seat": 0,
+      "index": 8,
+      "seed": 5008,
+      "state_hash": "0x09bddde4694c14ff",
+      "turn_counter": 10,
+      "values": {
+        "engine": 0.7926580905914307,
+        "junk": 0.8526967763900757,
+        "money": 0.9590408802032471
+      }
+    },
+    {
+      "acting_seat": 0,
+      "index": 9,
+      "seed": 5009,
+      "state_hash": "0x4fd8fbc8c1a41965",
+      "turn_counter": 10,
+      "values": {
+        "engine": 0.7975607514381409,
+        "junk": 0.8700475692749023,
+        "money": 0.9540883302688599
+      }
+    },
+    {
+      "acting_seat": 0,
+      "index": 10,
+      "seed": 5010,
+      "state_hash": "0xc1caf67a78c6760e",
+      "turn_counter": 10,
+      "values": {
+        "engine": 0.7876366972923279,
+        "junk": 0.9088725447654724,
+        "money": 0.9827921986579895
+      }
+    },
+    {
+      "acting_seat": 0,
+      "index": 11,
+      "seed": 5011,
+      "state_hash": "0xdae6c72f7ccabac5",
+      "turn_counter": 10,
+      "values": {
+        "engine": 0.8067313432693481,
+        "junk": 0.946462094783783,
+        "money": 0.992432713508606
+      }
+    },
+    {
+      "acting_seat": 0,
+      "index": 12,
+      "seed": 5012,
+      "state_hash": "0x4bb6482800b87579",
+      "turn_counter": 10,
+      "values": {
+        "engine": 0.7846596240997314,
+        "junk": 0.862986147403717,
+        "money": 0.9663045406341553
+      }
+    },
+    {
+      "acting_seat": 0,
+      "index": 13,
+      "seed": 5013,
+      "state_hash": "0x60de78624c61957d",
+      "turn_counter": 10,
+      "values": {
+        "engine": 0.7925962209701538,
+        "junk": 0.8672967553138733,
+        "money": 0.9661786556243896
+      }
+    }
+  ]
+}
