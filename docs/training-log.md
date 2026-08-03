@@ -1733,3 +1733,25 @@ PRE-COMMITTED RESPONSE APPLIED: anchor doubled 0.1 -> 0.2 (floor
 does the doubled anchor hold the discard frames.
 Duchy gate: dV -0.188 (provisional line -0.30, clear). All results:
 bench/honest_eval/c21g5_vs_champ.json, bench/c21_probes_gen0005.json.
+
+=== C21 GEN-10 MILESTONE (2026-08-03) ===
+CHAMP DUEL: 44.8% (87-107-6) — up from 43.1 at g5. Seat 50/33 -> 50/37:
+first seat DEAD EVEN with the champion for the second straight
+milestone; second seat 37/100 is the best in project history (c20 max
+36 at g50). Sentinel: 34.0 at g8, still climbing. Cadence ~35-min
+gens under the 80-turn cap at 184 workers.
+RETENTION (post-anchor-doubling verdict): drift SLOWED, not reversed
+— held-out human val 1.0119 (g5) -> 1.038 (g10): +2.6% per 5 gens vs
++16.4% pre-doubling. Militia frames: control hand RECOVERED
+(S,S,Gold), canonical still Estate-keeping, middle unchanged. Anchor
+row-loss down 0.553 -> 0.518. Verdict: 0.2 anchor holds the line;
+watch the SCHEDULED drop to 0.1 at g20 — likely needs cancelling if
+drift resumes. hr won-mass 0.229.
+DUCHY GATE: dV -0.305 vs PROVISIONAL -0.30 line (dPts +0.38, policy
+clean) — grazed by 1.7% on an uncalibrated instrument. Adjudication
+deferred to the empirical recalibration (task #34, Codex building the
+sampled-state calibration now); alpha patch holstered pending it.
+VIBE: g8 first-ever sweep (30-18, 47-15), g9 sweep (39-36, 48-15),
+g10 split (45-28 W sentry, 25-49 L chapel).
+Bars: crossing needs 50% at any milestone — 5.2pts away at gen 10
+with 90 gens of runway.
