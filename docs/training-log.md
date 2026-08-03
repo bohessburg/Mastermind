@@ -1714,3 +1714,22 @@ checkpoints/c21_ablation/bc_a.pt (1,965,947 params, BC val 0.870,
 80.1% human-action acc). 160 workers, 2 shards, supervisor
 auto-resume (resume21.sh: init-weights on first launch, resume
 latest after). Monitor + per-gen auto-pull armed. First milestone g5.
+
+=== C21 GEN-5 MILESTONE (2026-08-03) ===
+CHAMP DUEL: 43.1% (84-111-5), seat 51/33 — AT GENERATION FIVE. c20's
+best-ever was 41.1 at gen 50; c19's gen-5 read was 22.3. First seat
+51/100 = even with the champion; second seat 33/100 already matches
+c20's late-campaign best. Sentinel curve 13.4 (BC init) -> 27.3 ->
+31.2 (g1/g3). Cadence: ~32-min gens at the locked 184 workers
+(search: 160/184/196 -> 184 optimal, ~2x c20).
+HUMAN-RETENTION GUARD FIRED (first milestone): held-out human val
+1.0119 vs post-BC 0.8697 (+16.4%, line was +15%) AND militia
+discard regression (canonical keeps Estate again; control hand fully
+re-inverted; value-head green bias dragging the policy). Counter-
+signals: hr won-mass 0.249 (best ever), chapel probe 0.45 (6x any
+c20 read) — the erosion is frame-specific, not global washout.
+PRE-COMMITTED RESPONSE APPLIED: anchor doubled 0.1 -> 0.2 (floor
+0.05 -> 0.1), deployed at the gen-6 boundary. Gen-10 re-read =
+does the doubled anchor hold the discard frames.
+Duchy gate: dV -0.188 (provisional line -0.30, clear). All results:
+bench/honest_eval/c21g5_vs_champ.json, bench/c21_probes_gen0005.json.
