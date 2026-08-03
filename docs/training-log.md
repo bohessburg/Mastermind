@@ -1862,3 +1862,20 @@ scale the BC phase becomes a genuine SL curriculum rather than
 memorized flashcards, and per-card coverage floors are met. c21 runs
 on until then as strength bank + instrument testbed. League freeze
 (15%) deployed at g27 boundary; clean 3-step deploy, no truncation.
+
+=== C21 GEN-30 MILESTONE (2026-08-03) ===
+CHAMP DUEL: 46.0% (87-102-11) — NEW CAMPAIGN HIGH, fourth straight
+rise (37.8/40.0/43.2/46.0 from the g15 trough). Seat 56/31: FIRST
+TIME WINNING THE FIRST-SEAT HALF OUTRIGHT (56/100); second seat
+regressed to 31 after a 12-of-27 hot start (the mid-duel 57.7% was
+seat-order + hot-start artifact; the last 44 games went 9-33).
+SENTINEL: 50.8% (99-96-5) — FIRST READING ABOVE 50 IN PROJECT
+HISTORY, pre-registered "progress" bar formally met. Vibe: SWEEP
+(36-29 sentry, 51-18 chapel — second chapel blowout in three
+checks). Duchy gate healthiest ever (-0.049). Militia probe frames
+oscillating (mixed-bad this read) while in-context Militia-board
+behavior dominates — the isolated-hand probes are now judged a NOISY
+PROXY; behavior instruments (vibe, duel, sentinel) take precedence.
+Val 1.149 (oscillating band). All amendments live: flat 0.2 anchor,
+league 15% frozen, chapel phase to g40.
+Crossing distance: 4.0 pts. Momentum: +8.2 over three milestones.
