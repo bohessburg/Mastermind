@@ -1789,3 +1789,12 @@ the SIL specialization signature (sentinel flat + duel down + second
 seat regressed). Watch g20: if the duel drops again while sentinel
 holds, consider league share freeze at 15% (would be a pre-reg
 amendment for Jack). No action now — one milestone is noise-grade.
+
+C21 PRE-REG AMENDMENT (2026-08-03, Jack: "Hold it flat"): anchor
+step-down to 0.1 at g20 CANCELLED — anchor_weight_schedule flattened
+to 0.2 for the campaign. Rationale: g15 evidence (duel dip + style
+drift away from trash discipline + anchor being the force that healed
+the Militia frames); risks asymmetric vs an unsupported over-
+constraint worry. Deploys at the g20 bank with the milestone. Note:
+gen 20 itself trained partly under the old schedule's 0.1 step —
+one-gen contamination, logged.
