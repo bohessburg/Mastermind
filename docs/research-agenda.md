@@ -65,11 +65,21 @@ already carry `player_id` and `seat_index`, and ratings live in a
 decoupled sidecar (`data/dominion_games/ratings/`), so the weighting
 curve can be re-tuned without touching the corpus.
 
-Open decisions, both blocked on measuring leaderboard coverage:
-- Weight for UNRATED players — a default, never zero; they are likely
-  most of the corpus. If coverage is thin, this weighting does little.
-- Curve shape. Start gentle and monotonic in `level`; the ratings are
-  Glicko-style and carry `deviation`, so discount uncertain ratings.
+CURVE SIGNED (Jack, 2026-08-03) — coverage measured at 99% of games
+(777/784 in the current sidecar), so the scheme is fully fed:
+- level < 40: policy weight ~0 (epsilon) — these positions teach the
+  VALUE head only (outcomes are ground truth at any skill).
+- level 40-50: monotonic ramp from epsilon toward full weight.
+- level 50+: HEAVILY over-weighted in policy targets — expert tier,
+  the primary policy teachers.
+- Unrated (rare at 99% coverage): treat as the low band (value-only).
+- Value target weight: UNWEIGHTED by skill throughout (the asymmetry
+  above stands).
+ACCOUNTING CONSEQUENCE for the c22 gate: the 1M-tuple trigger and the
+per-card coverage floors must be counted in POLICY-EFFECTIVE tuples
+(weighted), not raw — a corpus dominated by sub-40 games could hit 1M
+raw while starving the policy head. The pre-launch audit reports both
+raw and effective counts per card.
 
 Tooling exists but has never run live (needs its own account — one
 session per account, so it would evict the collector):
