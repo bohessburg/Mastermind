@@ -1893,3 +1893,24 @@ predecessors (c20 peaked 41 at g50), short of the crossing. The
 corpus thesis's prediction, arriving on schedule. c21 continues
 (cheap; slope not formally dead — g40 adjudicates plateau-vs-climb),
 but the strategic weight now fully on the corpus march to 1M.
+
+=== C21 CUT (2026-08-04, Jack: "im shutting it down") ===
+Cut at gen 35 (of nominal 100), at the measured 65K-corpus
+equilibrium. FLAGSHIP: gen_0030 (best duel, 46.0%) with gen_0033
+(best sentinel, 52.0) as co-candidate — head-to-head can run locally
+if a deployment decision ever needs it. Duel curve g5..g35:
+43.1/44.8/37.8/40.0/43.2/46.0/45.2. DECIDING FIELD OBSERVATION
+(Jack, playing gen_0033 via local web UI): "we're back to bigmoney"
+— on ordinary boards vs a human the equilibrium style reverts toward
+money; the corpus holds engine play only where boards force it.
+Confirms the drift metrics (hr won-mass 0.249 -> 0.18, val 1.28).
+WHAT C21 PROVED: BC init on 65K tuples = ~30-gen head start and the
+best-vs-champ nets ever (every milestone above c20's all-time peak;
+first-seat parity; first >50 sentinels in project history); the
+anchor can pin frames and the curriculum can rescue boards, but 547
+static games cannot outweigh the self-play attractor at the
+STRATEGY-PREFERENCE level. 65K teaches what an engine is, not to
+prefer one. THE C22 MANDATE: 1M skill-weighted tuples, coverage-
+gated, curriculum-free — the corpus does the preferring.
+All artifacts local: gens 1-35 checkpoints, metrics (32 rows; 3 lost
+to restarts), all duels/probes/vibes. Box released.
