@@ -1914,3 +1914,12 @@ prefer one. THE C22 MANDATE: 1M skill-weighted tuples, coverage-
 gated, curriculum-free — the corpus does the preferring.
 All artifacts local: gens 1-35 checkpoints, metrics (32 rows; 3 lost
 to restarts), all duels/probes/vibes. Box released.
+
+C22 ASSEMBLY NOTE — RATING WEIGHTING (do not launch without): the
+signed skill curve (Jack 2026-08-03) is MANDATORY in the c22 loader
+and pre-registration: level<40 = value-head only (policy weight
+epsilon); 40-50 ramp; 50+ heavily dominates policy targets; value
+targets never skill-weighted; unrated = low band; 1M trigger and
+per-card floors counted in POLICY-EFFECTIVE tuples with a raw+
+effective pre-launch audit. Spec: docs/research-agenda.md; ratings
+sidecar: data/dominion_games/ratings/.
