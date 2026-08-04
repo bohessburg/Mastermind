@@ -1,0 +1,68 @@
+c21 BC loading train=exports/tuples_all/train val=exports/tuples_all/val
+c21 BC arm=a d_model=192 layers=4 heads=6 params=1965947 train=141668 val=6572 steps=5000 batch=512 device=cpu
+imitation pretrain step=50/50 loss=1.492930 policy=1.022337 value=0.470593
+imitation pretrain step=50/50 loss=1.184849 policy=0.753171 value=0.431678
+imitation pretrain step=50/50 loss=1.132942 policy=0.764985 value=0.367957
+imitation pretrain step=50/50 loss=1.110342 policy=0.777898 value=0.332445
+imitation pretrain step=50/50 loss=1.010511 policy=0.672660 value=0.337852
+c21 BC eval arm=a step=250/5000 val_loss=1.002776 best_val=1.002776 stale=0
+imitation pretrain step=50/50 loss=0.963993 policy=0.645654 value=0.318340
+imitation pretrain step=50/50 loss=0.907918 policy=0.639869 value=0.268049
+imitation pretrain step=50/50 loss=0.967051 policy=0.662178 value=0.304873
+imitation pretrain step=50/50 loss=0.959117 policy=0.679215 value=0.279901
+imitation pretrain step=50/50 loss=0.944845 policy=0.667408 value=0.277437
+c21 BC eval arm=a step=500/5000 val_loss=0.933745 best_val=0.933745 stale=0
+imitation pretrain step=50/50 loss=0.829326 policy=0.589908 value=0.239418
+imitation pretrain step=50/50 loss=0.833232 policy=0.609763 value=0.223469
+imitation pretrain step=50/50 loss=0.864224 policy=0.645344 value=0.218881
+imitation pretrain step=50/50 loss=0.756634 policy=0.572658 value=0.183977
+imitation pretrain step=50/50 loss=0.751264 policy=0.578520 value=0.172744
+c21 BC eval arm=a step=750/5000 val_loss=0.939279 best_val=0.933745 stale=1
+imitation pretrain step=50/50 loss=0.753002 policy=0.596072 value=0.156930
+imitation pretrain step=50/50 loss=0.793926 policy=0.638030 value=0.155896
+imitation pretrain step=50/50 loss=0.732595 policy=0.602544 value=0.130051
+imitation pretrain step=50/50 loss=0.709028 policy=0.600116 value=0.108912
+imitation pretrain step=50/50 loss=0.768449 policy=0.655941 value=0.112509
+c21 BC eval arm=a step=1000/5000 val_loss=1.002913 best_val=0.933745 stale=2
+imitation pretrain step=50/50 loss=0.696580 policy=0.570235 value=0.126345
+imitation pretrain step=50/50 loss=0.671466 policy=0.583249 value=0.088218
+imitation pretrain step=50/50 loss=0.694619 policy=0.608724 value=0.085895
+imitation pretrain step=50/50 loss=0.709829 policy=0.621352 value=0.088478
+imitation pretrain step=50/50 loss=0.791293 policy=0.684433 value=0.106860
+c21 BC eval arm=a step=1250/5000 val_loss=0.994537 best_val=0.933745 stale=3
+c21 BC early-stop arm=a step=1250 patience=3
+c21 BC complete arm=a checkpoint=checkpoints/c21_ablation/bc_a.pt steps=1250 train_loss=0.906288 best_val=0.933745 val_accuracy=0.765977
+c21 BC arm=b d_model=320 layers=5 heads=8 params=6639419 train=141668 val=6572 steps=5000 batch=512 device=cpu
+imitation pretrain step=50/50 loss=1.366678 policy=0.911192 value=0.455487
+imitation pretrain step=50/50 loss=1.153749 policy=0.759075 value=0.394674
+imitation pretrain step=50/50 loss=1.064697 policy=0.712974 value=0.351722
+imitation pretrain step=50/50 loss=1.052036 policy=0.763303 value=0.288732
+imitation pretrain step=50/50 loss=0.948583 policy=0.655652 value=0.292930
+c21 BC eval arm=b step=250/5000 val_loss=0.991820 best_val=0.991820 stale=0
+imitation pretrain step=50/50 loss=0.918421 policy=0.633550 value=0.284872
+imitation pretrain step=50/50 loss=0.879967 policy=0.647686 value=0.232281
+imitation pretrain step=50/50 loss=0.882710 policy=0.645997 value=0.236714
+imitation pretrain step=50/50 loss=0.880825 policy=0.675971 value=0.204854
+imitation pretrain step=50/50 loss=0.836594 policy=0.655186 value=0.181407
+c21 BC eval arm=b step=500/5000 val_loss=0.955460 best_val=0.955460 stale=0
+imitation pretrain step=50/50 loss=0.756784 policy=0.602322 value=0.154462
+imitation pretrain step=50/50 loss=0.707866 policy=0.585573 value=0.122293
+imitation pretrain step=50/50 loss=0.744925 policy=0.628172 value=0.116753
+imitation pretrain step=50/50 loss=0.647551 policy=0.562294 value=0.085257
+imitation pretrain step=50/50 loss=0.626844 policy=0.543583 value=0.083261
+c21 BC eval arm=b step=750/5000 val_loss=0.968750 best_val=0.955460 stale=1
+imitation pretrain step=50/50 loss=0.630430 policy=0.566248 value=0.064182
+imitation pretrain step=50/50 loss=0.693616 policy=0.621300 value=0.072316
+imitation pretrain step=50/50 loss=0.619698 policy=0.569644 value=0.050054
+imitation pretrain step=50/50 loss=0.626565 policy=0.571342 value=0.055223
+imitation pretrain step=50/50 loss=0.662533 policy=0.612274 value=0.050259
+c21 BC eval arm=b step=1000/5000 val_loss=0.977037 best_val=0.955460 stale=2
+imitation pretrain step=50/50 loss=0.576554 policy=0.528342 value=0.048212
+imitation pretrain step=50/50 loss=0.634316 policy=0.596056 value=0.038261
+imitation pretrain step=50/50 loss=0.634914 policy=0.604020 value=0.030894
+imitation pretrain step=50/50 loss=0.614666 policy=0.574420 value=0.040246
+imitation pretrain step=50/50 loss=0.679686 policy=0.639863 value=0.039823
+c21 BC eval arm=b step=1250/5000 val_loss=0.995802 best_val=0.955460 stale=3
+c21 BC early-stop arm=b step=1250 patience=3
+c21 BC complete arm=b checkpoint=checkpoints/c21_ablation/bc_b.pt steps=1250 train_loss=0.780916 best_val=0.955460 val_accuracy=0.771455
+c21 BC report=bench/c21_bc_ablation.json
