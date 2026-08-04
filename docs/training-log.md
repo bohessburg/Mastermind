@@ -1879,3 +1879,17 @@ PROXY; behavior instruments (vibe, duel, sentinel) take precedence.
 Val 1.149 (oscillating band). All amendments live: flat 0.2 anchor,
 league 15% frozen, chapel phase to g40.
 Crossing distance: 4.0 pts. Momentum: +8.2 over three milestones.
+
+=== C21 GEN-35 MILESTONE (2026-08-04) ===
+CHAMP DUEL: 45.2% (85-103-12), seat 49/36 — level with g30's 46.0
+(noise-equal); the four-milestone climb has flattened into a ~45-46
+plateau at champ-minus-4. SECOND SEAT 36/100 ties the all-time best.
+Sentinel 43.2 this gen (band swings 43-52). Vibe: sentry W 45-30,
+chapel L 33-36 (closest hard-board game yet). Gate healthy (-0.101).
+Val 1.281 (divergence drifting up — surpassing-vs-forgetting still
+unresolved without skill-weighted val). READ: c21 has likely reached
+its 65K-corpus equilibrium ~45-46 vs champ — extraordinary vs all
+predecessors (c20 peaked 41 at g50), short of the crossing. The
+corpus thesis's prediction, arriving on schedule. c21 continues
+(cheap; slope not formally dead — g40 adjudicates plateau-vs-climb),
+but the strategic weight now fully on the corpus march to 1M.
