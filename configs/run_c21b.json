@@ -79,7 +79,7 @@
     "margin_scale": 20.0,
     "obs_version": 3,
     "opening_templates_enabled": false,
-    "max_turns": 80
+    "max_turns": 60
   },
   "replay": {
     "capacity": 3000000,
