@@ -144,6 +144,8 @@ class ImitationConfig:
 
     # Directory containing tuple_manifest.json and tuples-*.npz shards.
     human_tuples: str = "exports/tuples"
+    # Opt-in so existing campaigns retain their exact unweighted CE path.
+    skill_weighting: bool = False
     # Optional manifest-backed filters. Empty lists retain every exported row.
     opponent_kinds: list[str] = field(default_factory=list)
     seat_indices: list[int] = field(default_factory=list)
@@ -501,6 +503,8 @@ def validate_imitation_config(config: ImitationConfig) -> None:
     """Validate optional human imitation settings without touching tuple files."""
     if not isinstance(config.human_tuples, str) or not config.human_tuples:
         raise ValueError("imitation.human_tuples must be a non-empty string path")
+    if not isinstance(config.skill_weighting, bool):
+        raise ValueError("imitation.skill_weighting must be a boolean")
     if not isinstance(config.opponent_kinds, list) or not all(
         isinstance(kind, str) and kind for kind in config.opponent_kinds
     ):

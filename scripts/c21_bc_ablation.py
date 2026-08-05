@@ -43,6 +43,7 @@ ARMS = {
     "a": {"d_model": 192, "n_layers": 4, "n_heads": 6},
     "b": {"d_model": 320, "n_layers": 5, "n_heads": 8},
 }
+SMOKE_EVAL_ROWS = 2_048
 
 
 @torch.no_grad()
@@ -51,14 +52,17 @@ def policy_accuracy(
     dataset: HumanTupleDataset,
     batch_size: int,
     device: torch.device,
+    *,
+    max_rows: int | None = None,
 ) -> float:
     """Return masked argmax agreement; loss computation stays in offline_fit."""
 
     model.eval()
     matches = 0
     total = 0
-    for start in range(0, len(dataset), batch_size):
-        stop = min(start + batch_size, len(dataset))
+    rows = len(dataset) if max_rows is None else min(len(dataset), max_rows)
+    for start in range(0, rows, batch_size):
+        stop = min(start + batch_size, rows)
         obs = torch.as_tensor(dataset.obs[start:stop], dtype=torch.float32, device=device)
         legal = torch.as_tensor(dataset.legal[start:stop], dtype=torch.bool, device=device)
         actions = torch.as_tensor(dataset.action[start:stop], dtype=torch.long, device=device)
@@ -78,6 +82,7 @@ def _prepare_config(args: argparse.Namespace, arm: dict[str, int]):
     config.checkpoint_dir = str(args.output_dir)
     config.metrics_csv = str(args.output_dir / "metrics.csv")
     config.imitation.human_tuples = str(args.train_tuples)
+    config.imitation.skill_weighting = bool(args.skill_weighting)
     config.imitation.pretrain_steps = 50 if args.smoke else args.steps
     config.model.d_model = arm["d_model"]
     config.model.n_layers = arm["n_layers"]
@@ -113,9 +118,10 @@ def _run_arm(
     # A normal ablation reports the corpus-wide final train loss.  Smoke mode
     # intentionally keeps its diagnostic loss compact so the promised fast
     # CPU sanity check does not spend most of its time re-scoring 62K rows.
-    train_metric_rows = min(len(train_arrays), 2_048) if args.smoke else len(train_arrays)
+    train_metric_rows = min(len(train_arrays), SMOKE_EVAL_ROWS) if args.smoke else len(train_arrays)
     train_indices = np.arange(train_metric_rows, dtype=np.intp)
-    val_indices = np.arange(len(val_arrays), dtype=np.intp)
+    val_metric_rows = min(len(val_arrays), SMOKE_EVAL_ROWS) if args.smoke else len(val_arrays)
+    val_indices = np.arange(val_metric_rows, dtype=np.intp)
     eval_batch_size = int(config.imitation.pretrain_batch_size)
     train_batch_size = min(eval_batch_size, 32) if args.smoke else eval_batch_size
     total_steps = int(config.imitation.pretrain_steps)
@@ -176,7 +182,13 @@ def _run_arm(
     final_train = evaluate_human(model, train_arrays, train_indices, eval_batch_size, device)
     last_train_loss = final_train.total
     final_val = evaluate_human(model, val_arrays, val_indices, eval_batch_size, device)
-    val_accuracy = policy_accuracy(model, val_dataset, eval_batch_size, device)
+    val_accuracy = policy_accuracy(
+        model,
+        val_dataset,
+        eval_batch_size,
+        device,
+        max_rows=SMOKE_EVAL_ROWS if args.smoke else None,
+    )
     checkpoint = checkpoint_payload(config, 0, model, optimizer)
     checkpoint["encoder_generation"] = 2
     checkpoint_path = args.output_dir / f"bc_{label}.pt"
@@ -200,6 +212,7 @@ def _run_arm(
         "parameter_count": parameter_count,
         "train_batch_size": train_batch_size,
         "train_loss_rows": train_metric_rows,
+        "val_loss_rows": val_metric_rows,
         "checkpoint": str(checkpoint_path),
         "last_pre_restore_train_loss": last_train_loss,
     }
@@ -209,6 +222,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--device", choices=("cpu", "cuda"), default="cpu")
     parser.add_argument("--smoke", action="store_true", help="run 50 steps per arm without early stopping")
+    parser.add_argument(
+        "--skill-weighting",
+        action="store_true",
+        help="apply the c22 rating curve to human policy CE (value stays unweighted)",
+    )
     parser.add_argument("--steps", type=int, default=5000)
     parser.add_argument("--eval-every", type=int, default=250)
     parser.add_argument("--patience", type=int, default=3)
@@ -225,8 +243,16 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit("--steps, --eval-every, and --patience must be positive")
     device = select_device(args.device)
     print(f"c21 BC loading train={args.train_tuples} val={args.val_tuples}", flush=True)
-    train_dataset = load_human_tuples(args.train_tuples, value_scheme="margin")
-    val_dataset = load_human_tuples(args.val_tuples, value_scheme="margin")
+    train_dataset = load_human_tuples(
+        args.train_tuples,
+        value_scheme="margin",
+        skill_weighting=args.skill_weighting,
+    )
+    val_dataset = load_human_tuples(
+        args.val_tuples,
+        value_scheme="margin",
+        skill_weighting=args.skill_weighting,
+    )
     args.output_dir.mkdir(parents=True, exist_ok=True)
     results = [
         _run_arm(label, arm, args, train_dataset, val_dataset, device)
@@ -239,6 +265,7 @@ def main(argv: list[str] | None = None) -> int:
         "train_tuples": len(train_dataset),
         "val_tuples": len(val_dataset),
         "smoke": bool(args.smoke),
+        "skill_weighting": bool(args.skill_weighting),
         "arms": results,
     }
     args.report.parent.mkdir(parents=True, exist_ok=True)

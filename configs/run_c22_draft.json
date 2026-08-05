@@ -30,6 +30,7 @@
   "aux_margin_weight": 0.3,
   "imitation": {
     "human_tuples": "exports/tuples_all/train",
+    "skill_weighting": true,
     "pretrain_steps": 0,
     "pretrain_batch_size": 512,
     "anchor_weight": 0.2,

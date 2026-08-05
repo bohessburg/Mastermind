@@ -75,6 +75,8 @@ class HumanArrays:
     value: np.ndarray
     legal_mask: np.ndarray
     margin: np.ndarray
+    # None preserves the historical human CE path exactly.
+    policy_weight: np.ndarray | None = None
 
     def __len__(self) -> int:
         return int(self.obs.shape[0])
@@ -307,6 +309,11 @@ def human_arrays(dataset: HumanTupleDataset) -> HumanArrays:
         value=np.ascontiguousarray(dataset.value, dtype=np.float32),
         legal_mask=np.ascontiguousarray(dataset.legal, dtype=np.bool_),
         margin=np.ascontiguousarray(dataset.margin, dtype=np.int16),
+        policy_weight=(
+            np.ascontiguousarray(dataset.policy_weight, dtype=np.float32)
+            if dataset.skill_weighting
+            else None
+        ),
     )
 
 
@@ -344,6 +351,19 @@ def _human_batch_tensors(data: HumanArrays, indices: np.ndarray, device: torch.d
 
 def _human_margin_tensor(data: HumanArrays, indices: np.ndarray, device: torch.device) -> torch.Tensor:
     return torch.as_tensor(data.margin[indices], dtype=torch.long, device=device)
+
+
+def _human_policy_weight_tensor(
+    data: HumanArrays,
+    indices: np.ndarray,
+    device: torch.device,
+) -> torch.Tensor | None:
+    if data.policy_weight is None:
+        return None
+    weights = np.asarray(data.policy_weight[indices], dtype=np.float32)
+    if weights.shape != (len(indices),) or not np.all(np.isfinite(weights)) or np.any(weights <= 0.0):
+        raise ValueError("HumanArrays.policy_weight must contain finite positive values")
+    return torch.as_tensor(weights, dtype=torch.float32, device=device)
 
 
 def _losses(
@@ -386,10 +406,12 @@ def _human_losses(
     actions: torch.Tensor,
     value_target: torch.Tensor,
     legal_mask: torch.Tensor,
+    policy_weight: torch.Tensor | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """Hard-label CE plus value MSE for human demonstrations."""
     masked = logits.masked_fill(~legal_mask, -1.0e9)
-    policy_loss = F.cross_entropy(masked, actions, reduction="mean")
+    policy_per_row = F.cross_entropy(masked, actions, reduction="none")
+    policy_loss = policy_per_row.mean() if policy_weight is None else (policy_per_row * policy_weight).mean()
     probs = torch.softmax(masked, dim=-1)
     log_probs = torch.log_softmax(masked, dim=-1)
     entropy = -(probs * log_probs).masked_fill(~legal_mask, 0.0).sum(dim=-1).mean()
@@ -406,6 +428,7 @@ def _human_losses_with_aux(
     legal_mask: torch.Tensor,
     margins: torch.Tensor,
     aux_margin_weight: float,
+    policy_weight: torch.Tensor | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     total, policy_loss, value_loss, entropy = _human_losses(
         logits,
@@ -413,6 +436,7 @@ def _human_losses_with_aux(
         actions,
         value_target,
         legal_mask,
+        policy_weight,
     )
     aux_loss = F.cross_entropy(aux_logits, margin_bucket_ids(margins, int(aux_logits.shape[-1])))
     return total + float(aux_margin_weight) * aux_loss, policy_loss, value_loss, entropy, aux_loss
@@ -533,11 +557,18 @@ def evaluate_human(
                 legal_mask,
                 _human_margin_tensor(data, batch_indices, device),
                 aux_margin_weight,
+                _human_policy_weight_tensor(data, batch_indices, device),
             )
             aux_total += float(losses[4].detach().cpu()) * len(batch_indices)
             losses = losses[:4]
         else:
-            losses = _human_losses(*model(obs), actions, value_target, legal_mask)
+            losses = _human_losses(
+                *model(obs),
+                actions,
+                value_target,
+                legal_mask,
+                _human_policy_weight_tensor(data, batch_indices, device),
+            )
         weight = len(batch_indices)
         for index, metric in enumerate(losses):
             totals[index] += float(metric.detach().cpu()) * weight
@@ -610,9 +641,16 @@ def _mixed_step(
                 legal_mask,
                 _human_margin_tensor(human, human_indices, device),
                 aux_margin_weight,
+                _human_policy_weight_tensor(human, human_indices, device),
             )
         else:
-            base_losses = _human_losses(*model(obs), actions, value_target, legal_mask)
+            base_losses = _human_losses(
+                *model(obs),
+                actions,
+                value_target,
+                legal_mask,
+                _human_policy_weight_tensor(human, human_indices, device),
+            )
             losses = (*base_losses, base_losses[0].new_tensor(float("nan")))
         source_losses["human"] = (*losses, len(human_indices))
     if not source_losses:

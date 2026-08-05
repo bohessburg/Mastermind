@@ -73,6 +73,25 @@ def test_anchor_train_step_reports_finite_human_losses() -> None:
     assert all(math.isfinite(value) for value in result.values())
 
 
+def test_pretrain_accepts_per_example_policy_weights() -> None:
+    torch.manual_seed(511)
+    model = DominionNet(5, 3, hidden_sizes=[8])
+    optimizer = torch.optim.Adam(model.parameters(), lr=1.0e-3)
+    batch = _toy_human_batch()
+    weighted = HumanBatch(
+        obs=batch.obs,
+        action=batch.action,
+        legal=batch.legal,
+        value=batch.value,
+        policy_weight=np.asarray([0.02, 0.51, 1.5, 3.0], dtype=np.float32),
+    )
+
+    history = run_human_pretrain(model, optimizer, iter([weighted]), steps=1, device=torch.device("cpu"))
+
+    assert len(history) == 1
+    assert all(math.isfinite(value) for value in history[0].values())
+
+
 def test_disabled_anchor_is_the_unchanged_selfplay_train_step_and_does_not_touch_human_data() -> None:
     torch.manual_seed(503)
     first = DominionNet(5, 3, hidden_sizes=[8])

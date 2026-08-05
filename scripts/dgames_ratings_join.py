@@ -43,6 +43,10 @@ class RatingObservation:
     rating: float
     trend: float
     rating_type: str
+    # Native Glicko deviation.  The displayed level is ``rating``; keep this
+    # separate rather than using the UI-converted value so downstream policy
+    # confidence normalization stays tied to the protocol's bounded scale.
+    deviation: float | None = None
 
     @property
     def observed_at(self) -> datetime:
@@ -110,6 +114,13 @@ def _required_number(document: Mapping[str, object], field: str, *, context: str
     return float(value)
 
 
+def _optional_number(document: Mapping[str, object], field: str, *, context: str) -> float | None:
+    value = document.get(field)
+    if value is None:
+        return None
+    return _required_number(document, field, context=context)
+
+
 def parse_observation_document(document: Mapping[str, object], *, context: str) -> RatingObservation:
     """Validate the fields that make a rating record usable for a time join."""
 
@@ -125,6 +136,7 @@ def parse_observation_document(document: Mapping[str, object], *, context: str) 
         rating=_required_number(document, "rating", context=context),
         trend=_required_number(document, "trend", context=context),
         rating_type=rating_type,
+        deviation=_optional_number(document, "deviation", context=context),
     )
 
 
@@ -236,7 +248,11 @@ def _sidecar_entry(
     capture_time: datetime,
 ) -> dict[str, object]:
     return {
+        # ``level`` names the UI concept.  Retain ``rating`` for the existing
+        # sidecar readers while they migrate to the explicit spelling.
+        "level": observation.rating,
         "rating": observation.rating,
+        "deviation": observation.deviation,
         "rank": observation.rank,
         "trend": observation.trend,
         "rating_type": observation.rating_type,

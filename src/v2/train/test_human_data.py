@@ -18,7 +18,12 @@ ROOT = Path(__file__).resolve().parents[3]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.v2.train.human_data import load_human_tuples, recompute_value_targets
+from src.v2.train.human_data import (
+    POLICY_WEIGHT_EPSILON,
+    policy_weight_for_rating,
+    load_human_tuples,
+    recompute_value_targets,
+)
 
 
 def make_tuple_root(root: Path) -> Path:
@@ -95,6 +100,68 @@ def test_seeded_minibatches_cycle_forever_and_match_across_iterators(tmp_path: P
         np.testing.assert_array_equal(first_batch.action, second_batch.action)
         np.testing.assert_array_equal(first_batch.legal, second_batch.legal)
         np.testing.assert_array_equal(first_batch.value, second_batch.value)
+
+
+def test_signed_policy_weight_curve_boundaries_and_deviation_discount() -> None:
+    assert policy_weight_for_rating(39.0) == pytest.approx(POLICY_WEIGHT_EPSILON)
+    assert policy_weight_for_rating(40.0) == pytest.approx(POLICY_WEIGHT_EPSILON)
+    assert policy_weight_for_rating(45.0) == pytest.approx(0.51)
+    assert policy_weight_for_rating(50.0) == pytest.approx(3.0)
+    assert policy_weight_for_rating(None) == pytest.approx(POLICY_WEIGHT_EPSILON)
+    # Native Glicko deviation 0.5 is the observed sidecar scale ceiling and therefore
+    # invokes the documented 0.5 confidence floor.
+    assert policy_weight_for_rating(50.0, deviation=0.5) == pytest.approx(1.5)
+    assert policy_weight_for_rating(45.0, deviation=0.25) == pytest.approx(0.255)
+
+
+def test_disabled_skill_weighting_is_loader_bit_identical_and_skips_sidecar(tmp_path: Path) -> None:
+    root = make_tuple_root(tmp_path / "tuples")
+    baseline = load_human_tuples(root)
+    disabled = load_human_tuples(
+        root,
+        skill_weighting=False,
+        ratings_sidecar=tmp_path / "does-not-exist.json",
+    )
+
+    for field in ("obs", "action", "legal", "value", "margin", "winner", "seat_index", "game_index", "ply_index", "turn_number"):
+        np.testing.assert_array_equal(getattr(disabled, field), getattr(baseline, field))
+    np.testing.assert_array_equal(disabled.policy_weight, np.ones(len(disabled), dtype=np.float32))
+    assert disabled.minibatches(2, 17).__next__().policy_weight is None
+
+
+def test_skill_weighted_loader_joins_manifest_player_ids_by_acting_seat(tmp_path: Path) -> None:
+    root = make_tuple_root(tmp_path / "tuples")
+    manifest_path = root / "tuple_manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["games"][0]["id"] = "first"
+    manifest["games"][0]["player_ids"] = [101, 102]
+    manifest["games"][1]["id"] = "second"
+    manifest["games"][1]["player_ids"] = [201, 202]
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    with np.load(root / "tuples-00000.npz", allow_pickle=False) as shard:
+        contents = {name: shard[name] for name in shard.files}
+    contents["seat_index"] = np.asarray([0, 1, 0, 1], dtype=np.int16)
+    np.savez_compressed(root / "tuples-00000.npz", **contents)
+    sidecar_path = tmp_path / "ratings.json"
+    sidecar_path.write_text(
+        json.dumps(
+            {
+                "first": {
+                    "101": {"level": 39.0, "deviation": 0.0},
+                    "102": {"level": 50.0, "deviation": 0.375},
+                },
+                "second": {
+                    "201": {"rating": 45.0, "deviation": 0.0},
+                    "202": None,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    dataset = load_human_tuples(root, skill_weighting=True, ratings_sidecar=sidecar_path)
+    np.testing.assert_allclose(dataset.policy_weight, [0.02, 1.5, 0.51, 0.02], rtol=0.0, atol=1.0e-6)
+    assert dataset.rating_band.tolist() == ["level_below_40", "level_50_plus", "level_40_to_50", "unrated_or_missing"]
 
 
 if __name__ == "__main__":  # pragma: no cover - standalone test entry point

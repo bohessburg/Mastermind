@@ -20,6 +20,21 @@ import numpy as np
 DEFAULT_MARGIN_BLEND_ALPHA = 0.6
 DEFAULT_MARGIN_SCALE = 20.0
 VALUE_SCHEMES = frozenset({"margin_blend", "margin", "plain_margin", "outcome", "winloss"})
+DEFAULT_RATINGS_SIDECAR = Path("data/dominion_games/ratings/game_ratings.json")
+
+# c22 signed policy-teacher curve. The joined sidecar's native Glicko
+# deviation tops out at 0.499 (p95 0.336), so normalize against its natural
+# 0.5 ceiling rather than the UI-converted deviation (roughly 7.5x larger).
+POLICY_WEIGHT_EPSILON = 0.02
+POLICY_WEIGHT_RAMP_START = 40.0
+POLICY_WEIGHT_RAMP_END = 50.0
+POLICY_WEIGHT_EXPERT = 3.0
+RATING_DEVIATION_THRESHOLD = 0.5
+
+RATING_BAND_UNRATED = "unrated_or_missing"
+RATING_BAND_LOW = "level_below_40"
+RATING_BAND_RAMP = "level_40_to_50"
+RATING_BAND_EXPERT = "level_50_plus"
 
 
 @dataclass(frozen=True)
@@ -39,6 +54,9 @@ class HumanBatch:
     # Optional only for compatibility with older direct HumanBatch fixtures;
     # manifest-backed batches always carry the raw terminal margin.
     margin: np.ndarray | None = None
+    # None retains the original unweighted CE reduction exactly. Loader-backed
+    # c22 skill-weighted batches carry one positive scalar per demonstration.
+    policy_weight: np.ndarray | None = None
 
     def __iter__(self):
         """Allow ``obs, action, legal, value = next(iterator)`` callers."""
@@ -62,6 +80,9 @@ class HumanTupleDataset:
     game_index: np.ndarray
     ply_index: np.ndarray
     turn_number: np.ndarray
+    policy_weight: np.ndarray
+    rating_band: np.ndarray
+    skill_weighting: bool
     manifest: dict[str, Any]
 
     def __len__(self) -> int:
@@ -124,6 +145,11 @@ class HumanBatchIterator(Iterator[HumanBatch]):
             legal=np.ascontiguousarray(self.dataset.legal[indices]),
             value=np.ascontiguousarray(self.dataset.value[indices]),
             margin=np.ascontiguousarray(self.dataset.margin[indices]),
+            policy_weight=(
+                np.ascontiguousarray(self.dataset.policy_weight[indices])
+                if self.dataset.skill_weighting
+                else None
+            ),
         )
 
 
@@ -186,12 +212,19 @@ def load_human_tuples(
     seat_indices: Iterable[int] | int | None = None,
     opponent_kind: str | None = None,
     seat_index: int | None = None,
+    skill_weighting: bool = False,
+    ratings_sidecar: str | Path = DEFAULT_RATINGS_SIDECAR,
 ) -> HumanTupleDataset:
     """Load manifest-declared tuple shards and optionally filter their rows.
 
     ``opponent_kinds`` matches the acting row's *other* seats.  Both exporter
     spellings (``"bot:bigmoney"``) and short spellings (``"bigmoney"``) are
     accepted.  ``seat_indices`` filters by the row's acting seat index.
+
+    When ``skill_weighting`` is enabled, ratings are joined at load time using
+    ``games[index].id`` / ``games[index].player_ids`` and each row's
+    ``game_index`` / ``seat_index``. This keeps ratings replaceable without
+    reconverting tuple shards. The value target remains unweighted.
     """
 
     if opponent_kind is not None:
@@ -202,6 +235,8 @@ def load_human_tuples(
         if seat_indices is not None:
             raise ValueError("pass only one of seat_index and seat_indices")
         seat_indices = seat_index
+    if not isinstance(skill_weighting, bool):
+        raise ValueError("skill_weighting must be a boolean")
 
     root = Path(tuple_dir)
     manifest_path = root / "tuple_manifest.json"
@@ -288,6 +323,15 @@ def load_human_tuples(
         alpha=margin_blend_alpha,
         scale=margin_scale,
     )
+    policy_weight = np.ones((actions.shape[0],), dtype=np.float32)
+    rating_band = np.full((actions.shape[0],), "unweighted", dtype="U18")
+    if skill_weighting:
+        policy_weight, rating_band = _load_policy_weights(
+            manifest,
+            filtered["game_index"],
+            filtered["seat_index"],
+            ratings_sidecar,
+        )
     return HumanTupleDataset(
         obs=filtered["obs"].astype(np.float32, copy=False),
         action=filtered["action"].astype(np.int64, copy=False),
@@ -299,8 +343,134 @@ def load_human_tuples(
         game_index=filtered["game_index"].astype(np.int32, copy=False),
         ply_index=filtered["ply_index"].astype(np.int32, copy=False),
         turn_number=filtered["turn_number"].astype(np.int32, copy=False),
+        policy_weight=policy_weight,
+        rating_band=rating_band,
+        skill_weighting=skill_weighting,
         manifest=manifest,
     )
+
+
+def rating_band_for_level(level: float | None) -> str:
+    """Classify a displayed leaderboard level for c22 audit accounting."""
+
+    if level is None or not math.isfinite(level):
+        return RATING_BAND_UNRATED
+    if level < POLICY_WEIGHT_RAMP_START:
+        return RATING_BAND_LOW
+    if level < POLICY_WEIGHT_RAMP_END:
+        return RATING_BAND_RAMP
+    return RATING_BAND_EXPERT
+
+
+def policy_weight_for_rating(level: float | None, deviation: float | None = None) -> float:
+    """Return the signed c22 policy-only teaching weight for one player."""
+
+    band = rating_band_for_level(level)
+    if band == RATING_BAND_UNRATED:
+        # Missing ratings are deliberately the low/value-only band, not an
+        # invitation to invent a confidence discount below the signed epsilon.
+        return POLICY_WEIGHT_EPSILON
+    assert level is not None
+    if band == RATING_BAND_LOW:
+        weight = POLICY_WEIGHT_EPSILON
+    elif band == RATING_BAND_RAMP:
+        progress = (level - POLICY_WEIGHT_RAMP_START) / (
+            POLICY_WEIGHT_RAMP_END - POLICY_WEIGHT_RAMP_START
+        )
+        weight = POLICY_WEIGHT_EPSILON + progress * (1.0 - POLICY_WEIGHT_EPSILON)
+    else:
+        weight = POLICY_WEIGHT_EXPERT
+
+    if deviation is None or not math.isfinite(deviation):
+        return float(weight)
+    confidence = max(0.5, 1.0 - max(0.0, deviation) / RATING_DEVIATION_THRESHOLD)
+    return float(weight * confidence)
+
+
+def _load_policy_weights(
+    manifest: dict[str, Any],
+    game_indices: np.ndarray,
+    seat_indices: np.ndarray,
+    ratings_sidecar: str | Path,
+) -> tuple[np.ndarray, np.ndarray]:
+    ratings_path = Path(ratings_sidecar)
+    try:
+        sidecar = json.loads(ratings_path.read_text(encoding="utf-8"))
+    except OSError as exc:
+        raise FileNotFoundError(f"ratings sidecar not found: {ratings_path}") from exc
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"ratings sidecar is not valid JSON: {ratings_path}") from exc
+    if not isinstance(sidecar, dict):
+        raise ValueError("ratings sidecar root must be an object")
+
+    games = _manifest_rating_games(manifest)
+    weights = np.empty((game_indices.shape[0],), dtype=np.float32)
+    bands = np.empty((game_indices.shape[0],), dtype="U18")
+    assignments: dict[tuple[int, int], tuple[float, str]] = {}
+    for row, (game_index, seat_index) in enumerate(zip(game_indices, seat_indices, strict=True)):
+        key = (int(game_index), int(seat_index))
+        assignment = assignments.get(key)
+        if assignment is None:
+            game = games.get(key[0])
+            if game is None:
+                raise ValueError(f"human tuple row references unknown game_index {key[0]}")
+            game_id, player_ids = game
+            if player_ids is None:
+                level = deviation = None
+            elif not 0 <= key[1] < len(player_ids):
+                raise ValueError(f"human tuple row has invalid seat_index {key[1]}")
+            else:
+                game_ratings = sidecar.get(game_id)
+                entry = game_ratings.get(str(player_ids[key[1]])) if isinstance(game_ratings, dict) else None
+                level, deviation = _rating_entry_level_and_deviation(entry)
+            assignment = (policy_weight_for_rating(level, deviation), rating_band_for_level(level))
+            assignments[key] = assignment
+        weights[row], bands[row] = assignment
+    return np.ascontiguousarray(weights), np.ascontiguousarray(bands)
+
+
+def _manifest_rating_games(manifest: dict[str, Any]) -> dict[int, tuple[str, tuple[int, ...] | None]]:
+    games = manifest.get("games")
+    if not isinstance(games, list):
+        raise ValueError("human tuple manifest games must be a list for skill weighting")
+    result: dict[int, tuple[str, tuple[int, ...] | None]] = {}
+    for raw_game in games:
+        if not isinstance(raw_game, dict):
+            raise ValueError("human tuple manifest games must contain objects")
+        index = raw_game.get("index")
+        game_id = raw_game.get("id")
+        if not isinstance(index, int) or isinstance(index, bool) or index < 0:
+            raise ValueError("human tuple manifest game index must be a non-negative integer")
+        if not isinstance(game_id, (int, str)) or isinstance(game_id, bool) or not str(game_id):
+            raise ValueError("human tuple manifest game id must be a non-empty string or integer")
+        raw_player_ids = raw_game.get("player_ids")
+        player_ids = (
+            tuple(raw_player_ids)
+            if isinstance(raw_player_ids, list)
+            and all(isinstance(player_id, int) and not isinstance(player_id, bool) for player_id in raw_player_ids)
+            else None
+        )
+        if index in result:
+            raise ValueError(f"human tuple manifest repeats game index {index}")
+        result[index] = (str(game_id), player_ids)
+    return result
+
+
+def _rating_entry_level_and_deviation(entry: object) -> tuple[float | None, float | None]:
+    if not isinstance(entry, dict):
+        return None, None
+    raw_level = entry.get("level", entry.get("rating"))
+    raw_deviation = entry.get("deviation")
+    level = _finite_optional_number(raw_level)
+    deviation = _finite_optional_number(raw_deviation)
+    return level, deviation
+
+
+def _finite_optional_number(value: object) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    normalized = float(value)
+    return normalized if math.isfinite(normalized) else None
 
 
 def _positive_manifest_int(manifest: dict[str, Any], name: str) -> int:

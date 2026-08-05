@@ -275,6 +275,17 @@ def _human_batch_tensors(batch: HumanBatch, device: torch.device) -> tuple[torch
     )
 
 
+def _human_policy_weights(batch: HumanBatch, device: torch.device) -> torch.Tensor | None:
+    if batch.policy_weight is None:
+        return None
+    weights = np.asarray(batch.policy_weight, dtype=np.float32)
+    if weights.shape != np.asarray(batch.value).shape:
+        raise ValueError("HumanBatch.policy_weight shape must match HumanBatch.value")
+    if not np.all(np.isfinite(weights)) or np.any(weights <= 0.0):
+        raise ValueError("HumanBatch.policy_weight must contain finite positive values")
+    return torch.as_tensor(weights, dtype=torch.float32, device=device)
+
+
 def human_imitation_losses(
     model: torch.nn.Module,
     batch: HumanBatch,
@@ -284,6 +295,7 @@ def human_imitation_losses(
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Compute hard-action CE and value MSE for one human tuple batch."""
     obs, actions, legal_mask, value_target = _human_batch_tensors(batch, device)
+    policy_weights = _human_policy_weights(batch, device)
     logits, value_prediction = model(obs)
     if anchor_awr_beta > 0.0:
         awr_weights = anchor_awr_weights(
@@ -291,7 +303,11 @@ def human_imitation_losses(
             value_prediction.detach(),
             anchor_awr_beta,
         )
+        if policy_weights is not None:
+            awr_weights = awr_weights * policy_weights
         policy_loss = hard_label_policy_loss(logits, legal_mask, actions, weights=awr_weights)
+    elif policy_weights is not None:
+        policy_loss = hard_label_policy_loss(logits, legal_mask, actions, weights=policy_weights)
     else:
         # Keep beta=0 on the ordinary CE reduction path, rather than merely
         # multiplying it by an all-ones tensor.
@@ -347,6 +363,7 @@ def human_imitation_losses_with_aux(
 
     obs, actions, legal_mask, value_target = _human_batch_tensors(batch, device)
     margins = _human_margin_tensor(batch, device)
+    policy_weights = _human_policy_weights(batch, device)
     logits, value_prediction, aux_logits = _forward_with_aux(model, obs)
     if anchor_awr_beta > 0.0:
         awr_weights = anchor_awr_weights(
@@ -354,7 +371,11 @@ def human_imitation_losses_with_aux(
             value_prediction.detach(),
             anchor_awr_beta,
         )
+        if policy_weights is not None:
+            awr_weights = awr_weights * policy_weights
         policy_loss = hard_label_policy_loss(logits, legal_mask, actions, weights=awr_weights)
+    elif policy_weights is not None:
+        policy_loss = hard_label_policy_loss(logits, legal_mask, actions, weights=policy_weights)
     else:
         policy_loss = hard_label_policy_loss(logits, legal_mask, actions)
     value_loss = F.mse_loss(value_prediction, value_target)
@@ -427,6 +448,7 @@ def load_human_dataset_for_config(config: TrainConfig) -> HumanTupleDataset:
         margin_scale=config.selfplay.margin_scale,
         opponent_kinds=config.imitation.opponent_kinds or None,
         seat_indices=config.imitation.seat_indices or None,
+        skill_weighting=config.imitation.skill_weighting,
     )
     expected_obs_size = obs_size_for_config(config)
     if dataset.obs_width != expected_obs_size:
