@@ -1,0 +1,73 @@
+{
+  "arms": [
+    {
+      "best_val_loss": 0.565244113146068,
+      "checkpoint": "checkpoints/c21_ablation/bc_a.pt",
+      "final_train_loss": 0.5413854299433929,
+      "final_val_loss": 0.565244113146068,
+      "label": "a",
+      "last_pre_restore_train_loss": 0.5413854299433929,
+      "model": {
+        "arch": "card_transformer",
+        "aux_margin_buckets": 21,
+        "d_model": 192,
+        "dropout": 0.0,
+        "ffn_multiplier": 4,
+        "hidden_sizes": [
+          1024,
+          1024,
+          512
+        ],
+        "input_scale": 1.0,
+        "n_heads": 6,
+        "n_layers": 4,
+        "obs_version": 3
+      },
+      "parameter_count": 1965947,
+      "steps_run": 1250,
+      "train_batch_size": 512,
+      "train_loss_rows": 332144,
+      "val_loss_rows": 16118,
+      "val_policy_accuracy": 0.6949373371386028,
+      "wall_seconds": 62.77485685200372
+    },
+    {
+      "best_val_loss": 0.5718560620119886,
+      "checkpoint": "checkpoints/c21_ablation/bc_b.pt",
+      "final_train_loss": 0.5706617753539818,
+      "final_val_loss": 0.5718560620119886,
+      "label": "b",
+      "last_pre_restore_train_loss": 0.5706617753539818,
+      "model": {
+        "arch": "card_transformer",
+        "aux_margin_buckets": 21,
+        "d_model": 320,
+        "dropout": 0.0,
+        "ffn_multiplier": 4,
+        "hidden_sizes": [
+          1024,
+          1024,
+          512
+        ],
+        "input_scale": 1.0,
+        "n_heads": 8,
+        "n_layers": 5,
+        "obs_version": 3
+      },
+      "parameter_count": 6639419,
+      "steps_run": 1000,
+      "train_batch_size": 512,
+      "train_loss_rows": 332144,
+      "val_loss_rows": 16118,
+      "val_policy_accuracy": 0.687988584191587,
+      "wall_seconds": 65.07889612299914
+    }
+  ],
+  "config": "configs/run_c21_draft.json",
+  "encoder_generation": 2,
+  "observation_version": 3,
+  "skill_weighting": true,
+  "smoke": false,
+  "train_tuples": 332144,
+  "val_tuples": 16118
+}

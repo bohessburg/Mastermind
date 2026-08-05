@@ -1923,3 +1923,17 @@ targets never skill-weighted; unrated = low band; 1M trigger and
 per-card floors counted in POLICY-EFFECTIVE tuples with a raw+
 effective pre-launch audit. Spec: docs/research-agenda.md; ratings
 sidecar: data/dominion_games/ratings/.
+
+=== C21B SCALING PROBE LAUNCHED (2026-08-05) ===
+PURPOSE: second point on the corpus-scaling curve. 348,262 tuples
+(2,800 games; ~32% policy-effective under the signed skill curve —
+audit banked). Minimal c22 recipe: NO curriculum, NO league,
+skill-weighted flat 0.2 anchor, 80-turn cap, 100% random kingdoms.
+Init: weighted BC on 348K (d192/4L, val 0.5652, 69.5% acc; small net
+beat 6.6M on BOTH metrics under weighting — third ablation
+confirmation). Box: 256 cores/251GB/5090 (port 32165), 224 workers,
+2 shards. PRE-REGISTERED BAR: equilibrium champ duel (c15 gen_0045,
+--legacy-shim) at g25-30 vs c21's 45-46 @65K. Time-boxed ~30 gens.
+Milestones every 5. If equilibrium moves materially up: scaling
+thesis confirmed, 1M(+) c22 proceeds with confidence. If flat: stop
+and rethink before c22.
