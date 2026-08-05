@@ -1,0 +1,127 @@
+{
+  "_comment": "Campaign 22 DRAFT (2026-08-05). Signed design: 1M-tuple trigger (policy-effective, coverage-gated pre-launch audit), rating-weighted policy targets (sub-40 value-only / 40-50 ramp / 50+ dominant; values unweighted), NO KINGDOM CURRICULUM OR FIXED-KINGDOM MACHINERY (100% uniform random kingdoms \u2014 Jack 2026-08-05), model d192/4L/6H pending final 1M ablation, flat 0.2 anchor, league frozen <=15%, 80-turn selfplay cap, SIL off. BC init from the corpus-of-record at trigger time. LAUNCH BLOCKED on: 1M trigger, coverage audit, final ablation, rating-weighted loader implementation, pre-registration sign-off.",
+  "seed": 20260731,
+  "generations": 100,
+  "init_weights": "",
+  "device": "auto",
+  "parallel_workers": 184,
+  "server_selfplay": true,
+  "gate_games": 0,
+  "checkpoint_dir": "checkpoints/campaign22",
+  "metrics_csv": "checkpoints/campaign22/metrics.csv",
+  "league_pool_size": 16,
+  "league_seed_checkpoints": [],
+  "league_self_every": 10,
+  "league_schedule": [
+    [
+      10,
+      0.15
+    ]
+  ],
+  "league_opponents_per_gen": 3,
+  "scripted_opponents": {},
+  "scripted_opponent_schedule": {},
+  "kingdom_curriculum": [],
+  "model": {
+    "arch": "card_transformer",
+    "obs_version": 3,
+    "d_model": 192,
+    "n_layers": 4,
+    "n_heads": 6,
+    "ffn_multiplier": 4,
+    "dropout": 0.0,
+    "aux_margin_buckets": 21
+  },
+  "aux_margin_weight": 0.3,
+  "imitation": {
+    "human_tuples": "exports/tuples_all/train",
+    "pretrain_steps": 0,
+    "pretrain_batch_size": 512,
+    "anchor_weight": 0.2,
+    "anchor_weight_schedule": [
+      [
+        1,
+        0.2
+      ]
+    ],
+    "anchor_batch_size": 128,
+    "anchor_awr_beta": 0.0
+  },
+  "server_compile": true,
+  "server_autocast_bf16": true,
+  "server_batch_buckets": [
+    128,
+    256,
+    512,
+    1024,
+    2048,
+    4096
+  ],
+  "selfplay": {
+    "n_games": 64,
+    "sims_per_move": 256,
+    "games_per_generation": 2048,
+    "max_batch": 4096,
+    "c_puct": 1.25,
+    "dirichlet_alpha": 0.3,
+    "dirichlet_frac": 0.25,
+    "determinize": "per_turn",
+    "tree_reuse": false,
+    "forced_playouts": true,
+    "forced_playouts_k": 2.0,
+    "expand_top_k": 8,
+    "temp_mode": "per_seat_buy",
+    "temp_buy_turns": 14,
+    "temp_action_plies": 10,
+    "temp_effect_plies": 6,
+    "kingdom_mode": "random",
+    "max_recorded_moves": 512,
+    "max_tree_nodes": 4096,
+    "auto_play_treasures": true,
+    "prune_treasure_plays": true,
+    "value_target": "margin",
+    "margin_scale": 20.0,
+    "obs_version": 3,
+    "opening_templates_enabled": false,
+    "max_turns": 80
+  },
+  "replay": {
+    "capacity": 3000000,
+    "sil_weight": 0.0
+  },
+  "optim": {
+    "optimizer": "adamw",
+    "lr": 0.0002,
+    "lr_schedule": "cosine",
+    "min_lr": 5e-05,
+    "weight_decay": 0.0001,
+    "batch_size": 2048,
+    "train_steps_per_generation": 750
+  },
+  "eval": {
+    "eval_every_n_generations": 5,
+    "eval_games": 200,
+    "eval_sims": 400,
+    "eval_opponent": "engine3",
+    "eval_honest": true,
+    "eval_kingdoms": "random",
+    "eval_n_games": 128,
+    "eval_max_batch": 4096,
+    "eval_sentinels": [
+      {
+        "opponent": "bigmoney",
+        "games": 100
+      },
+      {
+        "opponent": "engine3",
+        "games": 200
+      },
+      {
+        "opponent": "thinner",
+        "games": 200
+      }
+    ]
+  },
+  "server_response_timeout_s": 900.0,
+  "server_shards": 2
+}

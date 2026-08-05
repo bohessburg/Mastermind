@@ -89,6 +89,36 @@ Protocol re-derived in `data/dominion_games/recon/RECON.md`. NOTE: no
 per-player rating lookup exists in the protocol — coverage depends
 entirely on leaderboard depth, which is UNMEASURED.
 
+## Scraper join-age band and game-length distribution (measured 2026-08-03)
+
+True game lengths reconstructed (join age from collector logs + capture
+duration), n=957. **Games are shorter than assumed: median 9.2 min, not ~12.**
+
+Split by time control — three distinct populations, all ~19 turns, so the
+difference is purely clock speed, not play:
+| type | n | mean | median | p10 | p90 |
+|---|---|---|---|---|---|
+| RATINGS_2P | 834 | 9.6 | 9.2 | 6.1 | 13.4 |
+| RATINGS_2P_BLITZ | 49 | 7.2 | 7.1 | 5.1 | 9.2 |
+| unrated (no rating type) | 73 | 15.3 | 11.7 | 7.8 | 24.6 |
+
+JOIN BAND: moved 4-12m -> **7-14m** (2026-08-03), measured 25-27 -> ~49
+games/hour with ZERO join timeouts. A game cannot be joined after it ends, so
+the band structurally excludes games shorter than its lower bound: at 7-14m
+that is ~20% of all games, ~90% of blitz, ~15% of rated.
+
+DECISION (Jack): accept that bias. Blitz = time-pressured = worse decisions,
+so under-weighting it likely IMPROVES corpus quality for a bot meant to play
+well. And short RATED games were measured to be qualitatively ordinary, not a
+distinct category — resigned 26.7% vs 23.3%, |margin| 10.0 vs 11.4, turns 17.0
+vs 19.4 — so excluding them costs volume, not representativeness.
+
+FUTURE REFINEMENT (not built): per-time-control bands chosen from
+`TableDetails` rules BEFORE committing (time settings are a table rule), plus
+distribution-shaped non-uniform join-age sampling instead of a uniform band.
+Roughly 4-8m blitz / 6-13m rated / 8-20m unrated. Strictly better than any
+single global band.
+
 ## Per-card / per-pair coverage as the corpus sizing metric
 
 Measured 2026-08-02 over 642 scraped games. Kingdom selection is
@@ -204,3 +234,8 @@ corpus at millions of all-expansion games is the biggest single lever.
   gens (duel + dual probes + skill-aware retention val + vibe pair).
 - Retention val metric must be skill-weighted (ratings sidecar) to
   separate "forgetting" from "surpassing" — the c21 g15 lesson.
+
+ADDENDUM (Jack, 2026-08-05): ALL fixed-kingdom machinery removed from
+c22 training — kingdom_curriculum empty, no pools, no phases; 100%
+uniform random kingdoms everywhere (selfplay, league, eval). Draft:
+configs/run_c22_draft.json.
