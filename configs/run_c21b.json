@@ -4,7 +4,7 @@
   "generations": 100,
   "init_weights": "",
   "device": "auto",
-  "parallel_workers": 224,
+  "parallel_workers": 140,
   "server_selfplay": true,
   "gate_games": 0,
   "checkpoint_dir": "checkpoints/campaign21b",
