@@ -1,5 +1,5 @@
 {
-  "_comment": "Campaign 22 DRAFT (2026-08-05). Signed design: 1M-tuple trigger (policy-effective, coverage-gated pre-launch audit), rating-weighted policy targets (sub-40 value-only / 40-50 ramp / 50+ dominant; values unweighted), NO KINGDOM CURRICULUM OR FIXED-KINGDOM MACHINERY (100% uniform random kingdoms \u2014 Jack 2026-08-05), model d192/4L/6H pending final 1M ablation, flat 0.2 anchor, league frozen <=15%, 80-turn selfplay cap, SIL off. BC init from the corpus-of-record at trigger time. LAUNCH BLOCKED on: 1M trigger, coverage audit, final ablation, rating-weighted loader implementation, pre-registration sign-off.",
+  "_comment": "Campaign 22 DRAFT (2026-08-05). Signed design: 1M-tuple trigger (policy-effective, coverage-gated pre-launch audit), rating-weighted policy targets (sub-40 value-only / 40-50 ramp / 50+ dominant; values unweighted), NO KINGDOM CURRICULUM OR FIXED-KINGDOM MACHINERY (100% uniform random kingdoms \u2014 Jack 2026-08-05), model d192/4L/6H pending final 1M ablation, flat 0.2 anchor, NO LEAGUE (cut entirely \u2014 Jack 2026-08-05; buffer+anchor cover anti-cycling; league was drift suspect + serving tax with zero observed benefit), 80-turn selfplay cap, SIL off. BC init from the corpus-of-record at trigger time. LAUNCH BLOCKED on: 1M trigger, coverage audit, final ablation, rating-weighted loader implementation, pre-registration sign-off.",
   "seed": 20260731,
   "generations": 100,
   "init_weights": "",
@@ -12,12 +12,7 @@
   "league_pool_size": 16,
   "league_seed_checkpoints": [],
   "league_self_every": 10,
-  "league_schedule": [
-    [
-      10,
-      0.15
-    ]
-  ],
+  "league_schedule": [],
   "league_opponents_per_gen": 3,
   "scripted_opponents": {},
   "scripted_opponent_schedule": {},

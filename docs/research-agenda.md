@@ -239,3 +239,11 @@ ADDENDUM (Jack, 2026-08-05): ALL fixed-kingdom machinery removed from
 c22 training — kingdom_curriculum empty, no pools, no phases; 100%
 uniform random kingdoms everywhere (selfplay, league, eval). Draft:
 configs/run_c22_draft.json.
+
+ADDENDUM (Jack, 2026-08-05): LEAGUE CUT from c22 entirely
+(league_schedule []). Rationale: zero observed cycling in seven
+campaigns; the 3M replay buffer is already a temporal ensemble; the
+human anchor is a fixed external distribution (cannot cycle);
+measured costs — c21 drift suspect + multi-model batch fragmentation.
+Machinery retained; redeploy only if a milestone shows gen N losing
+to gen N-k (the actual cycling observable).
