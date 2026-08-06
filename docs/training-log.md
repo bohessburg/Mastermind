@@ -1957,3 +1957,40 @@ g10-15: does outcome data teach conversion FAST (steep catch-up,
 then overtake c21's curve) or slowly (weighting too aggressive for
 this corpus size — soften the curve for c22). Val-check tooling
 needs c21b-scale rebaseline before g10 (old baseline hard-coded).
+
+=== C21B CLOSE-OUT (2026-08-06) ===
+Gens 1-9 completed; box (third 211.21.106.81 death) killed the run
+before the g10 duel. FINDINGS: conversion arrived g7-9 (sentry wins
+29-28, 40-29); chapel/Militia board never solved (0-30 chapel loss
+persisted); entropy rose 0.86 -> 1.04; g8 buy-mix showed
+unprecedented archetype breadth (54 action / 66 treasure / 78
+victory per 8 games, incl. Gardens 9, Bureaucrat 8). VERDICT: the
+build-forever open was the 150:1 expert weighting, not the corpus.
+DECISION (Jack, "Yeah let's do 0.1-2"): curve SOFTENED — epsilon
+0.02 -> 0.1, expert 3.0 -> 2.0 (~20:1). human_data.py constants +
+tests updated (13 green). Probe findings folded into c22.
+
+=== C22 PRE-REGISTRATION + LAUNCH (2026-08-06) ===
+CORPUS: full dgames conversion (7,766 raw; 3,765 emitted, 120
+quarantined, 100% final-deck match) + seeded set = 483,384 tuples
+(train 459,571 / val 23,813; 3,876 games). Launched at ~500K raw by
+Jack's decision (earlier 1M trigger superseded). Ratings sidecar
+98.0% coverage (3,817/3,895). AUDIT (bench/c22_corpus_audit.json):
+146,639 policy-effective (30.3%); 50+ band = 455 games -> 40.7K
+effective (28% of policy signal from 9% of games); thinnest cards:
+Bureaucrat 93, Mine 188, Workshop 498, Library 501 effective.
+INIT: weighted BC under SOFTENED curve (0.1 / ramp 40-50 / 2.0),
+d192/4L/6H: val 0.5596, acc 73.7%, early-stop 1250 steps. Small net
+beat 6.6M arm (0.5647 / 73.5%) — FOURTH ablation confirmation.
+Banked local: checkpoints/c21_ablation/bc_a_483k_soft.pt.
+RECIPE (configs/run_c22.json): curriculum-free (100% random
+kingdoms), NO league, anchor flat 0.2, skill_weighting on, max_turns
+60, 2048 games/gen, 2 server shards. BOX: dual Xeon 8470 (104
+physical cores, 2.0/3.8GHz, 251GB, 5090), port 44417 — 100 workers
+(1/physical core). Supervisor: dominion-c22 via resume22.sh
+(auto-resume latest, else bc_a init).
+PRE-REGISTERED BAR: equilibrium champ duel (c15 gen_0045,
+--legacy-shim) vs c21's 45-46 @65K and c21b's 30.9 g5 open @348K.
+Milestones every 5 gens (duel + probes + both-board vibe). Watch:
+does the softened curve keep c21b's machinery depth while restoring
+early conversion (g5 duel materially above 30.9)?
