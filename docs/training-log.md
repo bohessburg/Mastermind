@@ -1937,3 +1937,23 @@ confirmation). Box: 256 cores/251GB/5090 (port 32165), 224 workers,
 Milestones every 5. If equilibrium moves materially up: scaling
 thesis confirmed, 1M(+) c22 proceeds with confidence. If flat: stop
 and rethink before c22.
+
+=== C21B GEN-5 MILESTONE (2026-08-06) ===
+CHAMP DUEL: 30.9% (60-134-6), seat 28/32 — WELL BELOW c21's gen-5
+43.1 at 65K. The scaling curve's second point OPENS LOW. Diagnosis
+is specific and consistent across instruments: the expert-weighted
+init built DEEPER MACHINERY (19-action chains at g3 — never seen in
+any prior campaign; militia canonical frame correct at g5) but has
+NOT learned CONVERSION — the chapel vibe scored 0-30 over 45 turns
+of flawless engine play with zero victory purchases. Build-forever
+failure mode: the exact OPPOSITE of the money attractor. Sentinel
+24.4 at g2. Vibe: L 30-42 / L 0-30. Note: seat split near-flat 28/32
+(no first-seat advantage yet — very unusual).
+READ: NOT a scaling refutation yet — the weighted init trades early
+strength for structure; c21's all-comers init encoded "buy provinces
+like an average human" for free, the expert-weighted one encodes
+machinery and defers greed. The probe's real question moves to
+g10-15: does outcome data teach conversion FAST (steep catch-up,
+then overtake c21's curve) or slowly (weighting too aggressive for
+this corpus size — soften the curve for c22). Val-check tooling
+needs c21b-scale rebaseline before g10 (old baseline hard-coded).
