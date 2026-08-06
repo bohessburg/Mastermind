@@ -67,11 +67,11 @@ curve can be re-tuned without touching the corpus.
 
 CURVE SIGNED (Jack, 2026-08-03) — coverage measured at 99% of games
 (777/784 in the current sidecar), so the scheme is fully fed:
-- level < 40: policy weight ~0 (epsilon) — these positions teach the
-  VALUE head only (outcomes are ground truth at any skill).
-- level 40-50: monotonic ramp from epsilon toward full weight.
-- level 50+: HEAVILY over-weighted in policy targets — expert tier,
-  the primary policy teachers.
+- level < 40: policy weight 0.1 (SOFTENED from 0.02, Jack 2026-08-06
+  per c21b probe evidence — retains average-human conversion wisdom).
+- level 40-50: monotonic linear ramp 0.1 -> 1.0.
+- level 50+: weight 2.0 (SOFTENED from 3.0 — the ~150:1 expert:casual
+  ratio produced c21b's build-forever behavior; now ~20:1).
 - Unrated (rare at 99% coverage): treat as the low band (value-only).
 - Value target weight: UNWEIGHTED by skill throughout (the asymmetry
   above stands).
