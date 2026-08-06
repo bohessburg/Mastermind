@@ -1,0 +1,234 @@
+{
+  "cases": [
+    {
+      "hand": [
+        "Copper",
+        "Copper",
+        "Silver",
+        "Estate"
+      ],
+      "label": "copper_copper_estate_silver",
+      "raw_matches_value_optimal": false,
+      "raw_policy_discard": [
+        "Estate"
+      ],
+      "raw_policy_keep": [
+        "Copper",
+        "Copper",
+        "Silver"
+      ],
+      "raw_root_value": 0.23533976078033447,
+      "search_discard": [
+        "Estate"
+      ],
+      "search_keep": [
+        "Copper",
+        "Copper",
+        "Silver"
+      ],
+      "search_matches_value_optimal": false,
+      "value_optimal_discard": [
+        "Copper"
+      ],
+      "value_optimal_keep": [
+        "Copper",
+        "Silver",
+        "Estate"
+      ],
+      "value_optimal_post_resolution_value": -0.15435831248760223,
+      "value_ranking": [
+        {
+          "keep": [
+            "Copper",
+            "Silver",
+            "Estate"
+          ],
+          "value": -0.15435831248760223
+        },
+        {
+          "keep": [
+            "Copper",
+            "Copper",
+            "Silver"
+          ],
+          "value": -0.16659851372241974
+        },
+        {
+          "keep": [
+            "Copper",
+            "Copper",
+            "Estate"
+          ],
+          "value": -0.1785653680562973
+        }
+      ]
+    },
+    {
+      "hand": [
+        "Copper",
+        "Copper",
+        "Silver",
+        "Silver",
+        "Silver"
+      ],
+      "label": "two_copper_three_silver",
+      "raw_matches_value_optimal": false,
+      "raw_policy_discard": [
+        "Silver",
+        "Silver"
+      ],
+      "raw_policy_keep": [
+        "Copper",
+        "Copper",
+        "Silver"
+      ],
+      "raw_root_value": 0.41882219910621643,
+      "search_discard": [
+        "Silver",
+        "Silver"
+      ],
+      "search_keep": [
+        "Copper",
+        "Copper",
+        "Silver"
+      ],
+      "search_matches_value_optimal": false,
+      "value_optimal_discard": [
+        "Copper",
+        "Copper"
+      ],
+      "value_optimal_keep": [
+        "Silver",
+        "Silver",
+        "Silver"
+      ],
+      "value_optimal_post_resolution_value": -0.09761165082454681,
+      "value_ranking": [
+        {
+          "keep": [
+            "Silver",
+            "Silver",
+            "Silver"
+          ],
+          "value": -0.09761165082454681
+        },
+        {
+          "keep": [
+            "Copper",
+            "Silver",
+            "Silver"
+          ],
+          "value": -0.09810642153024673
+        },
+        {
+          "keep": [
+            "Copper",
+            "Copper",
+            "Silver"
+          ],
+          "value": -0.10825635492801666
+        }
+      ]
+    },
+    {
+      "hand": [
+        "Silver",
+        "Silver",
+        "Gold",
+        "Estate",
+        "Estate"
+      ],
+      "label": "two_estates_gold_two_silver_control",
+      "raw_matches_value_optimal": false,
+      "raw_policy_discard": [
+        "Estate",
+        "Estate"
+      ],
+      "raw_policy_keep": [
+        "Silver",
+        "Silver",
+        "Gold"
+      ],
+      "raw_root_value": 0.5975311398506165,
+      "search_discard": [
+        "Estate",
+        "Estate"
+      ],
+      "search_keep": [
+        "Silver",
+        "Silver",
+        "Gold"
+      ],
+      "search_matches_value_optimal": false,
+      "value_optimal_discard": [
+        "Silver",
+        "Gold"
+      ],
+      "value_optimal_keep": [
+        "Silver",
+        "Estate",
+        "Estate"
+      ],
+      "value_optimal_post_resolution_value": -0.074538454413414,
+      "value_ranking": [
+        {
+          "keep": [
+            "Silver",
+            "Estate",
+            "Estate"
+          ],
+          "value": -0.074538454413414
+        },
+        {
+          "keep": [
+            "Silver",
+            "Silver",
+            "Gold"
+          ],
+          "value": -0.07609971612691879
+        },
+        {
+          "keep": [
+            "Silver",
+            "Gold",
+            "Estate"
+          ],
+          "value": -0.07776385545730591
+        },
+        {
+          "keep": [
+            "Gold",
+            "Estate",
+            "Estate"
+          ],
+          "value": -0.09166574478149414
+        },
+        {
+          "keep": [
+            "Silver",
+            "Silver",
+            "Estate"
+          ],
+          "value": -0.09780407696962357
+        }
+      ]
+    }
+  ],
+  "checkpoint": "checkpoints/campaign21/gen_0001.pt",
+  "obs_version": 3,
+  "probe": "militia_probe",
+  "protocol": {
+    "determinizations": 2,
+    "mode": "raw greedy policy plus production arena DecisionSearcher",
+    "omitted_incomplete_log_cases": [
+      "Gardens/Copper/Gold incident (full hand not logged)",
+      "own-Militia incident (full hand not logged)"
+    ],
+    "sims": 400
+  },
+  "seed": 168892186,
+  "summary": {
+    "arena_search": "inversion_present",
+    "raw_policy": "inversion_present"
+  }
+}

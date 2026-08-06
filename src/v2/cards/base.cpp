@@ -1,6 +1,294 @@
 #include "v2/core/defs.h"
+#include "v2/core/interp.h"
+#include "v2/core/moves.h"
+#include "v2/core/triggers.h"
+
+#include <cassert>
+#include <cstdint>
 
 namespace {
+
+enum FilterId : std::uint8_t {
+    FILTER_HAND_ANY = 0,
+    FILTER_HAND_TREASURE = 1,
+    FILTER_SUPPLY_COST_4 = 2,
+    FILTER_SUPPLY_LAST_PLUS_2 = 3,
+    FILTER_SUPPLY_TREASURE_LAST_PLUS_3 = 4,
+    FILTER_HAND_VICTORY = 5,
+    FILTER_HAND_COPPER = 6,
+    FILTER_HAND_ACTION = 7,
+    FILTER_DISCARD_ANY = 8,
+    FILTER_SUPPLY_COST_5 = 9,
+};
+
+constexpr std::uint8_t CHOOSE_MAX_ALL = 0xFFU;
+constexpr std::int16_t DATA_SLOT_NONE = static_cast<std::int16_t>(NONE);
+
+constexpr EffectSpan SPAN_CELLAR{0, 5};
+constexpr EffectSpan SPAN_CHAPEL{5, 2};
+constexpr EffectSpan SPAN_VILLAGE{7, 3};
+constexpr EffectSpan SPAN_SMITHY{10, 2};
+constexpr EffectSpan SPAN_WORKSHOP{12, 2};
+constexpr EffectSpan SPAN_REMODEL{14, 4};
+constexpr EffectSpan SPAN_MINE{18, 4};
+constexpr EffectSpan SPAN_EXACT_TWO_TEST{22, 2};
+constexpr EffectSpan SPAN_REPEAT_CHOOSE_TEST{24, 4};
+constexpr EffectSpan SPAN_MERCHANT{28, 3};
+constexpr EffectSpan SPAN_MERCHANT_ON_FIRST_PLAY{31, 2};
+constexpr EffectSpan SPAN_MILITIA{33, 3};
+constexpr EffectSpan SPAN_WITCH{38, 3};
+constexpr EffectSpan SPAN_MOAT{43, 2};
+constexpr EffectSpan SPAN_BUREAUCRAT{45, 3};
+constexpr EffectSpan SPAN_ORDER_ALPHA_ON_FIRST_PLAY{50, 2};
+constexpr EffectSpan SPAN_ORDER_BETA_ON_FIRST_PLAY{52, 5};
+constexpr EffectSpan SPAN_ORDER_GAMMA_ON_FIRST_PLAY{57, 5};
+constexpr EffectSpan SPAN_MARKET{62, 5};
+constexpr EffectSpan SPAN_FESTIVAL{67, 4};
+constexpr EffectSpan SPAN_LABORATORY{71, 3};
+constexpr EffectSpan SPAN_MONEYLENDER{77, 4};
+constexpr EffectSpan SPAN_POACHER{81, 5};
+constexpr EffectSpan SPAN_VASSAL{86, 7};
+constexpr EffectSpan SPAN_HARBINGER{93, 4};
+constexpr EffectSpan SPAN_THRONE_ROOM{97, 3};
+constexpr EffectSpan SPAN_COUNCIL_ROOM{100, 4};
+constexpr EffectSpan SPAN_ARTISAN{106, 3};
+constexpr EffectSpan SPAN_BANDIT{109, 3};
+
+[[nodiscard]] int count_ordered(const OrderedZone& zone) noexcept {
+    return zone.size;
+}
+
+[[nodiscard]] int count_zone(const std::uint8_t (&zone)[MAX_SLOTS]) noexcept {
+    int total = 0;
+    for (std::uint8_t slot = 0; slot < MAX_SLOTS; ++slot) {
+        total += zone[slot];
+    }
+    return total;
+}
+
+[[nodiscard]] std::int16_t gardens_score(const GameState& state, PlayerId player_id, DefId) noexcept {
+    const PlayerState& player = state.players[player_id];
+    int total = 0;
+    total += count_zone(player.hand);
+    total += count_zone(player.exile);
+    total += count_zone(player.tavern);
+    total += count_zone(player.island_mat);
+    total += count_ordered(player.deck);
+    total += count_ordered(player.discard);
+    total += count_ordered(player.set_aside);
+    total += player.in_play_size;
+    return static_cast<std::int16_t>(total / 10);
+}
+
+void append_ordered(OrderedZone& zone, Slot slot) noexcept {
+    assert(zone.size < MAX_DECK_CARDS);
+    zone.cards[zone.size] = slot;
+    ++zone.size;
+}
+
+[[nodiscard]] bool remove_ordered(OrderedZone& zone, Slot slot) noexcept {
+    for (std::uint8_t i = zone.size; i > 0U; --i) {
+        const std::uint8_t index = static_cast<std::uint8_t>(i - 1U);
+        if (zone.cards[index] != slot) {
+            continue;
+        }
+        for (std::uint8_t j = index; static_cast<std::uint8_t>(j + 1U) < zone.size; ++j) {
+            zone.cards[j] = zone.cards[j + 1U];
+        }
+        --zone.size;
+        zone.cards[zone.size] = 0;
+        return true;
+    }
+    return false;
+}
+
+void topdeck_from_set_aside(PlayerState& player, Slot slot) noexcept {
+    const bool removed = remove_ordered(player.set_aside, slot);
+    assert(removed);
+    if (removed) {
+        append_ordered(player.deck, slot);
+    }
+}
+
+[[nodiscard]] std::uint8_t hand_size(const PlayerState& player, std::uint8_t slots) noexcept {
+    std::uint8_t total = 0;
+    for (std::uint8_t slot = 0; slot < slots; ++slot) {
+        total = static_cast<std::uint8_t>(total + player.hand[slot]);
+    }
+    return total;
+}
+
+void discard_set_aside(GameState& state, PlayerId player_id) noexcept {
+    while (state.players[player_id].set_aside.size > 0U) {
+        const Slot slot = state.players[player_id].set_aside.cards[0];
+        const bool discarded = do_discard(state, player_id, slot, MoveZone::SetAside);
+        assert(discarded);
+        (void)discarded;
+    }
+}
+
+// Library custom frame data exposed read-only through Python decision_context():
+//   data[0]: last ChooseOption result (0 keep, 1 set aside)
+//   data[1]: currently drawn Action slot while the option is pending
+RunResult library_step(GameState& state, EffectFrame& frame) noexcept {
+    PlayerState& player = state.players[frame.player];
+    switch (frame.pc) {
+    case 0: {
+        frame.data[0] = 0;
+        frame.data[1] = DATA_SLOT_NONE;
+        if (hand_size(player, state.num_slots) >= 7U) {
+            if (player.set_aside.size == 0U) {
+                return RunResult::FrameDone;
+            }
+            discard_set_aside(state, frame.player);
+            frame.pc = 3;
+            return RunResult::Continue;
+        }
+
+        const Slot slot = take_deck_top_slot(state, frame.player);
+        if (slot == NONE) {
+            if (player.set_aside.size == 0U) {
+                return RunResult::FrameDone;
+            }
+            discard_set_aside(state, frame.player);
+            frame.pc = 3;
+            return RunResult::Continue;
+        }
+
+        const DefId def = state.slot_to_def[slot];
+        if ((card_def(def).types & TYPE_ACTION) == 0U) {
+            ++player.hand[slot];
+            return RunResult::Continue;
+        }
+
+        append_ordered(player.set_aside, slot);
+        frame.data[1] = slot;
+        frame.pc = 1;
+        state.decision = PendingDecision{
+            frame.player,
+            static_cast<std::uint8_t>(DecisionKind::ChooseOption),
+            DEF_LIBRARY,
+            0,
+            2,
+        };
+        return RunResult::NeedDecision;
+    }
+    case 2: {
+        const Slot slot = static_cast<Slot>(frame.data[1]);
+        assert(slot != NONE);
+        if (frame.data[0] != 1) {
+            const bool removed = remove_ordered(player.set_aside, slot);
+            assert(removed);
+            (void)removed;
+            ++player.hand[slot];
+        }
+        frame.pc = 0;
+        return RunResult::Continue;
+    }
+    case 3:
+        return RunResult::FrameDone;
+    default:
+        assert(false);
+        return RunResult::FrameDone;
+    }
+}
+
+// Sentry custom frame data exposed read-only through Python decision_context():
+//   data[0]: last ChooseOption/ChooseOrder result
+//   data[1], data[2]: looked-at set-aside slots in reveal order
+//   data[3]: looked-at count
+//   data[4]: current looked-at index for ChooseOption
+RunResult sentry_step(GameState& state, EffectFrame& frame) noexcept {
+    PlayerState& player = state.players[frame.player];
+    switch (frame.pc) {
+    case 0: {
+        for (std::uint8_t i = 0; i < 8U; ++i) {
+            frame.data[i] = 0;
+        }
+        frame.data[1] = DATA_SLOT_NONE;
+        frame.data[2] = DATA_SLOT_NONE;
+        draw_cards(state, frame.player, 1);
+        if (state.actions < 255U) {
+            ++state.actions;
+        }
+        for (std::uint8_t i = 0; i < 2U; ++i) {
+            const Slot slot = take_deck_top_slot(state, frame.player);
+            if (slot == NONE) {
+                break;
+            }
+            append_ordered(player.set_aside, slot);
+            frame.data[1 + i] = slot;
+            ++frame.data[3];
+        }
+        if (frame.data[3] == 0) {
+            return RunResult::FrameDone;
+        }
+        frame.pc = 1;
+        return RunResult::Continue;
+    }
+    case 1:
+        if (frame.data[4] < frame.data[3]) {
+            state.decision = PendingDecision{
+                frame.player,
+                static_cast<std::uint8_t>(DecisionKind::ChooseOption),
+                DEF_SENTRY,
+                1,
+                3,
+            };
+            return RunResult::NeedDecision;
+        }
+        if (player.set_aside.size >= 2U) {
+            frame.pc = 3;
+            state.decision = PendingDecision{
+                frame.player,
+                static_cast<std::uint8_t>(DecisionKind::ChooseOrder),
+                DEF_SENTRY,
+                1,
+                2,
+            };
+            return RunResult::NeedDecision;
+        }
+        if (player.set_aside.size == 1U) {
+            topdeck_from_set_aside(player, player.set_aside.cards[0]);
+        }
+        return RunResult::FrameDone;
+    case 2: {
+        const std::uint8_t index = static_cast<std::uint8_t>(frame.data[4]);
+        const Slot slot = static_cast<Slot>(frame.data[1 + index]);
+        assert(slot != NONE);
+        if (frame.data[0] == 0) {
+            const bool trashed = do_trash(state, frame.player, slot, MoveZone::SetAside);
+            assert(trashed);
+            (void)trashed;
+        } else if (frame.data[0] == 1) {
+            const bool discarded = do_discard(state, frame.player, slot, MoveZone::SetAside);
+            assert(discarded);
+            (void)discarded;
+        }
+        ++frame.data[4];
+        frame.pc = 1;
+        return RunResult::Continue;
+    }
+    case 4: {
+        assert(player.set_aside.size >= 2U);
+        const Slot first = player.set_aside.cards[0];
+        const Slot second = player.set_aside.cards[1];
+        assert(first != NONE);
+        assert(second != NONE);
+        if (frame.data[0] == 0) {
+            topdeck_from_set_aside(player, second);
+            topdeck_from_set_aside(player, first);
+        } else {
+            topdeck_from_set_aside(player, first);
+            topdeck_from_set_aside(player, second);
+        }
+        return RunResult::FrameDone;
+    }
+    default:
+        assert(false);
+        return RunResult::FrameDone;
+    }
+}
 
 constexpr CardDef kBaseCards[] = {
     DOMINION_V2_DEF(Copper, (Cost{0, 0, 0}), TYPE_TREASURE, 0, 1),
@@ -13,13 +301,297 @@ constexpr CardDef kBaseCards[] = {
     DOMINION_V2_DEF(Province, (Cost{8, 0, 0}), TYPE_VICTORY, 6, 0),
     DOMINION_V2_DEF(Colony, (Cost{11, 0, 0}), TYPE_VICTORY, 10, 0),
     DOMINION_V2_DEF(Curse, (Cost{0, 0, 0}), TYPE_CURSE, -1, 0),
+    DOMINION_V2_DEF_EFFECT(Cellar, (Cost{2, 0, 0}), TYPE_ACTION, 0, 0, SPAN_CELLAR),
+    DOMINION_V2_DEF_EFFECT(Chapel, (Cost{2, 0, 0}), TYPE_ACTION, 0, 0, SPAN_CHAPEL),
+    DOMINION_V2_DEF_EFFECT(Village, (Cost{3, 0, 0}), TYPE_ACTION, 0, 0, SPAN_VILLAGE),
+    DOMINION_V2_DEF_EFFECT(Smithy, (Cost{4, 0, 0}), TYPE_ACTION, 0, 0, SPAN_SMITHY),
+    DOMINION_V2_DEF_EFFECT(Workshop, (Cost{3, 0, 0}), TYPE_ACTION, 0, 0, SPAN_WORKSHOP),
+    DOMINION_V2_DEF_EFFECT(Remodel, (Cost{4, 0, 0}), TYPE_ACTION, 0, 0, SPAN_REMODEL),
+    DOMINION_V2_DEF_EFFECT(Mine, (Cost{5, 0, 0}), TYPE_ACTION, 0, 0, SPAN_MINE),
+    DOMINION_V2_DEF_EFFECT(ExactTwoTest, (Cost{0, 0, 0}), TYPE_ACTION, 0, 0, SPAN_EXACT_TWO_TEST),
+    DOMINION_V2_DEF_EFFECT(RepeatChooseTest, (Cost{0, 0, 0}), TYPE_ACTION, 0, 0, SPAN_REPEAT_CHOOSE_TEST),
+    CardDef{
+        "Merchant",
+        Cost{3, 0, 0},
+        TYPE_ACTION,
+        0,
+        0,
+        SPAN_MERCHANT,
+        SPAN_MERCHANT_ON_FIRST_PLAY,
+        NO_EFFECT,
+        NO_EFFECT,
+        NO_EFFECT,
+        trigger_mask(TriggerKind::OnFirstPlay),
+        nullptr,
+        nullptr,
+    },
+    DOMINION_V2_DEF_EFFECT(Militia, (Cost{4, 0, 0}), static_cast<std::uint16_t>(TYPE_ACTION | TYPE_ATTACK), 0, 0, SPAN_MILITIA),
+    DOMINION_V2_DEF_EFFECT(Witch, (Cost{5, 0, 0}), static_cast<std::uint16_t>(TYPE_ACTION | TYPE_ATTACK), 0, 0, SPAN_WITCH),
+    DOMINION_V2_DEF_EFFECT(Moat, (Cost{2, 0, 0}), static_cast<std::uint16_t>(TYPE_ACTION | TYPE_REACTION), 0, 0, SPAN_MOAT),
+    DOMINION_V2_DEF_EFFECT(Bureaucrat, (Cost{4, 0, 0}), static_cast<std::uint16_t>(TYPE_ACTION | TYPE_ATTACK), 0, 0, SPAN_BUREAUCRAT),
+    CardDef{
+        "OrderAlphaTest",
+        Cost{0, 0, 0},
+        TYPE_ACTION,
+        0,
+        0,
+        NO_EFFECT,
+        SPAN_ORDER_ALPHA_ON_FIRST_PLAY,
+        NO_EFFECT,
+        NO_EFFECT,
+        NO_EFFECT,
+        trigger_mask(TriggerKind::OnFirstPlay),
+        nullptr,
+        nullptr,
+    },
+    CardDef{
+        "OrderBetaTest",
+        Cost{0, 0, 0},
+        TYPE_ACTION,
+        0,
+        0,
+        NO_EFFECT,
+        SPAN_ORDER_BETA_ON_FIRST_PLAY,
+        NO_EFFECT,
+        NO_EFFECT,
+        NO_EFFECT,
+        trigger_mask(TriggerKind::OnFirstPlay),
+        nullptr,
+        nullptr,
+    },
+    CardDef{
+        "OrderGammaTest",
+        Cost{0, 0, 0},
+        TYPE_ACTION,
+        0,
+        0,
+        NO_EFFECT,
+        SPAN_ORDER_GAMMA_ON_FIRST_PLAY,
+        NO_EFFECT,
+        NO_EFFECT,
+        NO_EFFECT,
+        trigger_mask(TriggerKind::OnFirstPlay),
+        nullptr,
+        nullptr,
+    },
+    DOMINION_V2_DEF_EFFECT(Market, (Cost{5, 0, 0}), TYPE_ACTION, 0, 0, SPAN_MARKET),
+    DOMINION_V2_DEF_EFFECT(Festival, (Cost{5, 0, 0}), TYPE_ACTION, 0, 0, SPAN_FESTIVAL),
+    DOMINION_V2_DEF_EFFECT(Laboratory, (Cost{5, 0, 0}), TYPE_ACTION, 0, 0, SPAN_LABORATORY),
+    CardDef{
+        "Gardens",
+        Cost{4, 0, 0},
+        TYPE_VICTORY,
+        0,
+        0,
+        NO_EFFECT,
+        NO_EFFECT,
+        NO_EFFECT,
+        NO_EFFECT,
+        NO_EFFECT,
+        0U,
+        nullptr,
+        gardens_score,
+    },
+    DOMINION_V2_DEF_EFFECT(Moneylender, (Cost{4, 0, 0}), TYPE_ACTION, 0, 0, SPAN_MONEYLENDER),
+    DOMINION_V2_DEF_EFFECT(Poacher, (Cost{4, 0, 0}), TYPE_ACTION, 0, 0, SPAN_POACHER),
+    DOMINION_V2_DEF_EFFECT(Vassal, (Cost{3, 0, 0}), TYPE_ACTION, 0, 0, SPAN_VASSAL),
+    DOMINION_V2_DEF_EFFECT(Harbinger, (Cost{3, 0, 0}), TYPE_ACTION, 0, 0, SPAN_HARBINGER),
+    CardDef{
+        "Throne Room",
+        Cost{4, 0, 0},
+        TYPE_ACTION,
+        0,
+        0,
+        SPAN_THRONE_ROOM,
+        NO_EFFECT,
+        NO_EFFECT,
+        NO_EFFECT,
+        NO_EFFECT,
+        0U,
+        nullptr,
+        nullptr,
+    },
+    CardDef{
+        "Council Room",
+        Cost{5, 0, 0},
+        TYPE_ACTION,
+        0,
+        0,
+        SPAN_COUNCIL_ROOM,
+        NO_EFFECT,
+        NO_EFFECT,
+        NO_EFFECT,
+        NO_EFFECT,
+        0U,
+        nullptr,
+        nullptr,
+    },
+    DOMINION_V2_DEF_EFFECT(Artisan, (Cost{6, 0, 0}), TYPE_ACTION, 0, 0, SPAN_ARTISAN),
+    DOMINION_V2_DEF_EFFECT(Bandit, (Cost{5, 0, 0}), static_cast<std::uint16_t>(TYPE_ACTION | TYPE_ATTACK), 0, 0, SPAN_BANDIT),
+    CardDef{
+        "Library",
+        Cost{5, 0, 0},
+        TYPE_ACTION,
+        0,
+        0,
+        NO_EFFECT,
+        NO_EFFECT,
+        NO_EFFECT,
+        NO_EFFECT,
+        NO_EFFECT,
+        0U,
+        library_step,
+        nullptr,
+    },
+    CardDef{
+        "Sentry",
+        Cost{5, 0, 0},
+        TYPE_ACTION,
+        0,
+        0,
+        NO_EFFECT,
+        NO_EFFECT,
+        NO_EFFECT,
+        NO_EFFECT,
+        NO_EFFECT,
+        0U,
+        sentry_step,
+        nullptr,
+    },
 };
 
 constexpr Instr kEffectInstrs[] = {
+    Instr{Op::PlusActions, 0, 0, 0, 1},
+    Instr{Op::Choose, FILTER_HAND_ANY, 0, CHOOSE_MAX_ALL, static_cast<std::int16_t>(Then::Discard)},
+    Instr{Op::PerChosen, 0, 0, 0, 0},
+    Instr{Op::PlusCards, 0, 0, 0, 1},
+    Instr{Op::End, 0, 0, 0, 0},
+    Instr{Op::Choose, FILTER_HAND_ANY, 0, 4, static_cast<std::int16_t>(Then::Trash)},
+    Instr{Op::End, 0, 0, 0, 0},
+    Instr{Op::PlusCards, 0, 0, 0, 1},
+    Instr{Op::PlusActions, 0, 0, 0, 2},
+    Instr{Op::End, 0, 0, 0, 0},
+    Instr{Op::PlusCards, 0, 0, 0, 3},
+    Instr{Op::End, 0, 0, 0, 0},
+    Instr{Op::ChooseGain, FILTER_SUPPLY_COST_4, 1, 1, static_cast<std::int16_t>(GainDestination::Discard)},
+    Instr{Op::End, 0, 0, 0, 0},
+    Instr{Op::Choose, FILTER_HAND_ANY, 1, 1, static_cast<std::int16_t>(Then::Trash)},
+    Instr{Op::IfElse, static_cast<std::uint8_t>(PredicateId::ChosenAny), 1, 2, 0},
+    Instr{Op::ChooseGain, FILTER_SUPPLY_LAST_PLUS_2, 1, 1, static_cast<std::int16_t>(GainDestination::Discard)},
+    Instr{Op::End, 0, 0, 0, 0},
+    Instr{Op::Choose, FILTER_HAND_TREASURE, 1, 1, static_cast<std::int16_t>(Then::Trash)},
+    Instr{Op::IfElse, static_cast<std::uint8_t>(PredicateId::ChosenAny), 1, 2, 0},
+    Instr{Op::ChooseGain, FILTER_SUPPLY_TREASURE_LAST_PLUS_3, 1, 1, static_cast<std::int16_t>(GainDestination::Hand)},
+    Instr{Op::End, 0, 0, 0, 0},
+    Instr{Op::Choose, FILTER_HAND_ANY, 2, 2, static_cast<std::int16_t>(Then::Trash)},
+    Instr{Op::End, 0, 0, 0, 0},
+    Instr{Op::Choose, FILTER_HAND_ANY, 0, 1, static_cast<std::int16_t>(Then::Discard)},
+    Instr{Op::PlusCoins, 0, 0, 0, 1},
+    Instr{Op::Repeat, 0, 2, 0, 0},
+    Instr{Op::End, 0, 0, 0, 0},
+    Instr{Op::PlusCards, 0, 0, 0, 1},
+    Instr{Op::PlusActions, 0, 0, 0, 1},
+    Instr{Op::End, 0, 0, 0, 0},
+    Instr{Op::PlusCoins, 0, 0, 0, 1},
+    Instr{Op::End, 0, 0, 0, 0},
+    Instr{Op::PlusCoins, 0, 0, 0, 2},
+    Instr{Op::Attack, 36, 0, 0, 0},
+    Instr{Op::End, 0, 0, 0, 0},
+    Instr{Op::DiscardDownTo, 0, 0, 0, 3},
+    Instr{Op::End, 0, 0, 0, 0},
+    Instr{Op::PlusCards, 0, 0, 0, 2},
+    Instr{Op::Attack, 41, 0, 0, 0},
+    Instr{Op::End, 0, 0, 0, 0},
+    Instr{Op::GainCurse, static_cast<std::uint8_t>(GainDestination::Discard), 0, 0, DEF_CURSE},
+    Instr{Op::End, 0, 0, 0, 0},
+    Instr{Op::PlusCards, 0, 0, 0, 2},
+    Instr{Op::End, 0, 0, 0, 0},
+    Instr{Op::GainSpecific, static_cast<std::uint8_t>(GainDestination::Topdeck), 0, 0, DEF_SILVER},
+    Instr{Op::Attack, 48, 0, 0, 0},
+    Instr{Op::End, 0, 0, 0, 0},
+    Instr{Op::Choose, FILTER_HAND_VICTORY, 1, 1, static_cast<std::int16_t>(Then::Topdeck)},
+    Instr{Op::End, 0, 0, 0, 0},
+    Instr{Op::PlusCoins, 0, 0, 0, 2},
+    Instr{Op::End, 0, 0, 0, 0},
+    Instr{Op::IfElse, static_cast<std::uint8_t>(PredicateId::CoinsAtLeastArg), 1, 3, 3},
+    Instr{Op::PlusCoins, 0, 0, 0, 10},
+    Instr{Op::End, 0, 0, 0, 0},
+    Instr{Op::PlusCoins, 0, 0, 0, 1},
+    Instr{Op::End, 0, 0, 0, 0},
+    Instr{Op::IfElse, static_cast<std::uint8_t>(PredicateId::CoinsAtLeastArg), 1, 3, 10},
+    Instr{Op::PlusCoins, 0, 0, 0, 100},
+    Instr{Op::End, 0, 0, 0, 0},
+    Instr{Op::PlusCoins, 0, 0, 0, 5},
+    Instr{Op::End, 0, 0, 0, 0},
+    Instr{Op::PlusCards, 0, 0, 0, 1},
+    Instr{Op::PlusActions, 0, 0, 0, 1},
+    Instr{Op::PlusBuys, 0, 0, 0, 1},
+    Instr{Op::PlusCoins, 0, 0, 0, 1},
+    Instr{Op::End, 0, 0, 0, 0},
+    Instr{Op::PlusActions, 0, 0, 0, 2},
+    Instr{Op::PlusBuys, 0, 0, 0, 1},
+    Instr{Op::PlusCoins, 0, 0, 0, 2},
+    Instr{Op::End, 0, 0, 0, 0},
+    Instr{Op::PlusCards, 0, 0, 0, 2},
+    Instr{Op::PlusActions, 0, 0, 0, 1},
+    Instr{Op::End, 0, 0, 0, 0},
+    Instr{Op::PlusBuys, 0, 0, 0, 1},
+    Instr{Op::PlusCoins, 0, 0, 0, 2},
+    Instr{Op::End, 0, 0, 0, 0},
+    Instr{Op::Choose, FILTER_HAND_COPPER, 0, 1, static_cast<std::int16_t>(Then::Trash)},
+    Instr{Op::IfElse, static_cast<std::uint8_t>(PredicateId::ChosenAny), 1, 2, 0},
+    Instr{Op::PlusCoins, 0, 0, 0, 3},
+    Instr{Op::End, 0, 0, 0, 0},
+    Instr{Op::PlusCards, 0, 0, 0, 1},
+    Instr{Op::PlusActions, 0, 0, 0, 1},
+    Instr{Op::PlusCoins, 0, 0, 0, 1},
+    Instr{Op::DiscardPerEmptySupply, FILTER_HAND_ANY, 0, 0, static_cast<std::int16_t>(Then::Discard)},
+    Instr{Op::End, 0, 0, 0, 0},
+    Instr{Op::PlusCoins, 0, 0, 0, 2},
+    Instr{Op::DiscardDeckTop, 0, 0, 0, 0},
+    Instr{Op::IfElse, static_cast<std::uint8_t>(PredicateId::LastChosenIsAction), 1, 4, 0},
+    Instr{Op::ChooseOption, 2, 0, 0, 0},
+    Instr{Op::IfElse, static_cast<std::uint8_t>(PredicateId::LastOptionEqualsArg), 1, 2, 1},
+    Instr{Op::PlayLastFromDiscard, 0, 0, 0, 0},
+    Instr{Op::End, 0, 0, 0, 0},
+    Instr{Op::PlusCards, 0, 0, 0, 1},
+    Instr{Op::PlusActions, 0, 0, 0, 1},
+    Instr{Op::Choose, FILTER_DISCARD_ANY, 0, 1, static_cast<std::int16_t>(Then::Topdeck)},
+    Instr{Op::End, 0, 0, 0, 0},
+    Instr{Op::Choose, FILTER_HAND_ACTION, 0, 1, static_cast<std::int16_t>(Then::Play)},
+    Instr{Op::PlayChosenRepeated, 0, 0, 0, 2},
+    Instr{Op::End, 0, 0, 0, 0},
+    Instr{Op::PlusCards, 0, 0, 0, 4},
+    Instr{Op::PlusBuys, 0, 0, 0, 1},
+    Instr{Op::EachOtherPlayer, 104, 0, 0, 0},
+    Instr{Op::End, 0, 0, 0, 0},
+    Instr{Op::PlusCards, 0, 0, 0, 1},
+    Instr{Op::End, 0, 0, 0, 0},
+    Instr{Op::ChooseGain, FILTER_SUPPLY_COST_5, 1, 1, static_cast<std::int16_t>(GainDestination::Hand)},
+    Instr{Op::Choose, FILTER_HAND_ANY, 1, 1, static_cast<std::int16_t>(Then::Topdeck)},
+    Instr{Op::End, 0, 0, 0, 0},
+    Instr{Op::GainSpecific, static_cast<std::uint8_t>(GainDestination::Discard), 0, 0, DEF_GOLD},
+    Instr{Op::Attack, 112, 0, 0, 0},
+    Instr{Op::End, 0, 0, 0, 0},
+    Instr{Op::BanditAttack, 0, 0, 0, 0},
     Instr{Op::End, 0, 0, 0, 0},
 };
 
+constexpr Filter kFilters[] = {
+    Filter{ZoneSelector::Hand, 0, CostLimitKind::None, Cost{}, 0, ANY_DEF, ANY_DEF},
+    Filter{ZoneSelector::Hand, TYPE_TREASURE, CostLimitKind::None, Cost{}, 0, ANY_DEF, ANY_DEF},
+    Filter{ZoneSelector::Supply, 0, CostLimitKind::Fixed, Cost{4, 0, 0}, 0, ANY_DEF, ANY_DEF},
+    Filter{ZoneSelector::Supply, 0, CostLimitKind::LastChosenPlus, Cost{}, 2, ANY_DEF, ANY_DEF},
+    Filter{ZoneSelector::Supply, TYPE_TREASURE, CostLimitKind::LastChosenPlus, Cost{}, 3, ANY_DEF, ANY_DEF},
+    Filter{ZoneSelector::Hand, TYPE_VICTORY, CostLimitKind::None, Cost{}, 0, ANY_DEF, ANY_DEF},
+    Filter{ZoneSelector::Hand, 0, CostLimitKind::None, Cost{}, 0, DEF_COPPER, ANY_DEF},
+    Filter{ZoneSelector::Hand, TYPE_ACTION, CostLimitKind::None, Cost{}, 0, ANY_DEF, ANY_DEF},
+    Filter{ZoneSelector::Discard, 0, CostLimitKind::None, Cost{}, 0, ANY_DEF, ANY_DEF},
+    Filter{ZoneSelector::Supply, 0, CostLimitKind::Fixed, Cost{5, 0, 0}, 0, ANY_DEF, ANY_DEF},
+};
+
 static_assert(sizeof(kBaseCards) / sizeof(kBaseCards[0]) == BASIC_CARD_COUNT);
+static_assert(sizeof(kFilters) / sizeof(kFilters[0]) == 10U);
 
 } // namespace
 
@@ -41,6 +613,14 @@ const Instr& effect_instr(std::uint16_t offset) noexcept {
 
 std::uint16_t effect_instr_count() noexcept {
     return static_cast<std::uint16_t>(sizeof(kEffectInstrs) / sizeof(kEffectInstrs[0]));
+}
+
+const Filter& filter_def(std::uint8_t id) noexcept {
+    return kFilters[id];
+}
+
+std::uint8_t filter_count() noexcept {
+    return static_cast<std::uint8_t>(sizeof(kFilters) / sizeof(kFilters[0]));
 }
 
 const CardDef* base_card_defs() noexcept {

@@ -24,6 +24,7 @@ void clear_player_cards(GameState& state, PlayerId player_id) {
     }
     player.deck.size = 0;
     player.discard.size = 0;
+    player.set_aside.size = 0;
     player.in_play_size = 0;
 }
 

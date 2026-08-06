@@ -1,0 +1,40 @@
+{
+  "seed": 20260709,
+  "generations": 1,
+  "device": "mps",
+  "checkpoint_dir": "checkpoints/profile_mps",
+  "metrics_csv": "checkpoints/profile_mps/metrics.csv",
+  "model": {
+    "hidden_sizes": [1024, 1024, 512]
+  },
+  "selfplay": {
+    "n_games": 64,
+    "sims_per_move": 64,
+    "games_per_generation": 16,
+    "max_batch": 1024,
+    "dirichlet_frac": 0.0,
+    "temp_moves": 8,
+    "max_turns": 0,
+    "kingdom_mode": "fixed",
+    "max_recorded_moves": 512,
+    "max_tree_nodes": 4096
+  },
+  "optim": {
+    "lr": 0.001,
+    "weight_decay": 0.0001,
+    "batch_size": 256,
+    "train_steps_per_generation": 1
+  },
+  "replay": {
+    "capacity": 50000
+  },
+  "eval": {
+    "eval_every_n_generations": 0,
+    "eval_games": 20,
+    "eval_sims": 64,
+    "eval_opponent": "random",
+    "eval_kingdoms": "fixed",
+    "eval_n_games": 16,
+    "eval_max_batch": 512
+  }
+}

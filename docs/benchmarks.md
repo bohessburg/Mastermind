@@ -1,51 +1,53 @@
 # Engine Benchmarks and Performance
 
-## Build Configuration
+Current engine: v2 (`src/v2/`). All numbers Release build, 2-player.
+Live per-machine numbers: `./build/v2_bench` (JSON), gated locally against
+`bench/baseline.json` via `bench/check_regression.py` (±15%). CI runs the
+bench informationally (runner hardware differs from baselines).
 
-**Always build with Release for benchmarks:**
+**Always build Release for benchmarks** — Debug is 8–16× slower:
 ```bash
-cmake -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build
+cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build
 ```
-Debug mode (`-O0`) is 8-16x slower than Release (`-O2`). Debug showed 340 games/sec, Release shows 12,000.
 
-## Performance (Release, post-string-optimization, March 2025)
+## v2 engine (M1 Max baseline, July 2026)
 
-| Matchup | Games/sec | Avg Turns |
-|---------|-----------|-----------|
-| BM vs BM | 11,821 | 38.5 |
-| Heur vs BM | 7,640 | 42.1 |
-| Eng vs BM | 7,221 | 41.9 |
-| Eng vs Heur | 5,135 | 44.1 |
-| Eng vs Eng | 4,969 | 42.5 |
-| Heur vs Heur | 5,333 | 45.2 |
+| Metric | Value | Budget (REFACTOR_PLAN §4) |
+|---|---|---|
+| `step()` median | 42 ns | < 200 ns |
+| Clone (memcpy GameState) | ~118 ns | < 1 µs |
+| `legal_actions` mask | 26 ns | < 100 ns |
+| Random-agent games/sec | ~38.8K | 50K target: accepted deviation (decision count per game, not engine cost — see IMPLEMENTATION_PLAN Phase 3 note) |
+| BigMoney games/sec | ~80K | — |
+| Heuristic games/sec | ~60K | — |
+| Engine bot games/sec | ~58K | — |
+| MCTS sims/sec (1-thread, EngineLike rollouts, K=2) | ~14.5K | — |
 
-Full benchmark (9 matchups × 5000 games = 45,000 games) completes in ~6.5 seconds.
+v1 comparison (deleted 2026-07): ~12K games/sec with known correctness bugs
+and a benchmark-skewing kingdom-setup bug.
 
-## Bot Win Rates (seat-adjusted, 5000 games/matchup, random 10-of-26 kingdoms)
+## Bot win rates (10,000 seat-swapped games, random kingdoms, July 2026)
 
-| Bot A vs Bot B | A win% | B win% |
-|----------------|--------|--------|
-| Engine vs BigMoney | 56% | 41% |
-| Engine vs Heuristic | 69% | 28% |
-| BigMoney vs Heuristic | 57% | 40% |
+These rows are the drivers **EngineBot v2**. The current strongest scripted
+bot is **EngineBot v3** (2026-07) — full duel numbers, the chart-bot vs
+drivers-bot distinction, and CLI recipes are in `docs/bot_strategies.md`.
+For NN strength reads use `evaluate.py --opponent engine3`; the legacy
+"engine" eval opponent is a much weaker chart bot.
 
-**Ranking: Engine > BigMoney > Heuristic**
+| Matchup | Win / Loss / Tie |
+|---|---|
+| EngineBot vs BigMoney | 74.0 / 21.3 / 4.8 |
+| EngineBot vs Heuristic | 79.1 / 17.8 / 3.1 |
+| Heuristic vs BigMoney | 33.3 / 62.5 / 4.2 (known weakness: buys actions on boards that don't reward them) |
+| EngineBot vs Random | 100 / 0 / 0 |
 
-## Bot Strategies
+On the fixed engine-friendly kingdom (Village/Smithy/Market/Festival/Lab/…),
+EngineBot vs BigMoney is 81.1 / 16.5. On basics-only boards the bots converge
+(47/43) — always evaluate on real kingdoms (`eval_matchup` parameterless
+overload is basics-only; avoid it for strategy comparisons).
 
-- **BigMoney**: Pure money, no actions. Build to 16 total money value then green. Optimized duchy/estate dancing from wiki strategy guide.
-- **HeuristicAgent**: Plays all actions by priority, buys most expensive card with diminishing returns on duplicates.
-- **EngineBot**: Kingdom-aware — scans supply for Village/Chapel/draw. Three modes:
-  - FULL_ENGINE: Chapel + Village + terminal draw available → build engine, then green
-  - BM_PLUS_X: Has good terminals but no full engine support → BigMoney + 1-2 key actions
-  - PURE_BM: Nothing useful → falls back to BigMoney
+## MCTS (Phase 6 scaffold)
 
-## Optimization History
-
-1. **String→int optimization**: `card_def()` from double hash lookup to vector index, Supply iteration without allocating `all_pile_names()`. Result: 6K → 12K games/sec (2x).
-2. **Release build**: Debug → Release. Result: 340 → 12K games/sec in benchmarks (8-16x depending on matchup).
-
-## For MCTS Readiness
-
-12K games/sec for pure BigMoney rollouts is in the right ballpark for engine-side MCTS performance. The bottleneck for training will be neural network inference, not the game engine. State clone + step operations (needed for MCTS tree search) are not yet implemented.
+MCTS(1K sims, EngineLike rollouts, K=2 determinizations) vs EngineBot,
+200 seat-swapped random-kingdom games: **65.8% excluding ties** (gate: >50%).
+Full trial history and NN training throughput: `docs/training-log.md`.

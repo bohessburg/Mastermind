@@ -1,6 +1,12 @@
 # Build
 build/
+build-*/
 cmake-build-*/
+Testing/
+checkpoints/
+.venv/
+src/v2/web/client/node_modules/
+src/v2/web/client/dist/
 
 # IDE
 .idea/
@@ -21,3 +27,22 @@ compile_commands.json
 
 # Clangd cache
 .cache/
+Dominion_CompleteRules_v11.1.pdf
+__pycache__/
+exports/
+arena-recordings/
+arena-profile/
+.env
+.env.*
+dgames-profile/
+dgames-profiles/
+data/dominion_games/raw/
+data/dominion_games/ratings/
+data/dominion_games/coord/
+data/dominion_games/fleet.accounts.json
+data/dominion_games/recon/captures/
+data/dominion_games/recon/yield/
+data/dominion_games/recon/concurrency/
+bench/.box3_mrows
+*.pt
+*.npz

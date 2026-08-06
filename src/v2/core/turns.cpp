@@ -2,35 +2,12 @@
 
 #include "v2/core/defs.h"
 #include "v2/core/interp.h"
+#include "v2/core/moves.h"
 
 #include <cassert>
 #include <cstdint>
 
 namespace {
-
-void append_discard(PlayerState& player, Slot slot) noexcept {
-    assert(player.discard.size < MAX_DECK_CARDS);
-    player.discard.cards[player.discard.size] = slot;
-    ++player.discard.size;
-}
-
-void discard_hand(PlayerState& player) noexcept {
-    for (std::uint8_t slot = 0; slot < MAX_SLOTS; ++slot) {
-        const std::uint8_t count = player.hand[slot];
-        for (std::uint8_t i = 0; i < count; ++i) {
-            append_discard(player, slot);
-        }
-        player.hand[slot] = 0;
-    }
-}
-
-void discard_in_play(PlayerState& player) noexcept {
-    for (std::uint8_t i = 0; i < player.in_play_size; ++i) {
-        append_discard(player, player.in_play[i].slot);
-        player.in_play[i] = InPlayEntry{};
-    }
-    player.in_play_size = 0;
-}
 
 [[nodiscard]] bool pile_top_def(const GameState& state, const Pile& pile, DefId& out) noexcept {
     if (pile.mixed_len > 0U) {
@@ -119,21 +96,26 @@ void start_turn(GameState& state, PlayerId player) noexcept {
     state.buys = 1;
     state.coins = 0;
     state.potion_coins = 0;
-    state.decision = PendingDecision{player, static_cast<std::uint8_t>(DecisionKind::PhaseAction), 0, 0, 0};
+    state.decision = PendingDecision{
+        player,
+        static_cast<std::uint8_t>(DecisionKind::PhaseAction),
+        0,
+        0,
+        0,
+        static_cast<std::uint8_t>(SelectSemantic::None),
+    };
 }
 
 void cleanup_current_turn(GameState& state) noexcept {
     const PlayerId player_id = current_player(state);
-    PlayerState& player = state.players[player_id];
-    discard_in_play(player);
-    discard_hand(player);
+    do_discard_all_in_play(state, player_id);
+    do_discard_all_hand(state, player_id);
     draw_cards(state, player_id, 5U);
 
     state.actions = 0;
     state.buys = 0;
     state.coins = 0;
     state.potion_coins = 0;
-    state.effect_depth = 0;
     state.decision = PendingDecision{};
 }
 

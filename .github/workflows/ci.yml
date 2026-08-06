@@ -21,6 +21,56 @@ jobs:
       - name: Test
         run: ctest --test-dir build -R v2 --output-on-failure
 
+  python-smoke:
+    name: Python Smoke ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create venv
+        run: python3 -m venv .venv
+      - name: Install Python deps
+        run: ./.venv/bin/python -m pip install --upgrade pip numpy pybind11 requests torch -r src/v2/web/server/requirements.txt
+      - name: Configure
+        run: |
+          PYBIND11_DIR="$(./.venv/bin/python -m pybind11 --cmakedir)"
+          cmake -B build-py -DCMAKE_BUILD_TYPE=Release -DBUILD_PYTHON=ON -DPython3_EXECUTABLE="$PWD/.venv/bin/python" -Dpybind11_DIR="$PYBIND11_DIR"
+      - name: Build
+        run: cmake --build build-py --target dominion_v2_py
+      - name: Smoke
+        run: PYTHONPATH=build-py ./.venv/bin/python src/v2/py/test_smoke.py
+      - name: Training smoke
+        run: PYTHONPATH=build-py ./.venv/bin/python -m pytest src/v2/train -q
+      - name: Server tests
+        run: PYTHONPATH=build-py ./.venv/bin/python -m pytest src/v2/web/server -q
+      - name: Infra tests
+        run: PYTHONPATH=. ./.venv/bin/python -m pytest scripts/infra -q
+      - name: Infra dry-run
+        run: PYTHONPATH=. ./.venv/bin/python -m scripts.infra.remote_run --dry-run --ssh-target root@example.invalid --run ci launch --config src/v2/train/configs/smoke.json --resume-latest
+
+  web-client:
+    name: Web Client
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '23'
+          cache: npm
+          cache-dependency-path: src/v2/web/client/package-lock.json
+      - name: Install
+        working-directory: src/v2/web/client
+        run: npm ci
+      - name: Test
+        working-directory: src/v2/web/client
+        run: npm test
+      - name: Build
+        working-directory: src/v2/web/client
+        run: npm run build
+
   sanitizer:
     name: Debug Sanitizers
     runs-on: ubuntu-latest
@@ -33,6 +83,18 @@ jobs:
       - name: Test
         run: ctest --test-dir build -R v2 --output-on-failure
 
+  sanitizer-fuzz:
+    name: Sanitizer Fuzz
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -B build-fuzz -DCMAKE_BUILD_TYPE=RelWithDebInfo -DENABLE_SANITIZERS=ON -DBUILD_TESTS=OFF
+      - name: Build
+        run: cmake --build build-fuzz --target v2_fuzz
+      - name: Run
+        run: ./build-fuzz/v2_fuzz --seeds 100000 --steps-budget 10000000 --players 0
+
   bench:
     name: Bench Smoke
     runs-on: ubuntu-latest
@@ -42,5 +104,9 @@ jobs:
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release
       - name: Build
         run: cmake --build build --target v2_bench
+      # Informational only: runner hardware differs from the baseline machine,
+      # so absolute thresholds are meaningless in CI. The ±15% regression gate
+      # runs on dev machines via bench/check_regression.py against a baseline
+      # recorded on the same machine.
       - name: Run
-        run: ./build/v2_bench
+        run: ./build/v2_bench | tee bench/current.json

@@ -8,6 +8,7 @@
 
 constexpr int MAX_IN_PLAY = 24;
 constexpr int MAX_TURN_QUEUE = 16;
+constexpr int MAX_TRIGGER_SUBS = 64;
 
 struct OrderedZone {
     std::uint8_t size = 0;
@@ -25,6 +26,7 @@ struct EffectFrame {
     std::uint8_t pc = 0;
     PlayerId player = 0;
     std::uint8_t flags = 0;
+    std::uint8_t repeats_left = 1;
     std::int16_t data[8]{};
 };
 
@@ -36,6 +38,7 @@ struct PlayerState {
 
     OrderedZone deck;
     OrderedZone discard;
+    OrderedZone set_aside;
 
     std::uint8_t in_play_size = 0;
     InPlayEntry in_play[MAX_IN_PLAY]{};
@@ -99,12 +102,35 @@ enum class DecisionKind : std::uint8_t {
     OrderTriggers,
 };
 
+enum class SelectSemantic : std::uint8_t {
+    None = 0,
+    Keep,
+    Discard,
+    Trash,
+    Topdeck,
+    Gain,
+    Other,
+};
+
 struct PendingDecision {
     PlayerId player = 0;
     std::uint8_t kind = 0;
     std::uint16_t source = 0;
     std::uint8_t min_left = 0;
     std::uint8_t max_left = 0;
+    std::uint8_t select_semantic = static_cast<std::uint8_t>(SelectSemantic::None);
+};
+
+struct Subscription {
+    PlayerId owner = 0;
+    std::uint16_t source = 0;
+    std::uint8_t kind_of_source = 0;
+};
+
+struct TriggerTable {
+    Subscription subs[MAX_TRIGGER_SUBS]{};
+    std::uint8_t count = 0;
+    std::uint8_t dirty : 1 = 1;
 };
 
 enum class Phase : std::uint8_t {
@@ -152,6 +178,7 @@ struct GameState {
     std::uint8_t effect_depth = 0;
     EffectFrame effect_stack[MAX_EFFECT_DEPTH]{};
     PendingDecision decision;
+    TriggerTable trigger_table;
 
     Xoshiro256pp rng{};
 };

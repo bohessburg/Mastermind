@@ -1,0 +1,775 @@
+from __future__ import annotations
+
+import math
+import time
+from collections.abc import Mapping
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any, Callable, Sequence
+
+import numpy as np
+
+if TYPE_CHECKING:
+    import torch
+
+import dominion_v2_py as dz
+
+from .config import (
+    SelfPlayConfig,
+    validate_c_puct_config,
+    validate_deep_slice_config,
+    validate_determinize_config,
+    validate_forced_playouts_config,
+    validate_opening_template_config,
+    validate_selfplay_max_turns_config,
+    validate_temperature_config,
+    validate_value_target_config,
+)
+from .observation import (
+    model_encoder_generation,
+    model_observation_version,
+    observations_for_model,
+    obs_version_for_width,
+)
+from .replay import ReplayBuffer
+
+
+SIL_PRIORITY_EPSILON = 1.0e-6
+SIL_PRIORITY_BATCH_SIZE = 4096
+
+
+def compute_sil_priorities(
+    model: torch.nn.Module,
+    observations: np.ndarray,
+    value_targets: np.ndarray,
+    device: torch.device,
+    *,
+    batch_size: int = SIL_PRIORITY_BATCH_SIZE,
+) -> np.ndarray:
+    """Compute ``max(epsilon, z - v_theta(s))`` in batched no-grad forwards."""
+    import torch
+
+    obs = np.asarray(observations, dtype=np.float32)
+    targets = np.asarray(value_targets, dtype=np.float32)
+    if obs.ndim != 2 or targets.shape != (obs.shape[0],):
+        raise ValueError("SIL observations and value targets must have aligned rows")
+    if not isinstance(batch_size, int) or isinstance(batch_size, bool) or batch_size <= 0:
+        raise ValueError("SIL priority batch_size must be a positive integer")
+    predictions = np.empty((obs.shape[0],), dtype=np.float32)
+    was_training = model.training
+    model.eval()
+    try:
+        with torch.no_grad():
+            for start in range(0, obs.shape[0], batch_size):
+                stop = min(start + batch_size, obs.shape[0])
+                outputs = model(torch.as_tensor(obs[start:stop], dtype=torch.float32, device=device))
+                if not isinstance(outputs, tuple) or len(outputs) < 2:
+                    raise ValueError("SIL priority model forward must return policy logits and values")
+                values = outputs[1]
+                if tuple(values.shape) != (stop - start,):
+                    raise ValueError("SIL priority model value head shape mismatch")
+                predictions[start:stop] = values.detach().cpu().numpy().astype(np.float32, copy=False)
+    finally:
+        model.train(was_training)
+    return np.maximum(SIL_PRIORITY_EPSILON, targets - predictions).astype(np.float32, copy=False)
+
+
+def refresh_sil_priorities(
+    replay: ReplayBuffer,
+    model: torch.nn.Module,
+    device: torch.device,
+    *,
+    start_write: int,
+    inserted_positions: int,
+    batch_size: int = SIL_PRIORITY_BATCH_SIZE,
+) -> None:
+    """Refresh priorities for exactly the rows inserted by one self-play pass.
+
+    This lives at the trainer-side insertion boundary: workers only transport
+    records, while the current training model remains resident in the parent.
+    The dormant path returns before inspecting the model, preserving legacy
+    collection and RNG behavior exactly.
+    """
+    if not replay.sil_enabled or inserted_positions <= 0:
+        return
+    retained = min(int(inserted_positions), replay.capacity, len(replay))
+    if retained <= 0:
+        return
+    first = (int(start_write) + int(inserted_positions) - retained) % replay.capacity
+    indices = (first + np.arange(retained, dtype=np.int64)) % replay.capacity
+    replay.priority[indices] = compute_sil_priorities(
+        model,
+        replay.obs[indices],
+        replay.value[indices],
+        device,
+        batch_size=batch_size,
+    )
+
+
+@dataclass
+class SelfPlayStats:
+    games: int = 0
+    positions: int = 0
+    leaves: int = 0
+    nn_evals: int = 0
+    wall_time: float = 0.0
+    inference_time: float = 0.0
+    plumbing_time: float = 0.0
+    # Only routed self-play increments these. They distinguish normal
+    # best-vs-best routed segments from genuine two-model league segments.
+    routed_fast_path_batches: int = 0
+    routed_split_batches: int = 0
+    scripted_games: int = 0
+    scripted_wins: int = 0
+    # Deep-search games retain ordinary replay handling, but are surfaced in
+    # generation metrics so their data contribution can be monitored.
+    deep_games: int = 0
+    deep_positions: int = 0
+    # Maps scripted opponent kind to (games, neural-network wins).
+    scripted_by_kind: dict[str, tuple[int, int]] = field(default_factory=dict)
+    # Maps league checkpoint basename to (games, current-seat-zero wins).
+    league_by_opponent: dict[str, tuple[int, int]] = field(default_factory=dict)
+    # c18 opening-template telemetry. Template game counts are seat counts:
+    # each completed game contributes one observation for each assigned seat.
+    opening_template_games: list[int] = field(default_factory=lambda: [0] * 7)
+    opening_template_vs_unconstrained_games: list[int] = field(default_factory=lambda: [0] * 7)
+    opening_template_vs_unconstrained_wins: list[int] = field(default_factory=lambda: [0] * 7)
+    cards_trashed: int = 0
+    # Chapel, Sentry, Moneylender, Village in native record order.
+    unconstrained_buy_counts: list[int] = field(default_factory=lambda: [0] * 4)
+
+    @property
+    def games_per_hour(self) -> float:
+        return 3600.0 * self.games / self.wall_time if self.wall_time > 0 else 0.0
+
+    @property
+    def leaves_per_sec(self) -> float:
+        return self.leaves / self.wall_time if self.wall_time > 0 else 0.0
+
+    @property
+    def nn_evals_per_sec(self) -> float:
+        return self.nn_evals / self.inference_time if self.inference_time > 0 else 0.0
+
+    @property
+    def inference_pct(self) -> float:
+        return 100.0 * self.inference_time / self.wall_time if self.wall_time > 0 else 0.0
+
+    @property
+    def plumbing_pct(self) -> float:
+        return 100.0 * self.plumbing_time / self.wall_time if self.wall_time > 0 else 0.0
+
+
+def _kingdom_mode(mode: str):
+    normalized = mode.lower()
+    if normalized == "fixed":
+        return dz.SelfPlayKingdomMode.Fixed
+    if normalized == "random":
+        return dz.SelfPlayKingdomMode.Random
+    raise ValueError(f"unknown kingdom mode: {mode}")
+
+
+def _scripted_bot_kind(kind: str | None):
+    if kind is None:
+        return dz.SelfPlayScriptedBotKind.None_
+    normalized = kind.lower()
+    if normalized == "bigmoney":
+        return dz.SelfPlayScriptedBotKind.BigMoney
+    if normalized == "engine":
+        return dz.SelfPlayScriptedBotKind.Engine
+    if normalized == "engine3":
+        return dz.SelfPlayScriptedBotKind.EngineV3
+    if normalized == "random":
+        return dz.SelfPlayScriptedBotKind.Random
+    if normalized == "scaffold":
+        return dz.SelfPlayScriptedBotKind.Scaffold
+    raise ValueError(f"unknown scripted opponent: {kind}")
+
+
+def _value_target(value_target: str):
+    normalized = value_target.lower()
+    if normalized in {"outcome", "winloss"}:
+        return dz.SelfPlayValueTarget.Outcome
+    if normalized == "margin":
+        return dz.SelfPlayValueTarget.Margin
+    if normalized == "margin_blend":
+        return dz.SelfPlayValueTarget.MarginBlend
+    raise ValueError(f"unknown value target: {value_target}")
+
+
+def _determinize_mode(mode: str):
+    normalized = mode.lower()
+    if normalized == "off":
+        return dz.SelfPlayDeterminizeMode.Off
+    if normalized == "per_decision":
+        return dz.SelfPlayDeterminizeMode.PerDecision
+    if normalized == "per_turn":
+        return dz.SelfPlayDeterminizeMode.PerTurn
+    raise ValueError(f"unknown selfplay determinize mode: {mode}")
+
+
+def _manifest_value(descriptor: object, name: str, default: Any) -> Any:
+    if isinstance(descriptor, Mapping):
+        return descriptor.get(name, default)
+    return getattr(descriptor, name, default)
+
+
+def _nonnegative_int(value: Any, name: str) -> int:
+    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+        raise ValueError(f"{name} must be a non-negative integer")
+    return int(value)
+
+
+def _slot_manifest_configs(
+    config: SelfPlayConfig,
+    slot_manifest: Sequence[object],
+) -> list[dz.SelfPlaySlotConfig]:
+    """Translate Python slot descriptors into the native immutable manifest.
+
+    ``workers.py`` deliberately keeps counter-only metadata (league checkpoint
+    name and kingdom phase) on its descriptor; the runner receives just the
+    game attributes needed to drive an independent live slot.
+    """
+    if not slot_manifest:
+        raise ValueError("slot_manifest must contain at least one slot when supplied")
+    slots: list[dz.SelfPlaySlotConfig] = []
+    seen_game_indices: set[int] = set()
+    for position, descriptor in enumerate(slot_manifest):
+        if isinstance(descriptor, dz.SelfPlaySlotConfig):
+            # Copy through public fields so later caller mutations cannot make
+            # the Python manifest disagree with the runner's config object.
+            slot = dz.SelfPlaySlotConfig()
+            slot.game_index = int(descriptor.game_index)
+            slot.seat0_model_id = int(descriptor.seat0_model_id)
+            slot.seat1_model_id = int(descriptor.seat1_model_id)
+            slot.kingdom_mode = descriptor.kingdom_mode
+            slot.kingdom_pool = list(descriptor.kingdom_pool)
+            slot.sims_override = int(descriptor.sims_override)
+            slot.scripted_bot = descriptor.scripted_bot
+            slot.scripted_nn_player = int(descriptor.scripted_nn_player)
+        else:
+            slot = dz.SelfPlaySlotConfig()
+            game_index = _nonnegative_int(
+                _manifest_value(descriptor, "game_index", position),
+                "slot game_index",
+            )
+            seat0_model_id = _nonnegative_int(
+                _manifest_value(descriptor, "seat0_model_id", 0),
+                "slot seat0_model_id",
+            )
+            seat1_model_id = _nonnegative_int(
+                _manifest_value(descriptor, "seat1_model_id", 0),
+                "slot seat1_model_id",
+            )
+            mode = _manifest_value(descriptor, "kingdom_mode", None)
+            if mode is None:
+                mode = config.kingdom_mode
+            if isinstance(mode, str):
+                slot.kingdom_mode = _kingdom_mode(mode)
+            elif isinstance(mode, dz.SelfPlayKingdomMode):
+                slot.kingdom_mode = mode
+            else:
+                raise ValueError("slot kingdom_mode must be 'fixed' or 'random'")
+            pool = _manifest_value(descriptor, "kingdom_pool", None)
+            if pool is not None and (isinstance(pool, str) or not isinstance(pool, Sequence)):
+                raise ValueError("slot kingdom_pool must be a sequence or None")
+            slot.game_index = game_index
+            slot.seat0_model_id = seat0_model_id
+            slot.seat1_model_id = seat1_model_id
+            slot.kingdom_pool = list(pool) if pool is not None else None
+            slot.sims_override = _nonnegative_int(
+                _manifest_value(descriptor, "sims_override", 0),
+                "slot sims_override",
+            )
+            scripted_kind = _manifest_value(descriptor, "scripted_kind", None)
+            if isinstance(scripted_kind, dz.SelfPlayScriptedBotKind):
+                slot.scripted_bot = scripted_kind
+            else:
+                slot.scripted_bot = _scripted_bot_kind(scripted_kind)
+            slot.scripted_nn_player = _nonnegative_int(
+                _manifest_value(
+                    descriptor,
+                    "nn_player",
+                    _manifest_value(descriptor, "scripted_nn_player", 0),
+                ),
+                "slot nn_player",
+            )
+        game_index = _nonnegative_int(slot.game_index, "slot game_index")
+        if game_index in seen_game_indices:
+            raise ValueError("slot_manifest game_index values must be unique")
+        seen_game_indices.add(game_index)
+        if int(slot.scripted_nn_player) > 1 and slot.scripted_bot != dz.SelfPlayScriptedBotKind.None_:
+            raise ValueError("slot nn_player must be zero or one for scripted games")
+        slots.append(slot)
+    return slots
+
+
+def make_runner_config(
+    config: SelfPlayConfig,
+    seed: int,
+    *,
+    scripted_kind: str | None = None,
+    scripted_nn_player: int = 0,
+    kingdom_pool: Sequence[int] | None = None,
+    sims_override: int = 0,
+    slot_manifest: Sequence[object] | None = None,
+):
+    validate_deep_slice_config(config)
+    validate_value_target_config(config)
+    validate_c_puct_config(config)
+    validate_determinize_config(config)
+    validate_temperature_config(config)
+    validate_selfplay_max_turns_config(config)
+    validate_forced_playouts_config(config)
+    validate_opening_template_config(config)
+    if not math.isfinite(config.margin_scale) or config.margin_scale <= 0.0:
+        raise ValueError("margin_scale must be finite and positive")
+    if not isinstance(sims_override, int) or isinstance(sims_override, bool) or sims_override < 0:
+        raise ValueError("sims_override must be a non-negative integer")
+    native_slots = _slot_manifest_configs(config, slot_manifest) if slot_manifest is not None else []
+    max_slot_sims = max((int(slot.sims_override) for slot in native_slots), default=0)
+    effective_override = max(int(sims_override), max_slot_sims)
+    runner_sims = int(sims_override) if sims_override else int(config.sims_per_move)
+    runner_max_tree_nodes = int(config.max_tree_nodes)
+    if effective_override:
+        # C13 used 4,096 nodes for 512 sims (an 8x margin), but multiplying
+        # that full margin for every rare 8-16x deep run is needlessly large.
+        # Two nodes per simulation safely grows capacity with the budget while
+        # retaining the configured cap whenever it is already larger.
+        runner_max_tree_nodes = max(runner_max_tree_nodes, effective_override * 2)
+    runner_config = dz.SelfPlayConfig(
+        n_games=config.n_games,
+        sims_per_move=runner_sims,
+        c_puct=config.c_puct,
+        c_puct_schedule=config.c_puct_schedule,
+        c_puct_init=config.c_puct_init,
+        c_puct_base=config.c_puct_base,
+        dirichlet_alpha=config.dirichlet_alpha,
+        dirichlet_frac=config.dirichlet_frac,
+        temp_moves=config.temp_moves,
+        temp_mode=config.temp_mode.lower(),
+        temp_buy_turns=config.temp_buy_turns,
+        temp_action_plies=config.temp_action_plies,
+        temp_effect_plies=config.temp_effect_plies,
+        temp_final=config.temp_final,
+        selfplay_max_turns=config.max_turns,
+        max_batch=config.max_batch,
+        seed=seed,
+        obs_version=int(config.obs_version),
+        kingdom_mode=_kingdom_mode(config.kingdom_mode),
+        kingdom=config.fixed_kingdom,
+        kingdom_pool=list(kingdom_pool) if kingdom_pool is not None else None,
+        max_recorded_moves=config.max_recorded_moves,
+        max_tree_nodes=runner_max_tree_nodes,
+        scaffold_sims=config.scaffold_sims,
+        scaffold_sims_opening=config.scaffold_sims_opening,
+        scaffold_determinizations=config.scaffold_determinizations,
+        scripted_threads=config.scripted_threads,
+        scripted_bot=_scripted_bot_kind(scripted_kind),
+        scripted_nn_player=int(scripted_nn_player),
+        auto_play_treasures=config.auto_play_treasures,
+        prune_treasure_plays=config.prune_treasure_plays,
+        tree_reuse=config.tree_reuse,
+        determinize=_determinize_mode(config.determinize),
+        forced_playouts=config.forced_playouts,
+        forced_playouts_k=config.forced_playouts_k,
+        min_new_sims=config.min_new_sims,
+        expand_top_k=config.expand_top_k,
+        value_target=_value_target(config.value_target),
+        margin_scale=config.margin_scale,
+        margin_blend_alpha=config.margin_blend_alpha,
+        opening_templates_enabled=config.opening_templates_enabled,
+        opening_lambda=config.opening_lambda,
+        opening_turn_window=config.opening_turn_window,
+        template_weights=list(config.template_weights),
+    )
+    if native_slots:
+        runner_config.n_games = len(native_slots)
+        runner_config.slot_manifest = native_slots
+    return runner_config
+
+
+def _record_legal_mask(record: dict, policy: np.ndarray) -> np.ndarray:
+    if "legal_mask" not in record:
+        raise ValueError("self-play record is missing the true legal_mask field")
+    legal_mask = np.asarray(record["legal_mask"], dtype=np.bool_)
+    if legal_mask.shape != policy.shape:
+        raise ValueError("self-play record legal_mask shape does not match policy_targets")
+    return legal_mask
+
+
+def _record_margin(record: dict, value: np.ndarray) -> np.ndarray:
+    """Return native per-decision terminal margins with strict row alignment."""
+
+    if "margins" not in record:
+        raise ValueError("self-play record is missing the terminal margins field")
+    margins = np.asarray(record["margins"], dtype=np.int16)
+    if margins.shape != value.shape:
+        raise ValueError("self-play record margins shape does not match values")
+    return margins
+
+
+def _records_to_replay(records: list[dict], replay: ReplayBuffer) -> tuple[int, int]:
+    games = 0
+    positions = 0
+    for record in records:
+        obs = np.asarray(record["observations"], dtype=np.float32)
+        policy = np.asarray(record["policy_targets"], dtype=np.float32)
+        value = np.asarray(record["values"], dtype=np.float32)
+        legal_mask = _record_legal_mask(record, policy)
+        margin = _record_margin(record, value)
+        if obs.shape[0] == 0:
+            continue
+        replay.add(obs, policy, value, legal_mask, margin)
+        games += 1
+        positions += obs.shape[0]
+    return games, positions
+
+
+def record_opening_template_telemetry(stats: SelfPlayStats, records: list[dict]) -> None:
+    """Accumulate c18 record metadata without retaining per-game objects.
+
+    Template counts are per assigned seat. The matchup counters intentionally
+    include only template-vs-unconstrained games, which makes their win rate a
+    direct answer to whether a forced archetype can beat the unforced policy.
+    """
+    for record in records:
+        raw_ids = np.asarray(record.get("seat_template_ids", [0, 0]), dtype=np.int64).reshape(-1)
+        if raw_ids.size < 2:
+            raise ValueError("self-play record is missing both seat template ids")
+        template_ids = [int(raw_ids[0]), int(raw_ids[1])]
+        if any(template_id < 0 or template_id >= 7 for template_id in template_ids):
+            raise ValueError("self-play record has an invalid template id")
+        for template_id in template_ids:
+            stats.opening_template_games[template_id] += 1
+
+        winner = record.get("winner")
+        for seat, template_id in enumerate(template_ids):
+            opponent_template = template_ids[1 - seat]
+            if template_id == 0 or opponent_template != 0:
+                continue
+            stats.opening_template_vs_unconstrained_games[template_id] += 1
+            if winner is not None and int(winner) == seat:
+                stats.opening_template_vs_unconstrained_wins[template_id] += 1
+
+        stats.cards_trashed += int(record.get("cards_trashed", 0))
+        raw_buys = np.asarray(record.get("unconstrained_buy_counts", [0, 0, 0, 0]), dtype=np.int64).reshape(-1)
+        if raw_buys.size < 4:
+            raise ValueError("self-play record is missing unconstrained buy telemetry")
+        for index in range(4):
+            stats.unconstrained_buy_counts[index] += int(raw_buys[index])
+
+
+def _record_scripted_outcomes(
+    stats: SelfPlayStats,
+    records: list[dict],
+    scripted_kind: str | None,
+) -> None:
+    if scripted_kind is None:
+        return
+    games = len(records)
+    wins = sum(
+        1
+        for record in records
+        if record.get("winner") is not None
+        and record.get("scripted_nn_player") is not None
+        and int(record["winner"]) == int(record["scripted_nn_player"])
+    )
+    stats.scripted_games += games
+    stats.scripted_wins += wins
+    previous_games, previous_wins = stats.scripted_by_kind.get(scripted_kind, (0, 0))
+    stats.scripted_by_kind[scripted_kind] = (previous_games + games, previous_wins + wins)
+
+
+def _record_league_outcomes(
+    stats: SelfPlayStats,
+    records: list[dict],
+    league_opponent: str | None,
+) -> None:
+    if league_opponent is None:
+        return
+    # League replay deliberately preserves its established full-game behavior:
+    # _records_to_replay keeps positions from both seats. Only this metric is
+    # seat-specific, recording the current model's fixed seat-zero outcome;
+    # league games are not seat-swapped (gate matches are handled separately).
+    games = len(records)
+    wins = sum(1 for record in records if record.get("winner") is not None and int(record["winner"]) == 0)
+    previous_games, previous_wins = stats.league_by_opponent.get(league_opponent, (0, 0))
+    stats.league_by_opponent[league_opponent] = (previous_games + games, previous_wins + wins)
+
+
+def run_self_play_generation(
+    model: torch.nn.Module,
+    replay: ReplayBuffer,
+    config: SelfPlayConfig,
+    seed: int,
+    device: torch.device,
+) -> SelfPlayStats:
+    import torch
+
+    runner = dz.SelfPlayRunner(make_runner_config(config, seed))
+    model.eval()
+    stats = SelfPlayStats()
+    start = time.perf_counter()
+
+    with torch.no_grad():
+        while stats.games < config.games_per_generation:
+            plumbing_start = time.perf_counter()
+            obs, masks = runner.collect_leaves(config.max_batch)
+            stats.plumbing_time += time.perf_counter() - plumbing_start
+            batch = int(obs.shape[0])
+            if batch == 0:
+                continue
+
+            inference_start = time.perf_counter()
+            obs_tensor = torch.as_tensor(obs, dtype=torch.float32, device=device)
+            mask_tensor = torch.as_tensor(masks, dtype=torch.bool, device=device)
+            logits, values = model.evaluate(obs_tensor, mask_tensor)
+            logits_np = logits.detach().cpu().numpy().astype(np.float32, copy=False)
+            values_np = values.detach().cpu().numpy().astype(np.float32, copy=False)
+            stats.inference_time += time.perf_counter() - inference_start
+
+            plumbing_start = time.perf_counter()
+            runner.provide_evaluations(values_np, logits_np)
+            finished = runner.finished_games()
+            record_opening_template_telemetry(stats, finished)
+            games, positions = _records_to_replay(finished, replay)
+            stats.games += games
+            stats.positions += positions
+            stats.plumbing_time += time.perf_counter() - plumbing_start
+            stats.leaves += batch
+            stats.nn_evals += batch
+
+    stats.wall_time = time.perf_counter() - start
+    return stats
+
+
+def route_leaf_evaluations(
+    seat_models: Sequence[torch.nn.Module],
+    obs: np.ndarray,
+    masks: np.ndarray,
+    leaf_players: np.ndarray | None,
+    device: torch.device,
+    *,
+    same_model_fast_path: bool | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Evaluate a mixed self-play leaf batch with the model for its seat.
+
+    ``SelfPlayRunner.leaf_players()`` is aligned with ``collect_leaves``.  The
+    split/scatter keeps the engine's original batch order intact for
+    ``provide_evaluations`` while allowing a historical opponent on one seat.
+    When both seats reference the same model table entry, callers select the
+    full-batch fast path and deliberately do not fetch player attribution.
+    """
+    import torch
+
+    if len(seat_models) != 2:
+        raise ValueError("two seat models are required")
+    source_version = obs_version_for_width(int(obs.shape[-1]))
+
+    def evaluate_model(model: torch.nn.Module, model_obs: np.ndarray) -> tuple[torch.Tensor, torch.Tensor]:
+        adapted_obs = observations_for_model(
+            model_obs,
+            source_version,
+            model_observation_version(model, source_version),
+            model_encoder_generation(model),
+        )
+        obs_tensor = torch.as_tensor(adapted_obs, dtype=torch.float32, device=device)
+        mask_tensor = torch.as_tensor(masks, dtype=torch.bool, device=device)
+        return model.evaluate(obs_tensor, mask_tensor)
+
+    models_are_identical = seat_models[0] is seat_models[1]
+    if same_model_fast_path is True and not models_are_identical:
+        raise ValueError("same-model fast path requires both seat models to be the same object")
+    use_fast_path = models_are_identical and same_model_fast_path is not False
+    if use_fast_path:
+        model = seat_models[0]
+        model.eval()
+        with torch.no_grad():
+            logits, values = evaluate_model(model, obs)
+        return (
+            logits.detach().cpu().numpy().astype(np.float32, copy=False),
+            values.detach().cpu().numpy().astype(np.float32, copy=False),
+        )
+
+    if leaf_players is None:
+        raise ValueError("mixed-model routing requires leaf player attribution")
+    players = np.asarray(leaf_players, dtype=np.uint8)
+    if players.ndim != 1 or players.shape[0] != obs.shape[0]:
+        raise ValueError("leaf player attribution must have one entry per observation")
+    if models_are_identical:
+        # This explicit compatibility mode is used only by the fixed-seed
+        # equivalence test.  A GEMM over a full batch versus two differently
+        # shaped seat sub-batches can differ by one ULP, despite the model
+        # being mathematically batch-independent.  Preserve the routing
+        # machinery (attribution and scatter) while retaining the canonical
+        # full-batch numerical result that production's fast path emits.
+        model = seat_models[0]
+        model.eval()
+        with torch.no_grad():
+            logits, values = evaluate_model(model, obs)
+        full_logits = logits.detach().cpu().numpy().astype(np.float32, copy=False)
+        full_values = values.detach().cpu().numpy().astype(np.float32, copy=False)
+        logits_out = np.empty_like(full_logits)
+        values_out = np.empty_like(full_values)
+        for player in np.unique(players):
+            player_index = int(player)
+            if player_index not in (0, 1):
+                raise ValueError("SelfPlayRunner emitted an invalid player id")
+            indices = np.flatnonzero(players == player)
+            logits_out[indices] = full_logits[indices]
+            values_out[indices] = full_values[indices]
+        return logits_out, values_out
+
+    logits_out = np.empty((obs.shape[0], dz.ACTION_SPACE_SIZE), dtype=np.float32)
+    values_out = np.empty((obs.shape[0],), dtype=np.float32)
+    with torch.no_grad():
+        for player in np.unique(players):
+            player_index = int(player)
+            if player_index not in (0, 1):
+                raise ValueError("SelfPlayRunner emitted an invalid player id")
+            indices = np.flatnonzero(players == player)
+            model = seat_models[player_index]
+            model.eval()
+            adapted_obs = observations_for_model(
+                obs[indices],
+                source_version,
+                model_observation_version(model, source_version),
+                model_encoder_generation(model),
+            )
+            obs_tensor = torch.as_tensor(adapted_obs, dtype=torch.float32, device=device)
+            mask_tensor = torch.as_tensor(masks[indices], dtype=torch.bool, device=device)
+            logits, values = model.evaluate(obs_tensor, mask_tensor)
+            logits_out[indices] = logits.detach().cpu().numpy().astype(np.float32, copy=False)
+            values_out[indices] = values.detach().cpu().numpy().astype(np.float32, copy=False)
+    return logits_out, values_out
+
+
+def play_routed_games(
+    seat_models: Sequence[torch.nn.Module],
+    config: SelfPlayConfig,
+    *,
+    seed: int,
+    device: torch.device,
+    target_games: int,
+    same_model_fast_path: bool | None = None,
+    scripted_kind: str | None = None,
+    scripted_nn_player: int = 0,
+    kingdom_pool: Sequence[int] | None = None,
+    kingdom_mode: str | None = None,
+    sims_override: int = 0,
+    league_opponent: str | None = None,
+    determinize: str | None = None,
+    on_finished: Callable[[list[dict]], None] | None = None,
+) -> tuple[SelfPlayStats, list[dict]]:
+    """Generate an exact number of games while routing every leaf by seat."""
+    if target_games < 0:
+        raise ValueError("target_games cannot be negative")
+    stats = SelfPlayStats()
+    if target_games == 0:
+        return stats, []
+    runner_config = SelfPlayConfig(**config.__dict__)
+    runner_config.n_games = max(1, min(int(config.n_games), int(target_games)))
+    if kingdom_mode is not None:
+        runner_config.kingdom_mode = kingdom_mode
+    if determinize is not None:
+        runner_config.determinize = determinize
+    runner = dz.SelfPlayRunner(
+        make_runner_config(
+            runner_config,
+            seed,
+            scripted_kind=scripted_kind,
+            scripted_nn_player=scripted_nn_player,
+            kingdom_pool=kingdom_pool,
+            sims_override=sims_override,
+        )
+    )
+    for model in seat_models:
+        model.eval()
+    models_are_identical = seat_models[0] is seat_models[1]
+    if same_model_fast_path is True and not models_are_identical:
+        raise ValueError("same-model fast path requires both seat models to be the same object")
+    use_fast_path = models_are_identical and same_model_fast_path is not False
+
+    records: list[dict] = []
+    start = time.perf_counter()
+    while len(records) < target_games:
+        plumbing_start = time.perf_counter()
+        obs, masks = runner.collect_leaves(runner_config.max_batch)
+        players = None if use_fast_path else runner.leaf_players()
+        stats.plumbing_time += time.perf_counter() - plumbing_start
+        batch = int(obs.shape[0])
+        if batch == 0:
+            continue
+        inference_start = time.perf_counter()
+        logits_np, values_np = route_leaf_evaluations(
+            seat_models,
+            obs,
+            masks,
+            players,
+            device,
+            same_model_fast_path=use_fast_path,
+        )
+        stats.inference_time += time.perf_counter() - inference_start
+        if use_fast_path:
+            stats.routed_fast_path_batches += 1
+        else:
+            stats.routed_split_batches += 1
+        plumbing_start = time.perf_counter()
+        runner.provide_evaluations(values_np, logits_np)
+        finished = runner.finished_games()
+        stats.plumbing_time += time.perf_counter() - plumbing_start
+        stats.leaves += batch
+        stats.nn_evals += batch
+        remaining = target_games - len(records)
+        completed = finished[:remaining]
+        records.extend(completed)
+        if completed and on_finished is not None:
+            on_finished(completed)
+    stats.games, stats.positions = _records_to_replay(records, _DiscardReplay())
+    record_opening_template_telemetry(stats, records)
+    _record_scripted_outcomes(stats, records, scripted_kind)
+    _record_league_outcomes(stats, records, league_opponent)
+    stats.wall_time = time.perf_counter() - start
+    return stats, records
+
+
+class _DiscardReplay:
+    """Counts records through the existing helper without retaining them twice."""
+
+    def add(self, *_args: object) -> None:
+        return None
+
+
+def run_routed_self_play_generation(
+    seat_models: Sequence[torch.nn.Module],
+    replay: ReplayBuffer,
+    config: SelfPlayConfig,
+    *,
+    seed: int,
+    device: torch.device,
+    target_games: int,
+    same_model_fast_path: bool | None = None,
+    scripted_kind: str | None = None,
+    scripted_nn_player: int = 0,
+    kingdom_pool: Sequence[int] | None = None,
+    kingdom_mode: str | None = None,
+    sims_override: int = 0,
+    league_opponent: str | None = None,
+) -> SelfPlayStats:
+    stats, records = play_routed_games(
+        seat_models,
+        config,
+        seed=seed,
+        device=device,
+        target_games=target_games,
+        same_model_fast_path=same_model_fast_path,
+        scripted_kind=scripted_kind,
+        scripted_nn_player=scripted_nn_player,
+        kingdom_pool=kingdom_pool,
+        kingdom_mode=kingdom_mode,
+        sims_override=sims_override,
+        league_opponent=league_opponent,
+    )
+    games, positions = _records_to_replay(records, replay)
+    stats.games = games
+    stats.positions = positions
+    return stats
