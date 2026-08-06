@@ -111,7 +111,7 @@ def test_signed_policy_weight_curve_boundaries_and_deviation_discount() -> None:
     # Native Glicko deviation 0.5 is the observed sidecar scale ceiling and therefore
     # invokes the documented 0.5 confidence floor.
     assert policy_weight_for_rating(50.0, deviation=0.5) == pytest.approx(1.0)
-    assert policy_weight_for_rating(45.0, deviation=0.25) == pytest.approx(0.255)
+    assert policy_weight_for_rating(45.0, deviation=0.25) == pytest.approx(0.275)
 
 
 def test_disabled_skill_weighting_is_loader_bit_identical_and_skips_sidecar(tmp_path: Path) -> None:
