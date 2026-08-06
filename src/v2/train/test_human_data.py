@@ -105,12 +105,12 @@ def test_seeded_minibatches_cycle_forever_and_match_across_iterators(tmp_path: P
 def test_signed_policy_weight_curve_boundaries_and_deviation_discount() -> None:
     assert policy_weight_for_rating(39.0) == pytest.approx(POLICY_WEIGHT_EPSILON)
     assert policy_weight_for_rating(40.0) == pytest.approx(POLICY_WEIGHT_EPSILON)
-    assert policy_weight_for_rating(45.0) == pytest.approx(0.51)
-    assert policy_weight_for_rating(50.0) == pytest.approx(3.0)
+    assert policy_weight_for_rating(45.0) == pytest.approx(0.55)
+    assert policy_weight_for_rating(50.0) == pytest.approx(2.0)
     assert policy_weight_for_rating(None) == pytest.approx(POLICY_WEIGHT_EPSILON)
     # Native Glicko deviation 0.5 is the observed sidecar scale ceiling and therefore
     # invokes the documented 0.5 confidence floor.
-    assert policy_weight_for_rating(50.0, deviation=0.5) == pytest.approx(1.5)
+    assert policy_weight_for_rating(50.0, deviation=0.5) == pytest.approx(1.0)
     assert policy_weight_for_rating(45.0, deviation=0.25) == pytest.approx(0.255)
 
 
@@ -160,7 +160,7 @@ def test_skill_weighted_loader_joins_manifest_player_ids_by_acting_seat(tmp_path
     )
 
     dataset = load_human_tuples(root, skill_weighting=True, ratings_sidecar=sidecar_path)
-    np.testing.assert_allclose(dataset.policy_weight, [0.02, 1.5, 0.51, 0.02], rtol=0.0, atol=1.0e-6)
+    np.testing.assert_allclose(dataset.policy_weight, [0.1, 1.0, 0.55, 0.1], rtol=0.0, atol=1.0e-6)
     assert dataset.rating_band.tolist() == ["level_below_40", "level_50_plus", "level_40_to_50", "unrated_or_missing"]
 
 

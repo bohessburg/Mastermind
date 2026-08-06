@@ -25,10 +25,10 @@ DEFAULT_RATINGS_SIDECAR = Path("data/dominion_games/ratings/game_ratings.json")
 # c22 signed policy-teacher curve. The joined sidecar's native Glicko
 # deviation tops out at 0.499 (p95 0.336), so normalize against its natural
 # 0.5 ceiling rather than the UI-converted deviation (roughly 7.5x larger).
-POLICY_WEIGHT_EPSILON = 0.02
+POLICY_WEIGHT_EPSILON = 0.1
 POLICY_WEIGHT_RAMP_START = 40.0
 POLICY_WEIGHT_RAMP_END = 50.0
-POLICY_WEIGHT_EXPERT = 3.0
+POLICY_WEIGHT_EXPERT = 2.0
 RATING_DEVIATION_THRESHOLD = 0.5
 
 RATING_BAND_UNRATED = "unrated_or_missing"
