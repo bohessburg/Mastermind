@@ -2045,3 +2045,24 @@ machinery depth, (2) entropy stable-or-rising like c21b (NB: read
 col 9 "entropy", NOT col 6 aux_margin_loss — see c22 correction), (3)
 value probe stays flipped, (4) equilibrium duel vs c21's 45-46.
 Milestones every 5 gens, both-board vibes, duels on box.
+
+=== C22B G5-G20 MILESTONE ARC (2026-08-07) ===
+CHAMP DUELS: g5 24.0 / g10 22.3 / g15 29.3 / g20 35.6 (68W-123L-9T,
+seats 37.6/33.7, turns 48.9). Plateau g5-10 broke at g15; +13.3 over
+two milestone windows. c21 same-gen: 43.1/44.8/37.8/40.0 — c22b is
+4.4 behind at g20 but CLIMBING while c21 was decaying; entropy rose
+monotonically 0.83->1.14 (no prior campaign gained strength and
+entropy together). Sentinels g15: e3 27.5, bm 49, th 36.5.
+Buy-mix g16 (8 games): 72 treasure / 61 victory / ~58 action incl.
+Gardens-strategy expression (Gardens 7 + Workshop 6 + Copper 33).
+NOT a bigmoney reversion — archetype breadth persists.
+INSTABILITY: probe-board single-game execution oscillates hard.
+Chapel-board vibe scores g5..g20: 33(W,true engine) / 19(colossus,
+timing loss) / 1 / 4 / 12 / 0 (over-trashed into null deck g20).
+Militia canonical oscillates (fixed g15, canonical-case inversion
+g20 raw+search). Value probe FLATTENED to ~0 on all synthetic decks
+by g20 — instrument declared dead for this lineage, needs
+recalibration from c22b selfplay states (c20 lesson recurring).
+OPEN QUESTION at g20: average strength climbs while archetype-board
+execution churns — self-play is optimizing the mean, not the tails.
+Next: g25/g30 duels decide vs the c21 45-46 equilibrium bar.
