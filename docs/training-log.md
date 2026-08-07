@@ -1994,3 +1994,49 @@ PRE-REGISTERED BAR: equilibrium champ duel (c15 gen_0045,
 Milestones every 5 gens (duel + probes + both-board vibe). Watch:
 does the softened curve keep c21b's machinery depth while restoring
 early conversion (g5 duel materially above 30.9)?
+
+=== C22 CUT AT GEN 7 (2026-08-06, Jack: "clearly worse") ===
+G5 DUEL: 21.5% (42W-153L-5T, seats 27.1/16.2) — below BOTH
+reference curves (c21 43.1, c21b 30.9). ENTROPY COLLAPSE: 2.28 ->
+0.40 by g7 (c21b's ROSE 0.86->1.04). Vibes g3-g6: money+Witch
+monoculture on both probe boards; chapel-board "win" at g6 was
+money outracing, zero Chapel plays. THE ONE KEEPER: value probe
+FLIPPED at g5 — engine +0.006 > money -0.143, FIRST TIME IN
+PROJECT HISTORY (militia canonical also fixed at raw+search).
+400-sim arbitration test: deeper search drags a money prior toward
+machinery but cannot reconstruct engine play alone.
+DIAGNOSIS: softened curve handed 63% of policy-effective mass to
+the 40-50 mid-band (money+Witch meta); expert:mid fell to ~3.6:1
+(harsh: ~6:1). The BC init was already a money player with good
+conversion; selfplay amplified it. c21b's "build-forever" was the
+corpus's engine preference actually expressed — softening traded
+it away. Value head (never weighted) kept the engine preference.
+Artifacts: gens 1-7 local, bench/honest_eval/c22/g5_vs_champ.json.
+
+=== C22B LAUNCHED (2026-08-06/07) — HARSH CURVE, FULL CORPUS ===
+JACK'S CALL: "Cut and relaunch with 21b curve but update the
+corpus and ratings first." Corpus refreshed: 515,504 tuples
+(4,028 games converted, 128 quarantined, 100% deck match; +263
+games vs c22 snapshot; train 490,273 / val 25,231). Ratings
+sidecar re-joined. HARSH-CURVE AUDIT: 156,216 policy-effective
+(30.3%); expert band 64,473 eff = 41% of policy signal (soft
+curve: 28%); casual+unrated ~3K (2%). Curve reverted in
+human_data.py: epsilon 0.02, expert 3.0 (commit "reharden skill
+curve"; tests green).
+INIT: BC arm A val 0.5862, acc 73.3% (1500 steps); small net beat
+6.6M arm a FIFTH time (0.6031/72.1%). Same recipe otherwise:
+run_c22b.json = run_c22.json with checkpoint_dir campaign22b
+(curriculum-free, no league, anchor flat 0.2, max_turns 60, 100
+workers, 2 shards). Supervisor dominion-c22b via resume22b.sh.
+LAUNCH BUG LOG: sed 's/c22/c22b/' missed resume22.sh (no "c22"
+substring) — supervisor crashlooped on --resume/--init-weights
+conflict via the OLD script + campaign22 gens; fixed by pointing
+conf at resume22b.sh. Also: pkill -f from an ssh one-liner kills
+its own remote shell (pattern matches the sh -c argv) — kill by
+PID or use pgrep -f 'pat[x]' bracket trick.
+PRE-REGISTERED EXPECTATIONS: g5 duel likely BELOW 30.9 (515K
+harsh init defers conversion; c21b opened 30.9 with less data);
+the real bars are (1) conversion arriving g7-12 WITHOUT losing
+machinery depth, (2) entropy stable-or-rising like c21b, (3)
+value probe stays flipped, (4) equilibrium duel vs c21's 45-46.
+Milestones every 5 gens, both-board vibes, duels on box.
