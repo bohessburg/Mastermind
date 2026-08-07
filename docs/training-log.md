@@ -2066,3 +2066,18 @@ recalibration from c22b selfplay states (c20 lesson recurring).
 OPEN QUESTION at g20: average strength climbs while archetype-board
 execution churns — self-play is optimizing the mean, not the tails.
 Next: g25/g30 duels decide vs the c21 45-46 equilibrium bar.
+
+=== C22B G25 MILESTONE (2026-08-07) ===
+CHAMP DUEL: 28.9 (54W-133L-13T) — DOWN from g20's 35.6. Seat split
+BLEW APART: 40.7 first / 17.7 second (best-ever first half, worst
+second half since g10; second-seat-vs-attacks weakness resurfaced).
+Curve now 24.0/22.3/29.3/35.6/28.9 — OSCILLATING around ~30, not
+climbing to the 45-46 bar. Probes: value probe fully coherent for
+the FIRST TIME (engine +0.077 > money +0.041 > junk -0.206) but
+militia at worst-ever (all 3 cases inverted); chapel attraction
+0.033. Vibes: both boards weak money losses (19-41, 13-58).
+Box note: funding death mid-g25, clean auto-resume from gen 24
+(self-healing kit validated end-to-end; 4th death on host IP).
+READ: mean strength has entered a NOISY PLATEAU ~29-36 with severe
+gen-to-gen instrument churn — self-play is cycling strategies, not
+converging. The g30 duel completes the pre-registered arc.
