@@ -1997,8 +1997,12 @@ early conversion (g5 duel materially above 30.9)?
 
 === C22 CUT AT GEN 7 (2026-08-06, Jack: "clearly worse") ===
 G5 DUEL: 21.5% (42W-153L-5T, seats 27.1/16.2) — below BOTH
-reference curves (c21 43.1, c21b 30.9). ENTROPY COLLAPSE: 2.28 ->
-0.40 by g7 (c21b's ROSE 0.86->1.04). Vibes g3-g6: money+Witch
+reference curves (c21 43.1, c21b 30.9). CORRECTION (2026-08-07,
+post-cut): the "entropy collapse 2.28->0.40" reported during the
+run was a COLUMN MISREAD — that series was aux_margin_loss
+annealing (normal). True entropy (metrics col 9) ROSE 0.84->1.03
+over g1-7, healthy and c21b-like. The cut stands on the duel and
+the monoculture vibes, NOT on entropy. Vibes g3-g6: money+Witch
 monoculture on both probe boards; chapel-board "win" at g6 was
 money outracing, zero Chapel plays. THE ONE KEEPER: value probe
 FLIPPED at g5 — engine +0.006 > money -0.143, FIRST TIME IN
@@ -2037,6 +2041,7 @@ PID or use pgrep -f 'pat[x]' bracket trick.
 PRE-REGISTERED EXPECTATIONS: g5 duel likely BELOW 30.9 (515K
 harsh init defers conversion; c21b opened 30.9 with less data);
 the real bars are (1) conversion arriving g7-12 WITHOUT losing
-machinery depth, (2) entropy stable-or-rising like c21b, (3)
+machinery depth, (2) entropy stable-or-rising like c21b (NB: read
+col 9 "entropy", NOT col 6 aux_margin_loss — see c22 correction), (3)
 value probe stays flipped, (4) equilibrium duel vs c21's 45-46.
 Milestones every 5 gens, both-board vibes, duels on box.
