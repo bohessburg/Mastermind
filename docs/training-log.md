@@ -2154,3 +2154,9 @@ BARS: beat c22b's curve pointwise (esp. g20 35.6); hold-the-peak
 vibe stabilization. Milestones every 5 gens: box duel vs champ
 (c15 gen_0045 --legacy-shim), probes (militia + duchy; synthetic
 value probe RETIRED pending recalibration), both-board vibes.
+
+C23 PRE-REG AMENDMENT (launch-time corpus refresh, 2026-08-08):
+final corpus regenerated from 4,960 converted games (scraper +932
+overnight): 392,478 tuples (train 372,725 / val 19,753), 3,832
+human games >=40 + 111 seeded. Init will be retrained on-box on
+this corpus; local bc_a_40plus.pt (322K version) superseded.
