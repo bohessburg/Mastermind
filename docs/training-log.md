@@ -2081,3 +2081,21 @@ Box note: funding death mid-g25, clean auto-resume from gen 24
 READ: mean strength has entered a NOISY PLATEAU ~29-36 with severe
 gen-to-gen instrument churn — self-play is cycling strategies, not
 converging. The g30 duel completes the pre-registered arc.
+
+=== C22B G30 — PRE-REGISTERED ARC COMPLETE (2026-08-08) ===
+CHAMP DUEL: 25.1 (49W-146L-5T, seats 28.6/21.6). FULL CURVE:
+g5 24.0 / g10 22.3 / g15 29.3 / g20 35.6 / g25 28.9 / g30 25.1.
+PEAK = GEN 20 (35.6); two consecutive milestone declines since.
+The 45-46 equilibrium bar is decisively MISSED. Probes at g30:
+synthetic value probe saturated positive on ALL decks (instrument
+dead); militia all-3 inverted; chapel vibe bought a VOLUNTARY
+CURSE. Verdict: the harsh-curve 515K recipe produces real
+ingredients (true engine wins, archetype breadth incl. Gardens,
+best duel trajectory ever from a cold open, entropy rising all 30
+gens) but NO STABILIZATION — post-g20 the policy churns through
+strategies and strength decays. Corpus preference cannot hold
+against selfplay noise without a mechanism that locks in winning
+configurations (candidates for c23: best-checkpoint anchor/gating,
+SIL replay of won games, model selection pressure).
+FLAGSHIP CANDIDATE: gen_0020 (35.6). All 30 gens + all artifacts
+banked locally.
