@@ -2114,3 +2114,13 @@ C23 ASSEMBLY NOTES (accumulating, Jack-signed 2026-08-08):
    evals unchanged), greened-later replay bias (winner's first VP
    later than loser's -> upweight; build-forever tripwire),
    champion anchor (anchor to gated best, not BC prior).
+
+C23 FINAL SHAPE (Jack, 2026-08-08): single-variable experiment.
+c22b's exact recipe (harsh curve BC init, curriculum-free, no
+league, flat 0.2 BC anchor, max_turns 60, honest selfplay, d192)
+with ONLY two changes: (1) the 40+ filtered corpus, (2) slim eval
+(engine3 100g seat-balanced, battery dropped). NO gating, NO
+clairvoyant, NO greening bias, NO champion anchor — those are
+explicitly deferred so c22b serves as a clean control for the
+corpus-sharpening variable. Comparison curve: c22b's
+24.0/22.3/29.3/35.6/28.9/25.1.
