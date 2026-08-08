@@ -2124,3 +2124,33 @@ clairvoyant, NO greening bias, NO champion anchor — those are
 explicitly deferred so c22b serves as a clean control for the
 corpus-sharpening variable. Comparison curve: c22b's
 24.0/22.3/29.3/35.6/28.9/25.1.
+
+=== C23 PRE-REGISTRATION (2026-08-08) ===
+HYPOTHESIS (single variable): dropping sub-40 and unrated human
+seats ENTIRELY (policy and value) removes the badly-executed-
+engine outcomes that teach "engines lose", letting the imitation
+and outcome signals agree. Control = c22b (identical recipe on the
+unfiltered 515K corpus): 24.0/22.3/29.3/35.6/28.9/25.1, peak g20.
+CORPUS: exports/tuples_all_40plus — 322,972 tuples (train 306,932
+/ val 16,040), 3,098 human games >=40 + 111 seeded; 47.5%
+policy-effective (was 30.3%); audit bench/c23_corpus_audit.json.
+Game lengths: median 18 rounds/seat, p90 24, p99 ~34 — cap stays
+60 total turns (= human p98.6; a 40 cap was considered and
+REJECTED after a units check: it would truncate ~35% of
+human-paced games and zero their value targets).
+INIT: bc_a_40plus.pt (md5 1b083091), local CPU pretrain: val
+0.6613, acc 73.0%, 1250 steps. Ablation note: arm B (6.6M) took
+ACCURACY for the first time in six runs (73.30 vs 72.98) though
+arm A kept val loss — first crack in the small-net lock; watch at
+c24. Init vibes: chapel-board L 33-36 (best raw-init chapel game
+ever — conversion from T28, 3 Provinces); sentry build-forever as
+all inits do.
+CONFIG: run_c23.json = run_c22b.json except checkpoint/metrics
+dirs, corpus pointer, eval slimmed to single engine3 100g sentinel
+(500-game battery dropped). NO gating / clairvoyant / greening
+bias / champion anchor (explicitly deferred).
+BARS: beat c22b's curve pointwise (esp. g20 35.6); hold-the-peak
+(no two consecutive milestone declines before g30); chapel-board
+vibe stabilization. Milestones every 5 gens: box duel vs champ
+(c15 gen_0045 --legacy-shim), probes (militia + duchy; synthetic
+value probe RETIRED pending recalibration), both-board vibes.
