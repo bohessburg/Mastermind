@@ -2099,3 +2099,18 @@ configurations (candidates for c23: best-checkpoint anchor/gating,
 SIL replay of won games, model selection pressure).
 FLAGSHIP CANDIDATE: gen_0020 (35.6). All 30 gens + all artifacts
 banked locally.
+
+C23 ASSEMBLY NOTES (accumulating, Jack-signed 2026-08-08):
+1. CORPUS: drop ALL sub-40 and unrated seats entirely (policy AND
+   value) — per-seat filter, min level 40; seeded set kept; ~315K
+   of 515K tuples expected. Rationale: sub-40 outcomes are
+   badly-executed-engine losses — same poison as our selfplay
+   (the imitation-vs-outcome "civil war" diagnosis). Filter build
+   delegated (scripts/c23_filter_corpus.py).
+2. EVAL: drop the 500-game battery entirely. Single sentinel:
+   engine3, 100 games, seat-balanced 50/50. Nothing else on-box.
+3. Levers carried from the arc post-mortem (pending final pre-reg):
+   gating (promote only on duel win), clairvoyant selfplay (honest
+   evals unchanged), greened-later replay bias (winner's first VP
+   later than loser's -> upweight; build-forever tripwire),
+   champion anchor (anchor to gated best, not BC prior).
