@@ -2200,3 +2200,22 @@ CURVE: 28.3 / 31.6 / 26.7 vs c22b 24.0 / 22.3 / 29.3.
 G20 IS NOW DECISIVE: below 26.7 trips hold-the-peak AND misses
 the 35.6 bar; the campaign's oscillation-vs-climb question gets
 answered there.
+
+=== C23 G20 — BOTH PRE-REGISTERED BARS RESOLVED NEGATIVE (2026-08-09) ===
+CHAMP DUEL: 24.1 (47W-148L-5T, seats 23.5/24.7, turns 50.8).
+CURVE: 28.3 / 31.6 / 26.7 / 24.1 — SECOND consecutive milestone
+decline: HOLD-THE-PEAK TRIPPED. Pointwise vs c22b: won g5 (+4.3)
+and g10 (+9.3), lost g15 (-2.6) and g20 (-11.5) — curves crossed;
+c23 peaked at g10 (31.6), EARLIER than c22b's g20 (35.6).
+VERDICT: corpus sharpening = real early acceleration (fastest
+conversion install ever, best early value-probe coherence, +9 at
+g10) but NO stabilization — the oscillation/decay dynamic is
+RECIPE-INTRINSIC, independent of corpus size (65K/348K/515K) and
+quality (all-ratings vs 40+). Three campaigns, one shape.
+STANDING CONCLUSION for c24: the binding constraint is the absence
+of a mechanism that locks in winning configurations. Deferred
+levers now front of queue: GATING (promote selfplay generator only
+on duel win) + champion anchor; militia-response repair (filter
+cost never healed: 2-3 cases inverted all campaign); capacity
+re-test under gating. Challenger flagship of the era remains c22b
+gen_0020 (35.6).
