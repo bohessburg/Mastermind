@@ -2188,3 +2188,15 @@ arena concern). VIBES: both boards poor again (6-54, -6-71) —
 probe-board execution chronic across campaigns, decoupled from
 duel strength. Entropy 0.82->1.07 rising; cadence ~40min/gen.
 Next: g15 vs c22b's 29.3; then the real bar g20 vs 35.6.
+
+=== C23 G15 MILESTONE (2026-08-09) ===
+CHAMP DUEL: 26.7 (52W-143L-5T, seats 33.3/19.8, turns 51.7) —
+DOWN from g10's 31.6 and BELOW c22b's g15 (29.3). First pointwise
+checkpoint MISSED; first milestone decline (hold-the-peak trips
+only on two consecutive). Second seat still broken (19.8; militia
+2-of-3 inverted, one case healed). Value probe fully flat —
+instrument dead on schedule. Vibes: two scrappy losses.
+CURVE: 28.3 / 31.6 / 26.7 vs c22b 24.0 / 22.3 / 29.3.
+G20 IS NOW DECISIVE: below 26.7 trips hold-the-peak AND misses
+the 35.6 bar; the campaign's oscillation-vs-climb question gets
+answered there.
