@@ -2219,3 +2219,24 @@ on duel win) + champion anchor; militia-response repair (filter
 cost never healed: 2-3 cases inverted all campaign); capacity
 re-test under gating. Challenger flagship of the era remains c22b
 gen_0020 (35.6).
+
+=== C23 CUT AT G20 + C24 PRE-REGISTRATION/LAUNCH (2026-08-09) ===
+C23 CUT (Jack: "Do it now"): gens 1-20 + duels banked local; both
+bars negative (curve 28.3/31.6/26.7/24.1, peak g10). Box cleaned
+(ALL_DEAD verified), group-kill worked (2 strays only).
+C24 = C23 VERBATIM + CLAIRVOYANT TRAINING SELFPLAY. Single
+variable: selfplay.determinize per_turn -> off. Same 392K 40+
+corpus (FROZEN for purity), same bc_a_40plus init, same box/96
+workers, same slim eval. Honest evaluation unchanged everywhere.
+HYPOTHESES: (1) strength — both best-ever nets (c15 g45, c19 g40
+47.7) were clairvoyant-trained; every determinized campaign
+plateaued lower. (2) stabilization — the climb-peak-decay shape
+appears ONLY in determinized-era campaigns (c20/21/22b/23);
+clairvoyant-era campaigns held their peaks. Mechanism: per-turn
+determinization adds noise to value targets; noisy targets enable
+policy churn. Clairvoyant targets are deterministic given the
+game.
+BARS: beat c23 pointwise (28.3/31.6/26.7/24.1); no two
+consecutive milestone declines; reach c22b-era peak 35.6 by
+g15-20 if c19-era dynamics return. Gating + militia repair
+deferred to c25. Config diff verified 3 lines (paths + determinize).
