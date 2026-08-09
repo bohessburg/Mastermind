@@ -2174,3 +2174,17 @@ quiet. VIBES: both losses, scrappy (sentry 16-47, chapel 2-50
 estate-spam) — single-game execution still the lagging
 instrument. G1 NOTE: chapel vibe hit L 30-35 with full engine +
 greening after ONE gen (c22b needed 5-7).
+
+=== C23 G10 MILESTONE (2026-08-09) ===
+CHAMP DUEL: 31.6 (61W-132L-7T, turns 51.0) — beats c22b's g10
+(22.3) by +9.3 and extends c23's own climb (28.3 -> 31.6; c22b
+dipped at this point). Both pre-registered pointwise checkpoints
+passed. CAUTION: seat split 42.7/20.6 — first-seat surging,
+second-seat-vs-attacks weakness wide open (c22b g25 signature).
+PROBES: value probe compressed to ~0 (synthetic saturation
+arriving on schedule — instrument fading); chapel attraction 0.25;
+militia STILL all-3 inverted (filter cost unrepaired — standing
+arena concern). VIBES: both boards poor again (6-54, -6-71) —
+probe-board execution chronic across campaigns, decoupled from
+duel strength. Entropy 0.82->1.07 rising; cadence ~40min/gen.
+Next: g15 vs c22b's 29.3; then the real bar g20 vs 35.6.
