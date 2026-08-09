@@ -2160,3 +2160,17 @@ final corpus regenerated from 4,960 converted games (scraper +932
 overnight): 392,478 tuples (train 372,725 / val 19,753), 3,832
 human games >=40 + 111 seeded. Init will be retrained on-box on
 this corpus; local bc_a_40plus.pt (322K version) superseded.
+
+=== C23 G5 MILESTONE (2026-08-09) ===
+CHAMP DUEL: 28.3 (56W-142L-2T, seats 31.3/25.3, turns 51.3) —
+BEATS c22b's g5 control (24.0) by +4.3; first pre-registered
+checkpoint PASSED. Sentinel e3 21/100 (g1: 26/100, 100g noise).
+Entropy 0.82->0.98 rising; positions 262->170/game; trash 7.8.
+PROBES: value probe flipped AND coherent at g5 (engine +0.105 >
+money +0.086 > junk -0.673 — cleanest ordering ever recorded, 20
+gens earlier than c22b's best); militia all-3 inverted (filter
+removed casual militia examples; watch for RL re-fix); duchy
+quiet. VIBES: both losses, scrappy (sentry 16-47, chapel 2-50
+estate-spam) — single-game execution still the lagging
+instrument. G1 NOTE: chapel vibe hit L 30-35 with full engine +
+greening after ONE gen (c22b needed 5-7).
