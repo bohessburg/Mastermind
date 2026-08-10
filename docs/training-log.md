@@ -2240,3 +2240,21 @@ BARS: beat c23 pointwise (28.3/31.6/26.7/24.1); no two
 consecutive milestone declines; reach c22b-era peak 35.6 by
 g15-20 if c19-era dynamics return. Gating + militia repair
 deferred to c25. Config diff verified 3 lines (paths + determinize).
+
+=== C24 EARLY LOG (2026-08-09/10) ===
+LAUNCH: clean, ~15 min from c23 cut (config diff 3 lines verified;
+same frozen 392K 40+ corpus, same bc_a_40plus init, box 48100 96
+workers). G1 (63 min): honest e3 sentinel 22/100 — statistically
+identical to c23's g1 26/100 (same init; regimes only diverge as
+clairvoyant outcome data fills the buffer). Entropy 0.822, 263
+pos/game, trash 12.4/game — c23-launch profile reproduced.
+G2 (~33 min): entropy 0.871, 206 pos/game — conversion installing
+on schedule. G3 banked (~3,000 games/hr cadence, accelerating).
+BOX DOWN during gen 4 (2026-08-10, connection refused — same
+signature as the 2026-08-08 funding stop). Gens 1-3 + all rows
+banked locally via auto-pull; loss bounded at partial gen 4.
+Quiet reconnect probe armed (2-min cycle); on return: supervisor
+auto-resumes from gen_0003 via resume24.sh (group-kill +
+orphan-reap kit), eval re-fires on first resumed gen per the
+start_generation+1 rule. First meaningful clairvoyant-vs-
+determinized comparison remains the g5 battery.
