@@ -2258,3 +2258,15 @@ auto-resumes from gen_0003 via resume24.sh (group-kill +
 orphan-reap kit), eval re-fires on first resumed gen per the
 start_generation+1 rule. First meaningful clairvoyant-vs-
 determinized comparison remains the g5 battery.
+
+C24 AMENDMENT — RESTART WITH FULL C15 SELFPLAY REGIME (Jack,
+2026-08-10: "go back to 512 sims with the deep slice"): sims 256
+-> 512, deep slice 5% @ 4096 sims restored, games/gen 2048 ->
+1024 (c15's own value, keeps ~50-min gens at 2.4x search cost).
+c24 gens 1-3 (statistically identical to c23's launch) DISCARDED;
+campaign restarts fresh from bc_a_40plus on box return. Framing
+is now: c24 = c23 recipe + c15's complete selfplay regime
+(clairvoyant + 512 sims + deep slice + 1024 games/gen). Deep-slice
+machinery config-surfaced since c20 restructure, unused until now.
+Bars unchanged: beat c23 pointwise, no 2 consecutive declines,
+35.6 by g15-20.

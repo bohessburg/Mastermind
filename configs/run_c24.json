@@ -55,8 +55,8 @@
   ],
   "selfplay": {
     "n_games": 64,
-    "sims_per_move": 256,
-    "games_per_generation": 2048,
+    "sims_per_move": 512,
+    "games_per_generation": 1024,
     "max_batch": 4096,
     "c_puct": 1.25,
     "dirichlet_alpha": 0.3,
@@ -79,7 +79,9 @@
     "margin_scale": 20.0,
     "obs_version": 3,
     "opening_templates_enabled": false,
-    "max_turns": 60
+    "max_turns": 60,
+    "deep_slice_fraction": 0.05,
+    "deep_slice_sims": 4096
   },
   "replay": {
     "capacity": 3000000,
