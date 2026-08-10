@@ -2270,3 +2270,18 @@ is now: c24 = c23 recipe + c15's complete selfplay regime
 machinery config-surfaced since c20 restructure, unused until now.
 Bars unchanged: beat c23 pointwise, no 2 consecutive declines,
 35.6 by g15-20.
+
+C24 SEARCH-PARAM NOTES (2026-08-10): deep-slice hyperparameters
+audited. forced_playouts (k=2.0) + policy-target pruning already
+ON in the lineage — root breadth and noise-free targets are
+handled, so expand_top_k 8 / c_puct 1.25 / dirichlet 0.3/0.25
+kept c15-faithful. ONE change: max_tree_nodes 4096 -> 8192 (at
+4096 sims the tree saturated the node cap mid-search in c15 — a
+silent artifact, not a choice; our slice gets the full expansion).
+Net: c24's deep slice produces strictly cleaner targets than the
+champ's own did.
+BOX 48100 DEAD (permanent, Jack confirmed; 6th box). Probe
+stopped. Full relaunch kit local: amended run_c24.json (512 sims,
+slice 5%@4096, 1024 games/gen, 8192 nodes, clairvoyant),
+bc_a_40plus init, frozen 40+ corpus, resume24.sh/conf. Awaiting
+new box.

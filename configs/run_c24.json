@@ -72,7 +72,7 @@
     "temp_effect_plies": 6,
     "kingdom_mode": "random",
     "max_recorded_moves": 512,
-    "max_tree_nodes": 4096,
+    "max_tree_nodes": 8192,
     "auto_play_treasures": true,
     "prune_treasure_plays": true,
     "value_target": "margin",
