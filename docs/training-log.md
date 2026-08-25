@@ -2312,3 +2312,18 @@ slice 5%@4096, 8192 nodes, 1024 games/gen, harsh curve). READY TO
 LAUNCH on new box: ship tree+corpus+init, GPU re-pretrain
 optional (CPU init is from the identical recipe; re-pretrain
 on-box for procedure fidelity), launch kit current.
+
+=== C24 LAUNCHED (2026-08-24, box 42049 @76.66.207.254) ===
+Box: EPYC 7B13 (64 phys cores, Zen 3), 4x RTX 3090, 251GB. 64
+workers, 2 shards on GPU 0; GPU 1 reserved for milestone duels
+(honest_eval --device cuda — new procedure, ~5x faster duels);
+GPUs 2-3 idle (bundle was cheapest per CPU). On-box GPU pretrain
+reproduced the local ablation exactly (arm A 0.6308/75.5% —
+deterministic recipe confirmed). Init banked bc_a_40plus.pt.
+Full spec as pre-registered: clairvoyant, 512 sims, slice 5%@4096,
+8192 nodes, 1024 games/gen, 973K corpus, harsh curve, slim eval.
+Deploy notes: old scratchpad launch kit was tmp-reaped after 14
+days — kit rebuilt from spec (now under box5/); repo tree rsync
+needed --partial resume on this uplink. Supervisor dominion-c24
+RUNNING, monitor + auto-pull armed. Expected cadence ~55-60
+min/gen.
