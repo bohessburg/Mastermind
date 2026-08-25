@@ -10,7 +10,7 @@ from .gating import compact_selfplay_segments, plan_training_selfplay_segments
 from .selfplay import make_runner_config
 from .test_train_smoke import read_metrics, tiny_config
 from .train import append_metrics, run_training
-from .workers import game_quotas, split_segments_by_quotas
+from .workers import build_slot_manifest, game_quotas, split_segments_by_quotas
 
 
 @pytest.mark.parametrize(
@@ -45,6 +45,25 @@ def test_deep_slice_game_counts_use_exact_existing_rounding(
     assert sum(segment.n_games for segment in deep) == expected_deep_games
     assert all(segment.is_normal_mirror for segment in deep)
     assert all(segment.sims_override == 128 for segment in deep)
+
+
+def test_deep_slice_dispatches_first_generation_slots() -> None:
+    segments = plan_training_selfplay_segments(
+        total_games=16,
+        league_fraction=0.0,
+        league_pool_size=0,
+        scripted_opponents={},
+        seed=991,
+        deep_slice_fraction=0.25,
+        deep_slice_sims=128,
+        sims_per_move=16,
+    )
+
+    slots = build_slot_manifest(segments)
+
+    assert [slot.game_index for slot in slots] == list(range(16))
+    assert [slot.sims_override for slot in slots[:4]] == [128] * 4
+    assert [slot.sims_override for slot in slots[4:]] == [0] * 12
 
 
 def test_deep_slice_only_carves_normal_mirror_games() -> None:

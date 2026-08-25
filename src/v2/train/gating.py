@@ -594,7 +594,9 @@ def carve_deep_slice_segments(
 
     The fraction is measured against the normal mirror pool, so a generation
     with scripted or league games keeps those data sources completely intact.
-    Rounding intentionally matches ``scripted_opponent_game_counts``.
+    Rounding intentionally matches ``scripted_opponent_game_counts``. Deep
+    pieces lead the returned generation plan so manifest-backed workers start
+    the expensive games before normal work.
     """
     validate_deep_slice_config(
         SelfPlayConfig(
@@ -619,40 +621,29 @@ def carve_deep_slice_segments(
     remaining_deep_games = deep_games
     deep_piece_index = 0
     deep_piece_remaining = deep_piece_sizes[0] if deep_piece_sizes else 0
-    carved: list[SelfPlaySegment] = []
+    deep_segments: list[SelfPlaySegment] = []
+    remaining_segments: list[SelfPlaySegment] = []
     for segment in segments:
         if not segment.is_normal_mirror or remaining_deep_games == 0:
-            carved.append(segment)
+            remaining_segments.append(segment)
             continue
         segment_deep_games = min(segment.n_games, remaining_deep_games)
         segment_normal_games = segment.n_games - segment_deep_games
-        if segment_normal_games:
-            carved.append(
-                SelfPlaySegment(
-                    n_games=segment_normal_games,
-                    seat0_model_id=segment.seat0_model_id,
-                    seat1_model_id=segment.seat1_model_id,
-                    scripted_kind=segment.scripted_kind,
-                    nn_player=segment.nn_player,
-                    kingdom_pool=segment.kingdom_pool,
-                    kingdom_mode=segment.kingdom_mode,
-                    sims_override=segment.sims_override,
-                    league_opponent=segment.league_opponent,
-                )
-            )
         remaining_deep_games -= segment_deep_games
         while segment_deep_games:
             piece_games = min(segment_deep_games, deep_piece_remaining)
-            carved.append(replace(segment, n_games=piece_games, sims_override=int(sims)))
+            deep_segments.append(replace(segment, n_games=piece_games, sims_override=int(sims)))
             segment_deep_games -= piece_games
             deep_piece_remaining -= piece_games
             if deep_piece_remaining == 0:
                 deep_piece_index += 1
                 if deep_piece_index < len(deep_piece_sizes):
                     deep_piece_remaining = deep_piece_sizes[deep_piece_index]
+        if segment_normal_games:
+            remaining_segments.append(replace(segment, n_games=segment_normal_games))
     if remaining_deep_games != 0 or deep_piece_index != len(deep_piece_sizes):
         raise RuntimeError("deep self-play segments do not cover the requested game count")
-    return carved
+    return [*deep_segments, *remaining_segments]
 
 
 def scripted_opponent_game_counts(total_games: int, opponents: dict[str, float]) -> dict[str, int]:

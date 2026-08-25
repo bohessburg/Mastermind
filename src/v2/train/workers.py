@@ -257,7 +257,7 @@ def split_segments_by_quotas(
                 assigned_indices.add(segment_index)
         return True
 
-    # The planner emits no more than one deep piece per worker.  Give those
+    # The planner emits no more than one deep piece per worker. Give those
     # pieces first claim on workers; they are substantially more expensive
     # than the normal-mirror work that fills the rest of each quota.
     deep_indices = [index for index, segment in enumerate(segments) if segment.sims_override > 0]
@@ -299,7 +299,11 @@ def split_segments_by_quotas(
     if segment_index != len(remaining_segments):
         raise ValueError("self-play segment allocation left unassigned games")
     for worker_segments, worker_reserved in zip(per_worker, reserved, strict=True):
-        worker_segments.extend(worker_reserved)
+        # SelfPlayRunner dispatches manifest slots in list order. Put each
+        # reserved deep piece before the quota-filling normal work so all
+        # workers begin their costly games together rather than leaving them
+        # for a generation's near-idle tail.
+        worker_segments[0:0] = worker_reserved
     return per_worker
 
 
