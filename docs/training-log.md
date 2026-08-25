@@ -2297,3 +2297,18 @@ new 40+ corpus under the harsh curve; WHICHEVER WINS HELD-OUT VAL
 LOSS BECOMES THE C24 NET. Context: A won val loss 7/7 through
 515K; B took accuracy once at 392K. No re-litigation after the
 result.
+
+=== C24 CORPUS + ABLATION COMPLETE (2026-08-24) ===
+FILTERED CORPUS: 973,267 tuples (train 922,695 / val 50,572;
+9,736 human games >=40 + 111 seeded). AUDIT: 425,877
+policy-effective (43.8%) — 2.8x c23. ABLATION (pre-registered
+rule, CPU): arm A val 0.6308 / acc 75.5% (early-stop 2250 — the
+longest any corpus sustained; best-ever init on both metrics);
+arm B val 0.6458, diverging at stop (overfit onset at 2000).
+ARM A WINS VAL LOSS 8-FOR-8 — d192/4L/6H is the c24 net by rule.
+The 392K accuracy crack did not recur. Init banked:
+bc_a_973k.pt. C24 otherwise as amended (clairvoyant, 512 sims,
+slice 5%@4096, 8192 nodes, 1024 games/gen, harsh curve). READY TO
+LAUNCH on new box: ship tree+corpus+init, GPU re-pretrain
+optional (CPU init is from the identical recipe; re-pretrain
+on-box for procedure fidelity), launch kit current.
