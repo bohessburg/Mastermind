@@ -2285,3 +2285,15 @@ stopped. Full relaunch kit local: amended run_c24.json (512 sims,
 slice 5%@4096, 1024 games/gen, 8192 nodes, clairvoyant),
 bc_a_40plus init, frozen 40+ corpus, resume24.sh/conf. Awaiting
 new box.
+
+=== C24 CORPUS REFRESH + ABLATION PRE-REGISTRATION (2026-08-24) ===
+Scraper corpus at 12,732 games / 1,581,527 raw tuples (sidecar
+100%). Bands: 50+ 75,299 / 40-50 885,234 / <40 430,704 / unrated
+190,290. 40+ filter projection ~960K tuples (3x c23) — the 1M-raw
+trigger territory reached. Game lengths stable (median 19, p90 25).
+ABLATION DECISION RULE (pre-registered BEFORE running): arms A
+(d192/4L/6H, 1.97M) and B (d320/5L/8H, 6.6M) BC-pretrain on the
+new 40+ corpus under the harsh curve; WHICHEVER WINS HELD-OUT VAL
+LOSS BECOMES THE C24 NET. Context: A won val loss 7/7 through
+515K; B took accuracy once at 392K. No re-litigation after the
+result.
