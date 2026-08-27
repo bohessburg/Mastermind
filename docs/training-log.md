@@ -2327,3 +2327,19 @@ days — kit rebuilt from spec (now under box5/); repo tree rsync
 needed --partial resume on this uplink. Supervisor dominion-c24
 RUNNING, monitor + auto-pull armed. Expected cadence ~55-60
 min/gen.
+
+=== C24 G10 MILESTONE (2026-08-26) ===
+Champ duel (gen_0010 vs c15 g45, 200g, 400 sims, K=2, GPU 1, seed
+241010): 64W-132L-4T = 33.0% (seat0 36/100, seat1 28/100; 0
+truncations, mean 51.7 turns). BEATS the g10 bar (c23 = 31.6) and
+is the best-ever g10 vs-champ score in the lineage. Sentinel g10:
+33/100 vs engine3 — monotone climb 25(g1)→28(g4)→31(g5)→33(g10);
+entropy rising to 1.04, pos/game still shortening. No decay shape.
+Probes: value probe strongest ever — engine -0.080 > money -0.347
+>> junk -0.831 (first big engine-over-money gap); chapel
+attraction 0.37; militia probe still inverted (filter cost, c25
+repair queued). Vibes: sentry board W 26-25 with real Sentry/
+Merchant engine + disciplined trashing; chapel board L 3-48 (built
+Festivals, never greened properly — chapel series is a fresh
+reconstructed baseline). Next battery at g15; bar 26.7, stretch
+35.6 by g15-20.
