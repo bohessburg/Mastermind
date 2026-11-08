@@ -29,7 +29,7 @@ CARD_MAP = ROOT / "data/dominion_games/recon/card_id_map.json"
 
 
 def test_all_discovered_spectator_captures_have_the_expected_outcome(tmp_path: Path) -> None:
-    """Regression gate for resource, hidden-hand, and capacity failure families.
+    """Regression gate for resource, hidden-hand, and combo-turn families.
 
     ``raw/`` is collector-owned and gitignored, so discovery rather than a
     fixture id list is intentional.  This catches a regression that turns any
@@ -53,9 +53,9 @@ def test_all_discovered_spectator_captures_have_the_expected_outcome(tmp_path: P
     ]
 
     # Every emitted game crosses the strict terminal-deck gate.  A complete
-    # game may remain quarantined only when the current engine ABI cannot
-    # represent its public snapshot (more than 24 cards in play), or when it
-    # is outside the converter's intentionally two-player scope.
+    # game can remain quarantined for a genuinely malformed capture or when
+    # it is outside the converter's intentionally two-player scope, but a
+    # faithful combo turn must not be rejected by the engine's in-play array.
     assert totals["complete_games_seen"] == totals["games_emitted"] + len(complete_quarantine)
     assert totals["complete_games_without_final_deck_check"] == len(complete_quarantine)
     assert totals["final_deck_checked_games"] == totals["games_emitted"]
@@ -149,13 +149,9 @@ def test_all_discovered_spectator_captures_have_the_expected_outcome(tmp_path: P
         assert final_deck_match["all_seats"] is True
         assert all(final_deck_match["per_seat"])
 
-    assert {
-        entry["category"] for entry in complete_quarantine
-    } <= {"engine_in_play_capacity", "unsupported_player_count"}
-    assert all(
-        "MAX_IN_PLAY" in entry["reason"]
-        if entry["category"] == "engine_in_play_capacity"
-        else "only two-player captures are supported" in entry["reason"]
+    assert not any(
+        entry["category"] == "engine_in_play_capacity"
+        or "MAX_IN_PLAY" in entry["reason"]
         for entry in complete_quarantine
     )
 
@@ -167,7 +163,7 @@ def test_all_discovered_spectator_captures_have_the_expected_outcome(tmp_path: P
         for entry in complete_quarantine
     )
     assert all(
-        entry["category"] in {"incomplete_capture", "engine_in_play_capacity", "unsupported_player_count"}
+        entry["category"] in {"incomplete_capture", "conversion_failed", "unsupported_player_count"}
         for entry in manifest["quarantine"]
     )
 
@@ -183,6 +179,12 @@ def test_all_discovered_spectator_captures_have_the_expected_outcome(tmp_path: P
         if source.get("capture_status") != "complete":
             continue
         game_id = source_manifest.name.removesuffix(".manifest.json")
+        # This auxiliary scan verifies structures represented in emitted
+        # tuples.  Complete captures with malformed live CardMoves are
+        # deliberately quarantined by the converter, so do not re-decode
+        # them here as though they were expected corpus rows.
+        if game_id not in emitted_ids:
+            continue
         raw_path = RAW_ROOT / f"{game_id}.jsonl.gz"
         if not raw_path.exists():
             continue

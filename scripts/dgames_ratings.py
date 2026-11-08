@@ -38,9 +38,7 @@ from src.v2.arena.protocol.frames import Direction, ProtocolError, Reader, Write
 from scripts.dgames_collect import (
     DEFAULT_CREDENTIALED_LOGIN_TIMEOUT_SECONDS,
     DEFAULT_CREDENTIALED_RELOGIN_BACKOFF_SECONDS,
-    DEFAULT_FLEET_PROFILE_ROOT,
     DEFAULT_MAX_CREDENTIALED_RELOGINS_PER_HOUR,
-    DEFAULT_PROFILE,
     DEFAULT_SESSION_LOGIN_GRACE_SECONDS,
     DEFAULT_URL,
     CredentialedReloginRateLimitExceeded,
@@ -70,6 +68,8 @@ RATING_TYPE_NAMES = (
 )
 
 DEFAULT_RATINGS_ROOT = Path("data/dominion_games/ratings")
+DEFAULT_RATINGS_PROFILE = Path("dgames-ratings-profile")
+DEFAULT_RATINGS_FLEET_PROFILE_ROOT = Path("dgames-ratings-profiles")
 DEFAULT_POLL_INTERVAL_SECONDS = 60.0 * 60.0
 DEFAULT_HEARTBEAT_INTERVAL_SECONDS = 30.0
 DEFAULT_RESPONSE_TIMEOUT_SECONDS = 30.0
@@ -288,6 +288,19 @@ class RatingsPoller(DominionCollector):
         self.player_id = None
         self._pending_leaderboard = None
 
+    async def _credentialed_relogin(self, stop_requested: asyncio.Event) -> int:
+        """Reuse collector self-heal without evicting the live collector's session.
+
+        The collector's final ALREADY_LOGGED_IN fallback issues
+        REMOVE_ACTIVE_SESSIONS.  A ratings poller normally runs beside that
+        collector, so it must fail closed instead of clearing the other
+        browser's session.  All normal credential loading, form submission,
+        backoff, and successful self-heal remain inherited unchanged.
+        """
+
+        self._active_sessions_cleanup_attempted = True
+        return await super()._credentialed_relogin(stop_requested)
+
     def _handle_notice(self, notice: Any) -> None:
         """Consume only type-level transport state and decoded leaderboard data.
 
@@ -320,6 +333,10 @@ class RatingsPoller(DominionCollector):
     async def _poll_once(self, stop_requested: asyncio.Event) -> None:
         """Send exactly one polite type-28 request and append its type-25 reply."""
 
+        # Do not mistake an unsolicited/old response already queued by the
+        # browser for the response to this particular request.
+        for notice in self._pump.drain():
+            self._handle_notice(notice)
         self._pending_leaderboard = None
         try:
             await self._session.send_frame(
@@ -363,7 +380,7 @@ class RatingsPoller(DominionCollector):
         )
 
     async def _wait_until_next_poll(self, stop_requested: asyncio.Event) -> None:
-        """Idle without blocking browser traffic, emitting bounded heartbeats."""
+        """Drain browser traffic while idle and emit bounded heartbeats."""
 
         deadline = time.monotonic() + self.args.poll_interval
         next_heartbeat = time.monotonic() + self.args.heartbeat_interval
@@ -374,15 +391,13 @@ class RatingsPoller(DominionCollector):
             if remaining <= 0:
                 return
             until_heartbeat = max(0.0, next_heartbeat - time.monotonic())
-            try:
-                await asyncio.wait_for(
-                    stop_requested.wait(),
-                    timeout=min(remaining, until_heartbeat, 60.0),
-                )
-            except TimeoutError:
-                pass
-            else:
+            notice = await self._pump.next_notice(
+                min(1.0, remaining, until_heartbeat)
+            )
+            if stop_requested.is_set():
                 raise StopRequested()
+            if notice is not None:
+                self._handle_notice(notice)
             now = time.monotonic()
             if now >= next_heartbeat:
                 print(
@@ -463,6 +478,11 @@ class RatingsPoller(DominionCollector):
                 "credentialed self-heal enabled"
                 if self.credentials is not None
                 else "credentialed self-heal unavailable; using profile-session-only mode",
+                flush=True,
+            )
+            print(
+                "ratings profile is isolated from dgames-profile; use a distinct "
+                "account/profile for simultaneous collector and poller operation",
                 flush=True,
             )
             try:
@@ -652,7 +672,7 @@ async def _run(args: argparse.Namespace) -> int:
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--profile", type=Path, default=DEFAULT_PROFILE)
+    parser.add_argument("--profile", type=Path, default=DEFAULT_RATINGS_PROFILE)
     parser.add_argument("--account-id", default=None)
     parser.add_argument("--url", default=DEFAULT_URL)
     parser.add_argument("--ratings-root", type=Path, default=DEFAULT_RATINGS_ROOT)
@@ -732,8 +752,8 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             _credential_environment_keys(args.account_id)
         except ValueError as error:
             parser.error(str(error))
-        if args.profile == DEFAULT_PROFILE:
-            args.profile = DEFAULT_FLEET_PROFILE_ROOT / f"account-{args.account_id}"
+        if args.profile == DEFAULT_RATINGS_PROFILE:
+            args.profile = DEFAULT_RATINGS_FLEET_PROFILE_ROOT / f"account-{args.account_id}"
     if args.observations is None:
         args.observations = args.ratings_root / "observations.jsonl"
     return args

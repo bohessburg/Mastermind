@@ -36,6 +36,8 @@ arena-profile/
 .env.*
 dgames-profile/
 dgames-profiles/
+dgames-ratings-profile/
+dgames-ratings-profiles/
 data/dominion_games/raw/
 data/dominion_games/ratings/
 data/dominion_games/coord/

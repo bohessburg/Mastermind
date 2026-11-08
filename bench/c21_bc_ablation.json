@@ -1,12 +1,12 @@
 {
   "arms": [
     {
-      "best_val_loss": 0.9337451870457399,
+      "best_val_loss": 0.6307724010602098,
       "checkpoint": "checkpoints/c21_ablation/bc_a.pt",
-      "final_train_loss": 0.9062882648894488,
-      "final_val_loss": 0.9337451870457399,
+      "final_train_loss": 0.5616229848661788,
+      "final_val_loss": 0.6307724010602098,
       "label": "a",
-      "last_pre_restore_train_loss": 0.9062882648894488,
+      "last_pre_restore_train_loss": 0.5616229848661788,
       "model": {
         "arch": "card_transformer",
         "aux_margin_buckets": 21,
@@ -24,19 +24,20 @@
         "obs_version": 3
       },
       "parameter_count": 1965947,
-      "steps_run": 1250,
+      "steps_run": 2250,
       "train_batch_size": 512,
-      "train_loss_rows": 141668,
-      "val_policy_accuracy": 0.7659768715763846,
-      "wall_seconds": 1018.7249905001372
+      "train_loss_rows": 922695,
+      "val_loss_rows": 50572,
+      "val_policy_accuracy": 0.755141184845369,
+      "wall_seconds": 2190.4730104589835
     },
     {
-      "best_val_loss": 0.9554604399661356,
+      "best_val_loss": 0.645807497667133,
       "checkpoint": "checkpoints/c21_ablation/bc_b.pt",
-      "final_train_loss": 0.780916281948011,
-      "final_val_loss": 0.9554604399661356,
+      "final_train_loss": 0.5447260441390058,
+      "final_val_loss": 0.645807497667133,
       "label": "b",
-      "last_pre_restore_train_loss": 0.780916281948011,
+      "last_pre_restore_train_loss": 0.5447260441390058,
       "model": {
         "arch": "card_transformer",
         "aux_margin_buckets": 21,
@@ -54,17 +55,19 @@
         "obs_version": 3
       },
       "parameter_count": 6639419,
-      "steps_run": 1250,
+      "steps_run": 2000,
       "train_batch_size": 512,
-      "train_loss_rows": 141668,
-      "val_policy_accuracy": 0.7714546561168594,
-      "wall_seconds": 1994.1712601250038
+      "train_loss_rows": 922695,
+      "val_loss_rows": 50572,
+      "val_policy_accuracy": 0.7590168472672625,
+      "wall_seconds": 4271.282494166866
     }
   ],
   "config": "configs/run_c21_draft.json",
   "encoder_generation": 2,
   "observation_version": 3,
+  "skill_weighting": true,
   "smoke": false,
-  "train_tuples": 141668,
-  "val_tuples": 6572
+  "train_tuples": 922695,
+  "val_tuples": 50572
 }

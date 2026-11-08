@@ -1,136 +1,136 @@
 {
   "cards": {
     "Artisan": {
-      "policy_effective_positive_examples": 276.20753825921565,
-      "raw_positive_examples": 804
+      "policy_effective_positive_examples": 1192.249027193524,
+      "raw_positive_examples": 3069
     },
     "Bandit": {
-      "policy_effective_positive_examples": 167.25286244321615,
-      "raw_positive_examples": 586
+      "policy_effective_positive_examples": 548.3661285256967,
+      "raw_positive_examples": 2024
     },
     "Bureaucrat": {
-      "policy_effective_positive_examples": 22.160246825776994,
-      "raw_positive_examples": 142
+      "policy_effective_positive_examples": 83.12346859276295,
+      "raw_positive_examples": 508
     },
     "Cellar": {
-      "policy_effective_positive_examples": 419.81278984528035,
-      "raw_positive_examples": 1399
+      "policy_effective_positive_examples": 1886.725646847859,
+      "raw_positive_examples": 5289
     },
     "Chapel": {
-      "policy_effective_positive_examples": 207.67742077168077,
-      "raw_positive_examples": 697
+      "policy_effective_positive_examples": 788.2943829754367,
+      "raw_positive_examples": 2324
     },
     "Copper": {
-      "policy_effective_positive_examples": 278.54217449203134,
-      "raw_positive_examples": 1215
+      "policy_effective_positive_examples": 1109.1124232923612,
+      "raw_positive_examples": 4000
     },
     "Council Room": {
-      "policy_effective_positive_examples": 166.78859465755522,
-      "raw_positive_examples": 489
+      "policy_effective_positive_examples": 696.2711484860629,
+      "raw_positive_examples": 1901
     },
     "Curse": {
-      "policy_effective_positive_examples": 9.938804349862039,
-      "raw_positive_examples": 42
+      "policy_effective_positive_examples": 44.17060092557222,
+      "raw_positive_examples": 118
     },
     "Duchy": {
-      "policy_effective_positive_examples": 697.5308110788465,
-      "raw_positive_examples": 2516
+      "policy_effective_positive_examples": 2800.811775675975,
+      "raw_positive_examples": 9184
     },
     "Estate": {
-      "policy_effective_positive_examples": 426.09276034124196,
-      "raw_positive_examples": 1634
+      "policy_effective_positive_examples": 1877.0305502647534,
+      "raw_positive_examples": 6067
     },
     "Festival": {
-      "policy_effective_positive_examples": 766.9156385585666,
-      "raw_positive_examples": 2534
+      "policy_effective_positive_examples": 3237.7374692186713,
+      "raw_positive_examples": 9593
     },
     "Gardens": {
-      "policy_effective_positive_examples": 327.24402950610965,
-      "raw_positive_examples": 1385
+      "policy_effective_positive_examples": 1274.3310104887933,
+      "raw_positive_examples": 4762
     },
     "Gold": {
-      "policy_effective_positive_examples": 510.27158546075225,
-      "raw_positive_examples": 3203
+      "policy_effective_positive_examples": 1993.2972501488402,
+      "raw_positive_examples": 9600
     },
     "Harbinger": {
-      "policy_effective_positive_examples": 383.22874787449837,
-      "raw_positive_examples": 1225
+      "policy_effective_positive_examples": 1711.9436112912372,
+      "raw_positive_examples": 4858
     },
     "Laboratory": {
-      "policy_effective_positive_examples": 539.9286217205226,
-      "raw_positive_examples": 1677
+      "policy_effective_positive_examples": 2399.2872259626165,
+      "raw_positive_examples": 6581
     },
     "Library": {
-      "policy_effective_positive_examples": 143.61085340287536,
-      "raw_positive_examples": 386
+      "policy_effective_positive_examples": 566.1933625880629,
+      "raw_positive_examples": 1513
     },
     "Market": {
-      "policy_effective_positive_examples": 622.4717916315421,
-      "raw_positive_examples": 2204
+      "policy_effective_positive_examples": 2613.2411880586296,
+      "raw_positive_examples": 8115
     },
     "Merchant": {
-      "policy_effective_positive_examples": 658.0986927133054,
-      "raw_positive_examples": 2031
+      "policy_effective_positive_examples": 2561.558820007369,
+      "raw_positive_examples": 7127
     },
     "Militia": {
-      "policy_effective_positive_examples": 262.1416976545006,
-      "raw_positive_examples": 932
+      "policy_effective_positive_examples": 1007.5603972384706,
+      "raw_positive_examples": 3314
     },
     "Mine": {
-      "policy_effective_positive_examples": 43.10788189154118,
-      "raw_positive_examples": 206
+      "policy_effective_positive_examples": 188.26502467691898,
+      "raw_positive_examples": 746
     },
     "Moat": {
-      "policy_effective_positive_examples": 265.5060579087585,
-      "raw_positive_examples": 1013
+      "policy_effective_positive_examples": 1151.446164894849,
+      "raw_positive_examples": 3843
     },
     "Moneylender": {
-      "policy_effective_positive_examples": 155.1137771587819,
-      "raw_positive_examples": 539
+      "policy_effective_positive_examples": 571.3545257458463,
+      "raw_positive_examples": 1810
     },
     "Poacher": {
-      "policy_effective_positive_examples": 303.5577744645998,
-      "raw_positive_examples": 975
+      "policy_effective_positive_examples": 1050.4250014899299,
+      "raw_positive_examples": 3349
     },
     "Province": {
-      "policy_effective_positive_examples": 1958.8937498610467,
-      "raw_positive_examples": 6944
+      "policy_effective_positive_examples": 7865.933198936284,
+      "raw_positive_examples": 24208
     },
     "Remodel": {
-      "policy_effective_positive_examples": 210.58363151270896,
-      "raw_positive_examples": 750
+      "policy_effective_positive_examples": 801.2759494185448,
+      "raw_positive_examples": 2581
     },
     "Sentry": {
-      "policy_effective_positive_examples": 590.673181746155,
-      "raw_positive_examples": 1764
+      "policy_effective_positive_examples": 2378.133566082455,
+      "raw_positive_examples": 6689
     },
     "Silver": {
-      "policy_effective_positive_examples": 817.7750514931977,
-      "raw_positive_examples": 3950
+      "policy_effective_positive_examples": 3347.428226545453,
+      "raw_positive_examples": 12670
     },
     "Smithy": {
-      "policy_effective_positive_examples": 177.28014529962093,
-      "raw_positive_examples": 614
+      "policy_effective_positive_examples": 851.2421617442742,
+      "raw_positive_examples": 2540
     },
     "Throne Room": {
-      "policy_effective_positive_examples": 579.9697805140167,
-      "raw_positive_examples": 1883
+      "policy_effective_positive_examples": 2643.6797473924235,
+      "raw_positive_examples": 7494
     },
     "Vassal": {
-      "policy_effective_positive_examples": 618.6916998280212,
-      "raw_positive_examples": 1990
+      "policy_effective_positive_examples": 2590.059086064808,
+      "raw_positive_examples": 7422
     },
     "Village": {
-      "policy_effective_positive_examples": 721.7241719495505,
-      "raw_positive_examples": 2476
+      "policy_effective_positive_examples": 3339.299192073755,
+      "raw_positive_examples": 9702
     },
     "Witch": {
-      "policy_effective_positive_examples": 229.6651638057083,
-      "raw_positive_examples": 905
+      "policy_effective_positive_examples": 960.848545582965,
+      "raw_positive_examples": 3017
     },
     "Workshop": {
-      "policy_effective_positive_examples": 135.43397534172982,
-      "raw_positive_examples": 400
+      "policy_effective_positive_examples": 552.0658386358991,
+      "raw_positive_examples": 1560
     }
   },
   "curve": {
@@ -142,32 +142,32 @@
   },
   "rating_bands": {
     "level_40_to_50": {
-      "games": 804,
-      "policy_effective_tuples": 22480.03419377003,
-      "tuples": 72685
+      "games": 3006,
+      "policy_effective_tuples": 88700.96238086931,
+      "tuples": 278789
     },
     "level_50_plus": {
-      "games": 110,
-      "policy_effective_tuples": 12356.256905317307,
-      "tuples": 6146
+      "games": 484,
+      "policy_effective_tuples": 64472.794201016426,
+      "tuples": 31449
     },
     "level_below_40": {
-      "games": 436,
-      "policy_effective_tuples": 453.94829665031284,
-      "tuples": 38023
+      "games": 1497,
+      "policy_effective_tuples": 1518.077934751287,
+      "tuples": 129066
     },
     "unrated_or_missing": {
-      "games": 248,
-      "policy_effective_tuples": 627.7199859693646,
-      "tuples": 31386
+      "games": 574,
+      "policy_effective_tuples": 1523.9999659359455,
+      "tuples": 76200
     }
   },
   "ratings_sidecar": "data/dominion_games/ratings/game_ratings.json",
   "totals": {
-    "base_card_buy_policy_effective_examples": 13693.891704362817,
-    "base_card_buy_positive_examples": 49510,
-    "policy_effective_tuples": 35917.95938170701,
-    "tuples": 148240
+    "base_card_buy_policy_effective_examples": 56682.7617170671,
+    "base_card_buy_positive_examples": 177578,
+    "policy_effective_tuples": 156215.83448257297,
+    "tuples": 515504
   },
   "tuple_dirs": [
     "exports/tuples_all/train",
