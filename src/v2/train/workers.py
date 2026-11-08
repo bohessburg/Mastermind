@@ -1050,6 +1050,7 @@ def _accumulate_stats(total: SelfPlayStats, update: SelfPlayStats) -> None:
     total.deep_games += update.deep_games
     total.deep_positions += update.deep_positions
     total.cards_trashed += update.cards_trashed
+    total.truncated_games += update.truncated_games
     for index in range(7):
         total.opening_template_games[index] += update.opening_template_games[index]
         total.opening_template_vs_unconstrained_games[index] += (
@@ -1279,6 +1280,7 @@ def _worker_main(
                         stats.opening_template_vs_unconstrained_wins,
                         stats.cards_trashed,
                         stats.unconstrained_buy_counts,
+                        stats.truncated_games,
                     ),
                 )
             )
@@ -1471,6 +1473,7 @@ class ParallelSelfPlayPool:
                 worker_opening_template_vs_unconstrained_wins,
                 worker_cards_trashed,
                 worker_unconstrained_buy_counts,
+                worker_truncated_games,
             ) = payload
             if received_by_worker[worker_index] != self.quotas[worker_index]:
                 raise RuntimeError("self-play worker completed before delivering its full game quota")
@@ -1492,6 +1495,7 @@ class ParallelSelfPlayPool:
             stats.deep_games += worker_deep_games
             stats.deep_positions += worker_deep_positions
             stats.cards_trashed += worker_cards_trashed
+            stats.truncated_games += int(worker_truncated_games)
             for index in range(7):
                 stats.opening_template_games[index] += int(worker_opening_template_games[index])
                 stats.opening_template_vs_unconstrained_games[index] += int(

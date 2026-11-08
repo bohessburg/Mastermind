@@ -137,15 +137,7 @@ struct EvalBot {
 }
 
 [[nodiscard]] PlayerId winner_for(const GameState& state) noexcept {
-    const std::int16_t score0 = score(state, 0U);
-    const std::int16_t score1 = score(state, 1U);
-    if (score0 > score1) {
-        return 0U;
-    }
-    if (score1 > score0) {
-        return 1U;
-    }
-    return NONE;
+    return game_winner(state);
 }
 
 void run_one_game(const MctsEvalOptions& options, std::uint32_t game_index, ThreadStats& stats) {

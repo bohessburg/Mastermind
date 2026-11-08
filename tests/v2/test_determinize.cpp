@@ -281,3 +281,21 @@ TEST_CASE("v2 original and determinized states can finish", "[v2][determinize]")
     play_to_completion(original, 0xD373'4003ULL);
     play_to_completion(sampled, 0xD373'5003ULL);
 }
+
+TEST_CASE("v2 determinize reseeds the future shuffle stream", "[v2][determinize]") {
+    GameState original = Game::new_game(determinize_setup(), 0xD373'0004ULL);
+    seed_hidden_pool(original);
+
+    GameState first = original;
+    determinize(first, 0U, 0xD373'3004ULL);
+    GameState second = original;
+    determinize(second, 0U, 0xD373'3005ULL);
+    GameState repeat = original;
+    determinize(repeat, 0U, 0xD373'3004ULL);
+
+    // The true game's generator must not survive into a sample, or every
+    // determinized search would foresee the real reshuffle order.
+    REQUIRE(std::memcmp(&first.rng, &original.rng, sizeof(original.rng)) != 0);
+    REQUIRE(std::memcmp(&first.rng, &second.rng, sizeof(first.rng)) != 0);
+    REQUIRE(std::memcmp(&first.rng, &repeat.rng, sizeof(first.rng)) == 0);
+}

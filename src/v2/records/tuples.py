@@ -15,7 +15,7 @@ import numpy as np
 import dominion_v2_py as dz
 
 from .corpus import load_or_create_manifest, manifest_entries
-from .local import final_state_hash_matches, is_complete_local_export_data
+from .local import final_state_hash_matches, is_complete_local_export_data, state_hash_generation_fields
 
 
 OBS_VERSION = 3
@@ -151,9 +151,8 @@ def replay_export(
     if not game.game_over():
         raise ReplayVerificationError(f"{source_path}: replay did not reach game over")
     actual_hash = _format_hash(game.state_hash())
-    if (
-        data.get("final_state_hash") is None
-        and data.get(f"final_state_hash_gen{int(dz.ENCODER_GENERATION)}") is None
+    if data.get("final_state_hash") is None and all(
+        data.get(field) is None for field in state_hash_generation_fields()
     ):
         raise ReplayVerificationError(f"{source_path}: missing final_state_hash")
     if not final_state_hash_matches(data, game.state_hash()):

@@ -59,12 +59,28 @@ struct MctsConfig {
     // actually receives Dirichlet noise, so generic/eval MCTS remains inert.
     bool forced_playouts = false;
     float forced_playouts_k = 2.0F;
+    // First-play urgency. Negative (default) keeps the legacy q=0 for an
+    // unvisited child; >=0 uses parent mean value minus this reduction
+    // (KataGo-style), so losing positions stop visiting every sibling once.
+    float fpu_reduction = -1.0F;
+    // Terminal-node scale. 0 (default) keeps legacy +-1 game-end values.
+    // >0 scores game-end nodes on the same graded-margin scale the value head
+    // is trained on: sign * (alpha + (1-alpha) * (0.5 + 0.5*min(|m|,s)/s)).
+    float terminal_margin_scale = 0.0F;
+    float terminal_margin_alpha = 0.0F;
 };
 
 static_assert(std::is_trivially_copyable_v<MctsConfig>);
 static_assert(std::is_standard_layout_v<MctsConfig>);
 
 [[nodiscard]] bool mcts_is_valid_c_puct_schedule(MctsCPuctSchedule schedule) noexcept;
+// Terminal value for `player`; margin-scaled when config.terminal_margin_scale
+// is positive (see MctsConfig), otherwise legacy +-1/0.
+[[nodiscard]] float mcts_terminal_value_scaled(
+    const GameState& state,
+    PlayerId player,
+    float margin_scale,
+    float margin_alpha) noexcept;
 // In visit-scaled mode this is AlphaZero's
 // c_init + log((N + c_base + 1) / c_base); fixed mode returns c_puct exactly.
 [[nodiscard]] float mcts_effective_c_puct(
@@ -103,6 +119,10 @@ struct MctsPendingLeaf {
     ActionMask legal{};
     int legal_count = 0;
     bool valid = false;
+    // Set when selection reached an unexpanded node that already has an
+    // evaluation in flight (multi-leaf batching). Nothing was applied to the
+    // tree; the caller should try again after that evaluation lands.
+    bool collided = false;
 };
 
 class Mcts {
@@ -149,6 +169,8 @@ public:
     [[nodiscard]] Action best_root_action() const noexcept;
     [[nodiscard]] std::uint32_t root_visits_for(Action action) const noexcept;
     [[nodiscard]] float root_value_for(Action action) const noexcept;
+    // Mean backed-up value at the root, from the root player's perspective.
+    [[nodiscard]] float root_mean_value() const noexcept;
     [[nodiscard]] const GameState& state_for(std::uint32_t state_index) const noexcept;
     [[nodiscard]] bool collect_external_leaf(MctsPendingLeaf& leaf) noexcept;
     void provide_external_evaluation(

@@ -42,7 +42,9 @@ def test_selfplay_max_turns_rejects_out_of_range_values(tmp_path: Path, max_turn
 
 
 def test_selfplay_turn_cap_record_is_truncated_with_zero_value_targets() -> None:
+    """Legacy (adjudicate_truncation=False) behavior: capped games are draws."""
     config = dz.SelfPlayConfig(
+        adjudicate_truncation=False,
         n_games=1,
         sims_per_move=2,
         max_batch=8,
@@ -68,5 +70,38 @@ def test_selfplay_turn_cap_record_is_truncated_with_zero_value_targets() -> None
             assert record["turn_counter"] == 20
             assert record["truncated"] is True
             assert np.all(record["values"] == 0.0)
+            return
+    raise AssertionError("selfplay turn cap did not finish a game")
+
+
+def test_selfplay_turn_cap_adjudicates_by_position_at_cap() -> None:
+    config = dz.SelfPlayConfig(
+        n_games=1,
+        sims_per_move=2,
+        max_batch=8,
+        seed=0xCA20,
+        kingdom_mode=dz.SelfPlayKingdomMode.Fixed,
+        max_recorded_moves=256,
+        max_tree_nodes=256,
+        selfplay_max_turns=20,
+        auto_play_treasures=True,
+        prune_treasure_plays=True,
+    )
+    assert config.adjudicate_truncation is True
+    runner = dz.SelfPlayRunner(config)
+    for _ in range(20_000):
+        observations, _masks = runner.collect_leaves(config.max_batch)
+        if observations.shape[0] > 0:
+            runner.provide_evaluations(
+                np.zeros((observations.shape[0],), dtype=np.float32),
+                np.zeros((observations.shape[0], dz.ACTION_SPACE_SIZE), dtype=np.float32),
+            )
+        finished = runner.finished_games()
+        if finished:
+            record = finished[0]
+            assert record["truncated"] is True
+            values = np.asarray(record["values"])
+            margins = np.asarray(record["margins"])
+            assert np.all(np.sign(values) == np.sign(margins))
             return
     raise AssertionError("selfplay turn cap did not finish a game")

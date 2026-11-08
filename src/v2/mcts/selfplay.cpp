@@ -602,15 +602,7 @@ constexpr OpeningTemplateBands OPENING_TEMPLATE_BANDS[SELFPLAY_OPENING_TEMPLATE_
 }
 
 [[nodiscard]] PlayerId winner_for(const GameState& state) noexcept {
-    const std::int16_t score0 = score(state, 0U);
-    const std::int16_t score1 = score(state, 1U);
-    if (score0 > score1) {
-        return 0U;
-    }
-    if (score1 > score0) {
-        return 1U;
-    }
-    return NONE;
+    return game_winner(state);
 }
 
 } // namespace
@@ -663,6 +655,8 @@ struct SelfPlayRunner::GameSlot {
     std::vector<Action> sampled_actions;
     std::vector<std::uint64_t> legal_mask_words;
     std::vector<PlayerId> players;
+    // Search root value per recorded decision (decision player's view).
+    std::vector<float> root_values;
     SelfPlaySlotConfig slot{};
     std::uint64_t seed = 0;
     std::uint64_t generation = 0;
@@ -1051,6 +1045,14 @@ SelfPlayRunner::SelfPlayRunner(const SelfPlayConfig& config)
     mcts_config_.min_new_sims = config_.min_new_sims;
     mcts_config_.forced_playouts = config_.forced_playouts;
     mcts_config_.forced_playouts_k = config_.forced_playouts_k;
+    mcts_config_.fpu_reduction = config_.fpu_reduction;
+    if (config_.scaled_terminal_values
+        && config_.value_target != SelfPlayValueTarget::Outcome) {
+        mcts_config_.terminal_margin_scale = config_.margin_scale;
+        mcts_config_.terminal_margin_alpha = config_.value_target == SelfPlayValueTarget::MarginBlend
+            ? config_.margin_blend_alpha
+            : 0.0F;
+    }
     if (mcts_config_.tree_reuse && mcts_config_.determinizations != 1U) {
         // A reused subtree belongs to one root-sampled hidden-information
         // world; K>1 trees aggregate different worlds below the root.
@@ -1138,6 +1140,7 @@ SelfPlayRunner::SelfPlayRunner(const SelfPlayConfig& config)
         game.legal_mask_words.reserve(
             static_cast<std::size_t>(config_.max_recorded_moves) * ACTION_MASK_WORDS);
         game.players.reserve(config_.max_recorded_moves);
+        game.root_values.reserve(config_.max_recorded_moves);
         reset_game(i);
     }
 }
@@ -1170,70 +1173,84 @@ std::uint32_t SelfPlayRunner::collect_leaves(std::uint32_t max_batch) noexcept {
             ++idle;
             continue;
         }
-        if (game.pending != 0U) {
+        // A game with evaluations already in flight may add more leaves to
+        // the SAME search (up to its cap) but must not advance its state.
+        const bool resume_search = game.pending != 0U && game.search_active;
+        if (game.pending != 0U
+            && (!resume_search
+                || scripted_mode(game.slot.scripted_bot)
+                || game.pending >= leaves_in_flight_cap(game)
+                || game.sims_started >= game.sims_target)) {
             ++idle;
             continue;
         }
-        if (offload_scripted_slot(index)) {
-            ++idle;
-            continue;
-        }
-        if (game.retired) {
-            ++idle;
-            continue;
-        }
-        drive_scripted(game);
-        if (game.retired) {
-            ++idle;
-            continue;
-        }
-        if (game.pending != 0U) {
-            ++idle;
-            continue;
-        }
-        if (scripted_mode(game.slot.scripted_bot) && decision_player(game.state) != game.nn_player) {
-            ++idle;
-            continue;
-        }
-        maybe_finish_move(game);
-        if (game.retired) {
-            ++idle;
-            continue;
-        }
-        if (game.pending != 0U) {
-            ++idle;
-            continue;
-        }
-        if (scripted_mode(game.slot.scripted_bot) && decision_player(game.state) != game.nn_player) {
-            ++idle;
-            continue;
-        }
-        if (!game.search_active) {
-            auto_play_treasures(game);
-        }
-        if (game.retired) {
-            ++idle;
-            continue;
-        }
-        if (game.pending != 0U) {
-            ++idle;
-            continue;
-        }
-        if (scripted_mode(game.slot.scripted_bot) && decision_player(game.state) != game.nn_player) {
-            ++idle;
-            continue;
-        }
-        if (!game.search_active) {
-            start_search(game);
-        }
-        if (game.sims_started >= game.sims_target) {
+        if (!resume_search) {
+            if (offload_scripted_slot(index)) {
+                ++idle;
+                continue;
+            }
+            if (game.retired) {
+                ++idle;
+                continue;
+            }
+            drive_scripted(game);
+            if (game.retired) {
+                ++idle;
+                continue;
+            }
+            if (game.pending != 0U) {
+                ++idle;
+                continue;
+            }
+            if (scripted_mode(game.slot.scripted_bot) && decision_player(game.state) != game.nn_player) {
+                ++idle;
+                continue;
+            }
             maybe_finish_move(game);
-            ++idle;
-            continue;
-        }
+            if (game.retired) {
+                ++idle;
+                continue;
+            }
+            if (game.pending != 0U) {
+                ++idle;
+                continue;
+            }
+            if (scripted_mode(game.slot.scripted_bot) && decision_player(game.state) != game.nn_player) {
+                ++idle;
+                continue;
+            }
+            if (!game.search_active) {
+                auto_play_treasures(game);
+            }
+            if (game.retired) {
+                ++idle;
+                continue;
+            }
+            if (game.pending != 0U) {
+                ++idle;
+                continue;
+            }
+            if (scripted_mode(game.slot.scripted_bot) && decision_player(game.state) != game.nn_player) {
+                ++idle;
+                continue;
+            }
+            if (!game.search_active) {
+                start_search(game);
+            }
+            if (game.sims_started >= game.sims_target) {
+                maybe_finish_move(game);
+                ++idle;
+                continue;
+            }
+        }  // !resume_search
 
         MctsPendingLeaf leaf{};
         const bool need_eval = game.mcts.collect_external_leaf(leaf);
+        if (leaf.collided) {
+            // Retry after the in-flight evaluation lands; nothing started.
+            ++idle;
+            continue;
+        }
         ++game.sims_started;
         if (!need_eval) {
             ++game.sims_completed;
@@ -1278,6 +1295,14 @@ std::uint32_t SelfPlayRunner::collect_leaves(std::uint32_t max_batch) noexcept {
         std::this_thread::yield();
     }
     return pending_count_;
+}
+
+std::uint32_t SelfPlayRunner::leaves_in_flight_cap(const GameSlot& game) const noexcept {
+    std::uint32_t cap = config_.leaves_in_flight == 0U ? 1U : config_.leaves_in_flight;
+    if (game.slot.sims_override != 0U && config_.deep_leaves_in_flight != 0U) {
+        cap = config_.deep_leaves_in_flight;
+    }
+    return cap;
 }
 
 void SelfPlayRunner::provide_evaluations(const float* values, const float* policies, std::uint32_t count) noexcept {
@@ -1411,6 +1436,7 @@ void SelfPlayRunner::reset_game(std::uint32_t index) noexcept {
     game.sampled_actions.clear();
     game.legal_mask_words.clear();
     game.players.clear();
+    game.root_values.clear();
     game.sims_target = 0;
     game.sims_started = 0;
     game.sims_completed = 0;
@@ -1461,6 +1487,21 @@ void SelfPlayRunner::start_search(GameSlot& game) noexcept {
     // leaves and batch completion remain balanced. Only a hash-gated adopted
     // root turns sims_per_move into a total root-visit target.
     game.sims_target = game.mcts.new_simulation_target(reused);
+    if (config_.adaptive_sims_per_legal != 0U && game.slot.sims_override == 0U) {
+        ActionMask legal{};
+        int legal_count = Game::legal_actions(game.state, legal);
+        if (config_.prune_treasure_plays) {
+            const ActionMask filtered = mcts_filter_treasure_plays(game.state, legal);
+            legal_count = 0;
+            for (Action action = 0; action < ACTION_SPACE_SIZE; ++action) {
+                legal_count += filtered.test(action) ? 1 : 0;
+            }
+        }
+        const std::uint32_t cap = std::max(
+            config_.adaptive_sims_floor,
+            config_.adaptive_sims_per_legal * static_cast<std::uint32_t>(std::max(legal_count, 1)));
+        game.sims_target = std::min(game.sims_target, cap);
+    }
     game.sims_started = 0;
     game.sims_completed = 0;
     game.pending = 0;
@@ -1536,7 +1577,7 @@ void SelfPlayRunner::reapply_root_noise(GameSlot& game) noexcept {
             priors,
             retained,
             count,
-            config_.dirichlet_alpha,
+            selfplay_dirichlet_alpha(config_, count),
             config_.dirichlet_frac,
             game.rng);
     }
@@ -1756,6 +1797,40 @@ bool SelfPlayRunner::game_has_pending(std::uint32_t index) const noexcept {
     return index < slot_count_ && games_[index].pending != 0U;
 }
 
+float selfplay_dirichlet_alpha(const SelfPlayConfig& config, int legal_count) noexcept {
+    if (config.dirichlet_alpha_total <= 0.0F || legal_count <= 0) {
+        return config.dirichlet_alpha;
+    }
+    return std::clamp(config.dirichlet_alpha_total / static_cast<float>(legal_count), 0.03F, 1.0F);
+}
+
+Action selfplay_sample_from_policy(
+    const float* policy,
+    float temperature,
+    Xoshiro256pp& rng,
+    Action fallback) noexcept {
+    double weights[ACTION_SPACE_SIZE]{};
+    double total = 0.0;
+    const double inv_temp = 1.0 / static_cast<double>(temperature);
+    for (Action action = 0; action < ACTION_SPACE_SIZE; ++action) {
+        if (policy[action] > 0.0F) {
+            weights[action] = std::pow(static_cast<double>(policy[action]), inv_temp);
+            total += weights[action];
+        }
+    }
+    if (total <= 0.0) {
+        return fallback;
+    }
+    double sample = (static_cast<double>(rng.uniform(1'000'000U)) / 1'000'000.0) * total;
+    for (Action action = 0; action < ACTION_SPACE_SIZE; ++action) {
+        sample -= weights[action];
+        if (weights[action] > 0.0 && sample <= 0.0) {
+            return action;
+        }
+    }
+    return fallback;
+}
+
 void selfplay_pruned_root_visit_policy(
     const Mcts& search,
     float forced_playouts_k,
@@ -1848,7 +1923,13 @@ void SelfPlayRunner::maybe_finish_move(GameSlot& game) noexcept {
         game.move_index,
         seat_decision_count,
         seat_turn_number);
-    Action action = game.mcts.sample_root_action(temperature, game.rng);
+    Action action = A_PASS;
+    if (config_.sample_from_pruned_policy && config_.forced_playouts && config_.dirichlet_frac > 0.0F
+        && temperature > 0.0F) {
+        action = selfplay_sample_from_policy(policy, temperature, game.rng, game.mcts.best_root_action());
+    } else {
+        action = game.mcts.sample_root_action(temperature, game.rng);
+    }
     if (legal_count <= 0 || !legal.test(action)) {
         action = legal_count > 0 ? legal.nth_set(0U) : A_PASS;
     }
@@ -1923,6 +2004,7 @@ void SelfPlayRunner::record_decision(
         legal.words,
         legal.words + ACTION_MASK_WORDS);
     game.players.push_back(player);
+    game.root_values.push_back(game.mcts.root_mean_value());
 }
 
 void SelfPlayRunner::finish_game(GameSlot& game) noexcept {
@@ -1947,6 +2029,13 @@ void SelfPlayRunner::finish_game(GameSlot& game) noexcept {
         // representation for pathological terminal states as well.
         record.margins[i] = static_cast<std::int16_t>(std::clamp(terminal_margin, -127, 127));
         record.values[i] = terminal_value_for(game.state, game.players[i], terminal_margin);
+        if (config_.root_value_blend > 0.0F && i < game.root_values.size()) {
+            // Per-position bootstrap: every position gets its own label, which
+            // breaks the one-outcome-per-game structure the value head was
+            // memorizing (held-out R^2 ~ 0 in c24).
+            const float lambda = config_.root_value_blend;
+            record.values[i] = (1.0F - lambda) * record.values[i] + lambda * game.root_values[i];
+        }
     }
     record.seed = game.seed;
     record.winner = winner_for(game.state);
@@ -2061,20 +2150,26 @@ float SelfPlayRunner::terminal_value_for(
     PlayerId player,
     int terminal_margin) const noexcept {
     const PlayerId winner = winner_for(state);
-    // A configured self-play cap has no training outcome. Keep the legacy
-    // Outcome target for the engine-only cap when this option is disabled;
-    // Margin targets have always assigned zero to any truncated game.
-    if (winner == NONE
-        || (state.truncated != 0U
-            && (config_.selfplay_max_turns != 0U
-                || config_.value_target != SelfPlayValueTarget::Outcome))) {
+    // Truncated games: with adjudication on, the position at the cap is
+    // scored like a finished game. Legacy behavior (adjudication off) keeps
+    // the Outcome target for the engine-only cap and zero otherwise.
+    if (winner == NONE) {
         return 0.0F;
+    }
+    if (state.truncated != 0U
+        && !config_.adjudicate_truncation
+        && (config_.selfplay_max_turns != 0U
+            || config_.value_target != SelfPlayValueTarget::Outcome)) {
+        return 0.0F;
+    }
+    // An equal-VP finish decided by the fewer-turns tiebreak is the
+    // narrowest possible win/loss: grade it as a one-point margin so it
+    // keeps the winner's sign instead of training as a draw.
+    if (terminal_margin == 0) {
+        terminal_margin = winner == player ? 1 : -1;
     }
     if (config_.value_target == SelfPlayValueTarget::Margin) {
         const float margin = static_cast<float>(terminal_margin);
-        if (margin == 0.0F) {
-            return 0.0F;
-        }
         // Sign-preserving hybrid: every win is worth at least +0.5 so narrow
         // wins (a legal, often correct outcome — e.g. a well-executed pile
         // race) never train as near-ties; margin adds gradient WITHIN the
@@ -2185,7 +2280,7 @@ void SelfPlayRunner::normalize_policy(
         out,
         legal,
         legal_count,
-        config_.dirichlet_alpha,
+        selfplay_dirichlet_alpha(config_, legal_count),
         config_.dirichlet_frac,
         rng);
 }

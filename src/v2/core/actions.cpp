@@ -302,6 +302,12 @@ void play_card_to_in_play(GameState& state, DefId def) noexcept {
     --player.hand[slot];
 
     assert(player.in_play_size < MAX_IN_PLAY);
+    if (player.in_play_size >= MAX_IN_PLAY) {
+        // Release-safe fail-stop: never write past the fixed in-play array.
+        state.truncated = 1U;
+        state.phase = static_cast<std::uint8_t>(Phase::Over);
+        return;
+    }
     player.in_play[player.in_play_size] = InPlayEntry{slot, slot, 0};
     ++player.in_play_size;
     if (card_def(def).trigger_mask != 0U) {

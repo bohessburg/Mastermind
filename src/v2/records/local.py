@@ -47,17 +47,23 @@ class _LocalSnapshot:
     trash: Counter[int]
 
 
+def state_hash_generation_fields() -> tuple[str, ...]:
+    """Every per-generation hash field name a local export may carry."""
+    current = int(getattr(dz, "STATE_HASH_GENERATION", dz.ENCODER_GENERATION))
+    return tuple(f"final_state_hash_gen{generation}" for generation in range(2, current + 1))
+
+
 def final_state_hash_matches(data: Mapping[str, Any], state_hash: int) -> bool:
     """Return whether either recorded hash generation matches ``state_hash``.
 
-    State-hash generation currently coincides with ``ENCODER_GENERATION``: both
-    changed for the landscape-sentinel repair.  Reuse that engine marker until
-    a future state-format change makes the two generations diverge.
+    Generation 2 coincided with ``ENCODER_GENERATION`` (landscape-sentinel
+    repair). Generation 3 (``dz.STATE_HASH_GENERATION``) is a pure GameState
+    layout change with no encoder change, so every recorded generation field
+    is accepted.
     """
     actual_hash = f"0x{int(state_hash):016x}"
-    expected_hashes = (
-        data.get("final_state_hash"),
-        data.get(f"final_state_hash_gen{int(dz.ENCODER_GENERATION)}"),
+    expected_hashes = (data.get("final_state_hash"),) + tuple(
+        data.get(field) for field in state_hash_generation_fields()
     )
     # Keep the legacy behavior for exports that never recorded a hash at all.
     if all(expected is None for expected in expected_hashes):
@@ -166,8 +172,8 @@ def convert_local_data(
     if not final_state_hash_matches(data, game.state_hash()):
         raise ValueError(
             "local replay hash mismatch: "
-            f"{actual_hash} matches neither final_state_hash nor "
-            f"final_state_hash_gen{int(dz.ENCODER_GENERATION)}"
+            f"{actual_hash} matches neither final_state_hash nor any of "
+            f"{', '.join(state_hash_generation_fields())}"
         )
 
     scores = tuple(int(game.score(seat)) for seat in range(len(seat_kinds)))

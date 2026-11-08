@@ -2343,3 +2343,45 @@ Merchant engine + disciplined trashing; chapel board L 3-48 (built
 Festivals, never greened properly — chapel series is a fresh
 reconstructed baseline). Next battery at g15; bar 26.7, stretch
 35.6 by g15-20.
+
+=== 2026-11-08 AUDIT + FIXES (c24 box 42049 dead at g15; gen_0015 local) ===
+Four-way audit (architecture / RL / throughput / data+eval). Fixed:
+- Self-play turn cap (60 TOTAL turns = 30/seat) zeroed value targets for
+  33-52% of c22b-c24 games (c24 replay: 36% rows value 0 w/ nonzero margin,
+  rising 14%->46%). Now adjudicated from the position at the cap
+  (selfplay.adjudicate_truncation, default true); c25 cap 100.
+- determinize() never reseeded state.rng: "honest" search foresaw true
+  reshuffles (honest_eval, champ duels, determinized self-play, arena).
+- Fewer-turns tiebreak ignored everywhere -> core game_winner() + per-seat
+  turns_taken in GameState (golden hashes regenerated; actions identical).
+- Human corpus: 213K resigned-game rows (23%) had value 0 -> repaired at
+  load from manifest outcome (no reconversion). Zero-value rows 23% -> 1.5%.
+- Weighted policy loss divided by N not sum(w) -> weighted mean.
+- Inference server all-workers-pending trigger died after first worker
+  finished (every batch waited 4ms) -> quiet workers drop out after 100ms.
+  server_batch_wait_*_ms were in seconds -> fixed. server_evals_per_sec is
+  GPU-busy throughput, not wall.
+- MAX_IN_PLAY 24 overflowed silently in Release -> 64 + Release fail-stop.
+Added (opt-in, legacy defaults): leaves_in_flight / deep_leaves_in_flight
+(local bench K=8: 6.5x wall-clock), adaptive_sims_per_legal, root_value_blend,
+optim.value_loss_weight, fpu_reduction, scaled_terminal_values,
+dirichlet_alpha_total, sample_from_pruned_policy, server_gpu_ids,
+CardTokenNet derived_features/final_norm/embedding_init_std; per-gen
+heldout_value_* + selfplay_truncation_rate metrics; honest_eval paired
+seating on canonical seed 20261108 + Wilson/Elo/paired CIs; sprt.py; ladder.py.
+Stats reality check: 200g duel CI +-6.5pt; c22b/c23 "decay" not
+distinguishable from noise (pooled ~27.6% both); c24 g10 vs c23 g10 p=0.83.
+Ladder (existing duels): engine3 +16 Elo over c15 g45 in honest play.
+Value head memorizes (held-out R^2 ~ 0; BC init predicts fresh gen-9 games
+better than g5/g8). c25 draft: configs/run_c25.json (needs fresh BC init).
+Deferred: obs v4 decision-subject flags (Sentry/Vassal/Library; needs encoder
+ABI + corpus reconversion), cross-worker work stealing (measure first).
+State-hash generation 3 (same day): the GameState layout change (MAX_IN_PLAY
+64, turns_taken) changes raw-byte state hashes, so dz.STATE_HASH_GENERATION=3
+now diverges from ENCODER_GENERATION=2 (no observation change; checkpoints
+unaffected). 112/121 real local web exports were re-verified against a
+pre-change build (exact old-hash match) and given final_state_hash_gen3; 9
+did not verify and were left untouched (manifest: 112 real / 9 incomplete).
+Local-only verification so far: C++ 184/184; Python train+records suites
+green after test updates; local multi-leaf bench K=1 246s vs K=8 38s for 16
+games (1.6K -> 7.9K evals/s).

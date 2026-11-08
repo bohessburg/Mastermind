@@ -34,6 +34,11 @@ class ModelConfig:
     # None keeps the auxiliary margin-distribution head absent. Enabling
     # aux_margin_weight promotes this to the documented 21-bin default.
     aux_margin_buckets: int | None = None
+    # CardTokenNet opt-ins (2026-11 audit). All default off so existing
+    # checkpoints rebuild byte-identically.
+    derived_features: bool = False
+    final_norm: bool = False
+    embedding_init_std: float | None = None
 
 
 @dataclass
@@ -67,6 +72,24 @@ class SelfPlayConfig:
     # Zero leaves the engine-wide 200-turn cap as the only limit. A positive
     # value caps training self-play only after a completed player turn.
     max_turns: int = 0
+    # Score games stopped by max_turns from the position at the cap (VP
+    # margin + fewer-turns tiebreak) instead of the legacy zero/draw target.
+    adjudicate_truncation: bool = True
+    # NN evaluations one game may have in flight (virtual-loss batching).
+    # 1 = historical behavior. Deep-slice games use deep_leaves_in_flight
+    # when positive. Raises rows per inference request without more games.
+    leaves_in_flight: int = 1
+    deep_leaves_in_flight: int = 0
+    # Value target = (1 - b) * outcome + b * search root value (per position).
+    root_value_blend: float = 0.0
+    # Search options; defaults reproduce legacy behavior.
+    fpu_reduction: float = -1.0
+    scaled_terminal_values: bool = False
+    dirichlet_alpha_total: float = 0.0
+    sample_from_pruned_policy: bool = False
+    # >0 caps normal-decision sims at max(floor, per_legal * legal_count).
+    adaptive_sims_per_legal: int = 0
+    adaptive_sims_floor: int = 64
     # v1 remains the default so existing campaigns and checkpoints retain
     # their exact model input shape until a run explicitly opts into v2.
     obs_version: int = 1
@@ -130,6 +153,10 @@ class OptimConfig:
     weight_decay: float = 1.0e-4
     batch_size: int = 256
     train_steps_per_generation: int = 100
+    # Scales the self-play AND anchor value MSE. Every position of a game
+    # shares one outcome label, so the value head memorizes games at weight
+    # 1.0 (c24 held-out R^2 ~ 0); <1 trades fit for generalization.
+    value_loss_weight: float = 1.0
 
 
 @dataclass
@@ -219,6 +246,9 @@ class TrainConfig:
     # Replicate the shared inference service across this many processes. Each
     # worker is pinned to one shard, so one remains the legacy topology.
     server_shards: int = 1
+    # CUDA device ids to spread shards over (round-robin). Empty keeps every
+    # shard on server_device.
+    server_gpu_ids: list[int] = field(default_factory=list)
     server_max_batch: int = 8192
     # Cross-worker serving waits until one model reaches this many live rows,
     # every worker has submitted, or the bounded deadline below expires.
@@ -389,6 +419,15 @@ def validate_selfplay_max_turns_config(config: SelfPlayConfig) -> None:
     value = config.max_turns
     if not isinstance(value, int) or isinstance(value, bool) or (value != 0 and not 20 <= value <= 200):
         raise ValueError("selfplay.max_turns must be zero or an integer between 20 and 200")
+    if not isinstance(config.adjudicate_truncation, bool):
+        raise ValueError("selfplay.adjudicate_truncation must be a boolean")
+    for name, lower in (("leaves_in_flight", 1), ("deep_leaves_in_flight", 0)):
+        flight = getattr(config, name)
+        if not isinstance(flight, int) or isinstance(flight, bool) or not lower <= flight <= 64:
+            raise ValueError(f"selfplay.{name} must be an integer between {lower} and 64")
+    blend = config.root_value_blend
+    if isinstance(blend, bool) or not isinstance(blend, (int, float)) or not 0.0 <= float(blend) <= 1.0:
+        raise ValueError("selfplay.root_value_blend must be a number in [0, 1]")
 
 
 def validate_forced_playouts_config(config: SelfPlayConfig) -> None:
@@ -412,6 +451,9 @@ def validate_optimizer_kind(optimizer: object) -> str:
 
 def validate_optim_config(config: OptimConfig) -> None:
     validate_optimizer_kind(config.optimizer)
+    weight = config.value_loss_weight
+    if isinstance(weight, bool) or not isinstance(weight, (int, float)) or not math.isfinite(float(weight)) or float(weight) < 0.0:
+        raise ValueError("optim.value_loss_weight must be a finite non-negative number")
 
 
 def _finite_nonnegative(value: object, name: str) -> float:
@@ -670,6 +712,11 @@ def validate_server_shards(config: TrainConfig) -> None:
     shards = config.server_shards
     if not isinstance(shards, int) or isinstance(shards, bool) or shards <= 0:
         raise ValueError("server_shards must be a positive integer")
+    gpu_ids = config.server_gpu_ids
+    if not isinstance(gpu_ids, list) or any(
+        not isinstance(gpu, int) or isinstance(gpu, bool) or gpu < 0 for gpu in gpu_ids
+    ):
+        raise ValueError("server_gpu_ids must be a list of non-negative integers")
 
 
 def load_config(path: str | Path | None) -> TrainConfig:

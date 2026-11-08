@@ -449,6 +449,12 @@ void append_topdeck(PlayerState& player, Slot slot) noexcept {
 void add_to_in_play(GameState& state, PlayerId player_id, Slot slot) noexcept {
     PlayerState& player = state.players[player_id];
     assert(player.in_play_size < MAX_IN_PLAY);
+    if (player.in_play_size >= MAX_IN_PLAY) {
+        // Release-safe fail-stop: never write past the fixed in-play array.
+        state.truncated = 1U;
+        state.phase = static_cast<std::uint8_t>(Phase::Over);
+        return;
+    }
     player.in_play[player.in_play_size] = InPlayEntry{slot, slot, 0U};
     ++player.in_play_size;
     mark_trigger_table_dirty(state);

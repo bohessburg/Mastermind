@@ -111,6 +111,12 @@ struct SelfPlayConfig {
     // Used after the applicable schedule cutoff. Zero is ordinary argmax.
     float temp_final = 0.0F;
     std::uint32_t max_batch = 256;
+    // NN evaluations a single game may have in flight at once (virtual loss
+    // spreads them over the tree). 1 = historical one-leaf-per-game. Deep-
+    // slice games (slot sims_override > 0) use deep_leaves_in_flight when
+    // positive. Scripted games always keep one.
+    std::uint8_t leaves_in_flight = 1;
+    std::uint8_t deep_leaves_in_flight = 0;
     std::uint64_t seed = 0x545241494EULL;
     ObsVersion obs_version = ObsVersion::V1;
     SelfPlayKingdomMode kingdom_mode = SelfPlayKingdomMode::Random;
@@ -124,6 +130,31 @@ struct SelfPlayConfig {
     // Zero preserves the engine-only turn cap. A positive value is a
     // training self-play cap applied with the engine truncation semantics.
     std::uint16_t selfplay_max_turns = 0;
+    // How a game stopped by selfplay_max_turns is labelled. Adjudicate scores
+    // it from the position at the cap (VP margin + tiebreak) exactly like a
+    // finished game; false restores the legacy zero (draw) target, which
+    // taught "long game = draw" on up to half of c22b-c24 self-play data.
+    bool adjudicate_truncation = true;
+    // Value target = (1 - blend) * game outcome + blend * search root value.
+    // 0 keeps pure outcome targets.
+    float root_value_blend = 0.0F;
+    // Search options (2026-11 audit); defaults reproduce legacy behavior.
+    // See MctsConfig::fpu_reduction.
+    float fpu_reduction = -1.0F;
+    // Score game-end tree nodes on the value target's margin scale
+    // (margin_scale / margin_blend_alpha) instead of +-1.
+    bool scaled_terminal_values = false;
+    // >0: Dirichlet alpha = dirichlet_alpha_total / legal_count (clamped to
+    // [0.03, 1]) instead of the fixed dirichlet_alpha.
+    float dirichlet_alpha_total = 0.0F;
+    // With forced playouts, sample the PLAYED move from the pruned target
+    // distribution rather than raw visits (which include forced/noise visits).
+    bool sample_from_pruned_policy = false;
+    // >0: a normal (non-deep) decision with L legal root actions gets at most
+    // max(adaptive_sims_floor, adaptive_sims_per_legal * L) new simulations.
+    // 57% of c24 positions had 2-3 legal actions yet received 512 sims.
+    std::uint32_t adaptive_sims_per_legal = 0;
+    std::uint32_t adaptive_sims_floor = 64;
     std::uint32_t max_tree_nodes = 4096;
     std::uint32_t scaffold_sims = 400;
     // Zero keeps the endgame budget for the whole game. A positive value is
@@ -176,6 +207,12 @@ struct SelfPlayConfig {
 // Computes the non-tie MarginBlend target after terminal scoring has
 // established a score margin. Kept separate from SelfPlayRunner so the exact
 // target transform is unit-testable without constructing a terminal game.
+[[nodiscard]] float selfplay_dirichlet_alpha(const SelfPlayConfig& config, int legal_count) noexcept;
+[[nodiscard]] Action selfplay_sample_from_policy(
+    const float* policy,
+    float temperature,
+    Xoshiro256pp& rng,
+    Action fallback) noexcept;
 [[nodiscard]] float selfplay_margin_blend_value(
     float margin,
     float margin_scale,
@@ -350,6 +387,7 @@ private:
         const ActionMask& legal) const noexcept;
     [[nodiscard]] bool game_has_pending(std::uint32_t index) const noexcept;
     void maybe_finish_move(GameSlot& game) noexcept;
+    [[nodiscard]] std::uint32_t leaves_in_flight_cap(const GameSlot& game) const noexcept;
     void record_decision(
         GameSlot& game,
         const float* policy,

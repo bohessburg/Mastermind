@@ -67,15 +67,20 @@ $BOX 'supervisorctl restart dominion-c24'
 
 ## 5. Start a champ duel on a free GPU (200 games vs c15 gen_0045)
 
-Replace `gen_0015` with the checkpoint you want; keep the seed convention
-`24<gen>0` (e.g. g15 → 241510) so runs are reproducible.
+As of 2026-11 every duel uses the CANONICAL eval boards: omit `--seed`
+(default 20261108) and keep the default `--seating paired`, so each kingdom is
+played twice with seats swapped and every generation/campaign is measured on
+the same 100 boards. The summary prints a Wilson 95% CI, Elo, and the paired
+CI. For go/no-go decisions prefer `python -m src.v2.train.sprt` (stops early
+once decisive), and rate everything jointly with
+`python -m src.v2.train.ladder bench/`.
 
 ```sh
 $BOX 'cd /root/Mastermind && CUDA_VISIBLE_DEVICES=1 nice -n 15 env PYTHONPATH=build PYTHONUNBUFFERED=1 nohup ./.venv/bin/python -m src.v2.train.honest_eval \
   --a checkpoints/campaign24/gen_0015.pt \
   --b checkpoints/remote/campaign15/gen_0045.pt \
   --games 200 --sims 400 --determinizations 2 --sims-b 400 --determinizations-b 2 \
-  --workers 24 --device cuda --legacy-shim --seed 241510 \
+  --workers 24 --device cuda --legacy-shim \
   --out bench/c24_g15_vs_champ.json > duel_c24_g15.log 2>&1 & echo STARTED'
 ```
 

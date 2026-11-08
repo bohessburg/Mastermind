@@ -1,3 +1,4 @@
+#include "v2/core/rng.h"
 #include "v2/mcts/selfplay.h"
 
 #include "v2/core/actions.h"
@@ -553,9 +554,10 @@ TEST_CASE("v2 selfplay finished records have normalized policies and terminal va
     }
 }
 
-TEST_CASE("v2 selfplay turn cap truncates records and zeroes value targets", "[v2][selfplay]") {
+TEST_CASE("v2 selfplay turn cap truncates records and zeroes value targets in legacy mode", "[v2][selfplay]") {
     SelfPlayConfig config = fixed_config(1U, 2U, 8U, 0x5E1F'CA20ULL);
     config.selfplay_max_turns = 20U;
+    config.adjudicate_truncation = false;
     config.auto_play_treasures = true;
     config.prune_treasure_plays = true;
 
@@ -568,6 +570,55 @@ TEST_CASE("v2 selfplay turn cap truncates records and zeroes value targets", "[v
     REQUIRE_FALSE(record.values.empty());
     for (const float value : record.values) {
         REQUIRE(value == 0.0F);
+    }
+}
+
+TEST_CASE("v2 selfplay adjudicates truncated games from the position at the cap", "[v2][selfplay]") {
+    for (const SelfPlayValueTarget target :
+         {SelfPlayValueTarget::Outcome, SelfPlayValueTarget::Margin, SelfPlayValueTarget::MarginBlend}) {
+        SelfPlayConfig config = fixed_config(1U, 2U, 8U, 0x5E1F'AD00ULL);
+        config.selfplay_max_turns = 40U;
+        config.auto_play_treasures = true;
+        config.prune_treasure_plays = true;
+        config.value_target = target;
+        config.temp_moves = 400U;
+        REQUIRE(config.adjudicate_truncation);
+
+        // Random priors so the policy actually buys VP and creates gaps; an
+        // all-zero evaluator produces degenerate pass-only games.
+        SelfPlayRunner runner(config);
+        Xoshiro256pp rng = Xoshiro256pp::seeded(0xAD1Dull);
+        std::uint32_t guard = 0;
+        while (runner.games_completed() < 1U && guard < 200000U) {
+            const std::uint32_t count = runner.collect_leaves(config.max_batch);
+            if (count > 0U) {
+                std::vector<float> values(count, 0.0F);
+                std::vector<float> policies(static_cast<std::size_t>(count) * ACTION_SPACE_SIZE);
+                for (float& logit : policies) {
+                    logit = static_cast<float>(rng.uniform(1000U)) / 125.0F;
+                }
+                runner.provide_evaluations(values.data(), policies.data(), count);
+            }
+            ++guard;
+        }
+        const std::vector<SelfPlayRecord> records = runner.take_finished_games();
+        REQUIRE(records.size() == 1U);
+        const SelfPlayRecord& record = records.front();
+        REQUIRE(record.truncated);
+        REQUIRE(record.values.size() == record.margins.size());
+        bool saw_decided = false;
+        for (std::size_t i = 0; i < record.values.size(); ++i) {
+            const int margin = record.margins[i];
+            if (margin > 0) {
+                REQUIRE(record.values[i] > 0.0F);
+            } else if (margin < 0) {
+                REQUIRE(record.values[i] < 0.0F);
+            } else {
+                REQUIRE(record.values[i] == 0.0F);
+            }
+            saw_decided = saw_decided || margin != 0;
+        }
+        REQUIRE(saw_decided);
     }
 }
 
@@ -940,4 +991,43 @@ TEST_CASE("v2 selfplay mock evaluator throughput smoke", "[v2][selfplay][through
 
     REQUIRE(leaves >= 4096U);
     REQUIRE(leaves_per_sec > 0.0);
+}
+
+TEST_CASE("v2 selfplay multi-leaf batching keeps several evaluations in flight per game", "[v2][selfplay][batching]") {
+    SelfPlayConfig config = fixed_config(2U, 64U, 64U, 0x5E1F'B47CULL);
+    config.selfplay_max_turns = 20U;
+    config.auto_play_treasures = true;
+    config.prune_treasure_plays = true;
+    config.leaves_in_flight = 8U;
+
+    SelfPlayRunner runner(config);
+    std::uint32_t max_rows = 0U;
+    std::uint32_t guard = 0U;
+    while (runner.games_completed() < 2U && guard < 200000U) {
+        const std::uint32_t count = runner.collect_leaves(config.max_batch);
+        max_rows = std::max(max_rows, count);
+        if (count > 0U) {
+            provide_zero_eval(runner, count);
+            // Every in-flight leaf was answered: no virtual loss may linger.
+            REQUIRE(runner.total_virtual_loss() == 0.0F);
+        }
+        ++guard;
+    }
+    REQUIRE(runner.games_completed() >= 2U);
+    // Two games, one leaf each, was the historical ceiling.
+    REQUIRE(max_rows > 2U);
+    REQUIRE(max_rows <= 16U);
+
+    const std::vector<SelfPlayRecord> records = runner.take_finished_games();
+    REQUIRE(records.size() >= 2U);
+    for (const SelfPlayRecord& record : records) {
+        for (std::uint16_t move = 0; move < record.moves; ++move) {
+            const float* policy = record.policy_targets.data() + (static_cast<std::size_t>(move) * ACTION_SPACE_SIZE);
+            float sum = 0.0F;
+            for (Action action = 0; action < ACTION_SPACE_SIZE; ++action) {
+                sum += policy[action];
+            }
+            REQUIRE(sum == Catch::Approx(1.0F).margin(0.0001F));
+        }
+    }
 }

@@ -105,6 +105,78 @@ def refresh_sil_priorities(
     )
 
 
+def heldout_value_metrics(
+    replay: ReplayBuffer,
+    model: torch.nn.Module,
+    device: torch.device,
+    *,
+    start_write: int,
+    inserted_positions: int,
+    max_rows: int = 32768,
+    seed: int = 0,
+    batch_size: int = SIL_PRIORITY_BATCH_SIZE,
+) -> dict[str, float]:
+    """Score the CURRENT model on this generation's fresh rows before training.
+
+    These positions have never been trained on, so this is the honest
+    generalization read for the value head (the logged ``value_loss`` is fit
+    on replay the model has already seen many times). Returns NaNs when no
+    fresh rows are available.
+    """
+    import torch
+
+    nan = float("nan")
+    empty = {
+        "heldout_value_mse": nan,
+        "heldout_value_baseline_mse": nan,
+        "heldout_value_r2": nan,
+        "heldout_value_corr": nan,
+        "heldout_policy_ce": nan,
+        "heldout_rows": 0,
+    }
+    retained = min(int(inserted_positions), replay.capacity, len(replay))
+    if retained <= 0:
+        return empty
+    first = (int(start_write) + int(inserted_positions) - retained) % replay.capacity
+    indices = (first + np.arange(retained, dtype=np.int64)) % replay.capacity
+    if indices.shape[0] > max_rows:
+        rng = np.random.default_rng(seed)
+        indices = np.sort(rng.choice(indices, size=max_rows, replace=False))
+    targets = replay.value[indices].astype(np.float64)
+    predictions = np.empty((indices.shape[0],), dtype=np.float64)
+    ce_sum = 0.0
+    was_training = model.training
+    model.eval()
+    try:
+        with torch.no_grad():
+            for start in range(0, indices.shape[0], batch_size):
+                rows = indices[start : start + batch_size]
+                obs = torch.as_tensor(replay.obs[rows], dtype=torch.float32, device=device)
+                outputs = model(obs)
+                logits, values = outputs[0], outputs[1]
+                predictions[start : start + rows.shape[0]] = values.detach().float().cpu().numpy()
+                legal = torch.as_tensor(replay.legal_mask[rows], dtype=torch.bool, device=device)
+                policy = torch.as_tensor(replay.policy[rows], dtype=torch.float32, device=device)
+                log_probs = torch.log_softmax(logits.float().masked_fill(~legal, -1.0e9), dim=-1)
+                ce_sum += float(-(policy * log_probs.masked_fill(~legal, 0.0)).sum().cpu())
+    finally:
+        model.train(was_training)
+    mse = float(np.mean((predictions - targets) ** 2))
+    baseline = float(np.var(targets))
+    if baseline > 0.0 and np.std(predictions) > 0.0:
+        corr = float(np.corrcoef(predictions, targets)[0, 1])
+    else:
+        corr = nan
+    return {
+        "heldout_value_mse": mse,
+        "heldout_value_baseline_mse": baseline,
+        "heldout_value_r2": (1.0 - mse / baseline) if baseline > 0.0 else nan,
+        "heldout_value_corr": corr,
+        "heldout_policy_ce": ce_sum / float(indices.shape[0]),
+        "heldout_rows": int(indices.shape[0]),
+    }
+
+
 @dataclass
 class SelfPlayStats:
     games: int = 0
@@ -134,6 +206,9 @@ class SelfPlayStats:
     opening_template_vs_unconstrained_games: list[int] = field(default_factory=lambda: [0] * 7)
     opening_template_vs_unconstrained_wins: list[int] = field(default_factory=lambda: [0] * 7)
     cards_trashed: int = 0
+    # Games stopped by the training turn cap (selfplay.max_turns). Tracked
+    # every generation: c22b-c24 silently capped 33-52% of games.
+    truncated_games: int = 0
     # Chapel, Sentry, Moneylender, Village in native record order.
     unconstrained_buy_counts: list[int] = field(default_factory=lambda: [0] * 4)
 
@@ -351,6 +426,16 @@ def make_runner_config(
         temp_effect_plies=config.temp_effect_plies,
         temp_final=config.temp_final,
         selfplay_max_turns=config.max_turns,
+        adjudicate_truncation=bool(config.adjudicate_truncation),
+        leaves_in_flight=int(config.leaves_in_flight),
+        deep_leaves_in_flight=int(config.deep_leaves_in_flight),
+        root_value_blend=float(config.root_value_blend),
+        fpu_reduction=float(config.fpu_reduction),
+        scaled_terminal_values=bool(config.scaled_terminal_values),
+        dirichlet_alpha_total=float(config.dirichlet_alpha_total),
+        sample_from_pruned_policy=bool(config.sample_from_pruned_policy),
+        adaptive_sims_per_legal=int(config.adaptive_sims_per_legal),
+        adaptive_sims_floor=int(config.adaptive_sims_floor),
         max_batch=config.max_batch,
         seed=seed,
         obs_version=int(config.obs_version),
@@ -451,6 +536,7 @@ def record_opening_template_telemetry(stats: SelfPlayStats, records: list[dict])
                 stats.opening_template_vs_unconstrained_wins[template_id] += 1
 
         stats.cards_trashed += int(record.get("cards_trashed", 0))
+        stats.truncated_games += int(bool(record.get("truncated", False)))
         raw_buys = np.asarray(record.get("unconstrained_buy_counts", [0, 0, 0, 0]), dtype=np.int64).reshape(-1)
         if raw_buys.size < 4:
             raise ValueError("self-play record is missing unconstrained buy telemetry")

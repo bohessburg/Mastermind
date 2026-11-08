@@ -411,7 +411,12 @@ def _human_losses(
     """Hard-label CE plus value MSE for human demonstrations."""
     masked = logits.masked_fill(~legal_mask, -1.0e9)
     policy_per_row = F.cross_entropy(masked, actions, reduction="none")
-    policy_loss = policy_per_row.mean() if policy_weight is None else (policy_per_row * policy_weight).mean()
+    if policy_weight is None:
+        policy_loss = policy_per_row.mean()
+    else:
+        # Weighted mean: normalize by weight mass so curve changes do not
+        # silently rescale the policy term against the value term.
+        policy_loss = (policy_per_row * policy_weight).sum() / policy_weight.sum().clamp_min(1.0e-8)
     probs = torch.softmax(masked, dim=-1)
     log_probs = torch.log_softmax(masked, dim=-1)
     entropy = -(probs * log_probs).masked_fill(~legal_mask, 0.0).sum(dim=-1).mean()

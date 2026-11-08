@@ -747,6 +747,20 @@ GameState build_game_from_snapshot(const Snapshot& snapshot) {
     state.buys = static_cast<std::uint8_t>(resources.buys);
     state.coins = resources.coins;
     state.turn_counter = snapshot.turn_number;
+    {
+        // Seats alternate (base set has no extra turns); reconstruct
+        // completed turns per seat from the global counter and whose turn
+        // is in progress.
+        const std::uint16_t n = state.num_players;
+        const std::uint16_t completed = snapshot.turn_number;
+        const std::uint16_t first = static_cast<std::uint16_t>(
+            (snapshot.current_player + n - (completed % n)) % n);
+        for (PlayerId player = 0; player < state.num_players; ++player) {
+            const std::uint16_t offset = static_cast<std::uint16_t>((player + n - first) % n);
+            state.turns_taken[player] = static_cast<std::uint16_t>(
+                (completed / n) + (offset < (completed % n) ? 1U : 0U));
+        }
+    }
     turn_queue_clear(state.turn_queue);
     if (!turn_queue_push(state.turn_queue, snapshot.current_player, TurnKind::Normal)) {
         invalid("could not initialize turn queue");

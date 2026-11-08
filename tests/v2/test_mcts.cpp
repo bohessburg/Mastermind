@@ -967,3 +967,56 @@ TEST_CASE("v2 MCTS beats RandomBot in base games", "[v2][mcts][integration]") {
 
     REQUIRE(wins >= 18);
 }
+
+TEST_CASE("v2 MCTS margin-scaled terminal values match the value-target scale", "[v2][mcts][terminal]") {
+    GameState state = Game::new_game(Setup{}, 905U);
+    clear_player_cards(state, 0U);
+    clear_player_cards(state, 1U);
+    add_to_discard(state, 0U, DEF_DUCHY, 1U);  // 3 VP vs 0
+    state.phase = static_cast<std::uint8_t>(Phase::Over);
+    REQUIRE(score(state, 0U) - score(state, 1U) == 3);
+
+    REQUIRE(mcts_terminal_value(state, 0U) == 1.0F);
+    REQUIRE(mcts_terminal_value_scaled(state, 0U, 20.0F, 0.0F) == Catch::Approx(0.5F + 0.5F * 3.0F / 20.0F));
+    REQUIRE(mcts_terminal_value_scaled(state, 1U, 20.0F, 0.0F) == Catch::Approx(-(0.5F + 0.5F * 3.0F / 20.0F)));
+    // alpha = 1 is plain win/loss; alpha in between interpolates.
+    REQUIRE(mcts_terminal_value_scaled(state, 0U, 20.0F, 1.0F) == Catch::Approx(1.0F));
+    REQUIRE(mcts_terminal_value_scaled(state, 0U, 20.0F, 0.6F)
+            == Catch::Approx(0.6F + 0.4F * (0.5F + 0.5F * 3.0F / 20.0F)));
+    // Scale disabled -> legacy.
+    REQUIRE(mcts_terminal_value_scaled(state, 0U, 0.0F, 0.0F) == 1.0F);
+}
+
+TEST_CASE("v2 selfplay scaled Dirichlet alpha and pruned-policy sampling", "[v2][selfplay][exploration]") {
+    SelfPlayConfig config{};
+    config.dirichlet_alpha = 0.3F;
+    REQUIRE(selfplay_dirichlet_alpha(config, 5) == 0.3F);
+    config.dirichlet_alpha_total = 10.0F;
+    REQUIRE(selfplay_dirichlet_alpha(config, 5) == 1.0F);
+    REQUIRE(selfplay_dirichlet_alpha(config, 20) == Catch::Approx(0.5F));
+    REQUIRE(selfplay_dirichlet_alpha(config, 1000) == Catch::Approx(0.03F));
+
+    float policy[ACTION_SPACE_SIZE]{};
+    policy[A_PASS + 3] = 1.0F;
+    Xoshiro256pp rng = Xoshiro256pp::seeded(7U);
+    for (int i = 0; i < 16; ++i) {
+        REQUIRE(selfplay_sample_from_policy(policy, 1.0F, rng, A_PASS) == A_PASS + 3);
+    }
+    float empty[ACTION_SPACE_SIZE]{};
+    REQUIRE(selfplay_sample_from_policy(empty, 1.0F, rng, A_PASS + 1) == A_PASS + 1);
+}
+
+TEST_CASE("v2 MCTS FPU reduction values unvisited children below the parent", "[v2][mcts][fpu]") {
+    // Smoke: a search with FPU enabled stays well-formed and terminates.
+    GameState state = Game::new_game(Setup{}, 906U);
+    MctsConfig config{};
+    config.sims_per_move = 64U;
+    config.fpu_reduction = 0.2F;
+    config.max_tree_nodes = 1024U;
+    Mcts search(config);
+    const Action action = search.choose(state, current_player(state));
+    ActionMask legal{};
+    REQUIRE(Game::legal_actions(state, legal) > 0);
+    REQUIRE(legal.test(action));
+    REQUIRE(search.total_virtual_loss() == 0.0F);
+}

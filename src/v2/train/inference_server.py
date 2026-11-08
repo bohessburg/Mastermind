@@ -178,7 +178,7 @@ class _GenerationMetrics:
             self.batch_waits_s = []
 
     def snapshot(self, include_totals: bool = False) -> dict[str, float]:
-        waits_ms = np.asarray(self.batch_waits_s, dtype=np.float64)
+        waits_ms = np.asarray(self.batch_waits_s, dtype=np.float64) * 1000.0
         metrics = {
             "server_evals_per_sec": self.evals / self.inference_time if self.inference_time > 0.0 else 0.0,
             "server_mean_batch_size": self.evals / self.batches if self.batches > 0 else 0.0,
@@ -208,6 +208,7 @@ class _PerModelRequestQueues:
         target_rows: int,
         max_batch: int,
         coalesce_s: float,
+        active_window_s: float = 0.1,
     ) -> None:
         if worker_count <= 0:
             raise ValueError("coalescing worker_count must be positive")
@@ -219,6 +220,13 @@ class _PerModelRequestQueues:
         self.target_rows = min(int(target_rows), int(max_batch))
         self.max_batch = int(max_batch)
         self.coalesce_s = float(coalesce_s)
+        # A worker counts toward "all workers pending" only while it has
+        # submitted within this window. Workers that finished their quota stop
+        # submitting; counting them forever (the c24 behavior) disabled the
+        # trigger after the first worker finished, so every later batch waited
+        # out the full coalesce deadline.
+        self.active_window_s = float(active_window_s)
+        self._last_seen_s: dict[int, float] = {}
         self._requests: dict[int, deque[_Request]] = {}
         self._rows: dict[int, int] = {}
         self._worker_counts: dict[int, int] = {}
@@ -229,6 +237,27 @@ class _PerModelRequestQueues:
         self._requests.setdefault(request.model_id, deque()).append(request)
         self._rows[request.model_id] = self._rows.get(request.model_id, 0) + request.count
         self._worker_counts[request.worker_id] = self._worker_counts.get(request.worker_id, 0) + 1
+        previous = self._last_seen_s.get(request.worker_id)
+        submitted = float(request.submitted_at_s)
+        if previous is None or submitted > previous:
+            self._last_seen_s[request.worker_id] = submitted
+
+    def active_worker_count(self, now: float) -> int:
+        """Workers expected to submit soon (capped at the configured count).
+
+        A worker that has never submitted is assumed live (startup behavior is
+        unchanged). Only workers that submitted before and then went quiet for
+        longer than the window -- in practice, workers that finished their
+        quota -- stop holding the all-workers-pending trigger open.
+        """
+
+        horizon = float(now) - self.active_window_s
+        quiet = sum(
+            1
+            for worker_id, seen in self._last_seen_s.items()
+            if seen < horizon and worker_id not in self._worker_counts
+        )
+        return max(1, min(self.worker_count, self.worker_count - quiet))
 
     def rows_for(self, model_id: int) -> int:
         return self._rows.get(int(model_id), 0)
@@ -247,7 +276,7 @@ class _PerModelRequestQueues:
         """Select one fireable model without starving expired model queues."""
 
         now = float(now)
-        all_workers_pending = len(self._worker_counts) >= self.worker_count
+        all_workers_pending = len(self._worker_counts) >= self.active_worker_count(now)
         expired: list[_ReadyModel] = []
         candidates: list[_ReadyModel] = []
         for model_id in self._requests:
@@ -658,11 +687,28 @@ def _build_resident_model(
 
 def _server_device(name: str) -> torch.device:
     requested = name.lower()
-    if requested not in {"cpu", "cuda"}:
-        raise ValueError("server_device must be 'cpu' or 'cuda'")
-    if requested == "cuda" and not torch.cuda.is_available():
+    base, _, index = requested.partition(":")
+    if base not in {"cpu", "cuda"} or (index and (base != "cuda" or not index.isdigit())):
+        raise ValueError("server_device must be 'cpu', 'cuda', or 'cuda:<index>'")
+    if base == "cuda" and not torch.cuda.is_available():
         raise RuntimeError("server_device=cuda requested but unavailable")
+    if index and int(index) >= torch.cuda.device_count():
+        raise RuntimeError(f"server_device={requested} requested but only {torch.cuda.device_count()} GPUs exist")
     return torch.device(requested)
+
+
+def shard_server_device(config: TrainConfig, shard_index: int) -> str:
+    """Device string for one inference shard.
+
+    ``server_gpu_ids`` empty keeps the legacy single-device placement (every
+    shard on ``server_device``). Otherwise shards round-robin over the listed
+    CUDA devices -- c24 left 3 of 4 GPUs idle with both shards on GPU 0.
+    """
+
+    gpu_ids = list(getattr(config, "server_gpu_ids", []) or [])
+    if not gpu_ids or str(config.server_device).lower().split(":")[0] != "cuda":
+        return str(config.server_device)
+    return f"cuda:{int(gpu_ids[int(shard_index) % len(gpu_ids)])}"
 
 
 def _scatter_responses(
@@ -1167,9 +1213,14 @@ class _InferenceServerShard:
             if shard_count == 1
             else f"dominion-inference-server-{shard_index}"
         )
+        shard_config = config
+        shard_device = shard_server_device(config, shard_index)
+        if shard_device != str(config.server_device):
+            shard_config = copy.copy(config)
+            shard_config.server_device = shard_device
         self.process = context.Process(
             target=_server_main,
-            args=(config, self.endpoints, self.command_queue, self.status_queue, self.telemetry_queue),
+            args=(shard_config, self.endpoints, self.command_queue, self.status_queue, self.telemetry_queue),
             name=process_name,
         )
         self._closed = False

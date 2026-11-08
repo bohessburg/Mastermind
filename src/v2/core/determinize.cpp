@@ -93,4 +93,11 @@ void determinize(GameState& state, PlayerId perspective, std::uint64_t seed) noe
         }
         determinize_opponent(state.players[player], state.num_slots, rng);
     }
+
+    // Future reshuffles draw from state.rng.  Leaving it untouched would let
+    // every determinized search replay the TRUE future shuffle order (the
+    // copied state still carries the real game's generator).  Re-seed it from
+    // the determinization stream so each sample also has an independent,
+    // plausible future.
+    state.rng = Xoshiro256pp::seeded(rng.next() ^ 0xD6E8'FEB8'6659'FD93ULL);
 }

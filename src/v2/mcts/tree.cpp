@@ -1507,6 +1507,14 @@ float Mcts::root_value_for(Action action) const noexcept {
     return 0.0F;
 }
 
+float Mcts::root_mean_value() const noexcept {
+    if (node_count_ == 0U || nodes_[0].visits == 0U) {
+        return 0.0F;
+    }
+    const float value = nodes_[0].value_sum / static_cast<float>(nodes_[0].visits);
+    return std::clamp(value, -1.0F, 1.0F);
+}
+
 const GameState& Mcts::state_for(std::uint32_t state_index) const noexcept {
     assert(state_index < capacity_);
     return states_[state_index < capacity_ ? state_index : 0U];
@@ -1544,6 +1552,13 @@ bool Mcts::collect_external_leaf(MctsPendingLeaf& leaf) noexcept {
     if (node.expanded && node.first_child == MCTS_NULL) {
         node.terminal = true;
         backpropagate(path, depth, state);
+        return false;
+    }
+
+    if (!node.expanded && node.virtual_loss > 0.0F) {
+        // Another in-flight leaf already targets this node; evaluating it
+        // twice would waste a forward and double-count the expansion.
+        leaf.collided = true;
         return false;
     }
 
@@ -2038,11 +2053,19 @@ std::uint32_t Mcts::select_child(std::uint32_t node_index) const noexcept {
     // Fixed mode returns config_.c_puct exactly, retaining the established
     // score calculation. VisitScaled uses the parent's pre-selection count.
     const float c_puct = mcts_effective_c_puct(config_, node.visits);
+    // Node value_sum is from node.player's perspective, which is the
+    // perspective child_value_for_parent reports for this parent.
+    const float parent_fpu_value = config_.fpu_reduction >= 0.0F && node.visits > 0U
+        ? (node.value_sum / static_cast<float>(node.visits)) - config_.fpu_reduction
+        : 0.0F;
 
     for (std::uint32_t child_index = node.first_child; child_index != MCTS_NULL;
          child_index = nodes_[child_index].next_sibling) {
         const MctsNode& child = nodes_[child_index];
-        const float q = child_value_for_parent(node, child);
+        float q = child_value_for_parent(node, child);
+        if (child.visits == 0U && config_.fpu_reduction >= 0.0F) {
+            q = parent_fpu_value;
+        }
         const float denom = 1.0F + static_cast<float>(child.visits) + child.virtual_loss;
         const float u = c_puct * child.prior * exploration_base / denom;
         const float score_value = q + u - child.virtual_loss;
@@ -2115,7 +2138,32 @@ void Mcts::apply_virtual_loss(const std::uint32_t* path, std::uint8_t depth, flo
 }
 
 float Mcts::terminal_value_for(PlayerId player, const GameState& terminal) const noexcept {
+    if (config_.terminal_margin_scale > 0.0F) {
+        return mcts_terminal_value_scaled(
+            terminal,
+            player,
+            config_.terminal_margin_scale,
+            config_.terminal_margin_alpha);
+    }
     return mcts_terminal_value(terminal, player);
+}
+
+float mcts_terminal_value_scaled(
+    const GameState& state,
+    PlayerId player,
+    float margin_scale,
+    float margin_alpha) noexcept {
+    const float legacy = mcts_terminal_value(state, player);
+    if (legacy == 0.0F || margin_scale <= 0.0F || state.num_players != 2U) {
+        return legacy;
+    }
+    const PlayerId opponent = other_player(player);
+    float margin = std::abs(static_cast<float>(score(state, player)) - static_cast<float>(score(state, opponent)));
+    // A tiebreak decision is the narrowest possible result.
+    margin = std::max(margin, 1.0F);
+    const float graded = std::min(margin, margin_scale) / margin_scale;
+    const float alpha = std::clamp(margin_alpha, 0.0F, 1.0F);
+    return legacy * (alpha + (1.0F - alpha) * (0.5F + 0.5F * graded));
 }
 
 float Mcts::child_value_for_parent(const MctsNode& parent, const MctsNode& child) const noexcept {
@@ -2141,16 +2189,11 @@ float mcts_terminal_value(const GameState& state, PlayerId player) noexcept {
     if (state.num_players != 2U || player >= state.num_players) {
         return 0.0F;
     }
-    const PlayerId opponent = other_player(player);
-    const std::int16_t player_score = score(state, player);
-    const std::int16_t opponent_score = score(state, opponent);
-    if (player_score > opponent_score) {
-        return 1.0F;
+    const PlayerId winner = game_winner(state);
+    if (winner == NONE) {
+        return 0.0F;
     }
-    if (player_score < opponent_score) {
-        return -1.0F;
-    }
-    return 0.0F;
+    return winner == player ? 1.0F : -1.0F;
 }
 
 Action mcts_choose(const GameState& state, PlayerId perspective, const MctsConfig& config) noexcept {

@@ -145,6 +145,9 @@ bool advance_turn_machinery(GameState& state) noexcept {
     const PlayerId completed_player = current_player(state);
     cleanup_current_turn(state);
     ++state.turn_counter;
+    if (completed_player < state.num_players) {
+        ++state.turns_taken[completed_player];
+    }
 
     if (state.turn_counter >= MAX_TURNS) {
         state.truncated = 1U;

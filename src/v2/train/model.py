@@ -99,6 +99,9 @@ def build_model(model_config: Mapping[str, Any] | Any, obs_size: int, action_siz
             dropout=config.get("dropout", 0.0),
             obs_version=config.get("obs_version"),
             aux_margin_buckets=config.get("aux_margin_buckets"),
+            derived_features=bool(config.get("derived_features", False)),
+            final_norm=bool(config.get("final_norm", False)),
+            embedding_init_std=config.get("embedding_init_std"),
         )
     else:
         raise ValueError(f"unknown model.arch {arch!r}; expected 'mlp' or 'card_transformer'")

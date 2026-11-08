@@ -317,6 +317,12 @@ def load_human_tuples(
     if not np.all(legal[action_rows, actions.astype(np.intp, copy=False)]):
         raise ValueError("human tuple contains a demonstrated action that is not legal")
 
+    filtered["margin"] = _decisive_outcome_margins(
+        manifest,
+        filtered["margin"],
+        filtered["game_index"],
+        filtered["seat_index"],
+    )
     value = recompute_value_targets(
         filtered["margin"],
         scheme=value_scheme,
@@ -537,6 +543,64 @@ def _normalize_opponent_kinds(values: Iterable[str] | str | None) -> set[str] | 
             raise ValueError("opponent_kinds must contain non-empty strings")
         result.add(value.strip())
     return result
+
+
+def _decisive_outcome_margins(
+    manifest: dict[str, Any],
+    margins: np.ndarray,
+    game_index: np.ndarray,
+    seat_index: np.ndarray,
+) -> np.ndarray:
+    """Repair zero margins on rows whose game had a decided winner.
+
+    The converter writes ``margin=0`` for every row of a resigned game
+    (``margin_valid=false``) and the merge step drops the per-row
+    ``outcome_sign``, so ~23% of the c24 corpus trained the value head on a
+    tie target. Equal-VP finishes decided by the fewer-turns tiebreak have the
+    same problem. The per-game manifest outcome still carries the truth:
+    rows with a zero margin in a game whose ``outcome_signs`` are non-zero get
+    ``sign * max(|VP margin at the end|, 1)`` -- the real winner's sign with
+    the (possibly small) VP gap at resignation. Genuine shared ties and games
+    without outcome metadata are left untouched.
+    """
+
+    games = manifest.get("games")
+    if not isinstance(games, list) or margins.size == 0:
+        return margins
+    max_index = int(game_index.max()) if game_index.size else -1
+    seat_count = int(seat_index.max()) + 1 if seat_index.size else 0
+    if max_index < 0 or seat_count <= 0:
+        return margins
+    repaired_table = np.zeros((max_index + 1, seat_count), dtype=np.int32)
+    for raw_game in games:
+        if not isinstance(raw_game, dict):
+            continue
+        index = raw_game.get("index")
+        outcome = raw_game.get("outcome")
+        if not isinstance(index, int) or not 0 <= index <= max_index or not isinstance(outcome, dict):
+            continue
+        signs = outcome.get("outcome_signs")
+        game_margins = outcome.get("margins")
+        if not isinstance(signs, list):
+            continue
+        for seat in range(min(seat_count, len(signs))):
+            sign = int(signs[seat]) if isinstance(signs[seat], (int, float)) else 0
+            if sign == 0:
+                continue
+            magnitude = 1
+            if isinstance(game_margins, list) and seat < len(game_margins):
+                try:
+                    magnitude = max(abs(int(game_margins[seat])), 1)
+                except (TypeError, ValueError):
+                    magnitude = 1
+            repaired_table[index, seat] = (1 if sign > 0 else -1) * magnitude
+    candidates = repaired_table[game_index.astype(np.intp), seat_index.astype(np.intp)]
+    needs_repair = (margins == 0) & (candidates != 0)
+    if not bool(needs_repair.any()):
+        return margins
+    repaired = margins.astype(np.int16, copy=True)
+    repaired[needs_repair] = np.clip(candidates[needs_repair], -32768, 32767).astype(np.int16)
+    return repaired
 
 
 def _manifest_game_opponents(manifest: dict[str, Any]) -> dict[int, tuple[str, ...]]:

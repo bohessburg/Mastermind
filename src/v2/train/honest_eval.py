@@ -37,6 +37,11 @@ from src.v2.web.server.defs import kingdom_def_ids
 
 
 _UINT64_MASK = (1 << 64) - 1
+# One kingdom/shuffle seed for every milestone eval from 2026-11 on, so
+# results across generations AND campaigns are measured on the same boards.
+# (Pre-2026-11 evals used per-generation seeds -> different kingdom sets.)
+CANONICAL_EVAL_SEED = 20261108
+SEATINGS = ("paired", "blocked")
 _SCRIPTED_OPPONENTS = ("engine3", "engine2", "bigmoney", "thinner")
 
 
@@ -57,6 +62,14 @@ class HonestEvalConfig:
     seed: int
     torch_threads: int
     legacy_shim: bool
+    # "paired": games 2k and 2k+1 share one kingdom AND shuffle seed with A
+    # swapping seats -- seat and board effects cancel within each pair.
+    # "blocked": legacy layout (A seat 0 for the first half, seat 1 after,
+    # each game on its own kingdom).
+    seating: str = "paired"
+    # Global index of this run's first game. Sequential callers (SPRT) step
+    # it forward so successive batches keep playing NEW canonical boards.
+    first_index: int = 0
 
     @property
     def first_half(self) -> int:
@@ -139,13 +152,21 @@ def _is_legal(game: Any, action: int) -> bool:
 
 
 def _a_seat(config: HonestEvalConfig, index: int) -> int:
-    return 0 if index < config.first_half else 1
+    if config.seating == "paired":
+        return int(index) % 2
+    return 0 if index - int(config.first_index) < config.first_half else 1
+
+
+def _config_game_seed(config: HonestEvalConfig, index: int) -> int:
+    if config.seating == "paired":
+        return _game_seed(config.seed, int(index) // 2)
+    return _game_seed(config.seed, index)
 
 
 def _play_game(index: int, config: HonestEvalConfig) -> GameResult:
     """Play one entire game in a spawned worker, converting failures to errors."""
     started = time.perf_counter()
-    game_seed = _game_seed(config.seed, index)
+    game_seed = _config_game_seed(config, index)
     a_seat = _a_seat(config, index)
     turns = 0
     state: _WorkerState | None = None
@@ -256,6 +277,61 @@ def _record_counts(counts: dict[str, int], result: GameResult) -> None:
         counts["errors"] += 1
 
 
+def wilson_interval(successes: float, n: int, z: float = 1.959964) -> tuple[float, float]:
+    """95% Wilson score interval for a proportion (ties may count as 0.5)."""
+    if n <= 0:
+        return (0.0, 1.0)
+    p = float(successes) / float(n)
+    denom = 1.0 + z * z / n
+    centre = (p + z * z / (2.0 * n)) / denom
+    half = z * ((p * (1.0 - p) / n + z * z / (4.0 * n * n)) ** 0.5) / denom
+    return (max(0.0, centre - half), min(1.0, centre + half))
+
+
+def _elo(score: float) -> float:
+    score = min(max(score, 1.0e-4), 1.0 - 1.0e-4)
+    return -400.0 * float(np.log10(1.0 / score - 1.0))
+
+
+def score_statistics(results: list[GameResult], *, paired: bool) -> dict[str, Any]:
+    """Score (W=1, T=0.5) with Wilson CI, Elo, and the paired-design CI.
+
+    The paired CI treats each seat-swapped pair as one observation (mean of
+    its two game scores), which removes kingdom/seat variance shared by the
+    pair. Errors are excluded.
+    """
+    scored = {result.index: (1.0 if result.result == "W" else 0.5 if result.result == "T" else 0.0)
+              for result in results if result.result in ("W", "L", "T")}
+    n = len(scored)
+    total = float(sum(scored.values()))
+    score = total / n if n else float("nan")
+    low, high = wilson_interval(total, n)
+    stats: dict[str, Any] = {
+        "games_scored": n,
+        "score_pct": 100.0 * score if n else float("nan"),
+        "score_ci95_pct": [100.0 * low, 100.0 * high],
+        "elo_vs_b": _elo(score) if n else float("nan"),
+        "elo_ci95": [_elo(low), _elo(high)] if n else [float("nan"), float("nan")],
+    }
+    if paired:
+        pair_scores = [
+            0.5 * (scored[2 * k] + scored[2 * k + 1])
+            for k in range(max(scored, default=-1) // 2 + 1)
+            if 2 * k in scored and 2 * k + 1 in scored
+        ]
+        if len(pair_scores) >= 2:
+            arr = np.asarray(pair_scores, dtype=np.float64)
+            mean = float(arr.mean())
+            se = float(arr.std(ddof=1) / np.sqrt(arr.size))
+            stats["pairs"] = int(arr.size)
+            stats["paired_score_pct"] = 100.0 * mean
+            stats["paired_ci95_pct"] = [100.0 * (mean - 1.96 * se), 100.0 * (mean + 1.96 * se)]
+            # Fraction of pairs where both games went the same way: high
+            # values mean the board, not the seat, decided the result.
+            stats["pairs_split"] = int(np.sum(np.isclose(arr, 0.5)))
+    return stats
+
+
 def _win_pct(counts: dict[str, int]) -> float:
     decisive = counts["wins_a"] + counts["losses_a"]
     return 100.0 * counts["wins_a"] / decisive if decisive else 0.0
@@ -292,12 +368,18 @@ def _result_payload(config: HonestEvalConfig, results: list[GameResult], wall_ti
     return {
         "config": {
             **asdict(config),
-            "seat_blocked_first_half_games": config.first_half,
+            "seat_blocked_first_half_games": config.first_half if config.seating == "blocked" else None,
             "kingdom_sampling": "sorted(random.Random(game_seed).sample(kingdom_def_ids(), 10))",
+            "game_seed_rule": (
+                "seed + index // 2 (pair shares kingdom and shuffles)"
+                if config.seating == "paired"
+                else "seed + index"
+            ),
             "a_obs_versions": a_obs_versions,
             "b_obs_versions": b_obs_versions,
         },
         "overall": {**overall, "win_pct_a_excl_ties": _win_pct(overall)},
+        "statistics": score_statistics(results, paired=config.seating == "paired"),
         "per_seat_half": {
             key: {**counts, "win_pct_a_excl_ties": _win_pct(counts)}
             for key, counts in per_seat_half.items()
@@ -321,6 +403,18 @@ def _print_final_summary(payload: dict[str, Any], out_path: Path) -> None:
         f"errors {overall['errors']} win% excl ties {overall['win_pct_a_excl_ties']:.2f}",
         flush=True,
     )
+    stats = payload["statistics"]
+    line = (
+        f"score: {stats['score_pct']:.1f}% (ties=0.5) 95% CI "
+        f"[{stats['score_ci95_pct'][0]:.1f}, {stats['score_ci95_pct'][1]:.1f}] "
+        f"elo {stats['elo_vs_b']:+.0f} [{stats['elo_ci95'][0]:+.0f}, {stats['elo_ci95'][1]:+.0f}]"
+    )
+    if "paired_ci95_pct" in stats:
+        line += (
+            f" | paired CI [{stats['paired_ci95_pct'][0]:.1f}, {stats['paired_ci95_pct'][1]:.1f}]"
+            f" over {stats['pairs']} pairs ({stats['pairs_split']} split)"
+        )
+    print(line, flush=True)
     for half, counts in payload["per_seat_half"].items():
         print(
             f"{half}: W-L-T {counts['wins_a']}-{counts['losses_a']}-{counts['ties']} "
@@ -347,7 +441,10 @@ def run_honest_eval(config: HonestEvalConfig, out_path: str | Path) -> dict[str,
     results: list[GameResult] = []
     context = multiprocessing.get_context("spawn")
     worker_count = min(config.workers, config.games)
-    assignments = [list(range(worker, config.games, worker_count)) for worker in range(worker_count)]
+    first = int(config.first_index)
+    assignments = [
+        list(range(first + worker, first + config.games, worker_count)) for worker in range(worker_count)
+    ]
     workers: list[multiprocessing.Process] = []
     connections: dict[Connection, list[int]] = {}
     for indices in assignments:
@@ -382,11 +479,11 @@ def run_honest_eval(config: HonestEvalConfig, out_path: str | Path) -> dict[str,
         worker.join()
     # A hard worker crash should not turn the run into a process-level crash:
     # preserve the one-result-per-requested-game accounting contract instead.
-    for index in range(config.games):
+    for index in range(first, first + config.games):
         if index not in received_indices:
             result = GameResult(
                 index=index,
-                game_seed=_game_seed(config.seed, index),
+                game_seed=_config_game_seed(config, index),
                 a_seat=_a_seat(config, index),
                 turns=0,
                 result="E",
@@ -426,7 +523,18 @@ def _parse_args(argv: list[str] | None = None) -> tuple[HonestEvalConfig, Path]:
     )
     parser.add_argument("--workers", type=int, default=os.cpu_count() or 1)
     parser.add_argument("--device", default="cpu")
-    parser.add_argument("--seed", type=int, default=20260728)
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=CANONICAL_EVAL_SEED,
+        help="kingdom/shuffle seed; keep the canonical default so every eval uses the same boards",
+    )
+    parser.add_argument(
+        "--seating",
+        choices=SEATINGS,
+        default="paired",
+        help="paired (default): seat-swapped pairs on shared boards; blocked: legacy halves",
+    )
     parser.add_argument("--torch-threads", type=int, default=1)
     parser.add_argument(
         "--legacy-shim",
@@ -441,6 +549,8 @@ def _parse_args(argv: list[str] | None = None) -> tuple[HonestEvalConfig, Path]:
             parser.error(f"--{name.replace('_', '-')} must be positive")
     if args.seed < 0:
         parser.error("--seed must be non-negative")
+    if args.seating == "paired" and args.games % 2 != 0:
+        parser.error("--seating paired requires an even --games")
     if args.opponent is not None and (args.sims_b is not None or args.determinizations_b is not None):
         parser.error("--sims-b and --determinizations-b are only valid with --b")
     if args.sims_b is not None and args.sims_b <= 0:
@@ -465,6 +575,7 @@ def _parse_args(argv: list[str] | None = None) -> tuple[HonestEvalConfig, Path]:
             seed=int(args.seed),
             torch_threads=int(args.torch_threads),
             legacy_shim=bool(args.legacy_shim),
+            seating=str(args.seating),
         ),
         args.out,
     )

@@ -6,7 +6,13 @@
 #include <cstdint>
 #include <type_traits>
 
-constexpr int MAX_IN_PLAY = 24;
+// Combo turns in the supported base set can legitimately put more than 24
+// cards into play before Buy (long Village/Laboratory/Festival chains seen in
+// human captures).  64 covers any realistic base-set turn while keeping the
+// POD state compact (every MCTS node stores a full GameState).  Overflow is
+// handled defensively in Release builds: the game is truncated rather than
+// writing past the array.
+constexpr int MAX_IN_PLAY = 64;
 constexpr int MAX_TURN_QUEUE = 16;
 constexpr int MAX_TRIGGER_SUBS = 64;
 
@@ -173,6 +179,9 @@ struct GameState {
     std::uint8_t potion_coins = 0;
     TurnQueue turn_queue;
     std::uint16_t turn_counter = 0;
+    // Completed turns per seat; drives the official tiebreak (fewer turns
+    // played wins an equal-VP finish).
+    std::uint16_t turns_taken[MAX_PLAYERS]{};
     std::uint8_t truncated : 1 = 0;
 
     std::uint8_t effect_depth = 0;

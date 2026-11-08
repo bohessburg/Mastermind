@@ -58,6 +58,15 @@ ACTION_SPACE_SIZE = A_SPEND_BASE + SPEND_ACTION_COUNT
 # is the lower-edge pair [-20 + 2*i, -19 + 2*i], with the final +20 endpoint
 # retained in bucket 20 after clamping. Thus -20/-1/0/+1/+20 map to
 # 0/9/10/10/20 respectively.
+# Base-set victory-point table by native DefId (core/defs.h). Gardens is
+# handled separately (1 VP per 10 cards owned).
+DEF_ESTATE = 5
+DEF_DUCHY = 6
+DEF_PROVINCE = 7
+DEF_CURSE = 9
+DEF_GARDENS = 30
+DERIVED_FEATURE_SIZE = 14
+
 AUX_MARGIN_MIN = -20
 AUX_MARGIN_MAX = 20
 DEFAULT_AUX_MARGIN_BUCKETS = 21
@@ -144,6 +153,9 @@ class CardTokenNet(nn.Module):
         action_def_count: int = ACTION_DEF_COUNT,
         obs_version: int | None = None,
         aux_margin_buckets: int | None = None,
+        derived_features: bool = False,
+        final_norm: bool = False,
+        embedding_init_std: float | None = None,
     ):
         super().__init__()
         if int(obs_size) == OBS_SIZE_V2:
@@ -193,8 +205,25 @@ class CardTokenNet(nn.Module):
         )
 
         self.def_embedding = nn.Embedding(self.num_card_defs, self.d_model)
+        if embedding_init_std is not None:
+            # PyTorch's N(0, 1) default gives ~sqrt(d) row norms that swamp
+            # the projected count features at the token input.
+            nn.init.normal_(self.def_embedding.weight, std=float(embedding_init_std))
         self.card_projection = nn.Linear(self.card_feature_size, self.d_model)
         self.global_projection = nn.Linear(self.global_feature_size, self.d_model)
+        # Opt-in scalars the net otherwise has to reconstruct from log1p'd,
+        # zone-split counts: VP totals/difference, card totals (Gardens),
+        # own zone sizes, opponent deck/discard/hand sizes, empty piles.
+        # Absent modules keep legacy state_dicts byte-identical.
+        self.derived_features = bool(derived_features)
+        self.derived_projection = (
+            nn.Linear(DERIVED_FEATURE_SIZE, self.d_model) if self.derived_features else None
+        )
+        vp = torch.zeros(self.num_card_defs)
+        for def_id, points in ((DEF_ESTATE, 1.0), (DEF_DUCHY, 3.0), (DEF_PROVINCE, 6.0), (DEF_CURSE, -1.0)):
+            if def_id < self.num_card_defs:
+                vp[def_id] = points
+        self.register_buffer("_def_vp", vp, persistent=False)
 
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=self.d_model,
@@ -211,6 +240,9 @@ class CardTokenNet(nn.Module):
         self.transformer = nn.TransformerEncoder(
             encoder_layer,
             num_layers=int(n_layers),
+            # Pre-LN stacks need a final norm before the heads; legacy
+            # checkpoints omit it (heads read the raw residual stream).
+            norm=nn.LayerNorm(self.d_model) if final_norm else None,
             enable_nested_tensor=False,
         )
 
@@ -287,6 +319,53 @@ class CardTokenNet(nn.Module):
             :, OBS_V3_SELECT_SEMANTIC_OFFSET : OBS_V3_SELECT_SEMANTIC_OFFSET + SELECT_SEMANTIC_COUNT
         ]
         return torch.cat((features, trash_total, semantic), dim=-1)
+
+    def _derived_features(
+        self,
+        own: torch.Tensor,
+        opponents: torch.Tensor,
+        supply: torch.Tensor,
+        def_ids: torch.Tensor,
+        card_mask: torch.Tensor,
+    ) -> torch.Tensor:
+        """Exact public scalars computed from the observation (no encoder change).
+
+        ``own`` is [B, piles, 5 zones]; ``opponents`` the raw opponent blocks;
+        both are Slot-indexed and gathered by pile order like the tokens.
+        """
+
+        mask = card_mask.to(own.dtype)
+        safe_ids = def_ids.clamp(min=0, max=self.num_card_defs - 1)
+        pile_vp = self._def_vp[safe_ids] * mask  # [B, piles]
+        gardens = ((def_ids == DEF_GARDENS) & card_mask).to(own.dtype)
+
+        own_counts = own.clamp_min(0).sum(dim=-1) * mask  # per pile, all zones
+        opp_collection = opponents[:, 0, 75:139][:, :MAX_PILES].clamp_min(0) * mask
+        own_total = own_counts.sum(dim=-1)
+        opp_total = opp_collection.sum(dim=-1)
+        own_vp = (own_counts * pile_vp).sum(dim=-1) + (own_counts * gardens).sum(dim=-1) * torch.floor(own_total / 10.0)
+        opp_vp = (
+            (opp_collection * pile_vp).sum(dim=-1)
+            + (opp_collection * gardens).sum(dim=-1) * torch.floor(opp_total / 10.0)
+            + opponents[:, 0, 70]
+        )
+        zone_sizes = own.clamp_min(0).mul(mask.unsqueeze(-1)).sum(dim=1)  # [B, 5]
+        opp_sizes = opponents[:, 0, [2, 3, 5]].clamp_min(0)
+        remaining = supply[:, :, 0]
+        empty_piles = ((remaining <= 0) & card_mask).to(own.dtype).sum(dim=-1)
+        return torch.cat(
+            (
+                (own_vp / 20.0).unsqueeze(-1),
+                (opp_vp / 20.0).unsqueeze(-1),
+                ((own_vp - opp_vp) / 20.0).unsqueeze(-1),
+                torch.log1p(own_total).unsqueeze(-1),
+                torch.log1p(opp_total).unsqueeze(-1),
+                torch.log1p(zone_sizes),
+                torch.log1p(opp_sizes),
+                (empty_piles / 3.0).unsqueeze(-1),
+            ),
+            dim=-1,
+        )
 
     def _v3_decision_source_embedding(self, obs: torch.Tensor) -> torch.Tensor:
         """Embed the v3 decision source, with no-card represented by zero."""
@@ -366,6 +445,10 @@ class CardTokenNet(nn.Module):
         global_token = self.global_projection(global_features)
         if self.obs_version == 3:
             global_token = global_token + self._v3_decision_source_embedding(obs)
+        if self.derived_projection is not None:
+            global_token = global_token + self.derived_projection(
+                self._derived_features(own, opponents, supply, def_ids, card_mask)
+            )
         global_token = global_token.unsqueeze(1)
         return TokenizedCards(
             card_tokens=card_tokens,

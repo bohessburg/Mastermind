@@ -75,17 +75,8 @@ struct BotController {
 [[nodiscard]] PlayerId winner_for(
     const GameState& state,
     const std::int16_t (&scores)[MAX_PLAYERS]) noexcept {
-    PlayerId winner = 0;
-    bool tied = false;
-    for (PlayerId player = 1; player < state.num_players; ++player) {
-        if (scores[player] > scores[winner]) {
-            winner = player;
-            tied = false;
-        } else if (scores[player] == scores[winner]) {
-            tied = true;
-        }
-    }
-    return tied ? NONE : winner;
+    (void)scores;
+    return game_winner(state);
 }
 
 } // namespace

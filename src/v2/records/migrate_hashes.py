@@ -38,9 +38,8 @@ class MigrationReport:
 
 
 def _current_generation() -> int:
-    # State-hash and encoder generation currently coincide at the
-    # landscape-sentinel repair, so the engine's existing marker is canonical.
-    return int(dz.ENCODER_GENERATION)
+    # Diverged from ENCODER_GENERATION at gen 3 (GameState layout change only).
+    return int(getattr(dz, "STATE_HASH_GENERATION", dz.ENCODER_GENERATION))
 
 
 def _gen_field() -> str:
@@ -122,17 +121,16 @@ def _replay_hash(data: Mapping[str, Any]) -> tuple[str | None, str | None]:
         return None, f"replay setup failed: {error}"
 
 
-def _append_migration_fields(raw: bytes, state_hash: str) -> bytes:
+def _append_migration_fields(raw: bytes, state_hash: str, *, already_verified: bool = False) -> bytes:
     """Insert fields before the final JSON object brace, preserving all prior bytes."""
     end = len(raw)
     while end and raw[end - 1] in b" \t\r\n":
         end -= 1
     if end == 0 or raw[end - 1 : end] != b"}":
         raise ValueError("source JSON is not an object ending in '}'")
-    fields = {
-        _gen_field(): state_hash,
-        VERIFICATION_FIELD: _verification_record(),
-    }
+    fields: dict[str, Any] = {_gen_field(): state_hash}
+    if not already_verified:
+        fields[VERIFICATION_FIELD] = _verification_record()
     appended = json.dumps(fields, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
     # Strip both object braces because the source object already has members.
     return raw[: end - 1] + b"," + appended[1:-1] + raw[end - 1 :]
@@ -159,10 +157,9 @@ def _migrate_one(path: Path, *, dry_run: bool) -> tuple[bool, str | None]:
         if str(existing).lower() == actual_hash:
             return False, None
         return False, f"existing {generation_field} conflicts with replay: {existing}"
-    if VERIFICATION_FIELD in data:
-        return False, f"existing {VERIFICATION_FIELD} without {generation_field}"
-
-    migrated = _append_migration_fields(raw, actual_hash)
+    # A file migrated at an earlier generation already carries the
+    # verification record; later generations append only their hash field.
+    migrated = _append_migration_fields(raw, actual_hash, already_verified=VERIFICATION_FIELD in data)
     if not dry_run:
         path.write_bytes(migrated)
     return True, None

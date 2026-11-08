@@ -85,6 +85,7 @@ elif __package__ in (None, ""):
     from src.v2.train.replay import ReplayBuffer, load_replay_state, save_replay_state
     from src.v2.train.selfplay import (
         SelfPlayStats,
+        heldout_value_metrics,
         refresh_sil_priorities,
         run_routed_self_play_generation,
         run_self_play_generation,
@@ -139,7 +140,13 @@ else:
     from .observation import obs_size_for_config, obs_size_for_version, obs_version_for_checkpoint
     from .progress import TrainingProgress
     from .replay import ReplayBuffer, load_replay_state, save_replay_state
-    from .selfplay import SelfPlayStats, refresh_sil_priorities, run_routed_self_play_generation, run_self_play_generation
+    from .selfplay import (
+        SelfPlayStats,
+        heldout_value_metrics,
+        refresh_sil_priorities,
+        run_routed_self_play_generation,
+        run_self_play_generation,
+    )
     from .workers import ParallelSelfPlayPool
 
 
@@ -238,7 +245,10 @@ def hard_label_policy_loss(
     per_row = F.cross_entropy(masked_logits, actions.to(dtype=torch.long), reduction="none")
     if weights is None:
         return per_row.mean()
-    return (per_row * weights).mean()
+    # Weighted MEAN (normalize by the weight mass, not the row count) so the
+    # rating curve reshapes which rows teach the policy without also rescaling
+    # the policy term against value/anchor terms (c22 vs c22b confound).
+    return (per_row * weights).sum() / weights.sum().clamp_min(1.0e-8)
 
 
 def anchor_awr_weights(
@@ -473,6 +483,7 @@ def train_step(
     anchor_weight: float = 0.0,
     anchor_awr_beta: float = 0.0,
     aux_margin_weight: float = 0.0,
+    value_loss_weight: float = 1.0,
 ) -> dict[str, float]:
     # Keep the established self-play-only code path literally separate. In
     # particular, inactive anchor/aux objectives must not sample human data,
@@ -488,7 +499,7 @@ def train_step(
         logits, value = model(obs)
         policy_loss, entropy = masked_policy_loss(logits, legal_mask, policy_target)
         value_loss = F.mse_loss(value, value_target)
-        loss = policy_loss + value_loss
+        loss = policy_loss + float(value_loss_weight) * value_loss
 
         optimizer.zero_grad(set_to_none=True)
         loss.backward()
@@ -522,7 +533,11 @@ def train_step(
             device,
             anchor_awr_beta=anchor_awr_beta,
         )
-        loss = policy_loss + value_loss + float(anchor_weight) * (anchor_policy_loss + anchor_value_loss)
+        loss = (
+            policy_loss
+            + float(value_loss_weight) * value_loss
+            + float(anchor_weight) * (anchor_policy_loss + float(value_loss_weight) * anchor_value_loss)
+        )
 
         optimizer.zero_grad(set_to_none=True)
         loss.backward()
@@ -564,12 +579,12 @@ def train_step(
         aux_margin_loss = aux_margin_loss + float(anchor_weight) * anchor_aux_margin_loss
         loss = (
             policy_loss
-            + value_loss
+            + float(value_loss_weight) * value_loss
             + float(aux_margin_weight) * aux_margin_loss
-            + float(anchor_weight) * (anchor_policy_loss + anchor_value_loss)
+            + float(anchor_weight) * (anchor_policy_loss + float(value_loss_weight) * anchor_value_loss)
         )
     else:
-        loss = policy_loss + value_loss + float(aux_margin_weight) * aux_margin_loss
+        loss = policy_loss + float(value_loss_weight) * value_loss + float(aux_margin_weight) * aux_margin_loss
 
     optimizer.zero_grad(set_to_none=True)
     loss.backward()
@@ -920,6 +935,14 @@ METRICS_FIELDNAMES = [
         "unconstrained_buys_sentry",
         "unconstrained_buys_moneylender",
         "unconstrained_buys_village",
+        "truncated_games",
+        "selfplay_truncation_rate",
+        "heldout_value_mse",
+        "heldout_value_baseline_mse",
+        "heldout_value_r2",
+        "heldout_value_corr",
+        "heldout_policy_ce",
+        "heldout_rows",
 ]
 
 
@@ -989,6 +1012,7 @@ def _add_stats(total: SelfPlayStats, update: SelfPlayStats) -> None:
     total.deep_games += update.deep_games
     total.deep_positions += update.deep_positions
     total.cards_trashed += update.cards_trashed
+    total.truncated_games += update.truncated_games
     for index in range(7):
         total.opening_template_games[index] += update.opening_template_games[index]
         total.opening_template_vs_unconstrained_games[index] += (
@@ -1442,6 +1466,24 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
                 start_write=replay_write_before_selfplay,
                 inserted_positions=sp_stats.positions,
             )
+            # Honest generalization read: the pre-update model on rows it has
+            # never trained on (the logged value_loss is in-sample).
+            heldout_metrics = heldout_value_metrics(
+                replay,
+                model,
+                device,
+                start_write=replay_write_before_selfplay,
+                inserted_positions=sp_stats.positions,
+                seed=int(config.seed) ^ int(generation),
+            )
+            print(
+                f"gen {generation} heldout value mse={heldout_metrics['heldout_value_mse']:.4f} "
+                f"baseline={heldout_metrics['heldout_value_baseline_mse']:.4f} "
+                f"r2={heldout_metrics['heldout_value_r2']:.3f} corr={heldout_metrics['heldout_value_corr']:.3f} "
+                f"policy_ce={heldout_metrics['heldout_policy_ce']:.3f} "
+                f"truncated={sp_stats.truncated_games}/{sp_stats.games}",
+                flush=True,
+            )
             for opponent, (games, wins) in sp_stats.league_by_opponent.items():
                 # Use the most recently observed per-opponent rate for the
                 # following draw; unplayed opponents retain their last rate.
@@ -1513,6 +1555,7 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
                         anchor_weight=effective_anchor_weight if anchor_active else 0.0,
                         anchor_awr_beta=config.imitation.anchor_awr_beta,
                         aux_margin_weight=config.aux_margin_weight if aux_active else 0.0,
+                        value_loss_weight=float(config.optim.value_loss_weight),
                     )
                     for key in ("policy_loss", "value_loss", "entropy"):
                         accum[key] += step_losses[key]
@@ -1710,6 +1753,11 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
                 "unconstrained_buys_sentry": sp_stats.unconstrained_buy_counts[1],
                 "unconstrained_buys_moneylender": sp_stats.unconstrained_buy_counts[2],
                 "unconstrained_buys_village": sp_stats.unconstrained_buy_counts[3],
+                "truncated_games": sp_stats.truncated_games,
+                "selfplay_truncation_rate": (
+                    float(sp_stats.truncated_games) / float(sp_stats.games) if sp_stats.games > 0 else 0.0
+                ),
+                **heldout_metrics,
             }
             for template_id in range(7):
                 row[f"opening_template_games_t{template_id}"] = sp_stats.opening_template_games[template_id]

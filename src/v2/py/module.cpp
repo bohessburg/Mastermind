@@ -765,20 +765,8 @@ void append_subject_def(py::list& subjects, const GameState& state, std::int16_t
         return py::none();
     }
 
-    PlayerId winner = 0;
-    bool tied = false;
-    for (PlayerId player = 1; player < state.num_players; ++player) {
-        const std::int16_t player_score = score(state, player);
-        const std::int16_t winner_score = score(state, winner);
-        if (player_score > winner_score) {
-            winner = player;
-            tied = false;
-        } else if (player_score == winner_score) {
-            tied = true;
-        }
-    }
-
-    if (tied) {
+    const PlayerId winner = game_winner(state);
+    if (winner == NONE) {
         return py::none();
     }
     return py::int_(winner);
@@ -1991,7 +1979,17 @@ PYBIND11_MODULE(dominion_v2_py, module) {
             std::uint16_t temp_action_plies,
             std::uint16_t temp_effect_plies,
             float temp_final,
-            std::uint16_t selfplay_max_turns) {
+            std::uint16_t selfplay_max_turns,
+            bool adjudicate_truncation,
+            std::uint8_t leaves_in_flight,
+            std::uint8_t deep_leaves_in_flight,
+            float root_value_blend,
+            float fpu_reduction,
+            bool scaled_terminal_values,
+            float dirichlet_alpha_total,
+            bool sample_from_pruned_policy,
+            std::uint32_t adaptive_sims_per_legal,
+            std::uint32_t adaptive_sims_floor) {
             SelfPlayConfig config{};
             config.n_games = n_games;
             config.sims_per_move = sims_per_move;
@@ -2007,6 +2005,16 @@ PYBIND11_MODULE(dominion_v2_py, module) {
             config.kingdom_mode = kingdom_mode;
             config.max_recorded_moves = max_recorded_moves;
             config.selfplay_max_turns = selfplay_max_turns;
+            config.adjudicate_truncation = adjudicate_truncation;
+            config.leaves_in_flight = leaves_in_flight;
+            config.deep_leaves_in_flight = deep_leaves_in_flight;
+            config.root_value_blend = root_value_blend;
+            config.fpu_reduction = fpu_reduction;
+            config.scaled_terminal_values = scaled_terminal_values;
+            config.dirichlet_alpha_total = dirichlet_alpha_total;
+            config.sample_from_pruned_policy = sample_from_pruned_policy;
+            config.adaptive_sims_per_legal = adaptive_sims_per_legal;
+            config.adaptive_sims_floor = adaptive_sims_floor;
             config.max_tree_nodes = max_tree_nodes;
             config.scripted_bot = scripted_bot;
             config.scripted_nn_player = scripted_nn_player;
@@ -2091,7 +2099,17 @@ PYBIND11_MODULE(dominion_v2_py, module) {
             py::arg("temp_action_plies") = 10U,
             py::arg("temp_effect_plies") = 6U,
             py::arg("temp_final") = 0.0F,
-            py::arg("selfplay_max_turns") = 0U)
+            py::arg("selfplay_max_turns") = 0U,
+            py::arg("adjudicate_truncation") = true,
+            py::arg("leaves_in_flight") = 1U,
+            py::arg("deep_leaves_in_flight") = 0U,
+            py::arg("root_value_blend") = 0.0F,
+            py::arg("fpu_reduction") = -1.0F,
+            py::arg("scaled_terminal_values") = false,
+            py::arg("dirichlet_alpha_total") = 0.0F,
+            py::arg("sample_from_pruned_policy") = false,
+            py::arg("adaptive_sims_per_legal") = 0U,
+            py::arg("adaptive_sims_floor") = 64U)
         .def_readwrite("n_games", &SelfPlayConfig::n_games)
         .def_readwrite("sims_per_move", &SelfPlayConfig::sims_per_move)
         .def_readwrite("c_puct", &SelfPlayConfig::c_puct)
@@ -2130,6 +2148,16 @@ PYBIND11_MODULE(dominion_v2_py, module) {
         .def_property("kingdom_pool", &selfplay_kingdom_pool, &set_selfplay_kingdom_pool)
         .def_readwrite("max_recorded_moves", &SelfPlayConfig::max_recorded_moves)
         .def_readwrite("selfplay_max_turns", &SelfPlayConfig::selfplay_max_turns)
+        .def_readwrite("adjudicate_truncation", &SelfPlayConfig::adjudicate_truncation)
+        .def_readwrite("leaves_in_flight", &SelfPlayConfig::leaves_in_flight)
+        .def_readwrite("deep_leaves_in_flight", &SelfPlayConfig::deep_leaves_in_flight)
+        .def_readwrite("root_value_blend", &SelfPlayConfig::root_value_blend)
+        .def_readwrite("fpu_reduction", &SelfPlayConfig::fpu_reduction)
+        .def_readwrite("scaled_terminal_values", &SelfPlayConfig::scaled_terminal_values)
+        .def_readwrite("dirichlet_alpha_total", &SelfPlayConfig::dirichlet_alpha_total)
+        .def_readwrite("sample_from_pruned_policy", &SelfPlayConfig::sample_from_pruned_policy)
+        .def_readwrite("adaptive_sims_per_legal", &SelfPlayConfig::adaptive_sims_per_legal)
+        .def_readwrite("adaptive_sims_floor", &SelfPlayConfig::adaptive_sims_floor)
         .def_readwrite("max_tree_nodes", &SelfPlayConfig::max_tree_nodes)
         .def_readwrite("scaffold_sims", &SelfPlayConfig::scaffold_sims)
         .def_readwrite("scaffold_sims_opening", &SelfPlayConfig::scaffold_sims_opening)
@@ -2306,6 +2334,10 @@ PYBIND11_MODULE(dominion_v2_py, module) {
 
     module.attr("OBS_VERSION") = py::int_(OBS_VERSION);
     module.attr("ENCODER_GENERATION") = py::int_(ENCODER_GENERATION);
+    // Raw-byte GameState hash generation. Diverged from ENCODER_GENERATION at
+    // gen 3 (2026-11: MAX_IN_PLAY 24->64 and per-seat turns_taken) without any
+    // observation change.
+    module.attr("STATE_HASH_GENERATION") = py::int_(3);
     module.attr("OBS_SIZE") = py::int_(OBS_SIZE);
     module.attr("OBS_SIZE_V1") = py::int_(OBS_SIZE_V1);
     module.attr("OBS_SIZE_V2") = py::int_(OBS_SIZE_V2);
