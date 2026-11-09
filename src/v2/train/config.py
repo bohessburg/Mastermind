@@ -213,6 +213,10 @@ class EvalConfig:
     eval_kingdoms: str = "random"
     eval_n_games: int = 64
     eval_max_batch: int = 512
+    # Spawned processes the eval games are split across (each with its own
+    # runner + model copy). The runner's tree work is single-threaded, so one
+    # process left ~all cores idle (100 games took ~7.5 min in c25 g1).
+    eval_workers: int = 1
     # Keep periodic measurements clairvoyant by default; campaigns can opt
     # into the same per-decision root sampling as evaluate.py --honest.
     eval_honest: bool = False

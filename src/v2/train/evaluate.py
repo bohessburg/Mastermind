@@ -345,6 +345,56 @@ def evaluate_model(
     )
 
 
+def _evaluate_chunk(kwargs: dict[str, Any]) -> dict[str, Any]:
+    """Spawned-process entry: one runner over a slice of the games."""
+    torch.set_num_threads(1)
+    return evaluate_checkpoint(**kwargs).__dict__
+
+
+def _chunk_seed(seed: int, index: int) -> int:
+    return (int(seed) ^ ((index + 1) * 0x9E37_79B9)) & 0xFFFF_FFFF
+
+
+def evaluate_checkpoint_parallel(
+    checkpoint: str | Path,
+    *,
+    games: int,
+    workers: int,
+    seed: int = 0x4556414C,
+    **kwargs: Any,
+) -> EvalStats:
+    """Split ``games`` across ``workers`` spawned processes and sum results.
+
+    Each chunk gets a distinct derived seed, so results are statistically
+    equivalent to (not game-for-game identical with) the single-runner path.
+    """
+    import concurrent.futures
+    import multiprocessing
+
+    workers = max(1, min(int(workers), int(games)))
+    base, extra = divmod(int(games), workers)
+    sizes = [base + (1 if i < extra else 0) for i in range(workers)]
+    started = time.perf_counter()
+    jobs = []
+    for index, size in enumerate(sizes):
+        chunk = dict(kwargs)
+        chunk.update(checkpoint=str(checkpoint), games=size, seed=_chunk_seed(seed, index))
+        chunk["n_games"] = max(1, min(int(chunk.get("n_games", 64)), size))
+        jobs.append(chunk)
+    context = multiprocessing.get_context("spawn")
+    with concurrent.futures.ProcessPoolExecutor(max_workers=workers, mp_context=context) as pool:
+        parts = list(pool.map(_evaluate_chunk, jobs))
+    total = {key: sum(int(part[key]) for part in parts) for key in (
+        "games", "wins", "losses", "ties", "truncated", "end_province", "end_piles", "end_trunc")}
+    stats = EvalStats(opponent=str(parts[0]["opponent"]), wall_time=time.perf_counter() - started, **total)
+    print(
+        f"eval {stats.opponent}: {stats.games} games over {workers} workers, "
+        f"nn {stats.wins}W-{stats.losses}L-{stats.ties}T, {stats.wall_time:.0f}s",
+        flush=True,
+    )
+    return stats
+
+
 def evaluate_checkpoint(
     checkpoint: str | Path,
     *,

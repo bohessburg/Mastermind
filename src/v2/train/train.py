@@ -1665,11 +1665,18 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
                     server_evals_per_sec=server_metrics.get("server_evals_per_sec"),
                 )
                 if __package__ in (None, ""):
-                    from src.v2.train.evaluate import evaluate_checkpoint
+                    from src.v2.train.evaluate import evaluate_checkpoint, evaluate_checkpoint_parallel
                 else:
-                    from .evaluate import evaluate_checkpoint
+                    from .evaluate import evaluate_checkpoint, evaluate_checkpoint_parallel
 
-                stats = evaluate_checkpoint(
+                def _evaluate(checkpoint_path: Any, **eval_kwargs: Any) -> Any:
+                    if int(config.eval.eval_workers) > 1:
+                        return evaluate_checkpoint_parallel(
+                            checkpoint_path, workers=int(config.eval.eval_workers), **eval_kwargs
+                        )
+                    return evaluate_checkpoint(checkpoint_path, **eval_kwargs)
+
+                stats = _evaluate(
                     path,
                     opponent=config.eval.eval_opponent,
                     games=config.eval.eval_games,
@@ -1695,7 +1702,7 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
                     "eval_games_per_hour": stats.games_per_hour,
                 }
                 for sentinel_index, (opponent, games) in enumerate(eval_sentinels):
-                    sentinel_stats = evaluate_checkpoint(
+                    sentinel_stats = _evaluate(
                         path,
                         opponent=opponent,
                         games=games,
