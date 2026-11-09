@@ -42,14 +42,25 @@ RUN = Path("checkpoints/campaign26")
 BC = Path("checkpoints/c25_bc_long/bc_a.pt")
 
 
+def sharpen(target: torch.Tensor, mask: torch.Tensor, power: float) -> torch.Tensor:
+    """Raise visit targets to a power and renormalise (strips Dirichlet/exploration mass)."""
+    if power == 1.0:
+        return target
+    t = torch.where(mask, target.clamp_min(0.0), torch.zeros_like(target)).pow(power)
+    total = t.sum(dim=-1, keepdim=True)
+    return torch.where(total > 0, t / total.clamp_min(1e-12), target)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("arm", choices=("full", "sp_policy", "sp_value", "human", "vhead", "value_anchor"))
+    parser.add_argument("arm", choices=("full", "sp_policy", "sp_value", "human", "vhead", "value_anchor", "combo"))
     parser.add_argument("--steps", type=int, default=240)
     parser.add_argument("--out", default="bench/c26_ablation")
     parser.add_argument("--run", default=str(RUN))
     parser.add_argument("--lr", type=float, default=None)
     parser.add_argument("--tag", default=None)
+    parser.add_argument("--sharpen", type=float, default=1.0, help="policy target power (1=raw visits)")
+    parser.add_argument("--human-weight", type=float, default=1.0)
     args = parser.parse_args()
     device = torch.device("cuda")
     run = Path(args.run)
@@ -91,7 +102,20 @@ def main() -> None:
             )
         else:
             model.train()
-            if args.arm == "value_anchor":
+            if args.arm == "combo":
+                # Sharpened self-play policy + self-play value + human anchor.
+                batch = replay.sample(config.optim.batch_size)
+                obs = torch.as_tensor(batch.obs, dtype=torch.float32, device=device)
+                logits, value = model(obs)
+                mask = torch.as_tensor(batch.legal_mask, dtype=torch.bool, device=device)
+                target = sharpen(torch.as_tensor(batch.policy, dtype=torch.float32, device=device), mask, args.sharpen)
+                sp_pol, _ = masked_policy_loss(logits, mask, target)
+                sp_val = F.mse_loss(value, torch.as_tensor(batch.value, dtype=torch.float32, device=device))
+                pol, hval = human_imitation_losses(model, next(human), device)
+                loss = sp_pol + sp_val + args.human_weight * (pol + hval)
+                losses = {"policy_loss": float(sp_pol), "value_loss": float(sp_val),
+                          "anchor_policy_loss": float(pol), "anchor_value_loss": float(hval)}
+            elif args.arm == "value_anchor":
                 batch = replay.sample(config.optim.batch_size)
                 obs = torch.as_tensor(batch.obs, dtype=torch.float32, device=device)
                 _, value = model(obs)
@@ -113,7 +137,7 @@ def main() -> None:
                     losses = {"value_loss": float(loss)}
                 elif args.arm == "sp_policy":
                     mask = torch.as_tensor(batch.legal_mask, dtype=torch.bool, device=device)
-                    target = torch.as_tensor(batch.policy, dtype=torch.float32, device=device)
+                    target = sharpen(torch.as_tensor(batch.policy, dtype=torch.float32, device=device), mask, args.sharpen)
                     loss, _ = masked_policy_loss(logits, mask, target)
                     losses = {"policy_loss": float(loss)}
                 else:
@@ -133,7 +157,7 @@ def main() -> None:
     torch.save(checkpoint_payload(config, 0, model, optimizer), out / f"{tag}.pt")
     gate_started = time.time()
     stats = run_gate_match(model, best, config, 3, device)
-    result = {"arm": args.arm, "tag": tag, "run": str(run), "lr": optimizer.param_groups[0]["lr"], "steps": args.steps, "wins": stats.wins, "losses": stats.losses,
+    result = {"arm": args.arm, "tag": tag, "sharpen": args.sharpen, "human_weight": args.human_weight, "run": str(run), "lr": optimizer.param_groups[0]["lr"], "steps": args.steps, "wins": stats.wins, "losses": stats.losses,
               "ties": stats.ties, "win_pct": stats.win_pct, "gate_s": round(time.time() - gate_started),
               "gate_games": config.gate_games, "gate_sims": config.gate_sims}
     (out / f"{tag}.json").write_text(json.dumps(result, indent=2) + "\n")

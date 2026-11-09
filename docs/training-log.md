@@ -2500,3 +2500,84 @@ BC d01 arm a vs bc_a: 98-99-3 = 49.7% (tie). c/b duels: fixed
 c26_duel.py to build each side from its checkpoint config (crashed on
 the wider nets). New BC knob: --select-on policy (early-stop on val
 policy CE only; value half overfits first): arms a, c running.
+VALUE ARMS (c27v data, duels 200g @128, +-3.5):
+  vhead        vs bc_a 47.4 | vs own zero-value 51.8
+  value_anchor vs bc_a 32.1 | vs own zero-value 50.3
+  sp_value     vs bc_a 35.5 | vs own zero-value 43.7
+  BC d01 c 256x6 vs bc_a 52.3 | b 320x5 48.5 (both ~tie)
+=> 12K games of value data did not make search beat the prior, and
+whole-net value fine-tunes wrecked play. The NON-MONOTONE sims curve
+(value edge +8 @32, -3 @128, +1 @512) pointed at the search itself.
+
+*** BUG: MCTS LABELED NODES WITH THE TURN OWNER, NOT THE DECIDING PLAYER ***
+tree.cpp reset() set root.player = current_player(root) and
+next_player_for_child() used current_player(child) -- the turn-queue
+owner. At any opponent mid-turn decision (Militia discard, Bureaucrat
+reveal, Moat reaction) decision.player != turn owner, so:
+ - the leaf was ENCODED from the attacker's seat (wrong hand; the net's
+   prior for the defender's choice was garbage),
+ - selection maximized the ATTACKER's value (search picks the defender's
+   worst discard),
+ - at an NN-defender ROOT the most-visited move was the attacker-optimal
+   discard, and self-play RECORDED it as the policy target (obs encoded
+   correctly from decision_player) -> inverted training targets for
+   every defender decision in every campaign that used this tree code.
+Raw BC is unaffected (learned from humans) -- consistent with "search
+adds nothing over the prior" and "sp policy targets poison the policy".
+Likely related to the arena "fatal Militia bug" from the human-games
+analysis. FIX (6e6ef3f "mcts deciding-player fix"): player_to_move()
+(decision.player, fallback turn owner) at both sites. Regression tests
+[perspective] (root + post-Militia child) failed before, pass after;
+ctest 189/189 local, 186/186 box.
+A/B running: bc_a engine3 honest 400 sims 2x100 (same seeds) with the
+pre-fix bindings (/root/oldsearch worktree @51138e6) vs fixed, plus
+fixed-search bc vs zero-value @128/512.
+FIX A/B RESULT (bc_a, engine3 honest 400 sims, paired seeds 1001/2002):
+  OLD search (pre-fix bindings): 38-62 / 43-54-3 = 81/200 = 40.5%
+  FIXED search:                  44-56 / 50-48-2 = 94/200 = 47.0%
+  => +6.5 pts from the search fix alone, same net, same boards.
+  fixed bc vs own zero-value: 128 sims 49.5 | 512 sims 55.0 (pre-fix:
+  47.1 / 50.8) -- value-guided search now gains with depth.
+BC policy-selected (--select-on policy, dropout 0.1, patience 8):
+  a 192x4: step 18750, val policy 0.5387, val acc 79.58% (bc_a 78.55)
+  c 256x6: step 17750, val policy 0.5410, val acc 79.64%
+  duels vs bc_a (fixed search, 200g @128) running.
+C28 LAUNCHED (supervisor dominion-c28, configs/run_c28.json, 269d7cb):
+c26 settings on the fixed search, fresh from bc_a, fresh replay.
+BC policy-selected duels vs bc_a (fixed search, 200g @128): a 49.0 (tie),
+c 40.4 (LOSS) despite +1pt val accuracy. Policy-selection lets the value
+half overfit, and the fixed search now leans on value. bc_a stays init.
+C28 G1 (34 min): gate vs bc_a 46.4% REJECTED (c26 g1 on the buggy search:
+37.6%). R2 0.628, truncation 5.2%, 219K evals/s. Trainer SIGKILLed at
+the g1 boundary again (oom_kill 74->78) although eval_bg was still in
+its 240s delay -> the peak is the trainer's own: per-slot trees x 2048
+slots (+205 deep slots @32K nodes) apparently double-allocated across
+the generation switch. Fix: selfplay.n_games 16 (64 workers x 16 =
+1024 slots in flight, two waves per gen), n_games added to the resume
+carry-over (0c415b8). Resumed from gen_0001 (replay + candidate kept).
+C28 G2 (45 min incl. restart): gate 41.1% REJECTED, R2 0.697. g1-candidate
+engine3 (background eval, worked): 42-58 / 39-61 = 40.5%. Trainer
+OOM-killed at the g2 boundary AGAIN with n_games 16 (oom_kill 78->87;
+mid-gen 214-221G) -> the boundary peak is not slot memory. Profiling the
+g3 boundary (/root/memprof.log, 3s samples). Resume is clean (row +
+checkpoint written before the kill), so cost = restart + re-fired eval.
+Re-running the loss ablation on c28's CLEAN data (fixed search, g1+g2
+replay, 240 steps, gate 200g @128 vs bc_a): full / sp_policy / sp_value.
+
+### C28 clean-data loss ablation (fixed search, g1+g2 replay, 240 steps, gate 200g @128 vs bc_a)
+
+| arm | gate |
+|---|---|
+| full (c28 loss) | 38.1% (75-122-3) |
+| sp_policy only | 34.2% (67-129-4) |
+| sp_value only | 46.9% (91-103-6) |
+
+The search fix did NOT rescue the self-play policy targets: they still drive the damage (worse than on c26's buggy data).
+Symptom: policy entropy jumps from 0.51 (BC) to about 1.13 within 40 steps, so the targets are much flatter than the BC prior.
+Self-play runs 512 sims with Dirichlet 0.25 plus per-seat temperature, so the visit distributions carry exploration and noise mass, and the policy learns to spread out.
+With 128-sim gate search, a flatter prior wastes visits.
+
+Next: policy-target sharpening (target^p, renormalised over legal moves). Same snapshot and gate:
+- sp_policy p=2
+- sp_policy p=4
+- combo p=3: sharpened sp policy + sp value + human anchor, weight 1
