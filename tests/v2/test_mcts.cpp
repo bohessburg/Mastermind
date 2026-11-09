@@ -5,6 +5,7 @@
 #include "v2/core/game.h"
 #include "v2/core/score.h"
 #include "v2/core/setup.h"
+#include "v2/core/triggers.h"
 #include "v2/core/turns.h"
 #include "v2/drivers/bots.h"
 
@@ -1019,4 +1020,71 @@ TEST_CASE("v2 MCTS FPU reduction values unvisited children below the parent", "[
     REQUIRE(Game::legal_actions(state, legal) > 0);
     REQUIRE(legal.test(action));
     REQUIRE(search.total_virtual_loss() == 0.0F);
+}
+
+namespace {
+
+[[nodiscard]] GameState militia_attack_position() {
+    Setup setup{};
+    setup.kingdom_count = 1U;
+    setup.kingdom[0] = DEF_MILITIA;
+    GameState state = Game::new_game(setup, 0x4D49'4C49ULL);
+    for (PlayerId player = 0; player < state.num_players; ++player) {
+        clear_player_cards(state, player);
+    }
+    state.phase = static_cast<std::uint8_t>(Phase::Action);
+    state.actions = 1;
+    state.buys = 1;
+    state.coins = 0;
+    state.effect_depth = 0;
+    state.decision = PendingDecision{0, static_cast<std::uint8_t>(DecisionKind::PhaseAction), 0, 0, 0};
+    mark_trigger_table_dirty(state);
+    state.players[0].hand[slot_of(state, DEF_MILITIA)] = 1U;
+    state.players[1].hand[slot_of(state, DEF_GOLD)] = 2U;
+    state.players[1].hand[slot_of(state, DEF_COPPER)] = 1U;
+    state.players[1].hand[slot_of(state, DEF_ESTATE)] = 2U;
+    return state;
+}
+
+}  // namespace
+
+TEST_CASE("v2 MCTS labels an opponent's mid-turn decision with the deciding player", "[v2][mcts][perspective]") {
+    // c26 finding: nodes were labeled with the TURN owner, so at a Militia
+    // discard the search encoded the attacker's view and maximized the
+    // attacker's value -- the defender picked its own worst discards.
+    GameState state = militia_attack_position();
+    (void)Game::step(state, play_action(DEF_MILITIA));
+    REQUIRE(state.decision.player == 1U);
+    REQUIRE(current_player(state) == 0U);
+
+    MctsConfig config{};
+    config.sims_per_move = 32U;
+    config.determinizations = 1U;
+    config.max_tree_nodes = 2048U;
+    config.rollout_seed = 0x5EED'0001ULL;
+    Mcts search(config);
+    search.reset(state, 1U);
+    REQUIRE(search.node(0U).player == 1U);
+}
+
+TEST_CASE("v2 MCTS child after an attack is owned by the defender", "[v2][mcts][perspective]") {
+    GameState state = militia_attack_position();
+    MctsConfig config{};
+    config.sims_per_move = 64U;
+    config.determinizations = 1U;
+    config.max_tree_nodes = 4096U;
+    config.rollout_seed = 0x5EED'0002ULL;
+    Mcts search(config);
+    search.reset(state, 0U);
+    Xoshiro256pp rng = Xoshiro256pp::seeded(config.rollout_seed);
+    search.run_simulations(config.sims_per_move, rng);
+    REQUIRE(search.node(0U).player == 0U);
+    bool found = false;
+    for (std::uint32_t child = search.node(0U).first_child; child != MCTS_NULL; child = search.node(child).next_sibling) {
+        if (search.node(child).action_from_parent == play_action(DEF_MILITIA)) {
+            found = true;
+            REQUIRE(search.node(child).player == 1U);
+        }
+    }
+    REQUIRE(found);
 }

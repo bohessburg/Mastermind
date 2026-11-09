@@ -2408,3 +2408,95 @@ measurement. GPU at 45% => CPU side is now the limit; more workers
 (threads quota 184) is the next lever after gen 1.
 Supervisor dominion-c25 (resume.sh: init on first launch, resume
 latest after; orphan reap). Local auto-pull every 10 min.
+
+=== C25 RESULT + C26 (2026-11-09) ===
+C25 (BC init bc_a.pt, 88 workers, 1024 games/gen, 280 steps/gen): speed
+landed (gens 6-10 ~10 min each vs c24 3.4-5.8h) but strength SLID
+monotonically. engine3 (main+sentinel, 200g, +-3.5pt): g1 ~49 / g2 43.5 /
+g3 40 / g4 42 / g5 35 / g10 25%. Value overfit: train vloss 0.129->0.075
+while held-out R2 0.63->0.53. g1-g5 policy_loss 1e4-1e5 = the illegal
+PASS-target rows (fixed, aged out of replay by g6). Head-to-head SPRT
+BC vs g10 was 8-2 BC after 10 games when cut (too slow: 26 g/hr honest).
+c25 stopped at g11.
+Infra bugs found/fixed along the way: 24-process eval split gave no
+speedup (eval is bounded by the serial per-game search chain) ->
+eval_async background eval (eval_bg.py, main+sentinel concurrent);
+pkill missed the SPRT parent, which kept spawning 24 GPU eval workers
+and halved c26 throughput until found; global 32k-node trees OOMed
+(~40MB/game x 5632) -> deep_max_tree_nodes (deep slots only); cgroup
+OOM-killer fired 74x: workers are 2.4-2.9GB each, trainer gen-boundary
+peak + eval_bg CUDA load got the TRAINER SIGKILLed after g1 and g3
+(supervisor resumed, no loss) -> 64 workers (same 2048 in flight) +
+eval_bg 240s start delay + fork (resume.sh reaps multiprocessing.spawn).
+C26 (configs/run_c26.json): 2048 games, 80 steps (~4x reuse), anchor
+0.5 batch 512, value_loss_weight 0.25, deep slice 10% @4096 with
+deep_max_tree_nodes 32768, gate 200g @128 sims >=55%, no forced accepts.
+From g3 imitation.anchor_value_weight 2.0 (human value term 1.0 vs
+self-play 0.25; previously value_loss_weight also scaled the human
+term down to 0.125).
+  gate vs BC: g1 37.6 / g2 44.9 / g3 29.6% -- ALL REJECTED, so self-play
+  stayed on BC and each candidate = BC fine-tuned on BC's own search.
+  held-out R2 0.62 / 0.71 / 0.75 (rising while play gets worse).
+  g3 engine3 (partial 75+75 games): 16-59 and 22-52-1, ~25%.
+  ~37 min/gen, ~250k server evals/s, truncation ~6%, 12.3 trashed/game.
+Conclusion: fine-tuning BC on its own self-play targets makes it worse
+within one generation. Ablation (scripts/c26_ablation.py) launched to
+find which loss term does it.
+
+=== C26 LOSS ABLATION (2026-11-09, scripts/c26_ablation.py) ===
+c26 stopped after g3 (gen 4 partial). Each arm: BC weights + fresh AdamW,
+240 steps (= 3 gens x 80) on c26's saved replay (1M rows of BC self-play,
+clairvoyant), then the standard gate vs BC (200g seat-swapped @128, same
+boards for every arm). +-3.5pt.
+  full (c26 g3 loss: sp policy+0.25 value+aux+anchor 0.5x(pol+2.0 val)) 35.7%
+  sp_policy (self-play policy CE only)                               42.1%
+  sp_value  (self-play value MSE only)                               47.4%
+  human     (human policy+value only, drift control)                 47.7%
+=> The self-play POLICY targets are the poison (value and human-only
+fine-tuning are flat). The full loss is worse than any single term.
+Context: c23 (per_turn determinized) and c24 (clairvoyant) both slid
+below their BC inits too, and bc_a (~49% engine3) already matches the
+best nets the project has ever produced (c15 g45 / c19 g40 ~47-48).
+NEXT (running in parallel, same box):
+ (1) BC vs BC-zero-value duels @32/128/512 sims (scripts/c26_duel.py):
+     does value-guided search beat the raw policy prior at all? If not,
+     MCTS policy targets cannot improve the policy.
+ (2) c26h: 1 gen of BC self-play with honest per_turn determinization ->
+     sp_policy arm on that data (clairvoyance test).
+ (3) BC variants (dropout 0.1, patience 5; arms a 192x4, c 256x6,
+     b 320x5) -> duel vs bc_a.
+RESULT (1) VALUE-GUIDED SEARCH vs ZERO-VALUE SEARCH (bc_a both sides; B
+has its value output forced to 0, so its search follows the prior plus
+true terminal values / FPU; 200g gate conditions):
+  32 sims 58.1% | 128 sims 47.1% | 512 sims 50.8%   (+-3.5)
+=> At 128-512 sims the value head adds NOTHING over the policy prior.
+MCTS policy targets are then prior + value-head noise; distilling them
+degrades the policy (= the sp_policy ablation, = every RL campaign's
+slide). The bottleneck is the value head's ability to rank sibling
+positions, not RL plumbing or clairvoyance. (2) c26h honest-data test
+was cut at ~1.2K games: answered by (1).
+NEW PLAN: fix the value head with volume (AlphaGo SL-value recipe).
+c27v (configs/run_c27v.json): BC plays itself at 32 sims (the one
+budget where its search beat the prior), train_steps 0 (player stays
+BC), 3x4096 games into a 3M-row replay, max_tree_nodes 1024 (8192-node
+trees cost ~70MB per slot: 64-slot workers were 4.7GB). Then
+scripts/c26_ablation.py arms on it: vhead (only value_head.* trains;
+policy frozen, so any gate gain is pure search-value quality) and
+value_anchor (sp value + human policy + human value, all params),
+gated vs BC and re-run through the zero-value test.
+BC VARIANTS (dropout 0.1, patience 5, else the bc_a recipe):
+  a 192x4: best val 0.9066 (bc_a 0.9163), acc 78.60% (bc_a 78.55%)
+  c 256x6 / b 320x5: running (c at 0.9046)
+  each gets a gate-condition duel vs bc_a when done.
+c27v DATA: 12,288 BC games @32 sims in ~29 min (27K games/hr; 3M rows,
+BC held-out R2 on them 0.571). Value arms (1500 steps, from BC):
+  vhead (value_head.* only, lr 2e-4): sp value mse 0.2135 -> 0.180
+  value_anchor (all params, lr 1e-4): 0.2135 -> 0.173 (anchor pol 0.58->0.52)
+  sp_value (all params, value only, lr 1e-4): 0.2135 -> 0.125
+  (in-script gates played 0 games: c27v config has gate_games 0) ->
+  duels via c26_duel.py: each vs bc_a, and each vs its own zero-value
+  copy (does the new value make search beat the prior?).
+BC d01 arm a vs bc_a: 98-99-3 = 49.7% (tie). c/b duels: fixed
+c26_duel.py to build each side from its checkpoint config (crashed on
+the wider nets). New BC knob: --select-on policy (early-stop on val
+policy CE only; value half overfits first): arms a, c running.

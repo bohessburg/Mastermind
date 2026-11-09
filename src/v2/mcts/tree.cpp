@@ -1290,7 +1290,11 @@ void Mcts::reset(const GameState& root, PlayerId perspective) noexcept {
     states_[0] = root;
     MctsNode& root_node = nodes_[0];
     root_node.state_index = 0U;
-    root_node.player = terminal_state(root) ? perspective : current_player(root);
+    // The DECIDING player (decision.player), not the turn owner: at an
+    // opponent's mid-turn decision (Militia discard, Moat reveal,
+    // Bureaucrat) the turn owner labeling encoded the wrong seat and
+    // maximized the attacker's value (c26 finding).
+    root_node.player = terminal_state(root) ? perspective : player_to_move(root);
     root_node.terminal = terminal_state(root);
 }
 
@@ -2189,7 +2193,7 @@ PlayerId Mcts::next_player_for_child(const GameState& child_state, PlayerId pare
     if (terminal_state(child_state)) {
         return other_player(parent_player);
     }
-    const PlayerId player = current_player(child_state);
+    const PlayerId player = player_to_move(child_state);
     return player < child_state.num_players ? player : root_perspective_;
 }
 

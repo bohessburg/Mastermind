@@ -42,6 +42,7 @@ REPORT_PATH = Path("bench/c21_bc_ablation.json")
 ARMS = {
     "a": {"d_model": 192, "n_layers": 4, "n_heads": 6},
     "b": {"d_model": 320, "n_layers": 5, "n_heads": 8},
+    "c": {"d_model": 256, "n_layers": 6, "n_heads": 8},
 }
 SMOKE_EVAL_ROWS = 2_048
 
@@ -91,6 +92,10 @@ def _prepare_config(args: argparse.Namespace, arm: dict[str, int]):
     config.model.d_model = arm["d_model"]
     config.model.n_layers = arm["n_layers"]
     config.model.n_heads = arm["n_heads"]
+    if args.dropout is not None:
+        config.model.dropout = float(args.dropout)
+    if args.weight_decay is not None:
+        config.optim.weight_decay = float(args.weight_decay)
     # The draft already carries these settings. Keep the assertions local so a
     # future draft change fails loudly instead of silently changing this ablation.
     if config.model.arch != "card_transformer" or config.model.obs_version != 3 or config.selfplay.obs_version != 3:
@@ -164,15 +169,19 @@ def _run_arm(
             continue
 
         val_metrics = evaluate_human(model, val_arrays, val_indices, eval_batch_size, device)
-        improved = val_metrics.total < best_val_loss
+        # --select-on policy: the value half overfits first, so selecting on
+        # the total stops while the policy is still improving.
+        score = val_metrics.policy if args.select_on == "policy" else val_metrics.total
+        improved = score < best_val_loss
         if improved:
-            best_val_loss = val_metrics.total
+            best_val_loss = score
             best_state = _cpu_state_dict(model)
             stale_evaluations = 0
         else:
             stale_evaluations += 1
         print(
             f"c21 BC eval arm={label} step={steps_run}/{total_steps} val_loss={val_metrics.total:.6f} "
+            f"val_policy={val_metrics.policy:.5f} val_value={val_metrics.value:.5f} "
             f"best_val={best_val_loss:.6f} stale={stale_evaluations}",
             flush=True,
         )
@@ -239,6 +248,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output-dir", type=Path, default=OUTPUT_DIR)
     parser.add_argument("--report", type=Path, default=REPORT_PATH)
     parser.add_argument("--model-config", type=Path, help="copy the model section from this run config")
+    parser.add_argument("--dropout", type=float, default=None)
+    parser.add_argument("--select-on", choices=("total", "policy"), default="total")
+    parser.add_argument("--weight-decay", type=float, default=None)
     parser.add_argument("--arms", default=",".join(ARMS), help="comma-separated arm labels to run")
     return parser
 
