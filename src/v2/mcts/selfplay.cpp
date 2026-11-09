@@ -1130,7 +1130,13 @@ SelfPlayRunner::SelfPlayRunner(const SelfPlayConfig& config)
             game.slot.scripted_bot = config_.scripted_bot;
             game.slot.scripted_nn_player = config_.scripted_nn_player;
         }
-        game.mcts = Mcts(mcts_config_);
+        if (game.slot.sims_override != 0U && config_.deep_max_tree_nodes != 0U) {
+            MctsConfig deep_config = mcts_config_;
+            deep_config.max_tree_nodes = config_.deep_max_tree_nodes;
+            game.mcts = Mcts(deep_config);
+        } else {
+            game.mcts = Mcts(mcts_config_);
+        }
         game.mcts.set_sims_per_move(
             game.slot.sims_override == 0U ? config_.sims_per_move : game.slot.sims_override);
         game.observations.reserve(static_cast<std::size_t>(config_.max_recorded_moves) * obs_size_);

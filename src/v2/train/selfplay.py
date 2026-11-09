@@ -431,6 +431,7 @@ def make_runner_config(
         deep_leaves_in_flight=int(config.deep_leaves_in_flight),
         tail_games_threshold=int(config.tail_games_threshold),
         leaves_min_sims_per_leaf=int(config.leaves_min_sims_per_leaf),
+        deep_max_tree_nodes=int(config.deep_max_tree_nodes),
         tail_leaves_in_flight=int(config.tail_leaves_in_flight),
         root_value_blend=float(config.root_value_blend),
         fpu_reduction=float(config.fpu_reduction),

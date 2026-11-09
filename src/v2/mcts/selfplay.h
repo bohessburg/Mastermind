@@ -127,6 +127,10 @@ struct SelfPlayConfig {
     // visits. 0 disables. Applied before the tail boost.
     std::uint16_t leaves_min_sims_per_leaf = 0;
     std::uint8_t tail_leaves_in_flight = 0;
+    // Tree node capacity for deep-slice slots (sims_override > 0); 0 = use
+    // max_tree_nodes. Nodes cost ~40 KB per 32 nodes per game, so only the
+    // few deep slots should get the large pool.
+    std::uint32_t deep_max_tree_nodes = 0;
     std::uint64_t seed = 0x545241494EULL;
     ObsVersion obs_version = ObsVersion::V1;
     SelfPlayKingdomMode kingdom_mode = SelfPlayKingdomMode::Random;

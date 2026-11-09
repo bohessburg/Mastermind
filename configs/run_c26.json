@@ -1,5 +1,5 @@
 {
-  "_comment": "Campaign 26 (2026-11-09). c25 settings + speed fixes, retuned after c25 slid 49%->25% vs engine3 (g1->g10) with value overfit (train vl 0.13->0.075, held-out R2 0.63->0.53): train steps 280->80 (~4x lifetime reuse vs ~14x), anchor 0.2->0.5 with batch 128->512, value_loss_weight 0.5->0.25, candidate gating (200 seat-swapped games @128 sims, accept >=55%, no forced accepts). Fresh start from c25 BC init. Revised before g1: 2048 games/gen, deep slice 5%->20% @4096 sims, max_tree_nodes 8192->32768 (deep searches filled 8192 nodes at ~1000 sims, wasting ~3/4 of deep evals).",
+  "_comment": "Campaign 26 (2026-11-09). c25 settings + speed fixes, retuned after c25 slid 49%->25% vs engine3 (g1->g10) with value overfit (train vl 0.13->0.075, held-out R2 0.63->0.53): train steps 280->80 (~4x lifetime reuse vs ~14x), anchor 0.2->0.5 with batch 128->512, value_loss_weight 0.5->0.25, candidate gating (200 seat-swapped games @128 sims, accept >=55%, no forced accepts). Fresh start from c25 BC init. Revised before g1: 2048 games/gen, deep slice 5%->20% @4096 sims, deep_max_tree_nodes 32768 (deep slots only; global 32768 OOMed: ~40 MB/game x 5632 games) (deep searches filled 8192 nodes at ~1000 sims, wasting ~3/4 of deep evals).",
   "seed": 20261108,
   "generations": 100,
   "init_weights": "",
@@ -75,7 +75,7 @@
     "temp_effect_plies": 6,
     "kingdom_mode": "random",
     "max_recorded_moves": 512,
-    "max_tree_nodes": 32768,
+    "max_tree_nodes": 8192,
     "auto_play_treasures": true,
     "prune_treasure_plays": true,
     "value_target": "margin",
@@ -97,7 +97,8 @@
     "dirichlet_alpha_total": 10.0,
     "sample_from_pruned_policy": true,
     "adaptive_sims_per_legal": 64,
-    "adaptive_sims_floor": 64
+    "adaptive_sims_floor": 64,
+    "deep_max_tree_nodes": 32768
   },
   "replay": {
     "capacity": 1000000,
