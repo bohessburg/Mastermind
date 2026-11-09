@@ -35,6 +35,11 @@ def main(job_path: str) -> None:
     job = json.loads(Path(job_path).read_text())
     out = Path(job["evals_csv"])
     started = time.time()
+    # Launch lands on the trainer's gen-boundary memory peak; loading two
+    # CUDA eval processes then got the TRAINER OOM-killed (c26 g1, g3).
+    delay = float(job.get("delay_s", 240))
+    print(f"eval_bg gen {job['generation']}: waiting {delay:.0f}s for the boundary peak", flush=True)
+    time.sleep(delay)
     print(f"eval_bg gen {job['generation']}: {len(job['runs'])} runs started", flush=True)
     # fork, not spawn: resume.sh reaps "multiprocessing.spawn" orphans on
     # every restart, which killed spawn-started eval workers. The parent
