@@ -1067,6 +1067,40 @@ def _run_segmented_single_pipeline(
     return total
 
 
+def _launch_background_eval(
+    config: TrainConfig, checkpoint: Path, generation: int, device_type: str, sentinels: list
+) -> None:
+    """Detach eval_bg for this generation; rows land in evals.csv beside metrics."""
+    import subprocess
+
+    metrics_dir = Path(config.metrics_csv).parent
+    common = dict(
+        sims=config.eval.eval_sims,
+        kingdoms=config.eval.eval_kingdoms,
+        device_name=device_type,
+        n_games=config.eval.eval_n_games,
+        max_batch=config.eval.eval_max_batch,
+        honest=config.eval.eval_honest,
+    )
+    base_seed = config.seed ^ (generation * 0x4556)
+    runs = [{"kind": "main", "kwargs": dict(common, checkpoint=str(checkpoint),
+             opponent=config.eval.eval_opponent, games=config.eval.eval_games, seed=base_seed)}]
+    for index, (opponent, games) in enumerate(sentinels):
+        runs.append({"kind": f"sentinel{index}", "kwargs": dict(
+            common, checkpoint=str(checkpoint), opponent=opponent, games=games,
+            seed=base_seed ^ ((index + 1) * 0x10001))})
+    job = metrics_dir / f"eval_job_{generation:04d}.json"
+    job.write_text(json.dumps({"generation": generation,
+                               "evals_csv": str(metrics_dir / "evals.csv"), "runs": runs}))
+    log = (metrics_dir / f"eval_bg_{generation:04d}.log").open("a")
+    subprocess.Popen(
+        [sys.executable, "-m", "src.v2.train.eval_bg", str(job)],
+        stdout=log, stderr=subprocess.STDOUT, start_new_session=True,
+    )
+    print(f"gen {generation} eval launched in background ({len(runs)} runs) -> {job.parent / 'evals.csv'}",
+          flush=True)
+
+
 def validated_eval_sentinels(raw_sentinels: object) -> list[tuple[str, int]]:
     """Validate the compact eval-ladder sentinel configuration."""
     if not isinstance(raw_sentinels, list):
@@ -1173,6 +1207,7 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
         # config otherwise wins for selfplay/eval semantics.
         config.server_torch_threads = requested.server_torch_threads
         config.eval.eval_workers = requested.eval.eval_workers
+        config.eval.eval_async = requested.eval.eval_async
         config.selfplay.tail_games_threshold = requested.selfplay.tail_games_threshold
         config.selfplay.tail_leaves_in_flight = requested.selfplay.tail_leaves_in_flight
         config.selfplay.leaves_in_flight = requested.selfplay.leaves_in_flight
@@ -1686,6 +1721,10 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
                         )
                     return evaluate_checkpoint(checkpoint_path, **eval_kwargs)
 
+            if should_eval and config.eval.eval_async:
+                _launch_background_eval(config, path, generation, device.type, eval_sentinels)
+                should_eval = False
+            if should_eval:
                 stats = _evaluate(
                     path,
                     opponent=config.eval.eval_opponent,

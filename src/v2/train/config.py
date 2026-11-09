@@ -216,9 +216,13 @@ class EvalConfig:
     eval_n_games: int = 64
     eval_max_batch: int = 512
     # Spawned processes the eval games are split across (each with its own
-    # runner + model copy). The runner's tree work is single-threaded, so one
-    # process left ~all cores idle (100 games took ~7.5 min in c25 g1).
+    # runner + model copy). Measured in c25: no wall-time gain, since eval is
+    # bounded by the serial per-game search chain, not throughput.
     eval_workers: int = 1
+    # Run the main eval + sentinels concurrently in a detached background
+    # process (results -> evals.csv next to metrics.csv), overlapping with
+    # the next generations' selfplay instead of stalling the loop.
+    eval_async: bool = False
     # Keep periodic measurements clairvoyant by default; campaigns can opt
     # into the same per-decision root sampling as evaluate.py --honest.
     eval_honest: bool = False
