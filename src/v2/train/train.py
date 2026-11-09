@@ -1168,6 +1168,13 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
         config.kingdom_curriculum = requested.kingdom_curriculum
         config.gate_warmup_generations = requested.gate_warmup_generations
         config.gate_force_accept_every = requested.gate_force_accept_every
+        # Throughput-only knobs (no effect on what is learned) follow the
+        # requested config so a speed fix lands on resume; the checkpoint
+        # config otherwise wins for selfplay/eval semantics.
+        config.server_torch_threads = requested.server_torch_threads
+        config.eval.eval_workers = requested.eval.eval_workers
+        config.selfplay.tail_games_threshold = requested.selfplay.tail_games_threshold
+        config.selfplay.tail_leaves_in_flight = requested.selfplay.tail_leaves_in_flight
         validate_aux_margin_config(config)
         validate_model_config(config)
         validate_imitation_config(config.imitation)
