@@ -1,5 +1,5 @@
 {
-  "_comment": "Campaign 28 (2026-11-09). c26 settings on the FIXED search (6e6ef3f: MCTS nodes labeled with the deciding player, not the turn owner -- defender decisions were encoded from the attacker's seat, maximized the attacker's value, and recorded inverted policy targets). Fresh from bc_a, fresh replay (all earlier self-play data carries inverted defender targets). anchor_value_weight 1.0 (c26 g3's 2.0 result is confounded by the bug). 64 workers.",
+  "_comment": "Campaign 28 (2026-11-09). c26 settings on the FIXED search (6e6ef3f: MCTS nodes labeled with the deciding player, not the turn owner -- defender decisions were encoded from the attacker's seat, maximized the attacker's value, and recorded inverted policy targets). Fresh from bc_a, fresh replay (all earlier self-play data carries inverted defender targets). anchor_value_weight 1.0 (c26 g3's 2.0 result is confounded by the bug). 64 workers. From g2: selfplay.n_games 16 (1024 slots in flight; 2048 slots OOM-killed the trainer at the g1 boundary).",
   "seed": 20261108,
   "generations": 100,
   "init_weights": "",
@@ -58,7 +58,7 @@
     4096
   ],
   "selfplay": {
-    "n_games": 64,
+    "n_games": 16,
     "sims_per_move": 512,
     "games_per_generation": 2048,
     "max_batch": 4096,

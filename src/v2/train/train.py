@@ -1212,6 +1212,8 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
         config.eval.eval_workers = requested.eval.eval_workers
         config.eval.eval_async = requested.eval.eval_async
         config.imitation.anchor_value_weight = requested.imitation.anchor_value_weight
+        # Slots per worker drive worker memory (trees are allocated per slot).
+        config.selfplay.n_games = requested.selfplay.n_games
         config.selfplay.tail_games_threshold = requested.selfplay.tail_games_threshold
         config.selfplay.tail_leaves_in_flight = requested.selfplay.tail_leaves_in_flight
         config.selfplay.leaves_in_flight = requested.selfplay.leaves_in_flight
