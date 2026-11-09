@@ -993,6 +993,48 @@ TEST_CASE("v2 selfplay mock evaluator throughput smoke", "[v2][selfplay][through
     REQUIRE(leaves_per_sec > 0.0);
 }
 
+TEST_CASE("v2 selfplay tree reuse on a full node pool never records illegal targets", "[v2][selfplay][tree_reuse]") {
+    // A tiny pool fills within each search; children evaluated after that
+    // have visits but no children. Re-rooting into one used to finish the
+    // next move on an unexpanded root and record a one-hot (illegal) PASS.
+    // NOTE: zero evals do not trigger that path (needs peaked priors); the
+    // reproduction was 4096-sim random-prior self-play (11/2441 rows -> 0).
+    // This guards the invariant, not the exact trigger.
+    SelfPlayConfig config = fixed_config(2U, 512U, 64U, 0x0F11'7EE5ULL);
+    config.selfplay_max_turns = 30U;
+    config.auto_play_treasures = true;
+    config.prune_treasure_plays = true;
+    config.max_tree_nodes = 96U;
+    config.tree_reuse = true;
+    config.min_new_sims = 64U;
+    config.leaves_in_flight = 8U;
+
+    SelfPlayRunner runner(config);
+    std::uint32_t guard = 0U;
+    while (runner.games_completed() < 6U && guard < 800000U) {
+        const std::uint32_t count = runner.collect_leaves(config.max_batch);
+        if (count > 0U) {
+            provide_zero_eval(runner, count);
+        }
+        ++guard;
+    }
+    REQUIRE(runner.games_completed() >= 6U);
+    REQUIRE(runner.skipped_degenerate_targets() == 0U);
+    for (const SelfPlayRecord& record : runner.take_finished_games()) {
+        for (std::uint16_t move = 0; move < record.moves; ++move) {
+            const float* policy = record.policy_targets.data() + (static_cast<std::size_t>(move) * ACTION_SPACE_SIZE);
+            const std::uint64_t* words = record.legal_mask_words.data() + (static_cast<std::size_t>(move) * ACTION_MASK_WORDS);
+            float legal_mass = 0.0F;
+            for (Action action = 0; action < ACTION_SPACE_SIZE; ++action) {
+                if (((words[action / 64U] >> (action % 64U)) & 1ULL) != 0U) {
+                    legal_mass += policy[action];
+                }
+            }
+            REQUIRE(legal_mass == Catch::Approx(1.0F).margin(0.0001F));
+        }
+    }
+}
+
 TEST_CASE("v2 selfplay tail boost widens in-flight leaves once few games remain", "[v2][selfplay][batching]") {
     SelfPlayConfig config = fixed_config(2U, 512U, 64U, 0x7A11'B005ULL);
     config.selfplay_max_turns = 20U;

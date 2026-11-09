@@ -1997,6 +1997,16 @@ void SelfPlayRunner::record_decision(
     if (scripted_mode(game.slot.scripted_bot) && player != game.nn_player) {
         return;
     }
+    // Never write a target with no mass on a legal action (degenerate-root
+    // fallbacks): masked logits are -1e9, so one such row dominates the loss.
+    float legal_mass = 0.0F;
+    for (Action action = 0; action < ACTION_SPACE_SIZE; ++action) {
+        legal_mass += legal.test(action) ? policy[action] : 0.0F;
+    }
+    if (!(legal_mass > 0.5F)) {
+        ++skipped_degenerate_targets_;
+        return;
+    }
     const std::size_t obs_offset = game.observations.size();
     game.observations.resize(obs_offset + obs_size_);
     // This is intentionally the live, true state rather than the sampled

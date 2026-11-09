@@ -361,6 +361,7 @@ public:
     [[nodiscard]] std::uint32_t leaf_count() const noexcept;
     [[nodiscard]] std::size_t observation_size() const noexcept;
     [[nodiscard]] std::uint64_t games_completed() const noexcept;
+    [[nodiscard]] std::uint64_t skipped_degenerate_targets() const noexcept { return skipped_degenerate_targets_; }
     [[nodiscard]] float total_virtual_loss() const noexcept;
     [[nodiscard]] SelfPlaySearchStats search_stats(std::uint32_t index) const noexcept;
     // Async Scaffold jobs preserve each seed's trajectory, but cross-slot
@@ -440,5 +441,6 @@ private:
     std::uint32_t next_collect_game_ = 0;
     std::uint64_t completed_ = 0;
     bool tail_mode_ = false;
+    std::uint64_t skipped_degenerate_targets_ = 0;
     std::unique_ptr<ScriptedPool> scripted_pool_{};
 };

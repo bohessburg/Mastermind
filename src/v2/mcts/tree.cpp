@@ -1347,6 +1347,14 @@ bool Mcts::adopt_retained_root(const GameState& root, PlayerId perspective) noex
         || mcts_state_hash(states_[nodes_[retained_root].state_index]) != retained_hash) {
         return false;
     }
+    // A child evaluated after the node pool filled carries visits but no
+    // children. Adopting it would make the next search finish (inherited
+    // visits >= target) on an unexpanded root, whose visit policy falls back
+    // to a one-hot PASS that is usually illegal -- c25 g1 deep games wrote
+    // such rows. Start a fresh tree instead.
+    if (nodes_[retained_root].first_child == MCTS_NULL) {
+        return false;
+    }
     return compact_subtree_to_root(retained_root, perspective);
 }
 
