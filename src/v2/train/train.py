@@ -1175,6 +1175,9 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
         config.eval.eval_workers = requested.eval.eval_workers
         config.selfplay.tail_games_threshold = requested.selfplay.tail_games_threshold
         config.selfplay.tail_leaves_in_flight = requested.selfplay.tail_leaves_in_flight
+        config.selfplay.leaves_in_flight = requested.selfplay.leaves_in_flight
+        config.selfplay.deep_leaves_in_flight = requested.selfplay.deep_leaves_in_flight
+        config.selfplay.leaves_min_sims_per_leaf = requested.selfplay.leaves_min_sims_per_leaf
         validate_aux_margin_config(config)
         validate_model_config(config)
         validate_imitation_config(config.imitation)

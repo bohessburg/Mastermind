@@ -1035,6 +1035,31 @@ TEST_CASE("v2 selfplay tree reuse on a full node pool never records illegal targ
     }
 }
 
+TEST_CASE("v2 selfplay caps in-flight leaves by sims per leaf", "[v2][selfplay][batching]") {
+    SelfPlayConfig config = fixed_config(2U, 64U, 64U, 0x5C11'CA90ULL);
+    config.selfplay_max_turns = 20U;
+    config.auto_play_treasures = true;
+    config.prune_treasure_plays = true;
+    config.leaves_in_flight = 8U;
+    config.leaves_min_sims_per_leaf = 32U;
+
+    SelfPlayRunner runner(config);
+    std::uint32_t max_rows = 0U;
+    std::uint32_t guard = 0U;
+    while (runner.games_completed() < 2U && guard < 200000U) {
+        const std::uint32_t count = runner.collect_leaves(config.max_batch);
+        max_rows = std::max(max_rows, count);
+        if (count > 0U) {
+            provide_zero_eval(runner, count);
+        }
+        ++guard;
+    }
+    REQUIRE(runner.games_completed() >= 2U);
+    // 64 sims / 32 = 2 per game, not the configured 8.
+    REQUIRE(max_rows <= 4U);
+    REQUIRE(max_rows > 2U);
+}
+
 TEST_CASE("v2 selfplay tail boost widens in-flight leaves once few games remain", "[v2][selfplay][batching]") {
     SelfPlayConfig config = fixed_config(2U, 512U, 64U, 0x7A11'B005ULL);
     config.selfplay_max_turns = 20U;

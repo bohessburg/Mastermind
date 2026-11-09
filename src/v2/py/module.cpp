@@ -1984,6 +1984,7 @@ PYBIND11_MODULE(dominion_v2_py, module) {
             std::uint8_t leaves_in_flight,
             std::uint8_t deep_leaves_in_flight,
             std::uint16_t tail_games_threshold,
+            std::uint16_t leaves_min_sims_per_leaf,
             std::uint8_t tail_leaves_in_flight,
             float root_value_blend,
             float fpu_reduction,
@@ -2011,6 +2012,7 @@ PYBIND11_MODULE(dominion_v2_py, module) {
             config.leaves_in_flight = leaves_in_flight;
             config.deep_leaves_in_flight = deep_leaves_in_flight;
             config.tail_games_threshold = tail_games_threshold;
+            config.leaves_min_sims_per_leaf = leaves_min_sims_per_leaf;
             config.tail_leaves_in_flight = tail_leaves_in_flight;
             config.root_value_blend = root_value_blend;
             config.fpu_reduction = fpu_reduction;
@@ -2108,6 +2110,7 @@ PYBIND11_MODULE(dominion_v2_py, module) {
             py::arg("leaves_in_flight") = 1U,
             py::arg("deep_leaves_in_flight") = 0U,
             py::arg("tail_games_threshold") = 0U,
+            py::arg("leaves_min_sims_per_leaf") = 0U,
             py::arg("tail_leaves_in_flight") = 0U,
             py::arg("root_value_blend") = 0.0F,
             py::arg("fpu_reduction") = -1.0F,
@@ -2158,6 +2161,7 @@ PYBIND11_MODULE(dominion_v2_py, module) {
         .def_readwrite("leaves_in_flight", &SelfPlayConfig::leaves_in_flight)
         .def_readwrite("deep_leaves_in_flight", &SelfPlayConfig::deep_leaves_in_flight)
         .def_readwrite("tail_games_threshold", &SelfPlayConfig::tail_games_threshold)
+        .def_readwrite("leaves_min_sims_per_leaf", &SelfPlayConfig::leaves_min_sims_per_leaf)
         .def_readwrite("tail_leaves_in_flight", &SelfPlayConfig::tail_leaves_in_flight)
         .def_readwrite("root_value_blend", &SelfPlayConfig::root_value_blend)
         .def_readwrite("fpu_reduction", &SelfPlayConfig::fpu_reduction)

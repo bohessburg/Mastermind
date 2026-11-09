@@ -1309,6 +1309,9 @@ std::uint32_t SelfPlayRunner::leaves_in_flight_cap(const GameSlot& game) const n
     if (game.slot.sims_override != 0U && config_.deep_leaves_in_flight != 0U) {
         cap = config_.deep_leaves_in_flight;
     }
+    if (config_.leaves_min_sims_per_leaf != 0U) {
+        cap = std::min(cap, std::max<std::uint32_t>(1U, game.sims_target / config_.leaves_min_sims_per_leaf));
+    }
     if (tail_mode_) {
         const std::uint32_t tail = std::min<std::uint32_t>(config_.tail_leaves_in_flight, game.sims_target / 32U);
         cap = std::max(cap, tail);

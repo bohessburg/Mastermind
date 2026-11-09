@@ -122,6 +122,10 @@ struct SelfPlayConfig {
     // sims_target / 32) leaves in flight (never below its normal cap), so the
     // last deep games fill the otherwise idle GPU. 0 disables.
     std::uint16_t tail_games_threshold = 0;
+    // Caps the normal/deep in-flight leaves at sims_target / this so small
+    // (adaptive) searches keep virtual loss to a small fraction of their
+    // visits. 0 disables. Applied before the tail boost.
+    std::uint16_t leaves_min_sims_per_leaf = 0;
     std::uint8_t tail_leaves_in_flight = 0;
     std::uint64_t seed = 0x545241494EULL;
     ObsVersion obs_version = ObsVersion::V1;
