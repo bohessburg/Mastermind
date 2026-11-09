@@ -2385,3 +2385,26 @@ did not verify and were left untouched (manifest: 112 real / 9 incomplete).
 Local-only verification so far: C++ 184/184; Python train+records suites
 green after test updates; local multi-leaf bench K=1 246s vs K=8 38s for 16
 games (1.6K -> 7.9K evals/s).
+
+=== C25 LAUNCHED (2026-11-09, vast box ssh -p 50974 root@77.104.167.149, hetzner_dgames key) ===
+Box: dual EPYC 9654 host, quota 184 CPU / 342GB cgroup, 1x RTX 5090
+32GB, torch 2.14.1+cu130 (/venv/main, .venv symlinked). 88 workers,
+2 shards (configs/run_c25_box.json = run_c25 + parallel_workers 88).
+Launch kit now IN REPO: scripts/box/{ship,bootstrap,resume}.sh +
+supervisor.conf.tmpl (old scratchpad kits were tmp-reaped). ctest
+184/184 on box.
+INIT: on-box GPU BC re-pretrain on the 40+ corpus (9,355 games) with
+c25 arch (derived features, final norm) + fixed resign labels +
+weighted-mean policy loss: checkpoints/c25_bc_long/bc_a.pt, early-stop
+7500 (best 6750), val acc 78.5% (c24 init 75.5%). val loss 0.916 is
+NOT comparable to c24's 0.631 (label + loss-normalization changes).
+5000-step cap version (77.8%) kept at checkpoints/c25_bc.
+SPEED A/B (same box/init/88 workers, steady-state server evals/s):
+arm A c24 search (1 leaf, no adaptive/reuse) 24-28k evals/s, GPU
+7-17%; arm B multi-leaf 4/32 ~102k evals/s, GPU 45% => 3.9x from
+batching alone. c25 full config also ~100k evals/s (adaptive sims +
+tree reuse cut evals per game on top). Gen-1 wall time = remaining
+measurement. GPU at 45% => CPU side is now the limit; more workers
+(threads quota 184) is the next lever after gen 1.
+Supervisor dominion-c25 (resume.sh: init on first launch, resume
+latest after; orphan reap). Local auto-pull every 10 min.
