@@ -36,7 +36,10 @@ def main(job_path: str) -> None:
     out = Path(job["evals_csv"])
     started = time.time()
     print(f"eval_bg gen {job['generation']}: {len(job['runs'])} runs started", flush=True)
-    ctx = multiprocessing.get_context("spawn")
+    # fork, not spawn: resume.sh reaps "multiprocessing.spawn" orphans on
+    # every restart, which killed spawn-started eval workers. The parent
+    # never imports torch/CUDA, so forking is safe.
+    ctx = multiprocessing.get_context("fork")
     with concurrent.futures.ProcessPoolExecutor(max_workers=len(job["runs"]), mp_context=ctx) as pool:
         futures = {pool.submit(_run, run["kwargs"]): run for run in job["runs"]}
         for future in concurrent.futures.as_completed(futures):
