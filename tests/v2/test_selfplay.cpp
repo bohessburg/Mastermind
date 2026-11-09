@@ -993,6 +993,33 @@ TEST_CASE("v2 selfplay mock evaluator throughput smoke", "[v2][selfplay][through
     REQUIRE(leaves_per_sec > 0.0);
 }
 
+TEST_CASE("v2 selfplay tail boost widens in-flight leaves once few games remain", "[v2][selfplay][batching]") {
+    SelfPlayConfig config = fixed_config(2U, 512U, 64U, 0x7A11'B005ULL);
+    config.selfplay_max_turns = 20U;
+    config.auto_play_treasures = true;
+    config.prune_treasure_plays = true;
+    config.leaves_in_flight = 1U;
+    config.tail_games_threshold = 2U;
+    config.tail_leaves_in_flight = 32U;
+
+    SelfPlayRunner runner(config);
+    std::uint32_t max_rows = 0U;
+    std::uint32_t guard = 0U;
+    while (runner.games_completed() < 2U && guard < 400000U) {
+        const std::uint32_t count = runner.collect_leaves(config.max_batch);
+        max_rows = std::max(max_rows, count);
+        if (count > 0U) {
+            provide_zero_eval(runner, count);
+            REQUIRE(runner.total_virtual_loss() == 0.0F);
+        }
+        ++guard;
+    }
+    REQUIRE(runner.games_completed() >= 2U);
+    // Both games are "tail" games: cap = min(32, 512/32 = 16) per game.
+    REQUIRE(max_rows > 2U);
+    REQUIRE(max_rows <= 32U);
+}
+
 TEST_CASE("v2 selfplay multi-leaf batching keeps several evaluations in flight per game", "[v2][selfplay][batching]") {
     SelfPlayConfig config = fixed_config(2U, 64U, 64U, 0x5E1F'B47CULL);
     config.selfplay_max_turns = 20U;

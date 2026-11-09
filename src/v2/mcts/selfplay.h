@@ -117,6 +117,12 @@ struct SelfPlayConfig {
     // positive. Scripted games always keep one.
     std::uint8_t leaves_in_flight = 1;
     std::uint8_t deep_leaves_in_flight = 0;
+    // Generation-tail boost: once this runner has <= tail_games_threshold
+    // live games, each may keep up to min(tail_leaves_in_flight,
+    // sims_target / 32) leaves in flight (never below its normal cap), so the
+    // last deep games fill the otherwise idle GPU. 0 disables.
+    std::uint16_t tail_games_threshold = 0;
+    std::uint8_t tail_leaves_in_flight = 0;
     std::uint64_t seed = 0x545241494EULL;
     ObsVersion obs_version = ObsVersion::V1;
     SelfPlayKingdomMode kingdom_mode = SelfPlayKingdomMode::Random;
@@ -433,5 +439,6 @@ private:
     std::uint32_t pending_count_ = 0;
     std::uint32_t next_collect_game_ = 0;
     std::uint64_t completed_ = 0;
+    bool tail_mode_ = false;
     std::unique_ptr<ScriptedPool> scripted_pool_{};
 };

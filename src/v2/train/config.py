@@ -80,6 +80,10 @@ class SelfPlayConfig:
     # when positive. Raises rows per inference request without more games.
     leaves_in_flight: int = 1
     deep_leaves_in_flight: int = 0
+    # Generation-tail boost (see SelfPlayConfig): <= threshold live games per
+    # worker -> up to min(tail_leaves_in_flight, sims/32) leaves each. 0 = off.
+    tail_games_threshold: int = 0
+    tail_leaves_in_flight: int = 0
     # Value target = (1 - b) * outcome + b * search root value (per position).
     root_value_blend: float = 0.0
     # Search options; defaults reproduce legacy behavior.
@@ -425,6 +429,10 @@ def validate_selfplay_max_turns_config(config: SelfPlayConfig) -> None:
         flight = getattr(config, name)
         if not isinstance(flight, int) or isinstance(flight, bool) or not lower <= flight <= 64:
             raise ValueError(f"selfplay.{name} must be an integer between {lower} and 64")
+    for name, upper in (("tail_games_threshold", 1024), ("tail_leaves_in_flight", 128)):
+        value = getattr(config, name)
+        if not isinstance(value, int) or isinstance(value, bool) or not 0 <= value <= upper:
+            raise ValueError(f"selfplay.{name} must be an integer between 0 and {upper}")
     blend = config.root_value_blend
     if isinstance(blend, bool) or not isinstance(blend, (int, float)) or not 0.0 <= float(blend) <= 1.0:
         raise ValueError("selfplay.root_value_blend must be a number in [0, 1]")

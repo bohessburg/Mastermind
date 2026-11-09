@@ -1163,6 +1163,13 @@ std::uint32_t SelfPlayRunner::collect_leaves(std::uint32_t max_batch) noexcept {
         max_batch == 0U ? config_.max_batch : max_batch,
         config_.max_batch);
     pending_count_ = 0;
+    if (config_.tail_games_threshold != 0U && config_.tail_leaves_in_flight != 0U) {
+        std::uint32_t live = 0;
+        for (std::uint32_t slot = 0; slot < slot_count_; ++slot) {
+            live += games_[slot].retired ? 0U : 1U;
+        }
+        tail_mode_ = live <= config_.tail_games_threshold;
+    }
     std::uint32_t idle = 0;
     while (pending_count_ < limit && idle < slot_count_) {
         const std::uint32_t index = next_collect_game_;
@@ -1301,6 +1308,10 @@ std::uint32_t SelfPlayRunner::leaves_in_flight_cap(const GameSlot& game) const n
     std::uint32_t cap = config_.leaves_in_flight == 0U ? 1U : config_.leaves_in_flight;
     if (game.slot.sims_override != 0U && config_.deep_leaves_in_flight != 0U) {
         cap = config_.deep_leaves_in_flight;
+    }
+    if (tail_mode_) {
+        const std::uint32_t tail = std::min<std::uint32_t>(config_.tail_leaves_in_flight, game.sims_target / 32U);
+        cap = std::max(cap, tail);
     }
     return cap;
 }

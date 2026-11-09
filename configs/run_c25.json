@@ -88,6 +88,8 @@
     "adjudicate_truncation": true,
     "leaves_in_flight": 4,
     "deep_leaves_in_flight": 32,
+    "tail_games_threshold": 2,
+    "tail_leaves_in_flight": 64,
     "root_value_blend": 0.25,
     "fpu_reduction": 0.2,
     "scaled_terminal_values": true,

@@ -429,6 +429,8 @@ def make_runner_config(
         adjudicate_truncation=bool(config.adjudicate_truncation),
         leaves_in_flight=int(config.leaves_in_flight),
         deep_leaves_in_flight=int(config.deep_leaves_in_flight),
+        tail_games_threshold=int(config.tail_games_threshold),
+        tail_leaves_in_flight=int(config.tail_leaves_in_flight),
         root_value_blend=float(config.root_value_blend),
         fpu_reduction=float(config.fpu_reduction),
         scaled_terminal_values=bool(config.scaled_terminal_values),
