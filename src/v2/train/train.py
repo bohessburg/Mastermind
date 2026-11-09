@@ -484,7 +484,10 @@ def train_step(
     anchor_awr_beta: float = 0.0,
     aux_margin_weight: float = 0.0,
     value_loss_weight: float = 1.0,
+    anchor_value_weight: float | None = None,
 ) -> dict[str, float]:
+    # Human-anchor value MSE weight; None keeps the legacy value_loss_weight.
+    human_value_weight = float(value_loss_weight if anchor_value_weight is None else anchor_value_weight)
     # Keep the established self-play-only code path literally separate. In
     # particular, inactive anchor/aux objectives must not sample human data,
     # consume an extra RNG draw, or change the legacy return dictionary.
@@ -536,7 +539,7 @@ def train_step(
         loss = (
             policy_loss
             + float(value_loss_weight) * value_loss
-            + float(anchor_weight) * (anchor_policy_loss + float(value_loss_weight) * anchor_value_loss)
+            + float(anchor_weight) * (anchor_policy_loss + human_value_weight * anchor_value_loss)
         )
 
         optimizer.zero_grad(set_to_none=True)
@@ -581,7 +584,7 @@ def train_step(
             policy_loss
             + float(value_loss_weight) * value_loss
             + float(aux_margin_weight) * aux_margin_loss
-            + float(anchor_weight) * (anchor_policy_loss + float(value_loss_weight) * anchor_value_loss)
+            + float(anchor_weight) * (anchor_policy_loss + human_value_weight * anchor_value_loss)
         )
     else:
         loss = policy_loss + float(value_loss_weight) * value_loss + float(aux_margin_weight) * aux_margin_loss
@@ -1208,6 +1211,7 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
         config.server_torch_threads = requested.server_torch_threads
         config.eval.eval_workers = requested.eval.eval_workers
         config.eval.eval_async = requested.eval.eval_async
+        config.imitation.anchor_value_weight = requested.imitation.anchor_value_weight
         config.selfplay.tail_games_threshold = requested.selfplay.tail_games_threshold
         config.selfplay.tail_leaves_in_flight = requested.selfplay.tail_leaves_in_flight
         config.selfplay.leaves_in_flight = requested.selfplay.leaves_in_flight
@@ -1601,6 +1605,7 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
                         anchor_awr_beta=config.imitation.anchor_awr_beta,
                         aux_margin_weight=config.aux_margin_weight if aux_active else 0.0,
                         value_loss_weight=float(config.optim.value_loss_weight),
+                        anchor_value_weight=config.imitation.anchor_value_weight,
                     )
                     for key in ("policy_loss", "value_loss", "entropy"):
                         accum[key] += step_losses[key]

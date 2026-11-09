@@ -196,6 +196,12 @@ class ImitationConfig:
     anchor_weight_schedule: list = field(default_factory=list)
     # beta=0 is uniform hard-label CE; positive beta enables lightweight AWR.
     anchor_awr_beta: float = 0.0
+    # Value-MSE weight for human-anchor rows (None = optim.value_loss_weight).
+    # Human games are many distinct well-piloted games, so they resist the
+    # per-game memorization that motivated a low self-play value weight, and
+    # they are where engines actually pay off (c19 probe: every self-play net
+    # priced a built engine below money).
+    anchor_value_weight: float | None = None
 
 
 @dataclass
@@ -590,6 +596,8 @@ def validate_imitation_config(config: ImitationConfig) -> None:
             raise ValueError("imitation.pretrain_lr must be null or a finite positive number")
     _finite_nonnegative(config.anchor_weight, "anchor_weight")
     _finite_nonnegative(config.anchor_awr_beta, "anchor_awr_beta")
+    if config.anchor_value_weight is not None:
+        _finite_nonnegative(config.anchor_value_weight, "anchor_value_weight")
     # Evaluating at generation zero validates the whole breakpoint list.
     anchor_weight_for_generation(config, 0)
 
