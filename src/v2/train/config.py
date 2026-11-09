@@ -272,6 +272,8 @@ class TrainConfig:
     # CUDA-only opt-in. If this and server_fp16 are both enabled, bf16 wins.
     # Server responses are always converted back to fp32 before transport.
     server_autocast_bf16: bool = False
+    # CPU intra-op threads per inference-server process (see _server_main).
+    server_torch_threads: int = 4
     # Optional static forward sizes for CUDA graph-friendly serving. Each live
     # batch is zero-padded to the smallest fitting bucket; larger batches run
     # at their exact size.

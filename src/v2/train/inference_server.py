@@ -757,6 +757,15 @@ def _server_main(
     telemetry_queue: Any,
 ) -> None:
     """Process entry point; all model updates occur between complete batches."""
+    # The server only does small CPU-side tensor work around GPU forwards.
+    # Uncapped, torch sizes its intra-op pool to the whole host (192 threads
+    # on the c25 box) and those threads spin: two shards burned ~160 of a
+    # 184-CPU quota and starved the self-play workers.
+    torch.set_num_threads(max(1, int(getattr(config, "server_torch_threads", 4))))
+    try:
+        torch.set_num_interop_threads(1)
+    except RuntimeError:
+        pass
     parent_pid = os.getppid()
     running = True
     metrics = _GenerationMetrics()
