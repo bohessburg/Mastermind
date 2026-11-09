@@ -84,6 +84,10 @@ def _prepare_config(args: argparse.Namespace, arm: dict[str, int]):
     config.imitation.human_tuples = str(args.train_tuples)
     config.imitation.skill_weighting = bool(args.skill_weighting)
     config.imitation.pretrain_steps = 50 if args.smoke else args.steps
+    if args.model_config is not None:
+        # Take the architecture (e.g. c25 derived features / final norm) from
+        # another run config while keeping the frozen BC optimizer recipe.
+        config.model = load_config(args.model_config).model
     config.model.d_model = arm["d_model"]
     config.model.n_layers = arm["n_layers"]
     config.model.n_heads = arm["n_heads"]
@@ -234,6 +238,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--val-tuples", type=Path, default=VAL_TUPLES)
     parser.add_argument("--output-dir", type=Path, default=OUTPUT_DIR)
     parser.add_argument("--report", type=Path, default=REPORT_PATH)
+    parser.add_argument("--model-config", type=Path, help="copy the model section from this run config")
+    parser.add_argument("--arms", default=",".join(ARMS), help="comma-separated arm labels to run")
     return parser
 
 
@@ -257,6 +263,7 @@ def main(argv: list[str] | None = None) -> int:
     results = [
         _run_arm(label, arm, args, train_dataset, val_dataset, device)
         for label, arm in ARMS.items()
+        if label in args.arms.split(",")
     ]
     report = {
         "config": str(CONFIG_PATH),

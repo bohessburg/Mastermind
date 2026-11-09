@@ -1,0 +1,14 @@
+; cp to /etc/supervisor/conf.d/dominion-NAME.conf after substituting NAME/CONFIG/INIT
+[program:dominion-NAME]
+command=/bin/bash /root/Mastermind/scripts/box/resume.sh CONFIG INIT
+directory=/root/Mastermind
+autostart=true
+autorestart=true
+startsecs=30
+stopasgroup=true
+killasgroup=true
+stopsignal=INT
+stopwaitsecs=60
+redirect_stderr=true
+stdout_logfile=/root/Mastermind/supervisor-NAME.log
+stdout_logfile_maxbytes=200MB
