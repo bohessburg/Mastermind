@@ -2693,3 +2693,23 @@ Under the 55% rule every one of these would have been accepted; with promotion t
 Results: `bench/c29_ladder/gate_campaign28_gen_000N[_honest].json` (local, untracked).
 
 Still open: the engine3 numbers (c28 gens 41% pooled vs bc_a 47%) say this head-to-head gain does not carry to a third party. Next: paired engine3 evals of bc_a and gen6 on the same seed, and a corrected gen6 vs gen1 match.
+
+### Third-party check: the head-to-head gain is non-transitive
+
+Engine3, honest search, 400 sims, 200 games each, same seed (20261110), local:
+
+| net | vs engine3 | corrected gate vs bc_a (honest) |
+|---|---|---|
+| bc_a | 50.5% (101-99) | n/a |
+| c28 gen6 | 38.0% (76-124) | 0.950 |
+
+Corrected gen6 vs gen1 (100 boards x 2, 128 sims, clairvoyant): 0.540 [0.471, 0.609], 103-87-10. Not separable from even.
+
+gen6 beats bc_a 19 games in 20 and is 12.5 points worse than bc_a against engine3 (about 2.5 SE treating the two evals as independent); the earlier pooled numbers pointed the same way (41% over 1100 games vs 47%).
+gen6 beats bc_a by more than gen1 does (0.94 vs 0.83) but barely beats gen1.
+Reading: training on bc_a's self-play taught the nets to beat bc_a, not to play better. The loop never promoted, so six generations specialised against one fixed opponent.
+
+Consequences for c29:
+- No c28 checkpoint replaces bc_a as best.
+- The corrected gate is necessary but not sufficient. Promotion needs a third-party term (engine3, and a pool of past nets) next to the head-to-head.
+- Whether an iterating loop (promote, then self-play from the new best) generalises better than six generations against a frozen parent is untested; that is the first thing a c29 run would show.

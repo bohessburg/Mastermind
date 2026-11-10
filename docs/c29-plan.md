@@ -98,31 +98,30 @@ Corrected gates for all six c28 generations (100 boards, 200 games each):
 All six beat `bc_a` head to head, by more each generation, while the old gate
 fell. Step 0's gate part is done; the third-party check is what remains.
 
-What does not fit yet:
+The third-party check (done 2026-11-10, local):
 
-- Against engine3 (honest search, 400 sims, scripted opponent) the c28 nets
-  are not better than `bc_a`: gens 1-6 pooled 41% over 1100 games, `bc_a` 47%
-  over 200. A net that beats its parent 4:1 but beats a third party no more
-  often may have learned its parent's games rather than the game. gen1's value
-  head was fit to `bc_a` self-play, so this is a live possibility, and it is
-  the main thing step 0 has to settle.
+| Net | vs engine3 (200 games, 400 sims, honest, same seed) | Corrected gate vs `bc_a` |
+|---|---|---|
+| `bc_a` | 50.5% | n/a |
+| c28 gen6 | 38.0% | 0.950 |
+
+Corrected gen6 vs gen1: 0.540 [0.471, 0.609], not separable from even.
+
+So the head-to-head gain is non-transitive. gen6 beats `bc_a` 19 games in 20
+and does 12.5 points worse than `bc_a` against engine3. Six generations
+trained against one frozen parent learned to beat that parent, not to play
+better. No c28 checkpoint replaces `bc_a`.
 
 ## The plan
 
-### Step 0: re-gate what already exists (local, no box needed)
+### Step 0: re-gate what already exists (done 2026-11-10, local)
 
-Corrected gates for c28 gen 1-6 against `bc_a`, clairvoyant and honest
-(`--determinize per_decision`), 200 pairs each. This says whether any existing
-checkpoint is already better than `bc_a`, and whether the c28 loop was
-improving or degrading from generation to generation.
+Corrected gates for c28 gen 1-6 against `bc_a`, clairvoyant and honest, 100
+boards each; then `bc_a` and gen6 against engine3 on the same seed (200 games
+each) and a corrected gen6 vs gen1 match. Results are above. To reproduce:
 
     JOBS=2 CHUNK=100 PAIRS=100 scripts/box/c29_diagnostics.sh gates
-
-Then the third-party check: `bc_a` and the strongest c28 checkpoint against
-engine3 with the same seed and at least 400 games each
-(`python -m src.v2.train.evaluate --checkpoint ... --opponent engine3 --honest --games 400`), and
-a corrected match of gen6 against gen1 to see whether later generations kept
-improving while training on stale `bc_a` data.
+    python -m src.v2.train.evaluate --checkpoint <ckpt> --opponent engine3 --honest --games 200 --seed 20261110
 
 ### Step 1: search ladder (is search an improvement operator?)
 
@@ -159,7 +158,7 @@ numbers. Playouts never consult the value head. It reports:
 
 | Finding | Meaning | Next move |
 |---|---|---|
-| Search beats raw clearly, and candidates beat `bc_a` in the corrected gate | The loop was working and the gate was hiding it | c29 = c28 recipe with the corrected gate inside the trainer; promote the best existing checkpoint first |
+| Candidates beat `bc_a` in the corrected gate but not a third party (**observed**) | Self-play from a frozen parent teaches beating the parent | Gate on head-to-head AND a third-party term (engine3 plus a pool of past nets); let the loop promote so the opponent moves; mix past nets into self-play opponents |
 | Search beats raw, candidates do not beat `bc_a` | Targets are good, learning from them is not | Work on the loss and the targets (sharpening in the live loop, policy weight, replay mix) |
 | Search does not beat raw, or the zero-value net searches as well as the real one | There is no improvement operator to distil | Fix the search or the value head before any training: more sims, value calibration, playout-backed values |
 | Clairvoyant gains vanish under honest search | Self-play is learning to exploit hidden information | Generate self-play with determinized search |
@@ -170,7 +169,8 @@ numbers. Playouts never consult the value head. It reports:
 Whatever step 3 says, the trainer should stop gating with the legacy path.
 `run_gate_match` should use `run_paired_match` (greedy, independent search,
 paired boards) and accept on the lower end of the paired confidence interval
-rather than on a raw 55% of 200 games. This is not implemented yet; the legacy
+rather than on a raw 55% of 200 games, and it should also require no loss
+against engine3 on paired seeds. This is not implemented yet; the legacy
 path is kept so old numbers stay reproducible (`--legacy-gate`).
 
 ## Costs
