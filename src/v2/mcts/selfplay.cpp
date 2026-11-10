@@ -657,6 +657,8 @@ struct SelfPlayRunner::GameSlot {
     std::vector<PlayerId> players;
     // Search root value per recorded decision (decision player's view).
     std::vector<float> root_values;
+    // Filled only under SelfPlayConfig::record_states.
+    std::vector<GameState> states;
     SelfPlaySlotConfig slot{};
     std::uint64_t seed = 0;
     std::uint64_t generation = 0;
@@ -672,6 +674,8 @@ struct SelfPlayRunner::GameSlot {
     std::uint16_t opening_buy_counts[ACTION_DEF_COUNT]{};
     std::uint16_t unconstrained_buy_counts[SELFPLAY_OPENING_TELEMETRY_CARD_COUNT]{};
     PlayerId nn_player = NONE;
+    // Seat that owns the active search (root decision player).
+    PlayerId search_player = NONE;
     bool search_active = false;
     // Manifest slots represent one prescribed game for a generation.  Once
     // complete they stay parked so a fast slot cannot begin an unassigned
@@ -896,6 +900,7 @@ SelfPlayRunner::SelfPlayRunner(const SelfPlayConfig& config)
       leaf_obs_(new float[static_cast<std::size_t>(std::max(1U, config.max_batch)) * obs_size_]),
       leaf_masks_(new bool[static_cast<std::size_t>(std::max(1U, config.max_batch)) * ACTION_SPACE_SIZE]),
       leaf_players_(new PlayerId[std::max(1U, config.max_batch)]),
+      leaf_route_seats_(new PlayerId[std::max(1U, config.max_batch)]),
       leaf_model_ids_(new std::uint32_t[std::max(1U, config.max_batch)]),
       leaf_game_indices_(new std::uint64_t[std::max(1U, config.max_batch)]),
       normalized_policy_(new float[static_cast<std::size_t>(std::max(1U, config.max_batch)) * ACTION_SPACE_SIZE]) {
@@ -937,6 +942,14 @@ SelfPlayRunner::SelfPlayRunner(const SelfPlayConfig& config)
     }
     if (!(config_.temp_final >= 0.0F) || !std::isfinite(config_.temp_final)) {
         throw std::invalid_argument("SelfPlayConfig.temp_final must be finite and non-negative");
+    }
+    const bool per_seat_sims = config_.seat_sims[0] != 0U || config_.seat_sims[1] != 0U;
+    if (config_.tree_reuse && (per_seat_sims || config_.independent_search)) {
+        // A retained subtree carries the previous mover's search effort (and,
+        // with two models, the other model's evaluations) into this seat's
+        // search, which defeats both diagnostics.
+        throw std::invalid_argument(
+            "SelfPlayConfig.seat_sims and independent_search require tree_reuse off");
     }
     if (config_.determinize != SelfPlayDeterminizeMode::Off && config_.tree_reuse) {
         // A retained subtree belongs to the previous sampled hidden world.
@@ -1283,9 +1296,15 @@ std::uint32_t SelfPlayRunner::collect_leaves(std::uint32_t max_batch) noexcept {
         PendingLeaf& pending = pending_[pending_count_];
         pending.leaf = leaf;
         pending.game = index;
-        pending.model_id = leaf.player == 0U ? game.slot.seat0_model_id : game.slot.seat1_model_id;
+        // The observation below is always encoded for the leaf's deciding
+        // player; only the choice of network changes under independent_search.
+        const PlayerId route_seat = config_.independent_search && game.search_player < MAX_PLAYERS
+            ? game.search_player
+            : leaf.player;
+        pending.model_id = route_seat == 0U ? game.slot.seat0_model_id : game.slot.seat1_model_id;
         pending.root = leaf.node == 0U;
         leaf_players_[pending_count_] = leaf.player;
+        leaf_route_seats_[pending_count_] = route_seat;
         leaf_model_ids_[pending_count_] = pending.model_id;
         leaf_game_indices_[pending_count_] = game.slot.game_index;
         encode(
@@ -1373,6 +1392,10 @@ const PlayerId* SelfPlayRunner::leaf_players() const noexcept {
     return leaf_players_.get();
 }
 
+const PlayerId* SelfPlayRunner::leaf_route_seats() const noexcept {
+    return leaf_route_seats_.get();
+}
+
 const std::uint32_t* SelfPlayRunner::leaf_model_ids() const noexcept {
     return leaf_model_ids_.get();
 }
@@ -1457,6 +1480,8 @@ void SelfPlayRunner::reset_game(std::uint32_t index) noexcept {
     game.legal_mask_words.clear();
     game.players.clear();
     game.root_values.clear();
+    game.states.clear();
+    game.search_player = NONE;
     game.sims_target = 0;
     game.sims_started = 0;
     game.sims_completed = 0;
@@ -1473,6 +1498,14 @@ void SelfPlayRunner::reset_game(std::uint32_t index) noexcept {
 void SelfPlayRunner::start_search(GameSlot& game) noexcept {
     assert(game.pending == 0U);
     const PlayerId player = decision_player(game.state);
+    game.search_player = player;
+    if (config_.seat_sims[0] != 0U || config_.seat_sims[1] != 0U) {
+        const std::uint32_t base = game.slot.sims_override == 0U
+            ? config_.sims_per_move
+            : game.slot.sims_override;
+        const std::uint32_t seat = player < MAX_PLAYERS ? config_.seat_sims[player] : 0U;
+        game.mcts.set_sims_per_move(seat != 0U ? seat : base);
+    }
     bool reused = false;
     if (config_.determinize != SelfPlayDeterminizeMode::Off) {
         // Search only in a freshly sampled world.  The live state remains the
@@ -2035,6 +2068,9 @@ void SelfPlayRunner::record_decision(
         legal.words + ACTION_MASK_WORDS);
     game.players.push_back(player);
     game.root_values.push_back(game.mcts.root_mean_value());
+    if (config_.record_states) {
+        game.states.push_back(game.state);
+    }
 }
 
 void SelfPlayRunner::finish_game(GameSlot& game) noexcept {
@@ -2047,6 +2083,7 @@ void SelfPlayRunner::finish_game(GameSlot& game) noexcept {
     record.sampled_actions = game.sampled_actions;
     record.legal_mask_words = game.legal_mask_words;
     record.players = game.players;
+    record.states = game.states;
     record.moves = static_cast<std::uint16_t>(game.players.size());
     record.turn_counter = game.state.turn_counter;
     record.truncated = game.state.truncated != 0U;

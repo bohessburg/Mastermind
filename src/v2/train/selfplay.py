@@ -749,8 +749,16 @@ def play_routed_games(
     league_opponent: str | None = None,
     determinize: str | None = None,
     on_finished: Callable[[list[dict]], None] | None = None,
+    independent_search: bool = False,
 ) -> tuple[SelfPlayStats, list[dict]]:
-    """Generate an exact number of games while routing every leaf by seat."""
+    """Generate an exact number of games while routing every leaf by seat.
+
+    By default a leaf goes to the model of the player deciding AT the leaf, so
+    in a two-model match each side's tree is scored by the opponent's network
+    at opponent nodes.  ``independent_search`` routes a whole tree to the
+    searching seat's model instead (and turns tree reuse off, which would
+    otherwise share one tree between the two models).
+    """
     if target_games < 0:
         raise ValueError("target_games cannot be negative")
     stats = SelfPlayStats()
@@ -762,16 +770,18 @@ def play_routed_games(
         runner_config.kingdom_mode = kingdom_mode
     if determinize is not None:
         runner_config.determinize = determinize
-    runner = dz.SelfPlayRunner(
-        make_runner_config(
-            runner_config,
-            seed,
-            scripted_kind=scripted_kind,
-            scripted_nn_player=scripted_nn_player,
-            kingdom_pool=kingdom_pool,
-            sims_override=sims_override,
-        )
+    if independent_search:
+        runner_config.tree_reuse = False
+    native_config = make_runner_config(
+        runner_config,
+        seed,
+        scripted_kind=scripted_kind,
+        scripted_nn_player=scripted_nn_player,
+        kingdom_pool=kingdom_pool,
+        sims_override=sims_override,
     )
+    native_config.independent_search = bool(independent_search)
+    runner = dz.SelfPlayRunner(native_config)
     for model in seat_models:
         model.eval()
     models_are_identical = seat_models[0] is seat_models[1]
@@ -784,7 +794,8 @@ def play_routed_games(
     while len(records) < target_games:
         plumbing_start = time.perf_counter()
         obs, masks = runner.collect_leaves(runner_config.max_batch)
-        players = None if use_fast_path else runner.leaf_players()
+        # Equal to leaf_players() unless independent_search is set.
+        players = None if use_fast_path else runner.leaf_route_seats()
         stats.plumbing_time += time.perf_counter() - plumbing_start
         batch = int(obs.shape[0])
         if batch == 0:

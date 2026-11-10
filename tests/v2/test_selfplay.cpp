@@ -1125,3 +1125,131 @@ TEST_CASE("v2 selfplay multi-leaf batching keeps several evaluations in flight p
         }
     }
 }
+
+TEST_CASE("v2 selfplay per-seat sims give each seat its own search budget", "[v2][selfplay][diagnostics]") {
+    SelfPlayConfig config = fixed_config(2U, 16U, 16U, 0x5E1F'0D01ULL);
+    config.temp_moves = 0U;
+    config.selfplay_max_turns = 20U;
+    config.seat_sims[0] = 2U;
+    config.seat_sims[1] = 32U;
+    const std::vector<SelfPlayRecord> records = run_until_finished(config, 2U);
+    REQUIRE(records.size() >= 2U);
+
+    bool seat1_spread = false;
+    std::uint32_t seat0_rows = 0U;
+    for (const SelfPlayRecord& record : records) {
+        for (std::uint16_t move = 0; move < record.moves; ++move) {
+            const float* policy = record.policy_targets.data()
+                + (static_cast<std::size_t>(move) * ACTION_SPACE_SIZE);
+            const float top = *std::max_element(policy, policy + ACTION_SPACE_SIZE);
+            if (record.players[move] == 0U) {
+                // Two simulations = the root evaluation plus exactly one child
+                // visit, so the visit target is one-hot (the raw-policy seat).
+                REQUIRE(top == Catch::Approx(1.0F).margin(0.0001F));
+                ++seat0_rows;
+            } else if (top < 0.999F) {
+                seat1_spread = true;
+            }
+        }
+    }
+    REQUIRE(seat0_rows > 0U);
+    REQUIRE(seat1_spread);
+}
+
+TEST_CASE("v2 selfplay rejects per-seat diagnostics combined with tree reuse", "[v2][selfplay][diagnostics]") {
+    SelfPlayConfig sims = fixed_config(1U, 16U, 16U, 0x5E1F'0D02ULL);
+    sims.tree_reuse = true;
+    sims.seat_sims[1] = 8U;
+    REQUIRE_THROWS_AS(SelfPlayRunner(sims), std::invalid_argument);
+
+    SelfPlayConfig independent = fixed_config(1U, 16U, 16U, 0x5E1F'0D02ULL);
+    independent.tree_reuse = true;
+    independent.independent_search = true;
+    REQUIRE_THROWS_AS(SelfPlayRunner(independent), std::invalid_argument);
+}
+
+TEST_CASE("v2 selfplay independent search routes a whole tree to the searching seat", "[v2][selfplay][diagnostics]") {
+    for (const bool independent : {false, true}) {
+        SelfPlayConfig config = fixed_config(1U, 24U, 1U, 0x5E1F'0D03ULL);
+        config.temp_moves = 0U;
+        config.selfplay_max_turns = 20U;
+        config.independent_search = independent;
+        SelfPlaySlotConfig slot{};
+        slot.game_index = 0U;
+        slot.seat0_model_id = 7U;
+        slot.seat1_model_id = 9U;
+        slot.kingdom_mode = SelfPlayKingdomMode::Fixed;
+        config.slot_manifest.push_back(slot);
+
+        SelfPlayRunner runner(config);
+        PlayerId searcher = NONE;
+        std::uint32_t opponent_node_leaves = 0U;
+        std::uint32_t cross_routed = 0U;
+        std::uint32_t leaves = 0U;
+        std::uint32_t guard = 0U;
+        while (runner.games_completed() < 1U && guard < 200000U) {
+            ++guard;
+            const std::uint32_t count = runner.collect_leaves(1U);
+            if (count == 0U) {
+                continue;
+            }
+            REQUIRE(count == 1U);
+            const PlayerId leaf_player = runner.leaf_players()[0];
+            const PlayerId route_seat = runner.leaf_route_seats()[0];
+            // With one leaf in flight and no tree reuse, the first simulation
+            // of a search is always the root evaluation.
+            if (runner.search_stats(0U).sims_started == 1U) {
+                searcher = leaf_player;
+            }
+            REQUIRE(searcher != NONE);
+            REQUIRE(runner.leaf_model_ids()[0] == (route_seat == 0U ? 7U : 9U));
+            if (leaf_player != searcher) {
+                ++opponent_node_leaves;
+            }
+            if (independent) {
+                REQUIRE(route_seat == searcher);
+            } else {
+                REQUIRE(route_seat == leaf_player);
+                cross_routed += route_seat != searcher ? 1U : 0U;
+            }
+            ++leaves;
+            provide_zero_eval(runner, count);
+        }
+        REQUIRE(runner.games_completed() >= 1U);
+        REQUIRE(leaves > 0U);
+        // The search does reach opponent-decision nodes; legacy routing hands
+        // exactly those to the other seat's model.
+        REQUIRE(opponent_node_leaves > 0U);
+        REQUIRE(cross_routed == (independent ? 0U : opponent_node_leaves));
+    }
+}
+
+TEST_CASE("v2 selfplay record_states snapshots the live state of each recorded decision", "[v2][selfplay][diagnostics]") {
+    SelfPlayConfig config = fixed_config(1U, 8U, 8U, 0x5E1F'0D04ULL);
+    config.selfplay_max_turns = 20U;
+    const std::vector<SelfPlayRecord> plain = run_until_finished(config, 1U);
+    REQUIRE_FALSE(plain.empty());
+    REQUIRE(plain.front().states.empty());
+
+    config.record_states = true;
+    const std::vector<SelfPlayRecord> records = run_until_finished(config, 1U);
+    REQUIRE_FALSE(records.empty());
+    const SelfPlayRecord& record = records.front();
+    REQUIRE(record.moves > 0U);
+    REQUIRE(record.states.size() == record.moves);
+    REQUIRE(record.observations == plain.front().observations);
+    std::vector<float> obs(OBS_SIZE);
+    for (std::uint16_t move = 0; move < record.moves; ++move) {
+        encode(record.states[move], record.players[move], obs.data(), ObsVersion::V1);
+        REQUIRE(std::memcmp(
+            obs.data(),
+            record.observations.data() + (static_cast<std::size_t>(move) * OBS_SIZE),
+            OBS_SIZE * sizeof(float)) == 0);
+        ActionMask legal{};
+        (void)Game::legal_actions(record.states[move], legal);
+        for (std::uint16_t word = 0; word < ACTION_MASK_WORDS; ++word) {
+            REQUIRE(legal.words[word]
+                == record.legal_mask_words[(static_cast<std::size_t>(move) * ACTION_MASK_WORDS) + word]);
+        }
+    }
+}

@@ -1115,6 +1115,7 @@ def run_seat_swapped_match(
     device: torch.device,
     determinize: str | None = None,
     progress_callback: Callable[[int, int, int], None] | None = None,
+    independent_search: bool = False,
 ) -> SeatSwappedMatch:
     """Run a deterministic, seat-swapped NN-MCTS match.
 
@@ -1165,6 +1166,8 @@ def run_seat_swapped_match(
             route_kwargs["on_finished"] = report_finished
         if determinize is not None:
             route_kwargs["determinize"] = determinize
+        if independent_search:
+            route_kwargs["independent_search"] = True
         _, completed = play_routed_games(
             seat_models,
             config,

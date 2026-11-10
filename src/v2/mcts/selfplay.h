@@ -191,6 +191,20 @@ struct SelfPlayConfig {
     // Honest-information root sampling is opt-in so existing training runs
     // retain their exact Phase-T.1 perfect-information behavior by default.
     SelfPlayDeterminizeMode determinize = SelfPlayDeterminizeMode::Off;
+    // Diagnostics (2026-11 drawing board); defaults reproduce legacy behavior.
+    // Per-seat simulation budget for asymmetric matches (0 = inherit the
+    // slot/config budget). Requires tree_reuse off: a retained subtree would
+    // hand one seat's search effort to the other.
+    std::uint32_t seat_sims[MAX_PLAYERS]{};
+    // Route every leaf of a search to the SEARCHING seat's model. The legacy
+    // routing sends a leaf to the model of the player deciding AT the leaf,
+    // so in a two-model match each side's tree is scored by the opponent's
+    // priors and value at every opponent node (i.e. right after each of its
+    // own buys). Requires tree_reuse off (one tree, one model).
+    bool independent_search = false;
+    // Snapshot the live GameState of every recorded decision into
+    // SelfPlayRecord::states (16 KB each; analysis runs only).
+    bool record_states = false;
     std::uint16_t min_new_sims = 64U;
     std::uint8_t expand_top_k = 0;
     // Opening templates are a self-play-runner concern, deliberately kept
@@ -301,6 +315,9 @@ struct SelfPlayRecord {
     // This remains independent of the scalar value-target convention.
     std::vector<std::int16_t> margins;
     std::vector<PlayerId> players;
+    // Live state at each recorded decision; filled only when
+    // SelfPlayConfig::record_states is set.
+    std::vector<GameState> states;
     DefId kingdom[MAX_KINGDOM_DEFS]{};
     std::uint8_t kingdom_count = 0;
     std::uint64_t seed = 0;
@@ -359,6 +376,9 @@ public:
     [[nodiscard]] const float* leaf_observations() const noexcept;
     [[nodiscard]] const bool* leaf_legal_masks() const noexcept;
     [[nodiscard]] const PlayerId* leaf_players() const noexcept;
+    // Seat whose model must evaluate each pending leaf: the leaf's deciding
+    // player, or the searching seat under SelfPlayConfig::independent_search.
+    [[nodiscard]] const PlayerId* leaf_route_seats() const noexcept;
     // Aligned with leaf_observations()/leaf_players().  It identifies the
     // worker-model-table entry that must evaluate this pending leaf.
     [[nodiscard]] const std::uint32_t* leaf_model_ids() const noexcept;
@@ -441,6 +461,7 @@ private:
     std::unique_ptr<float[]> leaf_obs_;
     std::unique_ptr<bool[]> leaf_masks_;
     std::unique_ptr<PlayerId[]> leaf_players_;
+    std::unique_ptr<PlayerId[]> leaf_route_seats_;
     std::unique_ptr<std::uint32_t[]> leaf_model_ids_;
     std::unique_ptr<std::uint64_t[]> leaf_game_indices_;
     std::unique_ptr<float[]> normalized_policy_;

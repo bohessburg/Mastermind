@@ -12,6 +12,7 @@
 #include "v2/core/state_builder.h"
 #include "v2/encode/encoder.h"
 #include "v2/mcts/eval_runner.h"
+#include "v2/mcts/rollout_runner.h"
 #include "v2/mcts/selfplay.h"
 #include "v2/mcts/tree.h"
 
@@ -1370,6 +1371,97 @@ void decision_search_provide(
     return py::make_tuple(obs, masks);
 }
 
+[[nodiscard]] py::tuple rollout_collect(RolloutRunner& runner) {
+    std::uint32_t count = 0;
+    {
+        py::gil_scoped_release release;
+        count = runner.collect_leaves();
+    }
+    const std::size_t obs_size = runner.observation_size();
+    py::array_t<float> obs({static_cast<py::ssize_t>(count), static_cast<py::ssize_t>(obs_size)});
+    py::array_t<bool> masks({
+        static_cast<py::ssize_t>(count),
+        static_cast<py::ssize_t>(ACTION_SPACE_SIZE),
+    });
+    if (count != 0U) {
+        std::memcpy(
+            obs.mutable_data(),
+            runner.leaf_observations(),
+            static_cast<std::size_t>(count) * obs_size * sizeof(float));
+        std::memcpy(
+            masks.mutable_data(),
+            runner.leaf_legal_masks(),
+            static_cast<std::size_t>(count) * ACTION_SPACE_SIZE * sizeof(bool));
+    }
+    return py::make_tuple(obs, masks);
+}
+
+void rollout_provide(
+    RolloutRunner& runner,
+    py::array_t<float, py::array::c_style | py::array::forcecast> policies) {
+    if (policies.ndim() != 2 || policies.shape(1) != static_cast<py::ssize_t>(ACTION_SPACE_SIZE)) {
+        throw std::invalid_argument("policies must have shape [B, ACTION_SPACE]");
+    }
+    const auto count = static_cast<std::uint32_t>(policies.shape(0));
+    if (count != runner.leaf_count()) {
+        throw std::invalid_argument("policies batch does not match pending rollout leaves");
+    }
+    py::gil_scoped_release release;
+    runner.provide_policies(policies.data(), count);
+}
+
+void rollout_add_jobs(
+    RolloutRunner& runner,
+    py::array_t<std::uint32_t, py::array::c_style | py::array::forcecast> positions,
+    py::array_t<std::uint32_t, py::array::c_style | py::array::forcecast> actions,
+    py::array_t<std::uint64_t, py::array::c_style | py::array::forcecast> seeds,
+    py::array_t<std::uint32_t, py::array::c_style | py::array::forcecast> tags,
+    bool determinize_world) {
+    if (positions.ndim() != 1 || actions.ndim() != 1 || seeds.ndim() != 1 || tags.ndim() != 1
+        || actions.shape(0) != positions.shape(0)
+        || seeds.shape(0) != positions.shape(0)
+        || tags.shape(0) != positions.shape(0)) {
+        throw std::invalid_argument("rollout job arrays must be 1-D and the same length");
+    }
+    for (py::ssize_t i = 0; i < positions.shape(0); ++i) {
+        RolloutJob job{};
+        job.position = positions.at(i);
+        if (actions.at(i) >= ACTION_SPACE_SIZE) {
+            throw std::invalid_argument("rollout job action is out of range");
+        }
+        job.action = static_cast<Action>(actions.at(i));
+        job.seed = seeds.at(i);
+        job.tag = tags.at(i);
+        job.determinize = determinize_world;
+        runner.add_job(job);
+    }
+}
+
+[[nodiscard]] py::dict rollout_results(RolloutRunner& runner) {
+    const std::vector<RolloutResult> results = runner.take_results();
+    const auto count = static_cast<py::ssize_t>(results.size());
+    py::array_t<std::uint32_t> tags(count);
+    py::array_t<float> outcomes(count);
+    py::array_t<std::int16_t> margins(count);
+    py::array_t<std::uint16_t> turns(count);
+    py::array_t<bool> truncated(count);
+    for (py::ssize_t i = 0; i < count; ++i) {
+        const RolloutResult& result = results[static_cast<std::size_t>(i)];
+        tags.mutable_data()[i] = result.tag;
+        outcomes.mutable_data()[i] = result.outcome;
+        margins.mutable_data()[i] = result.margin;
+        turns.mutable_data()[i] = result.turns;
+        truncated.mutable_data()[i] = result.truncated;
+    }
+    py::dict dict;
+    dict["tags"] = tags;
+    dict["outcomes"] = outcomes;
+    dict["margins"] = margins;
+    dict["turns"] = turns;
+    dict["truncated"] = truncated;
+    return dict;
+}
+
 [[nodiscard]] py::array_t<std::uint8_t> selfplay_leaf_players(const SelfPlayRunner& runner) {
     const auto count = runner.leaf_count();
     py::array_t<std::uint8_t> players(static_cast<py::ssize_t>(count));
@@ -1380,6 +1472,18 @@ void decision_search_provide(
             static_cast<std::size_t>(count) * sizeof(PlayerId));
     }
     return players;
+}
+
+[[nodiscard]] py::array_t<std::uint8_t> selfplay_leaf_route_seats(const SelfPlayRunner& runner) {
+    const auto count = runner.leaf_count();
+    py::array_t<std::uint8_t> seats(static_cast<py::ssize_t>(count));
+    if (count != 0U) {
+        std::memcpy(
+            seats.mutable_data(),
+            runner.leaf_route_seats(),
+            static_cast<std::size_t>(count) * sizeof(PlayerId));
+    }
+    return seats;
 }
 
 [[nodiscard]] py::array_t<std::uint32_t> selfplay_leaf_model_ids(const SelfPlayRunner& runner) {
@@ -1497,6 +1601,13 @@ void selfplay_provide(
         dict["values"] = values;
         dict["margins"] = margins;
         dict["players"] = players;
+        if (!record.states.empty()) {
+            py::list states;
+            for (const GameState& state : record.states) {
+                states.append(make_game(state));
+            }
+            dict["states"] = states;
+        }
         for (std::size_t index = 0U; index < record.sampled_actions.size(); ++index) {
             sampled_actions.mutable_data()[index] = record.sampled_actions[index];
         }
@@ -2188,6 +2299,17 @@ PYBIND11_MODULE(dominion_v2_py, module) {
         .def_readwrite("prune_treasure_plays", &SelfPlayConfig::prune_treasure_plays)
         .def_readwrite("tree_reuse", &SelfPlayConfig::tree_reuse)
         .def_readwrite("determinize", &SelfPlayConfig::determinize)
+        .def_property(
+            "seat_sims",
+            [](const SelfPlayConfig& config) {
+                return py::make_tuple(config.seat_sims[0], config.seat_sims[1]);
+            },
+            [](SelfPlayConfig& config, const std::pair<std::uint32_t, std::uint32_t>& sims) {
+                config.seat_sims[0] = sims.first;
+                config.seat_sims[1] = sims.second;
+            })
+        .def_readwrite("independent_search", &SelfPlayConfig::independent_search)
+        .def_readwrite("record_states", &SelfPlayConfig::record_states)
         .def_readwrite("forced_playouts", &SelfPlayConfig::forced_playouts)
         .def_readwrite("forced_playouts_k", &SelfPlayConfig::forced_playouts_k)
         .def_readwrite("min_new_sims", &SelfPlayConfig::min_new_sims)
@@ -2202,6 +2324,7 @@ PYBIND11_MODULE(dominion_v2_py, module) {
         .def(py::init<const SelfPlayConfig&>(), py::arg("config"))
         .def("collect_leaves", &selfplay_collect, py::arg("max_batch") = 0U)
         .def("leaf_players", &selfplay_leaf_players)
+        .def("leaf_route_seats", &selfplay_leaf_route_seats)
         .def("leaf_model_ids", &selfplay_leaf_model_ids)
         .def("leaf_game_indices", &selfplay_leaf_game_indices)
         .def("provide_evaluations", &selfplay_provide, py::arg("values"), py::arg("policies"))
@@ -2209,6 +2332,48 @@ PYBIND11_MODULE(dominion_v2_py, module) {
         .def("games_completed", &SelfPlayRunner::games_completed)
         .def("observation_size", &SelfPlayRunner::observation_size)
         .def("total_virtual_loss", &SelfPlayRunner::total_virtual_loss);
+
+    py::class_<RolloutRunner>(module, "RolloutRunner")
+        .def(py::init([](
+            std::uint32_t n_slots,
+            int obs_version,
+            bool auto_play_treasures,
+            bool prune_treasure_plays,
+            std::uint16_t max_turns,
+            float temperature) {
+            RolloutConfig config{};
+            config.n_slots = n_slots;
+            config.obs_version = parse_obs_version(obs_version);
+            config.auto_play_treasures = auto_play_treasures;
+            config.prune_treasure_plays = prune_treasure_plays;
+            config.max_turns = max_turns;
+            config.temperature = temperature;
+            return std::make_unique<RolloutRunner>(config);
+        }),
+            py::arg("n_slots") = 1024U,
+            py::arg("obs_version") = 1,
+            py::arg("auto_play_treasures") = false,
+            py::arg("prune_treasure_plays") = false,
+            py::arg("max_turns") = 0U,
+            py::arg("temperature") = 0.0F)
+        .def("add_position", [](RolloutRunner& self, const PyGame& game) {
+            return self.add_position(game.state);
+        }, py::arg("game"))
+        .def(
+            "add_jobs",
+            &rollout_add_jobs,
+            py::arg("positions"),
+            py::arg("actions"),
+            py::arg("seeds"),
+            py::arg("tags"),
+            py::arg("determinize") = true)
+        .def("collect_leaves", &rollout_collect)
+        .def("provide_policies", &rollout_provide, py::arg("policies"))
+        .def("take_results", &rollout_results)
+        .def("queued_jobs", &RolloutRunner::queued_jobs)
+        .def("active_rollouts", &RolloutRunner::active_rollouts)
+        .def("decisions_evaluated", &RolloutRunner::decisions_evaluated)
+        .def("observation_size", &RolloutRunner::observation_size);
 
     py::enum_<EvalScriptedBotKind>(module, "EvalScriptedBotKind")
         .value("Engine", EvalScriptedBotKind::Engine)
