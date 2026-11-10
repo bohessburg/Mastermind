@@ -2620,3 +2620,58 @@ Goal (beat bc_a) not met. Durable results:
 - Self-play policy targets are the main source of regression, on both buggy and fixed search; self-play value alone is within noise of neutral (46.9%).
 - Sharpening helps but does not close the gap.
 - Untested: sharpened targets inside the live loop, lower Dirichlet/temperature in self-play, gate sims matched to self-play sims (128 vs 512).
+
+## Drawing board: the gate was mis-measuring (2026-11-10)
+
+No box. Everything below ran on the Mac (mps), 128 sims, c28 config.
+Plan and decision table: `docs/c29-plan.md`.
+
+### What was built
+
+- `SelfPlayConfig::independent_search` (whole tree scored by the searching seat's net), `seat_sims` (per-seat budget; 2 = raw policy), `record_states`, and `RolloutRunner` (batched policy playouts from stored positions). ctest 197/197.
+- `src/v2/train/diagnostics.py`: greedy match config, slot-manifest paired games, `run_paired_match` with pair-level SE / CI / Elo, zero-value model copy, raw-policy check. pytest 225 passed.
+- `scripts/c29_search_ladder.py` (one clean paired match; `--legacy-gate`, `--cross-route`, `--tree-reuse`, `--opening-temp` switch the old conditions back on one at a time).
+- `scripts/c29_decision_regret.py` (search move vs prior move by policy playouts with common random numbers, honest and true-world).
+- `scripts/box/c29_diagnostics.sh [ladder|gates|regret|measure|all]` (queue, skip finished tags, status line per job each minute).
+
+### Confounds in the old gate (`run_gate_match` -> `play_routed_games`)
+
+1. Cross-routed leaves: a leaf is scored by the net of the player deciding at the leaf. After a buy the turn passes, so the leaves that separate one buy from another are mostly opponent decisions. Each side's buys are therefore priced by the *other* side's value head.
+2. Shared reused tree between the two nets (`tree_reuse`).
+3. Sampled openings: under `per_seat_buy` the schedule ignores `gate_temp_moves = 0` and samples at T=1 (6 buy turns per seat, 10 action plies, 6 effect plies).
+4. First-N-finished selection (minor).
+
+### Measuring the measurement: c28 gen1 vs bc_a, same 32 boards x 2 seats = 64 games
+
+| conditions | gen1 score | 95% CI (paired) | Elo | W-L-T |
+|---|---|---|---|---|
+| clean: greedy, independent search, fresh tree, clairvoyant | **0.859** | [0.769, 0.950] | +314 | 55-9-0 |
+| clean, honest search (`determinize per_decision`) | **0.812** | [0.719, 0.906] | +255 | 51-11-2 |
+| clean + sampled openings only | 0.766 | [0.658, 0.873] | +206 | 49-15-0 |
+| clean + cross-routed leaves only | **0.266** | [0.160, 0.371] | -177 | 16-46-2 |
+| full legacy (cross-route + reuse + sampled openings) | 0.438 | [0.315, 0.560] | -44 | 28-36-0 |
+| old gate as recorded during c28 (200 games) | 0.464 | | | |
+| self-check: bc_a vs a separately loaded bc_a | 0.500 exactly | [0.500, 0.500] | 0 | 30-30-4 |
+| label swap: bc_a as side A, gen1 as side B (gen1's score shown) | 0.836 | [0.749, 0.923] | +283 | 53-10-1 |
+
+The label swap agrees with the first run to within two games (float non-determinism from batch composition on mps), so there is no side-A bias in the tool.
+
+Reading:
+- The tool reproduces the old gate (0.438 here, 0.464 recorded) and the corrected conditions give the opposite verdict on the same boards.
+- Cross-routing alone flips the result (0.859 -> 0.266). That is not dilution toward 50%: it is close to a swap of the two value heads. gen1's edge is in its value head, and the old gate handed that value head to bc_a.
+- Sampled openings cost about 9 points here (3.6% of decisions were not the most-visited move); within noise at 32 boards, direction as expected for a flatter policy.
+- The gain survives honest search (0.812), so it is not only hidden-information exploitation.
+- Side observation: bc_a against itself, greedy, hits the 100-turn cap in 8 of 64 games (mean 62.6 turns); gen1 vs bc_a truncates 1 of 64.
+
+### What this does to earlier conclusions
+
+- "c28 g1-g6 all failed the gate" (46 / 41 / 28 / 30 / 29 / 33%): the gate was anti-measuring value-head quality. Those numbers do not show the nets were worse. Because every gate rejected, `best` stayed bc_a and c28 never iterated: all six generations trained on bc_a's self-play.
+- "self-play policy targets cause the regression", "self-play value alone is neutral", "sharpening recovers 8-10 points": all measured with the same gate; none can be trusted until re-run with the corrected protocol.
+- The MCTS deciding-player fix (+6.5 points vs engine3) stands; it was measured with EvalRunner against a scripted opponent, which has no cross-routing.
+
+### What does not fit yet
+
+Against engine3 (honest, 400 sims, scripted opponent) the c28 nets are not better than bc_a: gens 1-6 pooled 455 wins in 1100 games (41%), bc_a 47.0% in 200 games.
+So gen1 beats bc_a 4:1 head to head but does not beat a third party more often.
+Candidate explanations, not yet separated: gen1's value head was fit to bc_a's own self-play and has learned bc_a's games specifically (a non-transitive gain); or the engine3 evals differ in budget and noise enough to hide a real gain (100 games each).
+The plan's step 0 covers this: corrected gates for g1-g6, plus paired engine3 evals of gen1 and bc_a on the same seeds.

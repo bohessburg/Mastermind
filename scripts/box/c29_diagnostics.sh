@@ -39,10 +39,13 @@ regret() { # tag, then c29_decision_regret.py arguments
 
 if [ "$WHAT" = gates ] || [ "$WHAT" = all ]; then
   # Corrected gate for every candidate: clairvoyant (the training regime)
-  # and honest search.
+  # first for all of them, then honest search.
   for ckpt in $CANDS; do
     name=$(basename "$(dirname "$ckpt")")_$(basename "$ckpt" .pt)
     ladder "gate_${name}"        --a "$ckpt" --b "$BC"
+  done
+  for ckpt in $CANDS; do
+    name=$(basename "$(dirname "$ckpt")")_$(basename "$ckpt" .pt)
     ladder "gate_${name}_honest" --a "$ckpt" --b "$BC" --determinize per_decision
   done
 fi

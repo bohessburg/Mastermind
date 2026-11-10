@@ -1,5 +1,11 @@
 # Session Handoff — Training Program State
 
+> **2026-11-10: this snapshot is stale.** Current state and plan are in
+> `docs/c29-plan.md` and the 2026-11-10 entry at the tail of
+> `docs/training-log.md`. Short version: the training gate was found to score
+> each side's moves with the opponent's value head, so the c25-c28 gate
+> rejections do not show those nets were worse than `bc_a`.
+
 Snapshot: 2026-07-30 (post-restructure-build night). Read with
 `docs/training-log.md` (the 2026-07-28..30 entries at the tail are the
 current state), `IMPLEMENTATION_PLAN.md` Phase T3 (the restructure build
