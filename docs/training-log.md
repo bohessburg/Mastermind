@@ -2675,3 +2675,21 @@ Against engine3 (honest, 400 sims, scripted opponent) the c28 nets are not bette
 So gen1 beats bc_a 4:1 head to head but does not beat a third party more often.
 Candidate explanations, not yet separated: gen1's value head was fit to bc_a's own self-play and has learned bc_a's games specifically (a non-transitive gain); or the engine3 evals differ in budget and noise enough to hide a real gain (100 games each).
 The plan's step 0 covers this: corrected gates for g1-g6, plus paired engine3 evals of gen1 and bc_a on the same seeds.
+
+### Corrected gates, c28 gen 1-6 vs bc_a (100 boards x 2 seats = 200 games each, 128 sims, local)
+
+| gen | old gate (recorded) | corrected, clairvoyant | corrected, honest search |
+|---|---|---|---|
+| 1 | 46.4% | 0.825 [0.778, 0.872] | 0.843 [0.795, 0.890] |
+| 2 | 41.1% | 0.840 [0.794, 0.886] | 0.882 [0.840, 0.925] |
+| 3 | 27.7% | 0.897 [0.851, 0.944] | 0.907 [0.865, 0.950] |
+| 4 | 30.3% | 0.910 [0.873, 0.947] | 0.922 [0.886, 0.959] |
+| 5 | 28.7% | 0.865 [0.819, 0.911] | 0.890 [0.847, 0.933] |
+| 6 | 33.2% | 0.938 [0.906, 0.969] | 0.950 [0.921, 0.979] |
+
+Every generation beats bc_a by a wide margin head to head, the margin grows from g1 to g6 (Elo +269 -> +470 clairvoyant, +291 -> +512 honest), and honest search does at least as well as clairvoyant.
+The old gate moved the other way as the nets got stronger (46% -> 28-33%), which is what a gate that lends the candidate's value head to the opponent would do.
+Under the 55% rule every one of these would have been accepted; with promotion the loop would have been generating self-play from g1, g2, ... instead of from bc_a six times.
+Results: `bench/c29_ladder/gate_campaign28_gen_000N[_honest].json` (local, untracked).
+
+Still open: the engine3 numbers (c28 gens 41% pooled vs bc_a 47%) say this head-to-head gain does not carry to a third party. Next: paired engine3 evals of bc_a and gen6 on the same seed, and a corrected gen6 vs gen1 match.

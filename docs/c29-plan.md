@@ -84,6 +84,20 @@ What this establishes:
   points") used the same gate and have to be re-measured before anyone builds
   on them.
 
+Corrected gates for all six c28 generations (100 boards, 200 games each):
+
+| gen | Old gate | Corrected, clairvoyant | Corrected, honest |
+|---|---|---|---|
+| 1 | 46.4% | 0.825 | 0.843 |
+| 2 | 41.1% | 0.840 | 0.882 |
+| 3 | 27.7% | 0.897 | 0.907 |
+| 4 | 30.3% | 0.910 | 0.922 |
+| 5 | 28.7% | 0.865 | 0.890 |
+| 6 | 33.2% | 0.938 | 0.950 |
+
+All six beat `bc_a` head to head, by more each generation, while the old gate
+fell. Step 0's gate part is done; the third-party check is what remains.
+
 What does not fit yet:
 
 - Against engine3 (honest search, 400 sims, scripted opponent) the c28 nets
