@@ -871,6 +871,79 @@ TEST_CASE("v2 MCTS virtual loss bookkeeping is reversible", "[v2][mcts]") {
     REQUIRE(search.node(0U).virtual_loss == 0.0F);
 }
 
+TEST_CASE("v2 MCTS leaves in flight do not flatten root visits", "[v2][mcts][virtual_loss]") {
+    // With a constant value the search has nothing but the prior to go on, so
+    // root visits must follow the prior however many leaves are in flight.
+    const GameState state = buy_position(3);
+    ActionMask legal{};
+    REQUIRE(Game::legal_actions(state, legal) >= 3);
+    const std::array<Action, 3> support = {
+        legal.nth_set(0U),
+        legal.nth_set(1U),
+        legal.nth_set(2U),
+    };
+    std::array<float, ACTION_SPACE_SIZE> priors{};
+    priors[support[0]] = 0.90F;
+    priors[support[1]] = 0.06F;
+    priors[support[2]] = 0.04F;
+
+    MctsConfig config{};
+    config.determinizations = 1U;
+    config.max_tree_nodes = 2048U;
+    config.c_puct = 1.25F;
+    config.fpu_reduction = 0.2F;
+    config.rollout_policy = MctsRolloutPolicy::External;
+
+    constexpr std::uint32_t simulations = 128U;
+    const auto top_share = [&](std::uint32_t leaves_in_flight) {
+        Mcts search(config);
+        search.reset(state, 0U);
+        Xoshiro256pp rng = Xoshiro256pp::seeded(0x1EAF'0001ULL);
+        std::uint32_t started = 0U;
+        while (started < simulations) {
+            std::array<MctsPendingLeaf, 8> batch{};
+            std::uint32_t count = 0U;
+            while (count < leaves_in_flight && started < simulations) {
+                MctsPendingLeaf leaf{};
+                const bool need_eval = search.collect_external_leaf(leaf);
+                if (leaf.collided) {
+                    break;
+                }
+                ++started;
+                if (need_eval) {
+                    batch[count++] = leaf;
+                }
+            }
+            for (std::uint32_t i = 0U; i < count; ++i) {
+                search.provide_external_evaluation(
+                    batch[i],
+                    0.0F,
+                    batch[i].node == 0U ? priors.data() : nullptr,
+                    rng);
+            }
+        }
+        REQUIRE(search.total_virtual_loss() == 0.0F);
+        REQUIRE(search.best_root_action() == support[0]);
+        std::uint32_t child_visits = 0U;
+        const MctsNode& root = search.node(0U);
+        for (std::uint32_t child = root.first_child; child != MCTS_NULL;
+             child = search.node(child).next_sibling) {
+            child_visits += search.node(child).visits;
+        }
+        REQUIRE(child_visits > 0U);
+        return static_cast<float>(search.root_visits_for(support[0])) / static_cast<float>(child_visits);
+    };
+
+    const float sequential = top_share(1U);
+    REQUIRE(sequential > 0.75F);
+    for (const std::uint32_t leaves : {4U, 8U}) {
+        const float batched = top_share(leaves);
+        INFO("leaves in flight " << leaves << " top share " << batched << " sequential " << sequential);
+        REQUIRE(batched > 0.70F);
+        REQUIRE(batched > sequential - 0.15F);
+    }
+}
+
 TEST_CASE("v2 MCTS terminal values are perspective correct", "[v2][mcts]") {
     GameState state = Game::new_game(Setup{}, 303U);
     clear_player_cards(state, 0U);

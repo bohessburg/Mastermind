@@ -2713,3 +2713,96 @@ Consequences for c29:
 - No c28 checkpoint replaces bc_a as best.
 - The corrected gate is necessary but not sufficient. Promotion needs a third-party term (engine3, and a pool of past nets) next to the head-to-head.
 - Whether an iterating loop (promote, then self-play from the new best) generalises better than six generations against a frozen parent is untested; that is the first thing a c29 run would show.
+
+## Drawing board, part 2: multi-leaf virtual loss flattened the search (2026-11-10)
+
+Started from a question about play style: bc_a's search games pile out (mean 64.6 turns, 1.10 Provinces per seat, 6 of 48 hit the turn cap), and the suspicion was that the net does not weigh game progress.
+The net does weigh it. The search was broken, by a change made in this project's own c25 prep.
+
+### The policy does respond to game progress
+
+bc_a raw policy (prior argmax, no search), 200 games, 1463 buy decisions with Province affordable:
+
+| Seat turn | Buys Province | | Provinces left | Buys Province |
+|---|---|---|---|---|
+| 1-8 | 16% | | 7-8 | 45% |
+| 9-12 | 42% | | 5-6 | 92% |
+| 13-16 | 77% | | 3-4 | 95% |
+| 17-20 | 87% | | 2 | 86% |
+| | | | 1 | 82% (67 of 67 when it wins or ties) |
+
+Counterfactual inputs on those observations: setting the turn counter from 2 to 90 moves mean P(Province) 0.61 -> 0.57 (the net ignores the turn counter); setting the Province pile count from 8 to 1 moves it 0.56 -> 0.73 and the share of decisions whose top move is Province 0.65 -> 0.87.
+Progress is read from the piles and the decks, as it should be.
+The one-ply value agrees: buying Province beats Gold and the best action buy by +0.10 to +0.26 once five or six Provinces are left, and is level with the best action buy while seven or eight remain.
+
+### The search was undoing it
+
+All at 128 sims, corrected protocol, honest search, bc_a:
+
+| Match | Score | 95% CI |
+|---|---|---|
+| search vs own raw policy | 0.155 | |
+| search with the value output zeroed vs raw policy | 0.120 | [0.074, 0.166] |
+
+Search lost to no search, and it lost by the same amount with no value head, so the value head was not the cause.
+In search games the prior's Province was overridden 58 times in 153 (38%), a third of all decisions were not the prior's move, and the largest class was "play an action -> PASS" (21 per game: Village, Sentry, Poacher, Throne Room ...).
+With a zero value the root visit vectors were near uniform over four children whatever the prior: `buy Moat` prior 0.999 -> 26% of visits, `buy Curse` prior 0.000 -> 27%; `PASS` prior 0.037 -> 67% against `play Moneylender` prior 0.963 -> 33%.
+
+### Root cause
+
+`Mcts::select_child` scored a child as `q + u - virtual_loss`, and each leaf in flight adds 1.0 of virtual loss to every node on its path.
+Values live in [-1, 1], so a flat -1.0 means a child with a leaf in flight cannot be chosen again while any sibling exists.
+Every batch of L in-flight leaves therefore went to L different root children, and root visits came out close to uniform over the top L children.
+L is `min(leaves_in_flight, sims / leaves_min_sims_per_leaf)`: 4 at 128 sims, 8 at 512 sims (the same as `expand_top_k`).
+
+The formula dates from July (`0c7c2a1`) and was harmless while each game had one leaf in flight.
+Multi-leaf search (`leaves_in_flight = 8`) was added for throughput in `530ffcc` ("audit fixes, c25 prep", 2026-11-08) and is in `run_c25`, `run_c26`, `run_c26h`, `run_c27v` and `run_c28`.
+`run_c24` and earlier use one leaf. `EvalRunner` (the engine3 evals) keeps one leaf per game and is not affected.
+
+Affected, all through `SelfPlayRunner`:
+- every self-play game of c25-c28: policy targets close to uniform over the top 4-8 children. This is the "target entropy 0.51 -> 1.1" and the "self-play policy targets make the net worse" of the c26/c28 ablations;
+- the old gates of c25-c28;
+- the corrected gates and ladder rungs earlier in this log (128 sims, 4 in flight).
+
+### Fix
+
+A leaf in flight now counts as one visit that lost: `q = (q * visits - in_flight) / (visits + in_flight)`, with the in-flight count kept in the exploration denominator and the flat penalty removed.
+The penalty shrinks as a child gathers real visits.
+New test `v2 MCTS leaves in flight do not flatten root visits`: constant value, root prior 0.90 / 0.06 / 0.04, 128 sims. Share of visits on the top move: sequential 0.906; 4 in flight 0.874 (0.252 before the fix); 8 in flight 0.772.
+
+### Re-measured (128 sims unless noted, honest search, 50 boards x 2 seats)
+
+| Match | Broken search | Sequential (`--leaves-in-flight 1`, old build) | Fixed multi-leaf |
+|---|---|---|---|
+| bc_a search vs own raw policy | 0.155 | 0.590 [0.492, 0.688] | 0.580 [0.498, 0.662] |
+| bc_a 512 sims vs own raw policy | | | 0.620 [0.531, 0.709] |
+| bc_a vs bc_a with value zeroed | | | 0.590 [0.501, 0.679] |
+| c28 gen6 vs bc_a | 0.950 (100 boards) | 0.580 [0.482, 0.678] | 0.570 [0.472, 0.668] |
+| zero-value search: decisions not the prior's move | 35% | 1.5% | 1.1% |
+
+bc_a self-play style, 48 games, 128 sims:
+
+| | Broken search | Fixed search | Raw policy |
+|---|---|---|---|
+| Turns per game | 64.6 | 40.8 | 42.2 |
+| Hit the turn cap | 6 | 0 | 1 |
+| Provinces per seat | 1.10 | 2.26 | 2.41 |
+| Final score | 14.0 | 22.8 | 22.0 |
+| Action plays per turn | 1.78 | 2.88 | 2.48 |
+| Prior says Province, search plays something else | 58 of 153 | 6 of 210 | n/a |
+
+Reading:
+- The fixed multi-leaf search matches sequential search (0.580 vs 0.590 against raw; 0.570 vs 0.580 for gen6 vs bc_a).
+- Search is an improvement operator on bc_a, a modest one: about +56 Elo at 128 sims and +85 at 512 over the raw policy. Both intervals are wide and 512 vs 128 is not separated.
+- The value head helps the search (+63 Elo over a zero value), the opposite of the earlier reading.
+- gen6's 0.95 over bc_a was mostly an artifact. Six generations trained on broken-search games learned priors and values that hold up when the mover picks nearly at random among its top four moves, and bc_a had not. With a working search gen6 is 0.57-0.58 against bc_a, not separated from even, and it is still 12.5 points worse against engine3 (38.0% vs 50.5%, single-leaf, unaffected).
+
+### What this does to earlier conclusions
+
+- c25-c28 never tested "does self-play improve on bc_a". They tested "does training on near-uniform top-8 visit targets improve on bc_a", and it does not. Their replay data and checkpoints should not seed c29.
+- "Self-play policy targets cause the regression" was true of those targets only. "Sharpening recovers 8-10 points" was undoing part of the flattening.
+- "The head-to-head gain is non-transitive": the gain was adaptation to the broken search, in both seats of the gate.
+- The gate confounds (cross-routed leaves, shared tree, sampled openings) are real in the code, but their sizes were measured with the broken search and need a re-run.
+- Unaffected: everything measured with `EvalRunner` (engine3 evals, the deciding-player fix), c24 and earlier, and the BC pretraining of bc_a.
+
+Results: `bench/c29_ladder/*_L1.json`, `*_vlfix.json` (local, untracked).

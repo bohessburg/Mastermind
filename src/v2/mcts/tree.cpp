@@ -2078,9 +2078,19 @@ std::uint32_t Mcts::select_child(std::uint32_t node_index) const noexcept {
         if (child.visits == 0U && config_.fpu_reduction >= 0.0F) {
             q = parent_fpu_value;
         }
-        const float denom = 1.0F + static_cast<float>(child.visits) + child.virtual_loss;
+        // Virtual loss: every leaf in flight below this child counts as one
+        // visit that lost. The penalty therefore shrinks as the child gathers
+        // real visits. (A flat "- virtual_loss" on the score outweighs any
+        // value in [-1, 1], which sends every leaf of a batch to a different
+        // sibling and flattens the visit distribution.)
+        const float in_flight = child.virtual_loss;
+        if (in_flight > 0.0F) {
+            const float visits = static_cast<float>(child.visits);
+            q = (q * visits - in_flight) / (visits + in_flight);
+        }
+        const float denom = 1.0F + static_cast<float>(child.visits) + in_flight;
         const float u = c_puct * child.prior * exploration_base / denom;
-        const float score_value = q + u - child.virtual_loss;
+        const float score_value = q + u;
         if (score_value > best_score) {
             best_score = score_value;
             best_child = child_index;

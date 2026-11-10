@@ -75,6 +75,8 @@ def main() -> None:
     parser.add_argument("--cross-route", action="store_true")
     parser.add_argument("--tree-reuse", action="store_true")
     parser.add_argument("--opening-temp", action="store_true")
+    parser.add_argument("--leaves-in-flight", type=int, default=None,
+                        help="leaves one search may have in flight at once (default: the config's; 1 = sequential search)")
     parser.add_argument("--seed", type=int, default=20261110)
     parser.add_argument("--config", default="configs/run_c28.json")
     parser.add_argument("--device", default="auto")
@@ -104,12 +106,16 @@ def main() -> None:
         greedy=not opening_temp,
         tree_reuse=tree_reuse,
     )
+    if args.leaves_in_flight is not None:
+        match_config.leaves_in_flight = int(args.leaves_in_flight)
+        match_config.tail_leaves_in_flight = 0
     print(
         f"[{args.tag}] device={device} pairs={args.pairs} chunk={args.chunk} "
         f"A={args.a} sims={args.a_sims} zero_v={args.a_zero_value} | "
         f"B={b_path} sims={args.b_sims} zero_v={args.b_zero_value} | "
         f"determinize={match_config.determinize} cross_route={cross_route} "
-        f"tree_reuse={tree_reuse} opening_temp={opening_temp}",
+        f"tree_reuse={tree_reuse} opening_temp={opening_temp} "
+        f"leaves_in_flight={match_config.leaves_in_flight} (min sims/leaf {match_config.leaves_min_sims_per_leaf})",
         flush=True,
     )
 
@@ -162,6 +168,7 @@ def main() -> None:
         "cross_route": cross_route,
         "tree_reuse": tree_reuse,
         "opening_temp": opening_temp,
+        "leaves_in_flight": int(match_config.leaves_in_flight),
         "seed": args.seed,
         "config": args.config,
         "device": str(device),

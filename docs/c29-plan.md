@@ -15,7 +15,33 @@ Before spending another box on training, two things had to be checked:
 2. Is search an improvement operator on this net at all? If 512-sim search
    does not beat the raw policy, no amount of self-play can help.
 
-The first check already failed. The second is what the next box is for.
+The first check already failed. The second was run locally the same day and
+turned up something worse than either: the search itself was broken.
+
+## Correction: the search was broken from c25 on
+
+Found 2026-11-10, after the sections below were first written. Numbers are in
+the "Drawing board, part 2" entry of `docs/training-log.md`.
+
+`Mcts::select_child` subtracted a flat 1.0 from a child's score for every leaf
+in flight below it. Values live in [-1, 1], so with several leaves in flight
+per search (`leaves_in_flight = 8`, added for throughput in the c25 prep,
+commit `530ffcc`) every batch was spread over different root children and
+root visits came out close to uniform over the top 4 (128 sims) or 8 (512
+sims) moves, whatever the prior and the value said. The move played was close
+to a random pick among the top few.
+
+- Affected: all c25-c28 self-play, their gates, and every 128-sim match in
+  "Results so far" below. Not affected: engine3 evals (`EvalRunner`, one leaf
+  per game), c24 and earlier, and `bc_a` itself (behaviour cloning).
+- Fixed in `src/v2/mcts/tree.cpp`: a leaf in flight counts as one lost visit,
+  so the penalty fades as real visits arrive. Regression test in
+  `tests/v2/test_mcts.cpp`.
+- With the fix, 128-sim search beats `bc_a`'s raw policy 0.580 (sequential
+  search: 0.590); before, it scored 0.155.
+
+Read "Results so far" with that in mind: the gate confounds are real in the
+code, but the scores there were all produced by the broken search.
 
 ## What was wrong with the gate
 
@@ -53,7 +79,7 @@ Implemented in `src/v2/train/diagnostics.py` and `scripts/c29_search_ladder.py`:
 A match of a net against a separately loaded copy of itself must score exactly
 0.500 with zero paired variance. That self-check is part of the launcher.
 
-## Results so far
+## Results so far (measured with the broken search)
 
 c28 gen1 against `bc_a`, the same 32 boards in both seat orientations (64
 games), 128 sims, local Mac:
@@ -107,10 +133,12 @@ The third-party check (done 2026-11-10, local):
 
 Corrected gen6 vs gen1: 0.540 [0.471, 0.609], not separable from even.
 
-So the head-to-head gain is non-transitive. gen6 beats `bc_a` 19 games in 20
-and does 12.5 points worse than `bc_a` against engine3. Six generations
-trained against one frozen parent learned to beat that parent, not to play
-better. No c28 checkpoint replaces `bc_a`.
+At the time this read as a non-transitive gain. It was adaptation to the
+broken search: six generations trained on games where the mover picks almost
+at random among its top moves learned priors and values that survive that,
+and `bc_a` had not. With the search fixed, gen6 vs `bc_a` is 0.570
+[0.472, 0.668] (sequential search: 0.580), not separated from even, and gen6
+is still 12.5 points worse against engine3. No c28 checkpoint replaces `bc_a`.
 
 ## The plan
 
@@ -137,6 +165,21 @@ All on `bc_a`, corrected protocol, clairvoyant and honest:
 
     scripts/box/c29_diagnostics.sh ladder
 
+Run locally 2026-11-10 with the fixed search (honest, 50 boards x 2 seats):
+
+| Match | Score | 95% CI | Elo |
+|---|---|---|---|
+| 128 sims vs raw policy | 0.580 | [0.498, 0.662] | +56 |
+| 128 sims vs raw policy, sequential search | 0.590 | [0.492, 0.688] | +63 |
+| 512 sims vs raw policy | 0.620 | [0.531, 0.709] | +85 |
+| 128 vs 128 with the value output zeroed | 0.590 | [0.501, 0.679] | +63 |
+
+Search is an improvement operator on `bc_a` and the value head contributes to
+it. The gain is modest and the intervals are wide. Still to run, on a GPU:
+512 vs 128, 512 vs zero-value 512, clairvoyant variants, and 8 leaves in
+flight against sequential search at 512 sims (only 4 in flight at 128 sims
+has been checked against sequential).
+
 ### Step 2: decision regret (is the search's move actually better?)
 
 `scripts/c29_decision_regret.py` takes positions from greedy search games,
@@ -158,11 +201,33 @@ numbers. Playouts never consult the value head. It reports:
 
 | Finding | Meaning | Next move |
 |---|---|---|
-| Candidates beat `bc_a` in the corrected gate but not a third party (**observed**) | Self-play from a frozen parent teaches beating the parent | Gate on head-to-head AND a third-party term (engine3 plus a pool of past nets); let the loop promote so the opponent moves; mix past nets into self-play opponents |
+| Candidates beat `bc_a` in the corrected gate but not a third party (observed, but with the broken search) | Self-play from a frozen parent teaches beating the parent | Gate on head-to-head AND a third-party term (engine3 plus a pool of past nets); let the loop promote so the opponent moves; mix past nets into self-play opponents |
 | Search beats raw, candidates do not beat `bc_a` | Targets are good, learning from them is not | Work on the loss and the targets (sharpening in the live loop, policy weight, replay mix) |
 | Search does not beat raw, or the zero-value net searches as well as the real one | There is no improvement operator to distil | Fix the search or the value head before any training: more sims, value calibration, playout-backed values |
 | Clairvoyant gains vanish under honest search | Self-play is learning to exploit hidden information | Generate self-play with determinized search |
 | Regret shows overrides are no better than the prior | Visit targets carry noise, not signal | Target pruning / sharpening, or train only on decisions with a clear visit margin |
+
+Outcome (2026-11-10): none of the rows applied as written, because the
+search that produced the targets was broken. With it fixed, search beats raw
+and the value head helps, so there is an improvement operator to distil, and
+it has never been distilled: c25-c28 trained on flattened targets.
+
+c29 is therefore the c28 recipe run for the first time with a working search:
+
+1. Start from `bc_a`. Do not reuse c25-c28 replay data or checkpoints.
+2. Finish the ladder on the box (previous section), then the decision-regret
+   run, before generating self-play.
+3. Gate with the corrected protocol plus an engine3 term (step 4), so the
+   loop can promote.
+4. Watch in the first generation: policy-target entropy should stay near the
+   BC prior's 0.5 instead of rising to 1.1; games should run about 41 turns
+   with over 2 Provinces per seat, not 65 turns and 1.1.
+
+Input features for game progress (Provinces left as its own scalar, piles to
+game end, money density) are cheap to add to the derived block but are not
+the fix: the raw policy already buys Province 16% -> 87% of the time as the
+game goes on and 92-95% once two Provinces are gone, and it reads that from
+the pile counts. Revisit only if a fixed-search campaign still greens late.
 
 ### Step 4: change the trainer's gate
 
