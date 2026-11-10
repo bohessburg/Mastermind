@@ -24,17 +24,19 @@ CANDS=${CANDS:-$(ls checkpoints/campaign28/gen_000[1-6].pt 2>/dev/null | tr '\n'
 PY=${PY:-.venv/bin/python}
 LADDER_OUT=bench/c29_ladder; REGRET_OUT=bench/c29_regret
 mkdir -p "$LADDER_OUT/logs" "$REGRET_OUT/logs"
-QUEUE=$(mktemp)
+# One small script per job: BSD xargs cannot substitute long command lines.
+QUEUE=$(mktemp -d)
+enqueue() { printf '%s\n' "$1" > "$QUEUE/$(printf '%03d' "$(ls "$QUEUE" | wc -l)").sh"; }
 
 ladder() { # tag, then c29_search_ladder.py arguments
   local tag=$1; shift
   [ -f "$LADDER_OUT/$tag.json" ] && return
-  echo "$PY scripts/c29_search_ladder.py --tag $tag --pairs $PAIRS --chunk $CHUNK --out $LADDER_OUT $* > $LADDER_OUT/logs/$tag.log 2>&1" >> "$QUEUE"
+  enqueue "$PY scripts/c29_search_ladder.py --tag $tag --pairs $PAIRS --chunk $CHUNK --out $LADDER_OUT $* > $LADDER_OUT/logs/$tag.log 2>&1"
 }
 regret() { # tag, then c29_decision_regret.py arguments
   local tag=$1; shift
   [ -f "$REGRET_OUT/$tag.json" ] && return
-  echo "$PY scripts/c29_decision_regret.py --tag $tag --out $REGRET_OUT $* > $REGRET_OUT/logs/$tag.log 2>&1" >> "$QUEUE"
+  enqueue "$PY scripts/c29_decision_regret.py --tag $tag --out $REGRET_OUT $* > $REGRET_OUT/logs/$tag.log 2>&1"
 }
 
 if [ "$WHAT" = gates ] || [ "$WHAT" = all ]; then
@@ -85,19 +87,22 @@ if [ "$WHAT" = regret ] || [ "$WHAT" = all ]; then
   regret "bc_s512_all" --model "$BC" --sims 512 --games 128 --positions 600
 fi
 
-total=$(wc -l < "$QUEUE" | tr -d ' ')
+total=$(ls "$QUEUE" | wc -l | tr -d ' ')
 echo "c29_diagnostics: $total jobs queued ($WHAT), $JOBS at a time, pairs=$PAIRS chunk=$CHUNK"
-[ "$total" = 0 ] && { rm -f "$QUEUE"; exit 0; }
-xargs -P "$JOBS" -I{} bash -c '{}' < "$QUEUE" &
+[ "$total" = 0 ] && { rm -rf "$QUEUE"; exit 0; }
+ls "$QUEUE"/*.sh | xargs -P "$JOBS" -n 1 bash &
 runner=$!
 while kill -0 "$runner" 2>/dev/null; do
   sleep 60
   echo "== $(date +%H:%M) done $(ls $LADDER_OUT/*.json $REGRET_OUT/*.json 2>/dev/null | wc -l | tr -d ' ') json"
+  # Last line of every log still being written (finished jobs end in DONE).
   for log in "$LADDER_OUT"/logs/*.log "$REGRET_OUT"/logs/*.log; do
-    [ -f "$log" ] && tail -n 1 "$log"
+    [ -f "$log" ] || continue
+    [ "$(basename "$log")" = _gates_run.log ] && continue
+    grep -q "DONE" "$log" || tail -n 1 "$log"
   done
 done
 wait "$runner"
-rm -f "$QUEUE"
+rm -rf "$QUEUE"
 echo "c29_diagnostics: finished"
 grep -h "DONE" "$LADDER_OUT"/logs/*.log "$REGRET_OUT"/logs/*.log 2>/dev/null
