@@ -2581,3 +2581,42 @@ Next: policy-target sharpening (target^p, renormalised over legal moves). Same s
 - sp_policy p=2
 - sp_policy p=4
 - combo p=3: sharpened sp policy + sp value + human anchor, weight 1
+
+### Policy-target sharpening (c28 g1+g2 replay, 240 steps, gate 200g @128 vs bc_a)
+
+| arm | gate |
+|---|---|
+| sp_policy p=1 (raw visits, from above) | 34.2% |
+| sp_policy p=2 | 42.3% (82-112-6) |
+| sp_policy p=4 | 44.1% (86-109-5) |
+| combo p=3 (sharp sp policy + sp value + human anchor) | 43.8% (85-109-6) |
+
+Sharpening recovers about 8-10 points over raw visit targets, so target flatness is part of the damage, but no arm reaches 50%.
+Even at p=4 the self-play policy targets make bc_a worse at the 128-sim gate.
+
+### C28 final (box expired about 20:45 MST on 2026-11-09, during gen 7 training)
+
+Gates vs bc_a (200g @128, accept at 55%), all rejected; best stayed gen 0 (bc_a):
+
+| gen | gate | engine3 main eval (100g, 400 sims) |
+|---|---|---|
+| 1 | 46.4% | 42 |
+| 2 | 41.1% | 41 |
+| 3 | 27.7% | 41 |
+| 4 | 30.3% | 31 |
+| 5 | 28.7% | 40 |
+| 6 | 33.2% | (not finished) |
+
+Policy entropy 1.11 -> 1.21, value loss 0.173 -> 0.140 over g1-g6.
+gen_0001..0006.pt, metrics.csv and evals.csv are pulled to checkpoints/campaign28/; ablation and duel outputs are in bench/c28_ablation, bench/c28_sharp, bench/c26_ablation, bench/c26_duels (local, untracked).
+
+Process failure: the watcher for the sharpening gates was launched under zsh with the ssh command in an unsplit variable, so it never saw the GATE lines and never fired.
+The sharpening results landed at 17:33 and nothing acted on them; c28 ran unchanged for the last ~3 h of box time. The g3 boundary memory profile (/root/memprof.log) was never read and is lost with the box.
+
+### Session outcome
+
+Goal (beat bc_a) not met. Durable results:
+- MCTS deciding-player fix (6e6ef3f): +6.5 points on engine3 with the same net (40.5% -> 47.0%, 200 paired games).
+- Self-play policy targets are the main source of regression, on both buggy and fixed search; self-play value alone is within noise of neutral (46.9%).
+- Sharpening helps but does not close the gap.
+- Untested: sharpened targets inside the live loop, lower Dirichlet/temperature in self-play, gate sims matched to self-play sims (128 vs 512).
