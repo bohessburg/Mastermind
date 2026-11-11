@@ -40,6 +40,7 @@ from ..protocol.events import (
     Discard,
     Draw,
     Chat,
+    Gain,
     GameEnd,
     GameEvent,
     GameResult,
@@ -2124,8 +2125,63 @@ def _rebuild_turn_after_shuffle(
             our_seat=seat_index,
             events=step.events,
         )
+    _return_shuffled_discards(
+        game,
+        seat_index,
+        (event for step in all_steps for event in step.events),
+    )
     game.validate()
     active.shadow = game
+
+
+def _return_shuffled_discards(
+    game: Any,
+    seat: int,
+    events: Iterable[GameEvent],
+) -> None:
+    """Put this turn's earlier discards under the deck, where the shuffle sent them.
+
+    The rebuilt turn starts with the turn-start discard pile already merged
+    into the deck.  Cards that reached the discard pile later in the turn but
+    before the shuffle (a Cellar discard, a Workshop gain) were shuffled in on
+    the client too, while the replayed shadow leaves them in its discard pile.
+    Everything in the shadow's pile that did not arrive after the shuffle
+    belongs in the deck.  Order does not matter: the cards go under the rigged
+    draws, and the next rig orders the deck from what is observed.
+    """
+    shuffled = False
+    arrived_after: Counter[str] = Counter()
+    for event in events:
+        if isinstance(event, Shuffle) and event.seat == seat:
+            shuffled = True
+            arrived_after.clear()
+            continue
+        if not shuffled or not isinstance(
+            event,
+            (Play, Gain, Trash, Discard, Draw, Reveal, Topdeck, ZoneTransfer),
+        ):
+            continue
+        if event.seat != seat:
+            continue
+        if event.to_zone == "discard":
+            arrived_after.update(event.cards)
+        elif event.from_zone == "discard":
+            for name in event.cards:
+                if arrived_after[name] > 0:
+                    arrived_after[name] -= 1
+    if not shuffled:
+        return
+    pile = Counter(int(card) for card in game.discard(seat))
+    stays = Counter(
+        {
+            int(dz.def_id(name)): count
+            for name, count in arrived_after.items()
+            if count > 0
+        }
+    )
+    returned = pile - stays
+    if returned:
+        game.return_discards_to_deck(seat, sorted(returned.elements()))
 
 
 def _deck_source_sequence(

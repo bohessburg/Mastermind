@@ -354,6 +354,32 @@ Restart after three idle months, serving c29 gen 10 through
   `test_local_question_is_never_answered_from_an_opponent_decision`. All 53
   games archived on 10 and 11 November replay clean through the patched
   loop. That run went 4-8-0 on gen 35 before the abort. Relaunched on gen 39.
+- Fourteenth abort, 22:55 UTC: the shadow's deck was three cards short after
+  a shuffle in the middle of a Throne Room chain (exit 4, run
+  `20261111T221203.193765Z`, game 185829033, turn 11, abandoned and not in
+  `record.jsonl`). The bot played Throne Room on Cellar. The first Cellar
+  discarded three Coppers and its draw ran the deck out, so the shuffle took
+  in the whole discard pile, those three Coppers included. The shadow rebuilt
+  at a shuffle starts from the turn-start deck and discard pile merged, then
+  replays the turn, which leaves cards discarded earlier in the same turn in
+  the shadow's discard pile: 12 in the deck and 3 in the discard pile against
+  the real 15 and 0. The second Cellar's question comes mid-chain, the shadow
+  is not rebuilt from the tracker, and settling it failed with "shadow/tracker
+  deck counts differ before rigged step: 12 vs 15". Fix: after the replay,
+  `_return_shuffled_discards` moves every card in the shadow's discard pile
+  that did not arrive after the shuffle under the deck, using a new native
+  primitive `return_discards_to_deck` (`state_builder`, bound as
+  `Game.return_discards_to_deck`). The next rigged step orders the deck from
+  what is observed. Tests:
+  `test_cards_discarded_before_a_mid_turn_shuffle_return_to_the_shadow_deck`,
+  `test_shuffle_rebuild_without_the_discard_return_reproduces_the_abort`, and
+  the native `v2 discards return under the deck oldest copy first`. All 58
+  games archived on 10 and 11 November replay clean. Still open: if the draw
+  that crosses the shuffle returns a card that exists only among the cards
+  just discarded, the replay cannot supply it, and mid-chain that still
+  aborts (the fifth fix covers only the case where the next question
+  rebuilds the shadow). That run went 5-0-0 on gen 39 before the abort.
+  Relaunched on gen 43.
 
 Open: `lobby.rated` is read from the config but nothing applies it. The
 account's own automatch preference decides, and the saved lobby pages from

@@ -1823,6 +1823,21 @@ PYBIND11_MODULE(dominion_v2_py, module) {
                 std::span<const DefId>(defs.data(), defs.size()));
         }, py::arg("player"), py::arg("defs"),
            "Set the full deck in draw order (next card first).")
+        .def("return_discards_to_deck", [](PyGame& self, int player, const py::sequence& cards) {
+            if (!valid_player(self.state, player)) {
+                throw std::invalid_argument("invalid player");
+            }
+            std::vector<DefId> defs;
+            defs.reserve(static_cast<std::size_t>(py::len(cards)));
+            for (const py::handle item : cards) {
+                defs.push_back(parse_def(item));
+            }
+            return_discards_to_deck(
+                self.state,
+                static_cast<PlayerId>(player),
+                std::span<const DefId>(defs.data(), defs.size()));
+        }, py::arg("player"), py::arg("defs"),
+           "Move the named cards from the discard pile to the bottom of the deck.")
         .def("validate", [](const PyGame& self) {
             validate_game(self.state);
             return true;

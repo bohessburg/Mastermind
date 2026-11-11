@@ -63,4 +63,6 @@ static_assert(std::is_trivially_copyable_v<Snapshot>);
 
 [[nodiscard]] GameState build_game_from_snapshot(const Snapshot& snapshot);
 void set_deck_order(GameState& state, PlayerId player, std::span<const DefId> defs);
+// Moves the named cards from the player's discard pile to the bottom of the deck.
+void return_discards_to_deck(GameState& state, PlayerId player, std::span<const DefId> defs);
 void validate_game(const GameState& state);

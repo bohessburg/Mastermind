@@ -835,6 +835,72 @@ void set_deck_order(
     validate_game(state);
 }
 
+void return_discards_to_deck(
+    GameState& state,
+    PlayerId player,
+    std::span<const DefId> defs) {
+    if (player >= state.num_players) {
+        throw std::invalid_argument("discard return player is out of range");
+    }
+    OrderedZone& deck = state.players[player].deck;
+    OrderedZone& discard = state.players[player].discard;
+    if (defs.size() + deck.size > static_cast<std::size_t>(MAX_DECK_CARDS)) {
+        throw std::invalid_argument("discard return would overflow the deck");
+    }
+
+    std::uint16_t wanted[MAX_SLOTS]{};
+    for (const DefId def : defs) {
+        if (def >= card_def_count()) {
+            throw std::invalid_argument("discard return contains an unknown def");
+        }
+        const Slot slot = slot_of(state, def);
+        if (slot == NONE) {
+            throw std::invalid_argument(
+                "discard return contains a def absent from the game");
+        }
+        ++wanted[slot];
+    }
+    std::uint16_t held[MAX_SLOTS]{};
+    for (std::uint8_t i = 0; i < discard.size; ++i) {
+        if (discard.cards[i] >= state.num_slots) {
+            throw std::logic_error("current discard contains an invalid slot");
+        }
+        ++held[discard.cards[i]];
+    }
+    for (std::uint8_t slot = 0; slot < state.num_slots; ++slot) {
+        if (wanted[slot] > held[slot]) {
+            throw std::invalid_argument(
+                "discard return names cards the discard pile does not hold");
+        }
+    }
+
+    // Take the oldest copies (index 0 is the bottom of the pile) so the cards
+    // discarded last stay on top, and compact the pile in place.
+    Slot moved[MAX_DECK_CARDS]{};
+    std::uint8_t moved_count = 0;
+    std::uint8_t kept = 0;
+    for (std::uint8_t i = 0; i < discard.size; ++i) {
+        const Slot slot = discard.cards[i];
+        if (wanted[slot] != 0U) {
+            --wanted[slot];
+            moved[moved_count++] = slot;
+        } else {
+            discard.cards[kept++] = slot;
+        }
+    }
+    discard.size = kept;
+
+    // The deck's top is at size - 1; the returned cards go underneath.
+    for (std::uint8_t i = deck.size; i > 0; --i) {
+        deck.cards[i - 1U + moved_count] = deck.cards[i - 1U];
+    }
+    for (std::uint8_t i = 0; i < moved_count; ++i) {
+        deck.cards[i] = moved[i];
+    }
+    deck.size = static_cast<std::uint8_t>(deck.size + moved_count);
+    validate_game(state);
+}
+
 void validate_game(const GameState& state) {
     if (state.phase > static_cast<std::uint8_t>(Phase::Over)) {
         corrupt("phase is invalid");

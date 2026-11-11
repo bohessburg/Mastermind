@@ -2259,3 +2259,71 @@ def test_local_question_is_never_answered_from_an_opponent_decision(
     assert report.error_type == "DivergenceError"
     assert report.question_index == SECOND_THRONE_AFTER_MILITIA_QUESTION
     assert "shadow waits on another decision" in report.message
+
+
+THRONED_CELLAR_ARCHIVE = Path("exports/arena/20261111T221203.193765Z/frames.jsonl")
+THRONED_CELLAR_GAME_ID = 185829033
+SECOND_CELLAR_QUESTION = 80
+ACTION_QUESTION_AFTER_THRONED_CELLAR = 81
+
+
+def _replay_throned_cellar_game() -> tuple[
+    _RecordedReplayWithShadowLog,
+    tuple[Any, ...],
+]:
+    if not THRONED_CELLAR_ARCHIVE.is_file():
+        pytest.skip(f"missing live arena fixture: {THRONED_CELLAR_ARCHIVE}")
+    events = _events_of_game(
+        parse_recording(THRONED_CELLAR_ARCHIVE).events,
+        THRONED_CELLAR_GAME_ID,
+    )
+    provider = _RecordedReplayWithShadowLog(events)
+    results = asyncio.run(
+        run_game_loop(
+            events,
+            actuator=MockActuator(replay=True),
+            decision_provider=provider,
+        )
+    )
+    return provider, tuple(results)
+
+
+def test_cards_discarded_before_a_mid_turn_shuffle_return_to_the_shadow_deck() -> None:
+    """Game 185829033: Throne Room on Cellar, the first Cellar drew over a shuffle.
+
+    The first Cellar discarded three Coppers and its draw shuffled them back
+    into the deck with the rest of the discard pile.  The shadow rebuilt at
+    the shuffle kept the three Coppers in its discard pile, the second Cellar
+    question arrived mid-chain so the shadow was not rebuilt from the tracker,
+    and settling it aborted with "deck counts differ before rigged step: 12 vs
+    15".
+    """
+    provider, results = _replay_throned_cellar_game()
+
+    assert not any(result.divergence_aborted for result in results)
+    for question in (SECOND_CELLAR_QUESTION, ACTION_QUESTION_AFTER_THRONED_CELLAR):
+        _, shadow, snapshot, _ = provider.seen[question]
+        seat = snapshot.seats[snapshot.our_seat]
+        assert shadow.deck_count(snapshot.our_seat) == seat.deck_count
+        assert shadow.discard_count(snapshot.our_seat) == seat.discard_count
+    _, shadow, snapshot, decision = provider.seen[SECOND_CELLAR_QUESTION]
+    assert decision.question_id == "CELLAR"
+    assert shadow.discard_count(snapshot.our_seat) == 0
+    assert int(shadow.current_decision()["source"]) == int(dz.def_id("Cellar"))
+
+
+def test_shuffle_rebuild_without_the_discard_return_reproduces_the_abort(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        game_module,
+        "_return_shuffled_discards",
+        lambda game, seat, events: None,
+    )
+    provider, results = _replay_throned_cellar_game()
+
+    assert [result.divergence_aborted for result in results] == [True]
+    assert ACTION_QUESTION_AFTER_THRONED_CELLAR not in provider.seen
+    report = results[0].divergence_report
+    assert report is not None
+    assert "deck counts differ before rigged step: 12 vs 15" in report.message

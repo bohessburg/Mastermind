@@ -420,6 +420,46 @@ TEST_CASE(
 }
 
 TEST_CASE(
+    "v2 discards return under the deck oldest copy first",
+    "[v2][state-builder]") {
+    GameState state = Game::new_game(builder_setup(), 0xD3C0'0002ULL);
+    const Slot gold = slot_of(state, DEF_GOLD);
+    const Slot silver = slot_of(state, DEF_SILVER);
+    REQUIRE(gold != NONE);
+    REQUIRE(silver != NONE);
+    REQUIRE(do_gain(state, 0U, gold, GainDestination::Discard));
+    REQUIRE(do_gain(state, 0U, silver, GainDestination::Discard));
+    REQUIRE(do_gain(state, 0U, gold, GainDestination::Discard));
+
+    PlayerState& player = state.players[0];
+    const std::uint8_t deck_before = player.deck.size;
+    const Slot top_before = player.deck.cards[deck_before - 1U];
+    REQUIRE(player.discard.size == 3U);
+
+    const std::vector<DefId> absent{DEF_PROVINCE};
+    REQUIRE_THROWS_AS(
+        return_discards_to_deck(state, 0U, std::span<const DefId>(absent)),
+        std::invalid_argument);
+    const std::vector<DefId> too_many{DEF_SILVER, DEF_SILVER};
+    REQUIRE_THROWS_AS(
+        return_discards_to_deck(state, 0U, std::span<const DefId>(too_many)),
+        std::invalid_argument);
+    REQUIRE(player.discard.size == 3U);
+    REQUIRE(player.deck.size == deck_before);
+
+    const std::vector<DefId> returned{DEF_GOLD};
+    return_discards_to_deck(state, 0U, std::span<const DefId>(returned));
+
+    REQUIRE(player.discard.size == 2U);
+    CHECK(player.discard.cards[0] == silver);
+    CHECK(player.discard.cards[1] == gold);
+    REQUIRE(player.deck.size == deck_before + 1U);
+    CHECK(player.deck.cards[0] == gold);
+    CHECK(player.deck.cards[player.deck.size - 1U] == top_before);
+    validate_game(state);
+}
+
+TEST_CASE(
     "v2 validate catches deliberate card-conservation corruption",
     "[v2][state-builder]") {
     GameState state = Game::new_game(builder_setup(), 0xA11D'0001ULL);
