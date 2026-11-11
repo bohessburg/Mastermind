@@ -1235,6 +1235,7 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
         config.server_torch_threads = requested.server_torch_threads
         config.eval.eval_workers = requested.eval.eval_workers
         config.eval.eval_async = requested.eval.eval_async
+        config.eval.eval_every_n_generations = requested.eval.eval_every_n_generations
         config.imitation.anchor_value_weight = requested.imitation.anchor_value_weight
         # Slots per worker drive worker memory (trees are allocated per slot).
         config.selfplay.n_games = requested.selfplay.n_games
@@ -1802,7 +1803,7 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
                 not profile
                 and config.eval.eval_every_n_generations > 0
                 and (
-                    generation == start_generation + 1
+                    generation == 1
                     or generation % config.eval.eval_every_n_generations == 0
                 )
             )

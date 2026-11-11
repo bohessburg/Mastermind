@@ -307,3 +307,36 @@ def test_periodic_eval_emits_sentinel_metric_columns(tmp_path: Path) -> None:
         assert 0 <= row[f"sentinel_{opponent}_wins"] <= 2
         assert int(csv_row[f"sentinel_{opponent}_games"]) == 2
         assert 0 <= int(csv_row[f"sentinel_{opponent}_wins"]) <= 2
+
+
+def test_eval_cadence_follows_the_requested_config_on_resume(tmp_path: Path) -> None:
+    """A run restarted every generation evaluates on the cadence, not after every restart."""
+
+    def config(generations: int, every: int):
+        cfg = tiny_config(tmp_path, seed=6263, generations=generations)
+        cfg.model.hidden_sizes = [16]
+        cfg.selfplay.n_games = 2
+        cfg.selfplay.games_per_generation = 2
+        cfg.selfplay.sims_per_move = 2
+        cfg.selfplay.max_batch = 8
+        cfg.selfplay.max_tree_nodes = 256
+        cfg.optim.train_steps_per_generation = 0
+        cfg.eval.eval_every_n_generations = every
+        cfg.eval.eval_games = 2
+        cfg.eval.eval_sims = 2
+        cfg.eval.eval_opponent = "random"
+        cfg.eval.eval_kingdoms = "fixed"
+        cfg.eval.eval_n_games = 1
+        cfg.eval.eval_max_batch = 8
+        cfg.eval.eval_sentinels = []
+        return cfg
+
+    first = config(1, 1)
+    run_training(first)
+    # Restart for each later generation, as the box does; the cadence changes to every 3rd.
+    for generation in (2, 3):
+        latest = Path(first.checkpoint_dir) / f"gen_{generation - 1:04d}.pt"
+        run_training(config(generation, 3), resume=str(latest))
+    rows = read_metrics(Path(first.metrics_csv))
+    assert [int(row["generation"]) for row in rows] == [1, 2, 3]
+    assert [bool(row.get("eval_games")) for row in rows] == [True, False, True]

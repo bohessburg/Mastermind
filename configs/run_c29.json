@@ -1,5 +1,5 @@
 {
-  "_comment": "Campaign 29 (2026-11-10). The c28 recipe on the FIXED multi-leaf search (d041322: a leaf in flight counts as one lost visit; the old flat penalty spread root visits evenly over the top 4-8 moves in every c25-c28 self-play game and gate). Fresh from bc_a with an empty replay buffer: no c25-c28 data or weights. Launch: scripts/box/resume.sh configs/run_c29.json checkpoints/campaign25/bc_a.pt. Gate is the paired protocol (greedy, own-network search, fresh trees, each board in both seats, honest search): accept when score minus one paired standard error exceeds 0.5 over 400 games AND the candidate is within 5 points of the best against engine3 (200 games, 400 sims). tail_leaves_in_flight 8 (was 64, i.e. 16 in flight at 512 sims) until 16 is checked against sequential search with scripts/c29_leaf_parity.py. engine3 eval every generation (c28 only got one because it was restarted each generation). Stop rule: stop after gen 1 if the targets are flat again (metrics entropy near 1.1, 5%+ truncated games) or if gen 1 neither passes the gate nor holds bc_a's engine3 level (50.5%; below 43% over the 200 eval games is a clear miss). Open choice kept from c28: self-play is clairvoyant (determinize off) while the gate and evals are honest.",
+  "_comment": "Campaign 29 (2026-11-10). The c28 recipe on the FIXED multi-leaf search (d041322: a leaf in flight counts as one lost visit; the old flat penalty spread root visits evenly over the top 4-8 moves in every c25-c28 self-play game and gate). Fresh from bc_a with an empty replay buffer: no c25-c28 data or weights. Launch: scripts/box/resume.sh configs/run_c29.json checkpoints/campaign25/bc_a.pt. Gate is the paired protocol (greedy, own-network search, fresh trees, each board in both seats, honest search): accept when score minus one paired standard error exceeds 0.5 over 400 games AND the candidate is within 5 points of the best against engine3 (200 games, 400 sims). tail_leaves_in_flight 8 (was 64, i.e. 16 in flight at 512 sims) until 16 is checked against sequential search with scripts/c29_leaf_parity.py. engine3 eval on gen 1 and every 5th generation (every generation through gen 4; the gate's engine3 match already scores every head-to-head winner). Stop rule: stop after gen 1 if the targets are flat again (metrics entropy near 1.1, 5%+ truncated games) or if gen 1 neither passes the gate nor holds bc_a's engine3 level (50.5%; below 43% over the 200 eval games is a clear miss). Open choice kept from c28: self-play is clairvoyant (determinize off) while the gate and evals are honest.",
   "seed": 20261110,
   "generations": 100,
   "init_weights": "",
@@ -115,7 +115,7 @@
     "value_loss_weight": 0.25
   },
   "eval": {
-    "eval_every_n_generations": 1,
+    "eval_every_n_generations": 5,
     "eval_games": 100,
     "eval_sims": 400,
     "eval_opponent": "engine3",
