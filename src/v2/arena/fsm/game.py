@@ -965,6 +965,13 @@ async def run_game_loop(
                     active.pending_plan.engine_actions,
                     frame_index=frame_index,
                     intended=active.pending,
+                    our_seat=(
+                        active.pending_snapshot.our_seat
+                        if active.pending_snapshot.turn_owner
+                        == active.pending_snapshot.our_seat
+                        else None
+                    ),
+                    events=tuple(active.pending_events),
                 )
             if not crossed_turn_boundary:
                 active.turn_history.append(current_step)
@@ -1423,6 +1430,17 @@ async def run_game_loop(
                 active.shadow.validate()
                 active.validations += 1
 
+            shadow_decision = active.shadow.current_decision()
+            if int(shadow_decision.get("player", -1)) != snapshot.our_seat:
+                # Decision kinds alone cannot tell our Throne Room choice from
+                # the opponent's Militia keep; never answer for the opponent.
+                raise DivergenceError(
+                    "client asked the local seat a question while the shadow "
+                    f"waits on another decision: native={shadow_decision} "
+                    f"client={event.question_id!r}",
+                    frame_index=frame_index,
+                    question_index=event.question_index,
+                )
             plan = await decision_provider.plan(
                 frame_index=frame_index,
                 game=active.shadow,
@@ -2103,6 +2121,8 @@ def _rebuild_turn_after_shuffle(
             if current.snapshot.pending_decision is not None
             else -1,
             intended=None,
+            our_seat=seat_index,
+            events=step.events,
         )
     game.validate()
     active.shadow = game
@@ -2163,7 +2183,19 @@ def _step_actions(
     *,
     frame_index: int,
     intended: IntendedAction | None,
+    our_seat: int | None = None,
+    events: Iterable[GameEvent] = (),
 ) -> None:
+    """Step our plan, then whatever it makes the opponent answer.
+
+    ``our_seat`` is passed only on our own turn.  ``events`` are the ones
+    observed after the plan was submitted; they say how the opponent answered.
+    """
+    observed = (
+        _observed_opponent_responses(events, our_seat)
+        if our_seat is not None
+        else None
+    )
     for action_index, action in enumerate(actions):
         legal = game.legal_mask()
         if not 0 <= action < len(legal) or not bool(legal[action]):
@@ -2185,6 +2217,8 @@ def _step_actions(
             )
         game.step(action)
         _resolve_trigger_orders(game)
+        if our_seat is not None and observed is not None:
+            _resolve_opponent_responses(game, our_seat, observed)
         game.validate()
 
 
@@ -2419,6 +2453,138 @@ def _resolve_trigger_orders(game: Any) -> None:
         legal = game.legal_mask()
         game.step(next(index for index, value in enumerate(legal) if value))
     raise BridgeError("native trigger ordering did not finish")
+
+
+@dataclass(kw_only=True)
+class _ObservedOpponentResponses:
+    """What the opponent was seen doing in answer to our own plays.
+
+    Counters are keyed by def id.  A hand discard names only the card left on
+    top of the discard pile, so ``discarded`` can be short of the real count.
+    """
+
+    discarded: Counter[int]
+    moved: Counter[int]
+    revealed: Counter[int]
+
+
+def _observed_opponent_responses(
+    events: Iterable[GameEvent],
+    our_seat: int,
+) -> _ObservedOpponentResponses:
+    observed = _ObservedOpponentResponses(
+        discarded=Counter(),
+        moved=Counter(),
+        revealed=Counter(),
+    )
+    for event in events:
+        if getattr(event, "seat", None) in {None, our_seat}:
+            continue
+        if isinstance(event, Discard) and event.from_zone == "hand":
+            target = observed.discarded
+        elif isinstance(event, (Trash, Topdeck)):
+            target = observed.moved
+        elif isinstance(event, Reveal):
+            target = observed.revealed
+        else:
+            continue
+        target.update(int(dz.def_id(name)) for name in event.cards)
+    return observed
+
+
+_TURN_PHASE_KINDS = frozenset({1, 2, 3})
+
+
+def _resolve_opponent_responses(
+    game: Any,
+    our_seat: int,
+    observed: _ObservedOpponentResponses,
+) -> None:
+    """Answer the opponent's part of our own play in the shadow.
+
+    The native interpreter stops for the opponent's Militia discard, Moat
+    reveal, Bureaucrat topdeck and Bandit trash.  The client never shows us
+    those questions, only their outcome.  The next local question is normally
+    a fresh action or buy phase, which rebuilds the shadow from the tracker,
+    but inside a Throne Room chain the same shadow carries on, so the
+    opponent's answer has to be stepped here or the bot would be asked to
+    choose for the opponent.
+
+    The shadow's opponent hand is an arbitrary deal of the hidden pool, so the
+    answer follows the observed outcome only as far as that deal allows.  The
+    opponent's hidden zones stay approximate until the next rebuild, exactly
+    as they were before the response.
+    """
+    militia = int(dz.def_id("Militia"))
+    select_base = int(dz.A_SELECT_BASE)
+    keep: Counter[int] | None = None
+    for _ in range(64):
+        if game.game_over():
+            return
+        current = game.current_decision()
+        player = int(current.get("player", -1))
+        kind = int(current.get("kind", -1))
+        if player < 0 or player == our_seat or kind <= 0:
+            return
+        if kind in _TURN_PHASE_KINDS:
+            # Our play ended the turn; this is the opponent's own turn.
+            return
+        legal = tuple(
+            index for index, value in enumerate(game.legal_mask()) if value
+        )
+        if not legal:
+            return
+        selects = {
+            action - select_base: action
+            for action in legal
+            if select_base <= action < select_base + int(dz.ACTION_DEF_COUNT)
+        }
+        action: int | None = None
+        if (
+            kind == _SELECT_CARDS_KIND
+            and int(current.get("source", -1)) == militia
+        ):
+            # Native Militia asks which cards to keep.
+            if keep is None:
+                hand = Counter(
+                    {
+                        int(card): int(count)
+                        for card, count in game.hand(player).items()
+                    }
+                )
+                keep = hand - observed.discarded
+                observed.discarded = Counter()
+            action = next(
+                (
+                    selects[card]
+                    for card in sorted(selects)
+                    if keep[card] > 0
+                ),
+                None,
+            )
+            if action is not None:
+                keep[action - select_base] -= 1
+        else:
+            keep = None
+            for evidence in (observed.moved, observed.revealed):
+                action = next(
+                    (
+                        selects[card]
+                        for card in sorted(selects)
+                        if evidence[card] > 0
+                    ),
+                    None,
+                )
+                if action is not None:
+                    evidence[action - select_base] -= 1
+                    break
+            if action is None and int(dz.A_PASS) in legal:
+                action = int(dz.A_PASS)
+        if action is None:
+            action = next(iter(selects.values()), legal[0])
+        game.step(action)
+        _resolve_trigger_orders(game)
+    raise BridgeError("opponent responses in the shadow did not finish")
 
 
 def _require_buy_or_pass(game: Any, action: int) -> None:

@@ -23,12 +23,14 @@ from src.v2.arena.actuate.clicks import (
     game_button_role,
     gesture_click_targets,
     map_engine_actions,
+    offered_name,
     possible_answer_indices,
     resolve_card_stack_index,
     resolve_submit_button_index,
     selected_card_counts,
 )
 from src.v2.arena.actuate.protocol import ProtocolActuator
+from src.v2.arena.fsm import game as game_module
 from src.v2.arena.fsm.game import (
     BotDecisionProvider,
     DecisionPlan,
@@ -39,6 +41,7 @@ from src.v2.arena.fsm.game import (
 )
 from src.v2.arena.protocol.events import (
     DecisionResolved,
+    Discard,
     GameEnd,
     GameStart,
     PendingDecision,
@@ -2134,3 +2137,125 @@ def test_bot_sentry_choices_reach_the_client_by_card_name() -> None:
         stepped.step(action)
     assert int(stepped.current_decision()["source"]) == vassal
     assert int(stepped.discard_top(snapshot.our_seat)) == vassal
+
+
+THRONED_MILITIA_ARCHIVE = Path(
+    "exports/arena/20261111T194423.643533Z/frames.jsonl"
+)
+THRONED_MILITIA_GAME_ID = 185826880
+THRONED_MILITIA_PLAY_QUESTION = 138
+SECOND_THRONE_AFTER_MILITIA_QUESTION = 140
+
+
+def _replay_throned_militia_game() -> tuple[
+    _RecordedReplayWithShadowLog,
+    tuple[Any, ...],
+]:
+    if not THRONED_MILITIA_ARCHIVE.is_file():
+        pytest.skip(f"missing live arena fixture: {THRONED_MILITIA_ARCHIVE}")
+    events = _events_of_game(
+        parse_recording(THRONED_MILITIA_ARCHIVE).events,
+        THRONED_MILITIA_GAME_ID,
+    )
+    provider = _RecordedReplayWithShadowLog(events)
+    results = asyncio.run(
+        run_game_loop(
+            events,
+            actuator=MockActuator(replay=True),
+            decision_provider=provider,
+        )
+    )
+    return provider, tuple(results)
+
+
+def test_opponent_militia_discard_is_resolved_inside_a_throne_room_chain() -> None:
+    """Game 185826880: Throne Room, Throne Room, Moat, then Militia.
+
+    The first Militia play made the opponent discard.  The native interpreter
+    asks the opponent which cards to keep; the client only reports the discard
+    and then asks us what the second Throne Room plays.  Both are card
+    selections, so the shadow was left on the opponent's choice, the bot picked
+    "keep Gold" for the opponent, and the send failed with "select action def 2
+    is absent from offered elements".
+    """
+    provider, results = _replay_throned_militia_game()
+
+    assert not any(result.divergence_aborted for result in results)
+    _, shadow, snapshot, decision = provider.seen[
+        SECOND_THRONE_AFTER_MILITIA_QUESTION
+    ]
+    current = shadow.current_decision()
+    opponent = 1 - snapshot.our_seat
+    assert decision.question_id == "THRONE_ROOM"
+    assert int(current["player"]) == snapshot.our_seat
+    assert int(current["source"]) == int(dz.def_id("Throne Room"))
+    assert shadow.hand_count(opponent) == 3
+    assert snapshot.seats[opponent].hand_count == 3
+    legal = {
+        index for index, value in enumerate(shadow.legal_mask()) if value
+    }
+    assert legal == {
+        int(dz.A_PASS),
+        *(
+            int(dz.A_SELECT_BASE + dz.def_id(offered_name(value)))
+            for value in decision.offered
+        ),
+    }
+
+
+def test_opponent_response_is_stepped_only_on_our_own_turn() -> None:
+    """Without the local seat the plan is stepped alone, as on their turn."""
+    provider, _ = _replay_throned_militia_game()
+    _, shadow, snapshot, _ = provider.seen[THRONED_MILITIA_PLAY_QUESTION]
+    opponent = 1 - snapshot.our_seat
+    play_militia = (int(dz.A_SELECT_BASE + dz.def_id("Militia")),)
+    discard = Discard(
+        seat=opponent,
+        cards=("Copper",),
+        count=2,
+        from_zone="hand",
+        to_zone="discard",
+        from_zone_index=19,
+        to_zone_index=22,
+    )
+
+    alone = shadow.clone()
+    _step_actions(alone, play_militia, frame_index=0, intended=None)
+    assert int(alone.current_decision()["player"]) == opponent
+    assert int(alone.current_decision()["source"]) == int(dz.def_id("Militia"))
+
+    answered = shadow.clone()
+    coppers_before = int(answered.hand(opponent).get(int(dz.def_id("Copper")), 0))
+    _step_actions(
+        answered,
+        play_militia,
+        frame_index=0,
+        intended=None,
+        our_seat=snapshot.our_seat,
+        events=(discard,),
+    )
+    assert int(answered.current_decision()["player"]) == snapshot.our_seat
+    assert answered.hand_count(opponent) == 3
+    coppers_after = int(answered.hand(opponent).get(int(dz.def_id("Copper")), 0))
+    if coppers_before:
+        assert coppers_after < coppers_before
+
+
+def test_local_question_is_never_answered_from_an_opponent_decision(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A shadow left on the opponent's choice aborts instead of answering it."""
+    monkeypatch.setattr(
+        game_module,
+        "_resolve_opponent_responses",
+        lambda game, our_seat, observed: None,
+    )
+    provider, results = _replay_throned_militia_game()
+
+    assert SECOND_THRONE_AFTER_MILITIA_QUESTION not in provider.seen
+    assert [result.divergence_aborted for result in results] == [True]
+    report = results[0].divergence_report
+    assert report is not None
+    assert report.error_type == "DivergenceError"
+    assert report.question_index == SECOND_THRONE_AFTER_MILITIA_QUESTION
+    assert "shadow waits on another decision" in report.message

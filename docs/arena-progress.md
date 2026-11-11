@@ -329,6 +329,31 @@ Restart after three idle months, serving c29 gen 10 through
   `test_throned_sentry_orders_cards_by_name_not_by_offer_position`,
   `test_bot_sentry_choices_reach_the_client_by_card_name`. That run went
   4-4-0 on gen 28 before the abort. Relaunched on gen 35.
+- Thirteenth abort, 22:03 UTC: the bot was asked to choose for the opponent
+  (exit 4, run `20261111T194423.643533Z`, game 185826880, turn 15, abandoned
+  and not in `record.jsonl`). The bot played Throne Room, Throne Room, Moat,
+  then Militia. The native interpreter stops for the opponent's Militia
+  choice (which three cards to keep). The client never shows us that
+  question, only the resulting discard, and then asked what the second Throne
+  Room plays. After a plain Militia the next question is a fresh action
+  phase, which rebuilds the shadow from the tracker, so the opponent's
+  pending choice never mattered. Inside a Throne Room chain the shadow
+  carries on. Both questions are card selections, the forced-choice bridge
+  compares decision kinds only, so the shadow stayed on the opponent's
+  choice, the bot picked "keep Gold" for the opponent, and the send failed
+  with "select action def 2 is absent from offered elements". Nothing wrong
+  was sent to the server. Fix: `_step_actions` now answers the opponent's
+  responses to our own plays in the shadow (`_resolve_opponent_responses`:
+  Militia keep, Moat reveal, Bureaucrat topdeck, Bandit trash), following
+  the observed outcome as far as the shadow's arbitrary opponent hand
+  allows, and it does so in shuffle-time turn replays too. The game loop
+  also refuses to plan when the shadow's pending decision belongs to the
+  other seat. Tests:
+  `test_opponent_militia_discard_is_resolved_inside_a_throne_room_chain`,
+  `test_opponent_response_is_stepped_only_on_our_own_turn`,
+  `test_local_question_is_never_answered_from_an_opponent_decision`. All 53
+  games archived on 10 and 11 November replay clean through the patched
+  loop. That run went 4-8-0 on gen 35 before the abort. Relaunched on gen 39.
 
 Open: `lobby.rated` is read from the config but nothing applies it. The
 account's own automatch preference decides, and the saved lobby pages from
