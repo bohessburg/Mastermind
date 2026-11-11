@@ -2918,6 +2918,7 @@ The CUDA numbers match the local ones. The deep slice (32 in flight at 4096 sims
 | 22 | 0.767 | 2/2048 (0.1%) | 0.643 | 0.5300 vs gen 21 | 0.5080 | 0.6150 vs gen 21 0.6500 | accepted |
 | 23 | 0.763 | 5/2048 (0.2%) | 0.642 | 0.4888 vs gen 22 | 0.4662 | not played | rejected |
 | 24 | 0.758 | 3/2048 (0.1%) | 0.616 | 0.5125 vs gen 22 | 0.4929 | not played | rejected |
+| 25 | 0.757 | 6/2048 (0.3%) | 0.644 | 0.5225 vs gen 22 | 0.5004 | 0.6725 vs gen 22 0.6150 | accepted |
 
 - Gen 1 per-generation evals against engine3: 61-38-1 and 55-44-1, 58.6% over 200 games (`bc_a` 50.5%, c28 gen 1 40.5%). Stop rule passed: targets are sharp (c28 gen 1 entropy was 1.11) and engine3 strength rose.
 - Gen 1 missed the gate by 0.0008 on the lower bound. Gen 2, trained on both generations' data, passed both terms. `bc_a` scored 0.5125 on the gate's 200 engine3 boards.
@@ -2950,6 +2951,7 @@ The CUDA numbers match the local ones. The deep slice (32 in flight at 4096 sims
 - Gen 15's per-generation evals: 61-39-0 and 73-26-1 (67.3%), against 62.8% for gen 10, while its gate-board engine3 score fell from 0.675 to 0.625. Pooled over 400 games gen 15 is 64.9% and gen 10 is 65.1%: no measurable change against engine3 from gen 10 to gen 15, although gen 14 beat gen 10 and gen 15 beat gen 14 head-to-head.
 - Gen 20's per-generation evals: 68-32-0 and 64-36-0 (66.0%), level with gen 15 (67.3%) at a standard error of about 3.3 points per 200 games. Gen 20 itself lost the head-to-head to gen 17 (0.4825), so this measures a rejected candidate. Evals so far: gen 2 62.3%, gen 4 63.0%, gen 5 61.3%, gen 10 62.8%, gen 15 67.3%, gen 20 66.0%. Gens 18-20 were three straight rejections; gen 21 then passed both terms (0.5213 vs gen 17, lower bound 0.5007, gate boards 0.650 against 0.640) and is the best net. Its generation took 29.9 minutes with gen 20's evals overlapping.
 - Gen 22 (13:11 UTC) beat gen 21 head to head (0.5300, lower bound 0.5080) and was accepted with a gate-board engine3 score of 0.6150, 3.5 points below gen 21's 0.6500 and inside the 5-point margin. First back-to-back promotions since gens 14-15. Gate-board engine3 by promoted gen since 10: 0.675, 0.675, 0.625, 0.640, 0.650, 0.615. 26.1-minute generation. The arena config points at gen 22; the running arena process keeps gen 21 until its next restart.
+- Gen 25 (14:24 UTC) beat gen 22 head to head (0.5225, lower bound 0.5004) with a gate-board engine3 score of 0.6725, level with the best so far (gens 10 and 14: 0.675). Gens 23-24 were rejected. The arena config points at gen 25; the running arena process keeps gen 21 until its next restart.
 
 ### c29 gen 6 vibe check (2026-11-11, local)
 
