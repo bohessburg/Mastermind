@@ -251,6 +251,27 @@ Restart after three idle months, serving c29 gen 10 through
   win by the opponent's forced resignation, as far as the prompt implies) is
   not in `record.jsonl`.
 
+- Ninth abort, 15:09 UTC: the server rejected an answer (exit 4, run
+  `20261111T124901.220957Z`, game 185811117, turn 12, abandoned and not in
+  `record.jsonl`). The bot played Throne Room with only Council Room to
+  double and chose to play nothing. The driver answered the `THRONE_ROOM`
+  question (COMPLEX_AND, min 0, max 2) with a bare `[]`, and 30 ms later the
+  server sent message type 1. It was the first decline in 88 live Throne Room
+  decisions, and `[]` had been assumed, never observed. Opponents' own client
+  answers, echoed in the log, show the decline as `[0, 0]` (an empty
+  selection and an empty way list): game 181422355 decision 195, 181422553
+  decisions 95 and 96, 181370596 decision 94, 181481244 decision 138. Fix
+  (`efc9344`): `possible_answer_indices` sends `(0, 0)` for a Throne Room
+  pass, and the replay decoders read `[0, 0]` as a pass. Tests:
+  `test_declining_a_throne_room_target_sends_an_empty_selection`,
+  `test_recorded_throne_room_decline_replays_as_a_pass`,
+  `test_live_archive_shows_the_server_rejecting_a_bare_empty_throne_answer`,
+  `test_human_throne_room_decline_is_logged_as_zero_zero`. Still open: other
+  optional complex questions whose decline has never been sent live may also
+  carry a guessed encoding; Cellar, Chapel, Harbinger and the action, buy and
+  reaction passes have been accepted. That run finished 9-4 on gen 21 before
+  the abort. The arena plays gen 26 from the next relaunch.
+
 Open: `lobby.rated` is read from the config but nothing applies it. The
 account's own automatch preference decides, and the saved lobby pages from
 July show it set to Rated, so every arena game so far has been rated.
