@@ -219,6 +219,30 @@ Restart after three idle months, serving c29 gen 10 through
   connection from hanging the run. Tests:
   `test_opponent_answering_our_attack_does_not_trigger_watchdog`,
   `test_silence_after_our_attack_still_stalls_at_the_longer_limit`.
+- **Restart into a game whose opponent had timed out.** The relaunch after
+  the abort above reconnected to the same game 185806100 (run
+  `20261111T122844.386627Z`). The server replayed the log and sent a timeout
+  offer for the opponent, but no `FullState` and no `GameStart`, and the
+  board rendered just after the one startup check for a retained board. The
+  homepage wait then found the board and returned "resumed", but
+  `queue_next_game()` dropped that answer, so `main` waited for a new game's
+  `GameStart` under the one-hour in-game limit with the page showing the
+  client's "Make <opponent> resign?" prompt. The idle watchdog ended it after
+  600 s (exit 3). Two changes: `queue_next_game()` now returns whether a
+  retained board was resumed and `_start_or_resume_game` sends that case down
+  the resume path (30 s for `FullState`, then recovery); and resume recovery
+  answers Yes to that prompt before leaving the table, but only when the
+  prompt names exactly the player the board's ticker says it is waiting for
+  (`TIMEOUT_REQUEST_CLAIM_SELECTOR`, evidence
+  `dom-20261111T124345.768671Z-idle-stall.html`; a live board has no Leave
+  Table control). Tests:
+  `test_board_that_renders_after_the_first_check_takes_the_resume_path`,
+  `test_late_board_without_full_state_recovers_to_the_search_cycle`,
+  `test_resume_recovery_claims_a_timed_out_opponents_game_then_requeues`,
+  `test_resume_recovery_never_claims_unless_the_board_waits_on_that_player`.
+  Still open: a reconnect into a live game that is waiting on an opponent who
+  has not timed out gets no `FullState` either, and recovery then exits 5.
+  The arena plays gen 21 from this relaunch.
 
 Open: `lobby.rated` is read from the config but nothing applies it. The
 account's own automatch preference decides, and the saved lobby pages from
