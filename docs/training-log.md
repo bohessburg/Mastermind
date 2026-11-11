@@ -2922,6 +2922,8 @@ The CUDA numbers match the local ones. The deep slice (32 in flight at 4096 sims
 | 26 | 0.753 | 0/2048 (0.0%) | 0.644 | 0.5313 vs gen 25 | 0.5069 | 0.6750 vs gen 25 0.6725 | accepted |
 | 27 | 0.764 | 3/2048 (0.1%) | 0.636 | 0.4838 vs gen 26 | 0.4601 | not played | rejected |
 
+- Gen 25 against gen 10 directly (2026-11-11, local, `bench/c29_ladder/c29_g25_vs_g10.json`): the gate's protocol (200 boards from both seats, 128 sims, per-decision determinization) on seed 20261110, which no generation's gate used. Gen 25 scored 0.550 (214-174-12), paired SE 0.024, 95% interval 0.504 to 0.596, about +35 Elo. It would pass the gate (lower bound 0.526). The six accepted gates between them (0.545, 0.530, 0.5425, 0.5213, 0.530, 0.5225) add up to about +133 Elo, an expected 0.68, which is above the interval. The accepted scores overstate each step: a gate that accepts on a noisy score near 0.52 selects for lucky draws.
+
 - Gen 1 per-generation evals against engine3: 61-38-1 and 55-44-1, 58.6% over 200 games (`bc_a` 50.5%, c28 gen 1 40.5%). Stop rule passed: targets are sharp (c28 gen 1 entropy was 1.11) and engine3 strength rose.
 - Gen 1 missed the gate by 0.0008 on the lower bound. Gen 2, trained on both generations' data, passed both terms. `bc_a` scored 0.5125 on the gate's 200 engine3 boards.
 - Truncated games are near the 5% stop line and rose from gen 1 to gen 2.
