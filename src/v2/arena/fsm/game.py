@@ -552,8 +552,16 @@ class BotDecisionProvider:
         for _ in range(max(1, decision.maximum + 1)):
             action = await self._choose(planning, seat)
             actions.append(action)
+            picks_left = _decision_picks_left(planning)
             planning.step(action)
             if _decision_signature(planning) != initial:
+                break
+            if action == int(dz.A_PASS) or (
+                picks_left > 0
+                and _decision_picks_left(planning) >= picks_left
+            ):
+                # The same card asks again (Throne Room on Chapel or Cellar):
+                # that is the client's next question, not more of this one.
                 break
             if decision.question_id in {
                 "GAME_ACTION_PHASE",
@@ -2174,6 +2182,11 @@ def _decision_signature(game: Any) -> tuple[int, int, int]:
         int(decision.get("kind", -1)),
         int(decision.get("source", -1)),
     )
+
+
+def _decision_picks_left(game: Any) -> int:
+    """Selections the pending native decision still accepts (0 if untracked)."""
+    return int(game.current_decision().get("max", 0))
 
 
 def _offered_treasures(

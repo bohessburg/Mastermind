@@ -166,6 +166,16 @@ Restart after three idle months, serving c29 gen 10 through
   game 185802782, not in `record.jsonl`). `settle` now drops the shadow
   instead of rebuilding it when the game is over. Test:
   `test_game_ending_on_our_turn_with_a_cleanup_shuffle_completes`.
+- **Throne Room on Chapel.** The second Chapel is a new native decision with
+  the same player, kind and source as the first, so the planner's batching
+  loop ran on into it and answered "trash nothing" inside the first
+  question's plan. The shadow reached the buy phase while the client asked
+  the second Chapel question, and the driver exited 4 with "native/client
+  decision kinds differ" mid-game (run `20261111T092905.220503Z`, game
+  185803487, abandoned on turn 13, not in `record.jsonl`). The loop now stops
+  at a pass, or when the picks left do not go down (a fresh decision). The
+  same applies to Throne Room on Cellar. Test:
+  `test_throne_room_chapel_plans_each_chapel_question_separately`.
 
 Open: `lobby.rated` is read from the config but nothing applies it. The
 account's own automatch preference decides, and the saved lobby pages from

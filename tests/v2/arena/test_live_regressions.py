@@ -1517,3 +1517,86 @@ def test_game_ending_on_our_turn_with_a_cleanup_shuffle_completes() -> None:
     assert won.reason == "game-finished"
     assert won.scores == (30, 19)
     assert won.outcome == "win"
+
+
+THRONED_CHAPEL_ARCHIVE = Path("exports/arena/20261111T092905.220503Z/frames.jsonl")
+THRONED_CHAPEL_GAME_ID = 185803487
+THRONED_CHAPEL_QUESTIONS = (100, 101)
+_TRASH_ESTATE = 256
+_TRASH_CURSE = 260
+
+
+class _RecordedReplayWithChapelBot:
+    """Use the live provider for the two Throne Room Chapel questions only."""
+
+    def __init__(self, events: tuple[object, ...]) -> None:
+        self.recorded = RecordedDecisionProvider(events)
+        self.chapel = BotDecisionProvider(self._trash_junk_then_stop)
+        self.chapel_plans: dict[int, DecisionPlan] = {}
+
+    @staticmethod
+    def _trash_junk_then_stop(game: Any, seat: int) -> int:
+        legal = game.legal_mask()
+        for action in (_TRASH_ESTATE, _TRASH_CURSE):
+            if legal[action]:
+                return action
+        return int(dz.A_PASS)
+
+    async def plan(
+        self,
+        *,
+        frame_index: int,
+        game: Any,
+        snapshot: TrackerSnapshot,
+        decision: PendingDecisionSnapshot,
+    ) -> DecisionPlan | None:
+        if (
+            snapshot.game_id == THRONED_CHAPEL_GAME_ID
+            and decision.question_index in THRONED_CHAPEL_QUESTIONS
+        ):
+            plan = await self.chapel.plan(
+                frame_index=frame_index,
+                game=game,
+                snapshot=snapshot,
+                decision=decision,
+            )
+            self.chapel_plans[decision.question_index] = plan
+            return plan
+        return await self.recorded.plan(
+            frame_index=frame_index,
+            game=game,
+            snapshot=snapshot,
+            decision=decision,
+        )
+
+
+def test_throne_room_chapel_plans_each_chapel_question_separately() -> None:
+    """Game 185803487: Throne Room played Chapel with Estate, Curse, Silver.
+
+    The second Chapel is a new native decision with the same player, kind and
+    source as the first.  The planner ran on into it, answering "trash
+    nothing" inside the first question's plan, so the shadow reached the buy
+    phase while the client asked the second Chapel question and the driver
+    aborted with "native/client decision kinds differ".
+    """
+    if not THRONED_CHAPEL_ARCHIVE.is_file():
+        pytest.skip(f"missing live arena fixture: {THRONED_CHAPEL_ARCHIVE}")
+    events = parse_recording(THRONED_CHAPEL_ARCHIVE).events
+    provider = _RecordedReplayWithChapelBot(events)
+
+    results = asyncio.run(
+        run_game_loop(
+            events,
+            actuator=MockActuator(replay=True),
+            decision_provider=provider,
+        )
+    )
+
+    assert not any(result.divergence_aborted for result in results)
+    assert {
+        question_index: plan.engine_actions
+        for question_index, plan in provider.chapel_plans.items()
+    } == {
+        100: (_TRASH_ESTATE, _TRASH_CURSE, int(dz.A_PASS)),
+        101: (int(dz.A_PASS),),
+    }
