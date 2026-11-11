@@ -2938,6 +2938,7 @@ The CUDA numbers match the local ones. The deep slice (32 in flight at 4096 sims
 - Gen 4's per-generation evals: 66-34-0 and 60-40-0 (63.0%); pooled with the gate boards 59.4% over 400 games. Gen 5 lost the head-to-head to gen 4 outright (0.465), the first candidate to score below 0.5; best stays gen 4.
 - Gen 5's per-generation evals: 59-39-2 and 62-37-1 (61.3%), level with gens 2-4 although it lost to gen 4. Gen 6 passed (0.5238 vs gen 4) with the highest gate-board engine3 score so far (0.590); no eval was launched for it, so the every-5th cadence is working.
 - Gens 8 and 10 raised the gate-board engine3 score to 0.6575 and 0.675, but gen 10's per-generation evals are 62-38-0 and 63-36-1 (62.8%), level with gen 2 (62.3%) and gen 4 (63.0%). Pooled over 400 games: gen 2 60.3%, gen 4 59.4%, gen 10 65.1%, a gain of about 5 points at roughly 1.5 standard errors. The gate boards are the same 200 every generation and the gate filters on them, so the eval boards are the cleaner measure.
+- Gen 15's per-generation evals: 61-39-0 and 73-26-1 (67.3%), against 62.8% for gen 10, while its gate-board engine3 score fell from 0.675 to 0.625. Pooled over 400 games gen 15 is 64.9% and gen 10 is 65.1%: no measurable change against engine3 from gen 10 to gen 15, although gen 14 beat gen 10 and gen 15 beat gen 14 head-to-head.
 
 ### c29 gen 6 vibe check (2026-11-11, local)
 
