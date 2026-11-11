@@ -35,6 +35,7 @@ from ..actuate.verify import (
 from ..archive import DecisionRecord, GameArchive, ResultSummary
 from ..bot.policy import NNPolicy, choose_nnmcts_action
 from ..protocol.events import (
+    Attack,
     DecisionResolved,
     Discard,
     Draw,
@@ -51,6 +52,7 @@ from ..protocol.events import (
     Shuffle,
     TimeoutOffer,
     Topdeck,
+    TurnStart,
     UndoRequest,
     UndoResync,
     UnknownFrame,
@@ -165,6 +167,7 @@ class _ActiveGame:
     pending_plan: DecisionPlan | None = None
     pending_events: list[GameEvent] = field(default_factory=list)
     timeout_offer: _PendingTimeoutOffer | None = None
+    opponent_owes_attack_response: bool = False
     archive: GameArchive | None = None
 
 
@@ -766,6 +769,7 @@ async def run_game_loop(
     auto_deny_undo: bool = True,
     timeout_offer_grace_seconds: float = 30.0,
     stall_watchdog_seconds: float | None = None,
+    opponent_response_watchdog_seconds: float = 600.0,
     clock: Callable[[], float] = time.monotonic,
     watchdog_poll_seconds: float = 0.25,
     stall_screenshot_hook: Callable[
@@ -792,6 +796,8 @@ async def run_game_loop(
         raise ValueError("timeout-offer grace must be non-negative")
     if stall_watchdog_seconds is not None and stall_watchdog_seconds <= 0:
         raise ValueError("stall watchdog must be positive or null")
+    if opponent_response_watchdog_seconds <= 0:
+        raise ValueError("opponent-response watchdog must be positive")
     if watchdog_poll_seconds <= 0:
         raise ValueError("watchdog poll interval must be positive")
     if not auto_deny_undo:
@@ -931,11 +937,17 @@ async def run_game_loop(
 
     async for frame_index, event in _indexed_events(
         events,
-        obligation=lambda: _has_outstanding_obligation(active, tracker),
+        stall_limit=lambda: _stall_limit_seconds(
+            active,
+            tracker,
+            stall_watchdog_seconds=stall_watchdog_seconds,
+            opponent_response_watchdog_seconds=(
+                opponent_response_watchdog_seconds
+            ),
+        ),
         timeout_offer=lambda: (
             active.timeout_offer if active is not None else None
         ),
-        stall_watchdog_seconds=stall_watchdog_seconds,
         clock=clock,
         sleep=sleep,
         watchdog_poll_seconds=watchdog_poll_seconds,
@@ -977,6 +989,14 @@ async def run_game_loop(
             tracker.consume(event)
             undo_resync = tracker.last_undo_resync
             if active is not None:
+                if isinstance(event, Attack):
+                    active.opponent_owes_attack_response = (
+                        event.seat is not None
+                        and event.seat == tracker.snapshot().our_seat
+                        and bool(event.targets)
+                    )
+                elif isinstance(event, (PendingDecision, TurnStart)):
+                    active.opponent_owes_attack_response = False
                 active.pending_events.append(event)
                 if active.archive is not None:
                     active.archive.append_event(frame_index, event)
@@ -1537,9 +1557,8 @@ async def run_game_loop(
 async def _indexed_events(
     events: Iterable[GameEvent] | AsyncIterable[GameEvent],
     *,
-    obligation: Callable[[], bool] | None = None,
+    stall_limit: Callable[[], float | None] | None = None,
     timeout_offer: Callable[[], _PendingTimeoutOffer | None] | None = None,
-    stall_watchdog_seconds: float | None = None,
     clock: Callable[[], float] = time.monotonic,
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     watchdog_poll_seconds: float = 0.25,
@@ -1569,13 +1588,10 @@ async def _indexed_events(
                     continue
 
                 silent_seconds: float | None = None
-                if (
-                    stall_watchdog_seconds is not None
-                    and obligation is not None
-                    and obligation()
-                ):
+                limit = stall_limit() if stall_limit is not None else None
+                if limit is not None:
                     silent_seconds = now - last_relevant_at
-                    if silent_seconds >= stall_watchdog_seconds:
+                    if silent_seconds >= limit:
                         next_event.cancel()
                         await asyncio.gather(next_event, return_exceptions=True)
                         yield index, _WatchdogStall(
@@ -1588,11 +1604,8 @@ async def _indexed_events(
                 waits = [watchdog_poll_seconds]
                 if pending_timeout is not None:
                     waits.append(pending_timeout.deadline_at - now)
-                if (
-                    silent_seconds is not None
-                    and stall_watchdog_seconds is not None
-                ):
-                    waits.append(stall_watchdog_seconds - silent_seconds)
+                if silent_seconds is not None and limit is not None:
+                    waits.append(limit - silent_seconds)
                 poll_task = asyncio.create_task(sleep(min(waits)))
                 done, _ = await asyncio.wait(
                     {next_event, poll_task},
@@ -1713,6 +1726,34 @@ def _has_outstanding_obligation(
         snapshot.our_seat is not None
         and snapshot.turn_owner == snapshot.our_seat
     )
+
+
+def _stall_limit_seconds(
+    active: _ActiveGame | None,
+    tracker: Tracker,
+    *,
+    stall_watchdog_seconds: float | None,
+    opponent_response_watchdog_seconds: float,
+) -> float | None:
+    """Return how long the stream may stay silent, or None when unarmed.
+
+    On our turn the client normally owes the next move.  After our own attack
+    the opponent may owe a response first (a Militia discard, a Moat reveal),
+    and the site gives them its own clock and then sends us a timeout offer.
+    That wait gets the longer limit, so a slow opponent is not taken for a
+    stalled client while a dead connection still ends the run.
+    """
+    if stall_watchdog_seconds is None:
+        return None
+    if not _has_outstanding_obligation(active, tracker):
+        return None
+    assert active is not None
+    if (
+        active.opponent_owes_attack_response
+        and tracker.snapshot().pending_decision is None
+    ):
+        return max(stall_watchdog_seconds, opponent_response_watchdog_seconds)
+    return stall_watchdog_seconds
 
 
 def _recorded_plan(

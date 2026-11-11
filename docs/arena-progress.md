@@ -206,6 +206,19 @@ Restart after three idle months, serving c29 gen 10 through
   stepped after the client confirms. Test:
   `test_silver_played_with_several_merchants_resolves_trigger_order`.
   The arena plays gen 17 from this relaunch.
+- **Slow opponent answering our attack.** We played Militia on our turn and
+  the opponent took more than two minutes to choose their discards. The stall
+  watchdog counted every silent stretch of our own turn as ours, so it closed
+  the browser after 120 s with the page showing "Waiting for" the opponent
+  (exit 3, run `20261111T113053.076912Z`, game 185806100, turn 19, we led
+  13 VP to 6, not in `record.jsonl`). After our own `Attack` event, and until
+  the next local question or turn start, the silence limit is now
+  `opponent_response_watchdog_seconds` (a `run_game_loop` argument, default
+  600, not a config key). The site's own clock and timeout offer cover a
+  slow opponent well before that; the longer limit only keeps a dead
+  connection from hanging the run. Tests:
+  `test_opponent_answering_our_attack_does_not_trigger_watchdog`,
+  `test_silence_after_our_attack_still_stalls_at_the_longer_limit`.
 
 Open: `lobby.rated` is read from the config but nothing applies it. The
 account's own automatch preference decides, and the saved lobby pages from

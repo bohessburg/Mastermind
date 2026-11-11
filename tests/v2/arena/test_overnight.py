@@ -21,6 +21,7 @@ from src.v2.arena.main import (
     write_exit_summary,
 )
 from src.v2.arena.protocol.events import (
+    Attack,
     FullState,
     GameEnd,
     GameResult,
@@ -226,6 +227,82 @@ def test_opponent_turn_silence_does_not_trigger_watchdog() -> None:
     assert len(results) == 1
     assert results[0].completed
     assert not results[0].stall_aborted
+
+
+async def _our_attack_then_slow_opponent(
+    clock: _FakeClock,
+    *,
+    opponent_seconds: float | None,
+) -> AsyncIterator[object]:
+    # Live game 185806100: we played Militia on our turn and the opponent
+    # took more than two minutes to choose their discards.
+    yield _start()
+    yield TurnStart(
+        seat=0,
+        turn_number=1,
+        turn_type=0,
+        controller_seat=0,
+        timestamp_ms=2_000,
+    )
+    yield Attack(seat=0, card="Militia", targets=(1,), timestamp_ms=2_500)
+    yield ResourceUpdate(
+        seat=0,
+        resource="coins",
+        value=2,
+        counter_index=12,
+        timestamp_ms=2_600,
+    )
+    if opponent_seconds is None:
+        await asyncio.Event().wait()
+    else:
+        # Small steps, so the watchdog polls while the opponent thinks.
+        for _ in range(int(opponent_seconds / 0.5)):
+            await clock.sleep(0.5)
+    yield GameEnd(
+        game_id=999,
+        reason="opponent-finished-discarding",
+        timestamp_ms=30_000,
+    )
+
+
+def test_opponent_answering_our_attack_does_not_trigger_watchdog() -> None:
+    clock = _FakeClock()
+    results = asyncio.run(
+        run_game_loop(
+            _our_attack_then_slow_opponent(clock, opponent_seconds=20.0),
+            actuator=MockActuator(replay=True),
+            decision_provider=_UnusedProvider(),
+            stall_watchdog_seconds=2.0,
+            opponent_response_watchdog_seconds=600.0,
+            watchdog_poll_seconds=0.5,
+            clock=clock,
+            sleep=clock.sleep,
+        )
+    )
+
+    assert len(results) == 1
+    assert results[0].completed
+    assert not results[0].stall_aborted
+
+
+def test_silence_after_our_attack_still_stalls_at_the_longer_limit() -> None:
+    clock = _FakeClock()
+    results = asyncio.run(
+        run_game_loop(
+            _our_attack_then_slow_opponent(clock, opponent_seconds=None),
+            actuator=MockActuator(replay=True),
+            decision_provider=_UnusedProvider(),
+            stall_watchdog_seconds=2.0,
+            opponent_response_watchdog_seconds=60.0,
+            watchdog_poll_seconds=0.5,
+            clock=clock,
+            sleep=clock.sleep,
+        )
+    )
+
+    assert results[0].stall_aborted
+    assert results[0].stall_report is not None
+    assert 60.0 <= results[0].stall_report.silent_seconds < 62.0
 
 
 async def _start_question_then_silence() -> AsyncIterator[object]:
