@@ -242,7 +242,14 @@ Restart after three idle months, serving c29 gen 10 through
   `test_resume_recovery_never_claims_unless_the_board_waits_on_that_player`.
   Still open: a reconnect into a live game that is waiting on an opponent who
   has not timed out gets no `FullState` either, and recovery then exits 5.
-  The arena plays gen 21 from this relaunch.
+  The arena plays gen 21 from this relaunch (12:49 UTC, run
+  `20261111T124901.220957Z`). Confirmed live there: the late board took the
+  resume path, no `FullState` came in 30 s, the prompt was answered, the
+  server ended game 185806100 within three seconds and the next game
+  (185807194) started six seconds later. The game-finished message for
+  185806100 could not be decoded without a known game id, so its result (a
+  win by the opponent's forced resignation, as far as the prompt implies) is
+  not in `record.jsonl`.
 
 Open: `lobby.rated` is read from the config but nothing applies it. The
 account's own automatch preference decides, and the saved lobby pages from
