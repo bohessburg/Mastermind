@@ -234,6 +234,9 @@ class RecordedDecisionProvider:
     def __init__(self, events: tuple[GameEvent, ...]) -> None:
         self.events = events
         self._answers = _paired_answers(events)
+        # Every stage of one Sentry, keyed like the plans, with the cards the
+        # client offered at its first stage.
+        self._sentry_offers: dict[int, tuple[str, ...]] = {}
         self._plans = self._build_plans()
 
     async def plan(
@@ -244,8 +247,18 @@ class RecordedDecisionProvider:
         snapshot: TrackerSnapshot,
         decision: PendingDecisionSnapshot,
     ) -> DecisionPlan | None:
-        del game, snapshot, decision
-        return self._plans.get(frame_index)
+        del snapshot, decision
+        plan = self._plans.get(frame_index)
+        offered = self._sentry_offers.get(frame_index)
+        if plan is None or offered is None or not plan.engine_actions:
+            return plan
+        return replace(
+            plan,
+            engine_actions=_sentry_shadow_actions(
+                _sentry_shadow_order(game, offered),
+                plan.engine_actions,
+            ),
+        )
 
     @property
     def paired_questions(self) -> int:
@@ -286,6 +299,7 @@ class RecordedDecisionProvider:
                 continue
 
             tags = _occurrence_tags(event.offered)
+            self._sentry_offers[index] = event.offered
             trash_tags = {tags[position] for position in self._answers[index]}
             discard_tags: set[tuple[str, int]] = set()
             discard_index: int | None = None
@@ -356,6 +370,7 @@ class RecordedDecisionProvider:
                     gesture_actions=remaining_actions,
                     answer_hint=self._answers[discard_index],
                 )
+                self._sentry_offers[discard_index] = event.offered
                 handled.add(discard_index)
 
             if topdeck_index is not None:
@@ -371,6 +386,7 @@ class RecordedDecisionProvider:
                     gesture_actions=(order_action,),
                     answer_hint=answers,
                 )
+                self._sentry_offers[topdeck_index] = event.offered
                 handled.add(topdeck_index)
         return plans
 
@@ -383,8 +399,11 @@ class BotDecisionProvider:
         choose_action: Callable[[Any, int], int | Awaitable[int]],
     ) -> None:
         self.choose_action = choose_action
+        # Offer tags and classifications in the client's offered order, plus
+        # the offered index of each card in the shadow's own looked-at order.
         self._sentry: tuple[
             tuple[tuple[str, int], ...],
+            tuple[int, ...],
             tuple[int, ...],
         ] | None = None
         self._deferred_buy: _DeferredBuy | None = None
@@ -468,7 +487,7 @@ class BotDecisionProvider:
         if decision.question_id == "SENTRY_DISCARD":
             if self._sentry is None:
                 raise BridgeError("Sentry discard arrived without classifications")
-            tags, classifications = self._sentry
+            tags, classifications, shadow_order = self._sentry
             remaining = tuple(
                 action
                 for tag, action in zip(tags, classifications, strict=True)
@@ -491,12 +510,17 @@ class BotDecisionProvider:
             )
             if engine_actions:
                 self._sentry = None
+                engine_actions = _sentry_shadow_actions(
+                    shadow_order,
+                    engine_actions,
+                )
             return DecisionPlan(
                 engine_actions=engine_actions,
                 gesture_actions=remaining,
             )
 
         if decision.question_id == "SENTRY_TRASH":
+            shadow_order = _sentry_shadow_order(game, decision.offered)
             planning = game.clone()
             actions: list[int] = []
             for _ in decision.offered:
@@ -507,11 +531,18 @@ class BotDecisionProvider:
                     )
                 actions.append(action)
                 planning.step(action)
-            result = tuple(actions)
-            self._sentry = (_occurrence_tags(decision.offered), result)
+            # The policy classified the shadow's cards in the shadow's order;
+            # the client and every later stage index them as offered.
+            by_offer = dict(zip(shadow_order, actions, strict=True))
+            result = tuple(by_offer[index] for index in range(len(actions)))
+            self._sentry = (
+                _occurrence_tags(decision.offered),
+                result,
+                shadow_order,
+            )
             return DecisionPlan(
                 engine_actions=(
-                    result
+                    tuple(actions)
                     if all(
                         action - int(dz.A_OPTION_BASE) == 0
                         for action in result
@@ -524,15 +555,21 @@ class BotDecisionProvider:
         if decision.question_id == "SENTRY_TOPDECK":
             if self._sentry is None:
                 raise BridgeError("Sentry order arrived without classifications")
-            _, classifications = self._sentry
+            _, classifications, shadow_order = self._sentry
+            shadow_classifications = _sentry_shadow_actions(
+                shadow_order,
+                classifications,
+            )
             planning = game.clone()
-            for classification in classifications:
+            for classification in shadow_classifications:
                 planning.step(classification)
             action = await self._choose(planning, seat)
             self._sentry = None
             return DecisionPlan(
-                engine_actions=(*classifications, action),
-                gesture_actions=(action,),
+                engine_actions=(*shadow_classifications, action),
+                gesture_actions=(
+                    _sentry_client_order_action(shadow_order, action),
+                ),
             )
 
         if decision.question_id == "GAME_BUY_PHASE":
@@ -2499,6 +2536,74 @@ def _advance_forced_to_client_question(
         frame_index=frame_index,
         question_index=decision.question_index,
     )
+
+
+def _sentry_shadow_order(game: Any, offered: tuple[str, ...]) -> tuple[int, ...]:
+    """Return the offered index of each card the shadow Sentry looked at.
+
+    The shadow looks at its deck top first.  The client lists the same cards in
+    its own order, which differs when one of them was put back on the deck
+    earlier in the same event window (the second play of a Throne Room'd
+    Sentry), because that card cannot be rigged into place beforehand.  Sentry
+    answers are positional on both sides, so they must be matched by card.
+    """
+    client = tuple(int(dz.def_id(offered_name(value))) for value in offered)
+    if len(set(client)) <= 1:
+        return tuple(range(len(client)))
+    context = game.decision_context()
+    shadow = tuple(int(card) for card in context["subject_defs"])
+    if context["source_def"] is None or int(context["source_def"]) != int(
+        dz.def_id("Sentry")
+    ):
+        raise DivergenceError(
+            "client asked a Sentry question but the shadow is resolving "
+            f"source {context['source_def']}"
+        )
+    if shadow == client:
+        return tuple(range(len(client)))
+    if shadow == client[::-1]:
+        return tuple(reversed(range(len(client))))
+    raise DivergenceError(
+        f"shadow Sentry looked at defs {shadow}; client offered {offered}"
+    )
+
+
+def _flip_sentry_order(action: int) -> int:
+    option = action - int(dz.A_OPTION_BASE)
+    if option not in (0, 1):
+        raise BridgeError(f"Sentry order needs option 0/1, got action {action}")
+    return int(dz.A_OPTION_BASE + 1 - option)
+
+
+def _sentry_shadow_actions(
+    shadow_order: tuple[int, ...],
+    client_actions: tuple[int, ...],
+) -> tuple[int, ...]:
+    """Reindex offer-ordered Sentry actions into the shadow's looked-at order.
+
+    ``client_actions`` holds one classification per offered card, optionally
+    followed by the order option for two kept cards.
+    """
+    count = len(shadow_order)
+    if len(client_actions) not in (count, count + 1):
+        raise BridgeError(
+            f"Sentry plan {client_actions} does not fit {count} looked-at cards"
+        )
+    classifications = tuple(client_actions[index] for index in shadow_order)
+    order = client_actions[count:]
+    if order and shadow_order != tuple(range(count)):
+        order = (_flip_sentry_order(order[0]),)
+    return (*classifications, *order)
+
+
+def _sentry_client_order_action(
+    shadow_order: tuple[int, ...],
+    shadow_action: int,
+) -> int:
+    """Translate the shadow's order option into the client's offered order."""
+    if shadow_order == tuple(range(len(shadow_order))):
+        return shadow_action
+    return _flip_sentry_order(shadow_action)
 
 
 def _occurrence_tags(values: tuple[str, ...]) -> tuple[tuple[str, int], ...]:

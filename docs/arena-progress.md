@@ -309,6 +309,26 @@ Restart after three idle months, serving c29 gen 10 through
   Still open: any other optional choice the client resolves by itself would
   abort the same way when it lands mid-chain; Moneylender is the only one
   seen. That run went 11-2-1 on gen 28 before the abort.
+- Twelfth abort, 19:33 UTC: Sentry answers were matched to cards by position
+  (exit 4, run `20261111T181356.236018Z`, game 185820625, turn 13, abandoned
+  and not in `record.jsonl`). The bot played Throne Room on Sentry and kept
+  both cards each time. The first Sentry put Vassal and Artisan back. The
+  second drew Artisan and looked at that Vassal plus a fresh Sentry. The
+  shadow looks at the deck top first (Vassal, Sentry); the client offered
+  (Sentry, Vassal). Normally the shadow's deck is rigged from the client's
+  reveal so the two orders agree, but a card put back earlier in the same
+  event window is not in the deck yet when the rig runs. The order answer was
+  applied by position, the shadow put Vassal on top where the client put
+  Sentry, and the next step aborted with "shadow/tracker deck compositions
+  differ before rigged step". The same mismatch would have sent a trash or
+  discard to the wrong card on the client had the bot not kept both. Fix:
+  both decision providers read the shadow's looked-at cards from
+  `decision_context()` and translate classifications and the order option
+  between the shadow's order and the client's offer by card
+  (`_sentry_shadow_order`). Tests:
+  `test_throned_sentry_orders_cards_by_name_not_by_offer_position`,
+  `test_bot_sentry_choices_reach_the_client_by_card_name`. That run went
+  4-4-0 on gen 28 before the abort. Relaunched on gen 35.
 
 Open: `lobby.rated` is read from the config but nothing applies it. The
 account's own automatch preference decides, and the saved lobby pages from

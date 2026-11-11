@@ -23,6 +23,7 @@ from src.v2.arena.actuate.clicks import (
     game_button_role,
     gesture_click_targets,
     map_engine_actions,
+    possible_answer_indices,
     resolve_card_stack_index,
     resolve_submit_button_index,
     selected_card_counts,
@@ -455,6 +456,14 @@ class _BatchedDecisionGame:
     def step(self, action: int) -> None:
         assert action in self.legal_actions
         self.steps += 1
+
+    def decision_context(self) -> dict[str, object]:
+        """A Sentry looking at Copper then Estate."""
+        return {
+            "source_def": int(dz.def_id("Sentry")),
+            "subject_defs": [int(dz.def_id("Copper")), int(dz.def_id("Estate"))],
+            "subject_index": min(self.steps, 1),
+        }
 
 
 class _ProviderSnapshot:
@@ -1979,3 +1988,149 @@ def test_moneylender_played_by_a_throned_vassal_follows_the_client_auto_trash() 
     kind, legal = provider.native[SECOND_VASSAL_QUESTION]
     assert kind == 6
     assert len(legal) == 2
+
+
+THRONED_SENTRY_ARCHIVE = Path(
+    "exports/arena/20261111T181356.236018Z/frames.jsonl"
+)
+THRONED_SENTRY_GAME_ID = 185820625
+SECOND_SENTRY_TRASH_QUESTION = 173
+SECOND_SENTRY_DISCARD_QUESTION = 174
+SECOND_SENTRY_ORDER_QUESTION = 175
+
+
+class _RecordedReplayWithShadowLog:
+    """Replay the recorded answers and keep the shadow seen at each question."""
+
+    def __init__(self, events: tuple[object, ...]) -> None:
+        self.recorded = RecordedDecisionProvider(events)
+        self.seen: dict[
+            int,
+            tuple[int, Any, TrackerSnapshot, PendingDecisionSnapshot],
+        ] = {}
+
+    async def plan(
+        self,
+        *,
+        frame_index: int,
+        game: Any,
+        snapshot: TrackerSnapshot,
+        decision: PendingDecisionSnapshot,
+    ) -> DecisionPlan | None:
+        self.seen[decision.question_index] = (
+            frame_index,
+            game.clone(),
+            snapshot,
+            decision,
+        )
+        return await self.recorded.plan(
+            frame_index=frame_index,
+            game=game,
+            snapshot=snapshot,
+            decision=decision,
+        )
+
+
+def _replay_throned_sentry_game() -> tuple[
+    _RecordedReplayWithShadowLog,
+    tuple[Any, ...],
+]:
+    if not THRONED_SENTRY_ARCHIVE.is_file():
+        pytest.skip(f"missing live arena fixture: {THRONED_SENTRY_ARCHIVE}")
+    events = _events_of_game(
+        parse_recording(THRONED_SENTRY_ARCHIVE).events,
+        THRONED_SENTRY_GAME_ID,
+    )
+    provider = _RecordedReplayWithShadowLog(events)
+    results = asyncio.run(
+        run_game_loop(
+            events,
+            actuator=MockActuator(replay=True),
+            decision_provider=provider,
+        )
+    )
+    return provider, tuple(results)
+
+
+def test_throned_sentry_orders_cards_by_name_not_by_offer_position() -> None:
+    """Game 185820625: Throne Room on Sentry, both plays keeping both cards.
+
+    The first Sentry put Vassal and Artisan back.  The second drew Artisan and
+    looked at that Vassal plus a fresh Sentry.  The shadow looks at them top
+    first (Vassal, Sentry); the client offered them as (Sentry, Vassal).  The
+    order answer was applied by position, so the shadow put Vassal on top
+    where the client put Sentry, and the next Vassal play aborted with
+    "shadow/tracker deck compositions differ before rigged step".
+    """
+    provider, results = _replay_throned_sentry_game()
+
+    assert not any(result.divergence_aborted for result in results)
+    _, shadow, _, decision = provider.seen[SECOND_SENTRY_TRASH_QUESTION]
+    looked_at = tuple(
+        int(card) for card in shadow.decision_context()["subject_defs"]
+    )
+    assert decision.offered == ("Sentry", "Vassal")
+    assert looked_at == (int(dz.def_id("Vassal")), int(dz.def_id("Sentry")))
+
+
+def test_bot_sentry_choices_reach_the_client_by_card_name() -> None:
+    """The policy classifies the shadow's cards; the client must get the same cards."""
+    provider, _ = _replay_throned_sentry_game()
+    vassal = int(dz.def_id("Vassal"))
+    trash = int(dz.A_OPTION_BASE)
+    keep = int(dz.A_OPTION_BASE + 2)
+
+    def trash_the_vassal(game: Any, seat: int) -> int:
+        context = game.decision_context()
+        subject = int(context["subject_defs"][context["subject_index"]])
+        return trash if subject == vassal else keep
+
+    frame_index, shadow, snapshot, decision = provider.seen[
+        SECOND_SENTRY_TRASH_QUESTION
+    ]
+    trash_plan = asyncio.run(
+        BotDecisionProvider(trash_the_vassal).plan(
+            frame_index=frame_index,
+            game=shadow.clone(),
+            snapshot=snapshot,
+            decision=decision,
+        )
+    )
+    assert possible_answer_indices(trash_plan.gesture_actions, decision) == (
+        (decision.offered.index("Vassal"),),
+    )
+
+    # Keep both, then put the shadow's first card (Vassal) on top.
+    def vassal_on_top(game: Any, seat: int) -> int:
+        if int(game.current_decision()["kind"]) == 7:
+            return int(dz.A_OPTION_BASE)
+        return keep
+
+    bot = BotDecisionProvider(vassal_on_top)
+    order_plan = None
+    for question in (
+        SECOND_SENTRY_TRASH_QUESTION,
+        SECOND_SENTRY_DISCARD_QUESTION,
+        SECOND_SENTRY_ORDER_QUESTION,
+    ):
+        frame_index, _, snapshot, decision = provider.seen[question]
+        order_plan = asyncio.run(
+            bot.plan(
+                frame_index=frame_index,
+                game=shadow.clone(),
+                snapshot=snapshot,
+                decision=decision,
+            )
+        )
+    assert order_plan is not None
+    # The client puts the last answered card on top.
+    answers = possible_answer_indices(order_plan.gesture_actions, decision)
+    assert answers == ((0, 1),)
+    assert decision.offered[answers[0][-1]] == "Vassal"
+    # The Sentry was played by a Throne Room that a Throne Room'd Vassal had
+    # played, so the Vassal's second play follows and discards the top card.
+    stepped = shadow.clone()
+    for action in order_plan.engine_actions:
+        stepped.step(action)
+    assert int(stepped.current_decision()["source"]) == vassal
+    assert int(stepped.discard_top(snapshot.our_seat)) == vassal
