@@ -2934,6 +2934,7 @@ The CUDA numbers match the local ones. The deep slice (32 in flight at 4096 sims
 | 38 | 0.753 | 9/2048 (0.4%) | 0.703 | 0.5213 vs gen 35 | 0.5018 | 0.6700 (gen 35: 0.6700) | accepted |
 | 39 | 0.751 | 4/2048 (0.2%) | 0.666 | 0.5350 vs gen 38 | 0.5140 | 0.6775 (gen 38: 0.6700) | accepted |
 | 40 | 0.749 | 4/2048 (0.2%) | 0.632 | 0.5050 vs gen 39 | 0.4840 | not played | rejected |
+| 41 | 0.739 | 5/2048 (0.2%) | 0.633 | 0.4975 vs gen 39 | 0.4763 | not played | rejected |
 
 - Box outage (2026-11-11): the vast container went down at about 16:38 UTC and came back at 17:33 UTC with `dominion-c29` stopped. Files through gen 30 were intact. Gen 31 self-play (1612/2048 games) was lost and restarted from `gen_0030.pt` at 17:36 UTC. The gen 30 engine3 eval was cut off at 75 of 100 games in each half: 53-22-0 and 54-20-1, 107-42-1 over 150 games, 71.7%. It was not rerun and has no `evals.csv` row. The campaign's small result files were copied to `checkpoints/remote/campaign29/box_files/`.
 
