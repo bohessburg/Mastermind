@@ -2900,6 +2900,7 @@ The CUDA numbers match the local ones. The deep slice (32 in flight at 4096 sims
 | 4 | 0.703 | 9/2048 (0.4%) | 0.633 | 0.5225 vs gen 3 | 0.5018 | 0.5575 (111W-88L-1T) vs gen 3 0.5350 | accepted |
 | 5 | 0.713 | 6/2048 (0.3%) | 0.661 | 0.4650 vs gen 4 | 0.4449 | not played | rejected |
 | 6 | 0.717 | 11/2048 (0.5%) | 0.639 | 0.5238 vs gen 4 | 0.5024 | 0.5900 vs gen 4 0.5575 | accepted |
+| 7 | 0.728 | 4/2048 (0.2%) | 0.658 | 0.4888 vs gen 6 | 0.4673 | not played | rejected |
 
 - Gen 1 per-generation evals against engine3: 61-38-1 and 55-44-1, 58.6% over 200 games (`bc_a` 50.5%, c28 gen 1 40.5%). Stop rule passed: targets are sharp (c28 gen 1 entropy was 1.11) and engine3 strength rose.
 - Gen 1 missed the gate by 0.0008 on the lower bound. Gen 2, trained on both generations' data, passed both terms. `bc_a` scored 0.5125 on the gate's 200 engine3 boards.
@@ -2928,3 +2929,26 @@ The CUDA numbers match the local ones. The deep slice (32 in flight at 4096 sims
 - Eval cadence (2026-11-11 05:33 UTC, `d5bb8c7`): back to every 5th generation plus gen 1, as in c15-c28. The trainer used to evaluate the first generation after any restart, which on the box (OOM restart every generation) meant every generation whatever the setting; the cadence now also follows the config file on resume. Deployed by stop, merge, start at the start of gen 5 self-play. Gens 1-4 have evals; the next are gen 5 and gen 10. The gate's engine3 match still scores every head-to-head winner.
 - Gen 4's per-generation evals: 66-34-0 and 60-40-0 (63.0%); pooled with the gate boards 59.4% over 400 games. Gen 5 lost the head-to-head to gen 4 outright (0.465), the first candidate to score below 0.5; best stays gen 4.
 - Gen 5's per-generation evals: 59-39-2 and 62-37-1 (61.3%), level with gens 2-4 although it lost to gen 4. Gen 6 passed (0.5238 vs gen 4) with the highest gate-board engine3 score so far (0.590); no eval was launched for it, so the every-5th cadence is working.
+
+### c29 gen 6 vibe check (2026-11-11, local)
+
+`scripts/vibe_check.py` (new; the c24 vibe script and its board lists were lost with that box, so older vibe scores do not compare). One full game per board per seat against engine3, arena search at 400 sims, seed 20261111. Boards: `sentry` and `chapel` are fixed in the script; `random[:N]` draws 10 cards from the 26-card pool.
+
+| Board | Seat | gen 6 | bc_a |
+|---|---|---|---|
+| chapel | first | W 43-3 | W 47-8 |
+| chapel | second | L 34-44 | L -1-62 |
+| sentry | first | W 41-17 | W 43-14 |
+| sentry | second | W 46-25 | W 45-14 |
+| random (Mine, Harbinger, Market, Council Room, Workshop, Library, Remodel, Cellar, Vassal, Bureaucrat) | first | L 31-43 | L 38-45 |
+| same | second | L 26-43 | L 35-36 |
+| random:1 (Chapel, Remodel, Bureaucrat, Harbinger, Cellar, Moat, Mine, Smithy, Merchant, Festival) | first | W 36-22 | not played |
+| same | second | W 36-24 | not played |
+| random:2 (Bandit, Bureaucrat, Witch, Market, Council Room, Laboratory, Harbinger, Festival, Workshop, Throne Room) | first | L 25-45 | not played |
+| same | second | W 38-32 | not played |
+
+- Engine boards: gen 6 builds real engines (3-6 actions a turn, double-Province turns, Chapel/Sentry trashing of Coppers, Estates and Curses, Militia openings, Witches). It greens 2-5 rounds earlier than bc_a on the same games and with leaner decks (bc_a's sentry decks carry 8 Villages).
+- Chapel over-trashing is inherited from bc_a and reduced, not gone: bc_a as second player trashed its deck down to 4 cards (-1 to 62); gen 6 in the same game trashed all 7 Coppers by round 8 with 3 Silvers behind them, never bought Gold, and lost by 10.
+- Vassal board: gen 6 bought 9-10 Vassals and no Silver or Gold in both games and lost both by more than bc_a, which bought no Vassals. This habit was learned in self-play.
+- random:1: 6-10 Festivals plus 4 Smithies, both wins. random:2 as first player: lost the Witch race (7 Curses, no trasher on the board) with 13 Silvers.
+- Small oddities: 5 Moats bought and 3 trashed in one game, surplus Witches after the Curses ran out, a Village and a Silver trashed with Sentry, Coppers bought with spare buys on the last turn, the last Province taken while 10 behind.
