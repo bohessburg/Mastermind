@@ -272,6 +272,26 @@ Restart after three idle months, serving c29 gen 10 through
   reaction passes have been accepted. That run finished 9-4 on gen 21 before
   the abort. The arena plays gen 26 from the next relaunch.
 
+- Tenth abort, 15:52 UTC: an inbound question did not parse (exit 4, run
+  `20261111T151610.685744Z`, game 185812617, turn 11, abandoned and not in
+  `record.jsonl`). The opponent played Witch while the bot held a Moat, the
+  first Moat reaction the bot has been asked since July. The 281-byte
+  question is eight bytes longer than the July one. The site's web client is
+  now bundle 2.3.7 (the parser was written against 2.2.8), and its
+  `Ability.parse` reads two more ints, `copyIndex` and `copyTotal`, after the
+  optional flag of every ability offered as a question element. Fix: the
+  parser reads them, and falls back to the 2.2.8 layout when a question does
+  not consume cleanly, so July recordings still replay. The answer encoding
+  is unchanged: opponents' Moat reveals echoed in November logs are still
+  `[1, 0, 1, 0, 0]`. Tests:
+  `test_moat_reaction_parses_with_and_without_ability_copy_fields`,
+  `test_live_281_byte_frame_parses_as_moat_reaction`,
+  `test_live_moat_question_reaches_a_legal_reveal_in_the_shadow_game`.
+  Still open: nothing else in the parser has been checked against bundle
+  2.3.7; paths the bot has not hit since July may have changed too. That run
+  went 2-1 on gen 26 before the abort. The arena plays gen 28 from the next
+  relaunch.
+
 Open: `lobby.rated` is read from the config but nothing applies it. The
 account's own automatch preference decides, and the saved lobby pages from
 July show it set to Rated, so every arena game so far has been rated.
