@@ -371,6 +371,10 @@ class TrainConfig:
     gate_third_party_games: int = 200
     gate_third_party_sims: int = 400
     gate_third_party_margin: float = 0.05
+    # Play the third-party matches in background processes started with the
+    # head-to-head, instead of in the trainer after it. Same games and same
+    # decision; the gate only waits for what is left of them.
+    gate_third_party_background: bool = False
     checkpoint_dir: str = "checkpoints"
     metrics_csv: str = "checkpoints/metrics.csv"
     # KataGo-style decomposed terminal-margin supervision. Zero preserves the

@@ -146,6 +146,7 @@
   "gate_third_party_games": 200,
   "gate_third_party_sims": 400,
   "gate_third_party_margin": 0.05,
+  "gate_third_party_background": true,
   "gate_force_accept_every": 0,
   "gate_warmup_generations": 0
 }

@@ -9,10 +9,14 @@ order, but the games assigned to each opponent remain reproducible.
 from __future__ import annotations
 
 import copy
+import json
 import math
+import os
 import random
 import re
 import shutil
+import subprocess
+import sys
 import time
 import warnings
 from dataclasses import dataclass, replace
@@ -1270,23 +1274,18 @@ def third_party_gate_passes(candidate: float, best: float, margin: float) -> boo
     return candidate >= best - float(margin)
 
 
-def third_party_score(
-    model: torch.nn.Module,
-    config: TrainConfig,
-    device: torch.device,
-) -> float:
-    """Score (ties half) of ``model`` against the configured scripted opponent."""
-    from .evaluate import evaluate_model
+def third_party_eval_kwargs(config: TrainConfig) -> dict[str, Any]:
+    """Arguments of the third-party match (JSON-serializable).
 
-    was_training = model.training
-    stats = evaluate_model(
-        model,
+    One source for the in-process match and the background one, so both play
+    the same boards under the same search settings.
+    """
+    return dict(
         opponent=config.gate_third_party_opponent,
         games=int(config.gate_third_party_games),
         sims=int(config.gate_third_party_sims),
         kingdoms=config.eval.eval_kingdoms,
         seed=int(config.seed) ^ GATE_THIRD_PARTY_SEED_SALT,
-        device=device,
         n_games=int(config.eval.eval_n_games),
         max_batch=int(config.eval.eval_max_batch),
         c_puct=config.selfplay.c_puct,
@@ -1300,10 +1299,214 @@ def third_party_score(
         obs_version=config.selfplay.obs_version,
         honest=bool(config.eval.eval_honest),
     )
+
+
+def third_party_score(
+    model: torch.nn.Module,
+    config: TrainConfig,
+    device: torch.device,
+) -> float:
+    """Score (ties half) of ``model`` against the configured scripted opponent."""
+    from .evaluate import evaluate_model
+
+    was_training = model.training
+    stats = evaluate_model(model, device=device, **third_party_eval_kwargs(config))
     model.train(was_training)
     if stats.games <= 0:
         return 0.0
     return (stats.wins + 0.5 * stats.ties) / stats.games
+
+
+def third_party_score_path(config: TrainConfig, generation: int) -> Path:
+    """Where the third-party score of generation ``generation``'s network is kept."""
+    return Path(config.checkpoint_dir) / f"gate_third_party_{int(generation):04d}.json"
+
+
+def _read_third_party_score(path: Path, config: TrainConfig) -> float | None:
+    """Score stored in ``path``, or ``None`` if absent, unreadable or from another match setup."""
+    try:
+        payload = json.loads(Path(path).read_text())
+        score = float(payload["score"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    # Compare as JSON: that is the form the stored match went through.
+    if payload.get("match") != json.loads(json.dumps(third_party_eval_kwargs(config))) or not math.isfinite(score):
+        return None
+    return score
+
+
+def load_third_party_score(config: TrainConfig, generation: int) -> float | None:
+    """A network's stored third-party score; survives trainer restarts."""
+    return _read_third_party_score(third_party_score_path(config, generation), config)
+
+
+def write_third_party_score(path: str | Path, score: float, match: dict[str, Any], **extra: Any) -> None:
+    """Atomically write a third-party score together with the match it came from."""
+    destination = Path(path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    scratch = destination.with_name(f"{destination.name}.{os.getpid()}.tmp")
+    scratch.write_text(json.dumps({"score": float(score), "match": match, **extra}, sort_keys=True) + "\n")
+    os.replace(scratch, destination)
+
+
+def store_third_party_score(config: TrainConfig, generation: int, score: float) -> None:
+    write_third_party_score(
+        third_party_score_path(config, generation), score, third_party_eval_kwargs(config), generation=int(generation)
+    )
+
+
+@dataclass
+class ThirdPartyJob:
+    """A third-party match running in a detached ``gate_bg`` process."""
+
+    process: Any
+    result_path: Path
+    label: str
+
+    def collect(
+        self, config: TrainConfig, log: Callable[[str], None] | None = None, heartbeat_s: float = 60.0
+    ) -> float | None:
+        """Wait for the match; its score, or ``None`` if the process failed."""
+        started = time.perf_counter()
+        while True:
+            try:
+                self.process.wait(timeout=heartbeat_s)
+                break
+            except subprocess.TimeoutExpired:
+                if log is not None:
+                    log(f"gate: waiting for the background {self.label} match, {time.perf_counter() - started:.0f}s")
+        if self.process.returncode != 0:
+            return None
+        return _read_third_party_score(self.result_path, config)
+
+    def cancel(self) -> None:
+        if self.process.poll() is not None:
+            return
+        self.process.terminate()
+        try:
+            self.process.wait(timeout=10.0)
+        except subprocess.TimeoutExpired:
+            self.process.kill()
+            self.process.wait()
+
+
+@dataclass
+class GateThirdPartyJobs:
+    """The background third-party matches of one gate."""
+
+    candidate: ThirdPartyJob | None = None
+    best: ThirdPartyJob | None = None
+    scratch: tuple[Path, ...] = ()
+
+    def close(self) -> None:
+        """Stop the candidate's match and drop its files.
+
+        The best's match is left to finish: its score is written to the
+        best's score file, where the next gate finds it.
+        """
+        if self.candidate is not None:
+            self.candidate.cancel()
+        for path in self.scratch:
+            path.unlink(missing_ok=True)
+
+
+def launch_third_party_job(
+    checkpoint: str | Path,
+    config: TrainConfig,
+    device_name: str,
+    result_path: str | Path,
+    *,
+    generation: int,
+    label: str,
+) -> ThirdPartyJob:
+    """Start ``third_party_score`` for a saved checkpoint in a detached process."""
+    directory = Path(config.checkpoint_dir)
+    directory.mkdir(parents=True, exist_ok=True)
+    job = directory / f"gate_bg_{int(generation):04d}_{label}.json"
+    job.write_text(
+        json.dumps(
+            {
+                "generation": int(generation),
+                "label": label,
+                "checkpoint": str(checkpoint),
+                "device_name": device_name,
+                "result": str(result_path),
+                "kwargs": third_party_eval_kwargs(config),
+            }
+        )
+    )
+    with (directory / f"gate_bg_{int(generation):04d}_{label}.log").open("a") as log_handle:
+        process = subprocess.Popen(
+            [sys.executable, "-m", "src.v2.train.gate_bg", str(job)],
+            stdout=log_handle,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+    return ThirdPartyJob(process, Path(result_path), label)
+
+
+def start_gate_third_party_jobs(
+    config: TrainConfig,
+    generation: int,
+    candidate: torch.nn.Module,
+    best_path: str | Path,
+    best_generation: int,
+    device_name: str,
+    *,
+    need_best: bool,
+) -> GateThirdPartyJobs | None:
+    """Start the gate's third-party matches so they overlap the head-to-head.
+
+    The matches are bound by the serial search inside each game, not by
+    throughput, so they cost the head-to-head little and the gate only waits
+    for what is left of them. ``need_best`` is false when the best's score is
+    already known.
+    """
+    if not (config.gate_third_party_opponent and config.gate_third_party_background):
+        return None
+    directory = Path(config.checkpoint_dir)
+    # The generation checkpoint is written after the gate, and a retried gate
+    # trains a different candidate: both files are private to this attempt.
+    checkpoint = directory / f"gate_candidate_{int(generation):04d}.pt"
+    result = directory / f"gate_candidate_{int(generation):04d}.{os.getpid()}.json"
+    save_best_checkpoint(config, generation, candidate, checkpoint)
+    result.unlink(missing_ok=True)
+    jobs = GateThirdPartyJobs(scratch=(checkpoint, result))
+    jobs.candidate = launch_third_party_job(
+        checkpoint, config, device_name, result, generation=generation, label="candidate"
+    )
+    if need_best:
+        jobs.best = launch_third_party_job(
+            best_path,
+            config,
+            device_name,
+            third_party_score_path(config, best_generation),
+            generation=generation,
+            label="best",
+        )
+    return jobs
+
+
+def _third_party_score_from(
+    job: ThirdPartyJob | None,
+    model: torch.nn.Module,
+    config: TrainConfig,
+    device: torch.device,
+    generation: int,
+    log: Callable[[str], None] | None,
+) -> float:
+    """The background match's score, or the in-process match when there is none."""
+    if job is not None:
+        started = time.perf_counter()
+        score = job.collect(config, log)
+        if score is not None:
+            if log is not None:
+                log(f"gate gen {generation}: {job.label} {config.gate_third_party_opponent} score {score:.4f} "
+                    f"from the background match (waited {time.perf_counter() - started:.0f}s)")
+            return score
+        if log is not None:
+            log(f"gate gen {generation}: background {job.label} match failed; playing it in process")
+    return third_party_score(model, config, device)
 
 
 def run_paired_gate_match(
@@ -1360,13 +1563,17 @@ def run_paired_gate(
     device: torch.device,
     *,
     best_third_party: float | None = None,
+    jobs: GateThirdPartyJobs | None = None,
     log: Callable[[str], None] | None = None,
 ) -> GateOutcome:
     """Gate a candidate with the paired head-to-head, then the third-party check.
 
     ``best_third_party`` is the current best's cached score against the
-    third-party opponent; when ``None`` it is measured here. The third-party
-    games are only played for a candidate that passed the head-to-head.
+    third-party opponent; when ``None`` it is measured here. Without ``jobs``
+    the third-party games are only played, in process, for a candidate that
+    passed the head-to-head. With ``jobs`` they are already running in the
+    background; a candidate that fails the head-to-head has its match
+    stopped. The decision is the same either way.
     """
     validate_gate_config(config)
     summary = run_paired_gate_match(candidate, best, config, generation, device, log)
@@ -1375,6 +1582,8 @@ def run_paired_gate(
     paired_se = float(summary["paired_se"])
     ci_lo = score - float(config.gate_ci_z) * paired_se
     if not paired_gate_passes(score, paired_se, config.gate_threshold, config.gate_ci_z):
+        if jobs is not None and jobs.candidate is not None:
+            jobs.candidate.cancel()
         return GateOutcome(stats, "rejected", "head_to_head", score, paired_se, ci_lo, None, best_third_party)
     if not config.gate_third_party_opponent:
         return GateOutcome(stats, "accepted", "head_to_head", score, paired_se, ci_lo)
@@ -1382,8 +1591,12 @@ def run_paired_gate(
         log(f"gate gen {generation}: head-to-head passed ({score:.3f}, lower {ci_lo:.3f}); "
             f"checking against {config.gate_third_party_opponent}")
     if best_third_party is None:
-        best_third_party = third_party_score(best, config, device)
-    candidate_third_party = third_party_score(candidate, config, device)
+        best_third_party = _third_party_score_from(
+            jobs.best if jobs is not None else None, best, config, device, generation, log
+        )
+    candidate_third_party = _third_party_score_from(
+        jobs.candidate if jobs is not None else None, candidate, config, device, generation, log
+    )
     passed = third_party_gate_passes(candidate_third_party, best_third_party, config.gate_third_party_margin)
     return GateOutcome(
         stats,

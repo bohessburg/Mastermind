@@ -929,7 +929,8 @@ def test_paired_gate_mode_drives_training_and_caches_best_third_party_score(
         GateOutcome(GateStats(3, 1, 0), "rejected", "third_party", 0.75, 0.1, 0.65, 0.40, 0.55),
     ]
 
-    def scripted_gate(_candidate, _best, _config, generation, _device, *, best_third_party=None, log=None):
+    def scripted_gate(_candidate, _best, _config, generation, _device, *, best_third_party=None, jobs=None, log=None):
+        assert jobs is None  # background matches are opt-in
         seen_best_scores.append(best_third_party)
         return script[generation - 1]
 
@@ -966,3 +967,132 @@ def test_third_party_score_plays_the_configured_opponent(tmp_path: Path) -> None
     # Same boards every time, so a best's score can be cached.
     assert first == again
     assert model.training
+
+
+class _FakeThirdPartyJob:
+    def __init__(self, label: str, score: float | None) -> None:
+        self.label = label
+        self.score = score
+        self.collected = False
+        self.cancelled = False
+
+    def collect(self, _config, _log=None):
+        self.collected = True
+        return self.score
+
+    def cancel(self) -> None:
+        self.cancelled = True
+
+
+def test_paired_gate_takes_third_party_scores_from_background_jobs(monkeypatch, tmp_path: Path) -> None:
+    from . import gating as gating_module
+    from .gating import GateThirdPartyJobs
+
+    cfg = _paired_gate_config(tmp_path)
+    cfg.gate_third_party_opponent = "engine3"
+    cfg.gate_third_party_margin = 0.05
+    candidate, _, _ = build_objects(cfg, torch.device("cpu"))
+    best, _, _ = build_objects(cfg, torch.device("cpu"))
+    in_process: list[int] = []
+
+    def fake_third_party(model, _config, _device):
+        in_process.append(id(model))
+        return 0.30
+
+    monkeypatch.setattr(gating_module, "third_party_score", fake_third_party)
+    head_to_head = {"summary": _summary(0.60, 0.03)}
+    monkeypatch.setattr(gating_module, "run_paired_gate_match", lambda *_a, **_k: head_to_head["summary"])
+    cpu = torch.device("cpu")
+
+    # Both scores come from the background matches; nothing is replayed.
+    jobs = GateThirdPartyJobs(_FakeThirdPartyJob("candidate", 0.46), _FakeThirdPartyJob("best", 0.50))
+    outcome = run_paired_gate(candidate, best, cfg, 1, cpu, jobs=jobs)
+    assert (outcome.result, outcome.reason) == ("accepted", "head_to_head+third_party")
+    assert (outcome.third_party_candidate, outcome.third_party_best) == (0.46, 0.50)
+    assert in_process == [] and not jobs.candidate.cancelled
+
+    # The same rule vetoes: ten points below the best.
+    jobs = GateThirdPartyJobs(_FakeThirdPartyJob("candidate", 0.40), _FakeThirdPartyJob("best", 0.50))
+    outcome = run_paired_gate(candidate, best, cfg, 1, cpu, jobs=jobs)
+    assert (outcome.result, outcome.reason) == ("rejected", "third_party")
+
+    # A known best score needs no best match.
+    jobs = GateThirdPartyJobs(_FakeThirdPartyJob("candidate", 0.52))
+    outcome = run_paired_gate(candidate, best, cfg, 1, cpu, best_third_party=0.50, jobs=jobs)
+    assert (outcome.third_party_candidate, outcome.third_party_best) == (0.52, 0.50)
+    assert in_process == []
+
+    # A failed background match is replayed in process, not guessed.
+    jobs = GateThirdPartyJobs(_FakeThirdPartyJob("candidate", None))
+    outcome = run_paired_gate(candidate, best, cfg, 1, cpu, best_third_party=0.50, jobs=jobs)
+    assert outcome.third_party_candidate == 0.30 and in_process == [id(candidate)]
+    assert (outcome.result, outcome.reason) == ("rejected", "third_party")
+
+    # A head-to-head loss stops the candidate's match and leaves the best's running.
+    in_process.clear()
+    head_to_head["summary"] = _summary(0.52, 0.03)
+    jobs = GateThirdPartyJobs(_FakeThirdPartyJob("candidate", 0.99), _FakeThirdPartyJob("best", 0.50))
+    outcome = run_paired_gate(candidate, best, cfg, 1, cpu, jobs=jobs)
+    assert (outcome.result, outcome.reason) == ("rejected", "head_to_head")
+    assert jobs.candidate.cancelled and not jobs.candidate.collected
+    assert not jobs.best.cancelled and not jobs.best.collected
+    assert outcome.third_party_candidate is None and in_process == []
+
+
+def test_third_party_score_file_survives_restart_and_is_bound_to_the_match(tmp_path: Path) -> None:
+    from .gating import load_third_party_score, store_third_party_score, third_party_score_path
+
+    cfg = _paired_gate_config(tmp_path)
+    cfg.gate_third_party_opponent = "engine3"
+    assert load_third_party_score(cfg, 2) is None
+    store_third_party_score(cfg, 2, 0.5825)
+    assert load_third_party_score(cfg, 2) == 0.5825
+    assert load_third_party_score(cfg, 3) is None
+    # A score from a different match setup is not comparable and is ignored.
+    changed = _paired_gate_config(tmp_path)
+    changed.gate_third_party_opponent = "engine3"
+    changed.gate_third_party_sims = cfg.gate_third_party_sims + 1
+    assert load_third_party_score(changed, 2) is None
+    third_party_score_path(cfg, 2).write_text("{not json")
+    assert load_third_party_score(cfg, 2) is None
+
+
+def test_background_third_party_matches_drive_the_gate_and_equal_the_in_process_score(
+    monkeypatch, tmp_path: Path
+) -> None:
+    from . import gating as gating_module
+    from .evaluate import load_model
+    from .gating import load_third_party_score
+
+    cfg = _paired_gate_config(tmp_path, generations=2)
+    cfg.gate_third_party_opponent = "engine3"
+    cfg.gate_third_party_games = 2
+    cfg.gate_third_party_sims = 4
+    cfg.gate_third_party_margin = 1.0  # two games decide nothing; the plumbing is under test
+    cfg.gate_third_party_background = True
+    cfg.eval.eval_n_games = 2
+    cfg.eval.eval_honest = True
+    monkeypatch.setattr(gating_module, "run_paired_gate_match", lambda *_a, **_k: _summary(0.60, 0.03))
+
+    def no_in_process_match(*_args, **_kwargs):
+        raise AssertionError("the third-party matches must come from the background processes")
+
+    monkeypatch.setattr(gating_module, "third_party_score", no_in_process_match)
+    rows = run_training(cfg)["metrics"]
+    monkeypatch.undo()
+    assert [row["gate_result"] for row in rows] == ["accepted", "accepted"]
+    assert [row["best_generation"] for row in rows] == [1, 2]
+    directory = Path(cfg.checkpoint_dir)
+    # Gen 1 measured both nets; gen 2 reused gen 1's score as the best's and played one match.
+    assert (directory / "gate_bg_0001_best.json").exists()
+    assert not (directory / "gate_bg_0002_best.json").exists()
+    assert rows[1]["gate_third_party_best"] == rows[0]["gate_third_party_candidate"]
+    for generation, score in ((0, rows[0]["gate_third_party_best"]), (1, rows[0]["gate_third_party_candidate"]),
+                              (2, rows[1]["gate_third_party_candidate"])):
+        assert load_third_party_score(cfg, generation) == score
+    # The candidate's scratch checkpoint and result are gone; resume only sees gen_*.pt.
+    assert sorted(path.name for path in directory.glob("gate_candidate_*")) == []
+    # The background match is the in-process match.
+    for generation, row in ((1, rows[0]), (2, rows[1])):
+        model, _ = load_model(directory / f"gen_{generation:04d}.pt", torch.device("cpu"))
+        assert third_party_score(model, cfg, torch.device("cpu")) == row["gate_third_party_candidate"]

@@ -72,10 +72,13 @@ elif __package__ in (None, ""):
         effective_league_fraction,
         effective_scripted_fractions,
         league_opponent_weights,
+        load_third_party_score,
         plan_training_selfplay_segments,
         run_gate_match,
         run_paired_gate,
         save_best_checkpoint,
+        start_gate_third_party_jobs,
+        store_third_party_score,
         seed_league_checkpoints,
     )
     from src.v2.train.inference_server import InferenceServer, serialize_cpu_state_dict
@@ -131,10 +134,13 @@ else:
         effective_league_fraction,
         effective_scripted_fractions,
         league_opponent_weights,
+        load_third_party_score,
         plan_training_selfplay_segments,
         run_gate_match,
         run_paired_gate,
         save_best_checkpoint,
+        start_gate_third_party_jobs,
+        store_third_party_score,
         seed_league_checkpoints,
     )
     from .inference_server import InferenceServer, serialize_cpu_state_dict
@@ -1211,6 +1217,7 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
         config.gate_third_party_games = requested.gate_third_party_games
         config.gate_third_party_sims = requested.gate_third_party_sims
         config.gate_third_party_margin = requested.gate_third_party_margin
+        config.gate_third_party_background = requested.gate_third_party_background
         config.league_fraction = requested.league_fraction
         config.league_pool_size = requested.league_pool_size
         config.league_opponents_per_gen = requested.league_opponents_per_gen
@@ -1676,18 +1683,44 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
                     gate_stats = GateStats(wins=0, losses=0, ties=0)
                     result = "warmup_accepted"
                 elif config.gate_mode == "paired":
-                    outcome = run_paired_gate(
-                        model,
-                        best_model,
+                    best_third_party = best_third_party_scores.get(best_generation)
+                    if best_third_party is None and config.gate_third_party_opponent:
+                        # The in-memory score does not survive a restart.
+                        best_third_party = load_third_party_score(config, best_generation)
+                    gate_jobs = start_gate_third_party_jobs(
                         config,
                         generation,
-                        device,
-                        best_third_party=best_third_party_scores.get(best_generation),
-                        log=lambda message: print(message, flush=True),
+                        model,
+                        best_path,
+                        best_generation,
+                        device.type,
+                        need_best=best_third_party is None,
                     )
+                    if gate_jobs is not None:
+                        started_matches = "candidate and best" if gate_jobs.best is not None else "candidate"
+                        print(
+                            f"gate gen {generation}: {config.gate_third_party_opponent} match started in the "
+                            f"background for the {started_matches}",
+                            flush=True,
+                        )
+                    try:
+                        outcome = run_paired_gate(
+                            model,
+                            best_model,
+                            config,
+                            generation,
+                            device,
+                            best_third_party=best_third_party,
+                            jobs=gate_jobs,
+                            log=lambda message: print(message, flush=True),
+                        )
+                    finally:
+                        if gate_jobs is not None:
+                            gate_jobs.close()
                     gate_stats = outcome.stats
                     if outcome.third_party_best is not None:
                         best_third_party_scores[best_generation] = outcome.third_party_best
+                        store_third_party_score(config, best_generation, outcome.third_party_best)
                     stale_generations = generation - best_generation - 1
                     if outcome.result != "accepted" and (
                         int(config.gate_force_accept_every) > 0
@@ -1698,6 +1731,7 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
                         result = outcome.result
                     if result == "accepted" and outcome.third_party_candidate is not None:
                         best_third_party_scores[generation] = outcome.third_party_candidate
+                        store_third_party_score(config, generation, outcome.third_party_candidate)
                     gate_extra = {
                         "gate_score": outcome.score,
                         "gate_ci_lo": outcome.ci_lo,
