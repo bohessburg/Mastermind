@@ -245,7 +245,12 @@ def possible_answer_indices(
 
     if question == "THRONE_ROOM":
         if actions_tuple == (int(dz.A_PASS),):
-            return ((),)
+            # Flattened COMPLEX_AND: [selection length][selection][way length].
+            # Declining is an empty selection, not an empty answer; the server
+            # rejects a bare [] (live game 185811117, question 159).  Client
+            # answers echoed in opponents' logs show [0, 0] for a decline
+            # (e.g. game 181422355, decision 195).
+            return ((0, 0),)
         _require_length(actions_tuple, 1, decision)
         indices = _card_assignments(actions_tuple, offered, region="select")
         return _unique((1, index_tuple[0], 0) for index_tuple in indices)
@@ -1855,7 +1860,7 @@ def _selected_indices(
             return (treasures[answers[2]],)
         return (answers[1],) if len(answers) == 2 else ()
     if decision.question_id == "THRONE_ROOM":
-        return (answers[1],) if answers else ()
+        return (answers[1],) if len(answers) == 3 and answers[0] == 1 else ()
     return answers
 
 

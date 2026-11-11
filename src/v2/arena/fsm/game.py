@@ -1822,7 +1822,8 @@ def _recorded_plan(
                 ),
             )
     elif question == "THRONE_ROOM":
-        if not answers:
+        # A decline is [0, 0]: an empty selection and an empty way list.
+        if not answers or answers[0] == 0:
             actions = (int(dz.A_PASS),)
         else:
             actions = (
@@ -2224,7 +2225,7 @@ def _recorded_selected_indices(
             return (treasures[answers[2]],)
         return (answers[1],) if len(answers) == 2 else ()
     if decision.question_id == "THRONE_ROOM":
-        return (answers[1],) if answers else ()
+        return (answers[1],) if len(answers) == 3 and answers[0] == 1 else ()
     return answers
 
 

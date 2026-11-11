@@ -27,10 +27,12 @@ from src.v2.arena.actuate.clicks import (
     resolve_submit_button_index,
     selected_card_counts,
 )
+from src.v2.arena.actuate.protocol import ProtocolActuator
 from src.v2.arena.fsm.game import (
     BotDecisionProvider,
     DecisionPlan,
     RecordedDecisionProvider,
+    _recorded_plan,
     _step_actions,
     run_game_loop,
 )
@@ -41,7 +43,9 @@ from src.v2.arena.protocol.events import (
     PendingDecision,
     Play,
     ResourceUpdate,
+    UnknownFrame,
 )
+from src.v2.arena.protocol.messages import ANSWER_QUESTION, encode_answer
 from src.v2.arena.protocol.recording import parse_recording
 from src.v2.arena.shadow.bridge import game_from_snapshot
 from src.v2.arena.shadow.tracker import (
@@ -1747,3 +1751,162 @@ def test_silver_played_with_several_merchants_resolves_trigger_order() -> None:
     _step_actions(provider.shadow, treasures, frame_index=0, intended=None)
     assert int(provider.shadow.current_decision()["kind"]) == 2
     assert int(provider.shadow.resources()["coins"]) == 16
+
+
+THRONE_DECLINE_ARCHIVE = Path("exports/arena/20261111T124901.220957Z/frames.jsonl")
+THRONE_DECLINE_GAME_ID = 185811117
+THRONE_DECLINE_QUESTION = 159
+HUMAN_THRONE_DECLINE_ARCHIVE = Path(
+    "exports/arena/20260726T142200.662178Z/frames.jsonl"
+)
+HUMAN_THRONE_DECLINE_GAME_ID = 181422355
+HUMAN_THRONE_DECLINE_QUESTION = 195
+
+
+def _events_of_game(events: tuple[object, ...], game_id: int) -> tuple[object, ...]:
+    start = next(
+        index
+        for index, event in enumerate(events)
+        if isinstance(event, GameStart) and event.game_id == game_id
+    )
+    end = next(
+        (
+            index
+            for index in range(start + 1, len(events))
+            if isinstance(events[index], GameStart)
+        ),
+        len(events),
+    )
+    return events[start:end]
+
+
+def _throne_room_snapshot(
+    offered: tuple[str, ...] = ("0:Council Room",),
+) -> PendingDecisionSnapshot:
+    return PendingDecisionSnapshot(
+        question_index=THRONE_DECLINE_QUESTION,
+        decision_type="COMPLEX_AND",
+        question_id="THRONE_ROOM",
+        offered=offered,
+        minimum=0,
+        maximum=2,
+        association="Throne Room",
+    )
+
+
+def test_declining_a_throne_room_target_sends_an_empty_selection() -> None:
+    """Game 185811117: the bot played Throne Room and chose to play nothing.
+
+    The driver answered the COMPLEX_AND question with a bare ``[]``; the
+    server replied with error message 1 and the run aborted.  The client's
+    encoding is ``[selection length][selection][way length]``, so a decline
+    is ``[0, 0]``.
+    """
+    decision = _throne_room_snapshot()
+
+    mapping = map_engine_actions((int(dz.A_PASS),), decision)
+
+    assert mapping.answers == (0, 0)
+    assert mapping.selected_indices == ()
+    assert not mapping.ambiguous
+    council_room = int(dz.A_SELECT_BASE + dz.def_id("Council Room"))
+    assert map_engine_actions((council_room,), decision).answers == (1, 0, 0)
+
+    sent: list[tuple[int, bytes]] = []
+
+    async def send_frame(msg_type: int, payload: bytes) -> None:
+        sent.append((msg_type, payload))
+
+    asyncio.run(
+        ProtocolActuator(send_frame).act(int(dz.A_PASS), decision, decision.offered)
+    )
+    assert sent == [
+        (
+            ANSWER_QUESTION,
+            encode_answer(THRONE_DECLINE_QUESTION, (0, 0), auto_played=False),
+        )
+    ]
+
+
+def test_recorded_throne_room_decline_replays_as_a_pass() -> None:
+    question = PendingDecision(
+        question_index=THRONE_DECLINE_QUESTION,
+        decision_type="COMPLEX_AND",
+        question_id="THRONE_ROOM",
+        offered=("0:Council Room",),
+        minimum=0,
+        maximum=2,
+        association="Throne Room",
+    )
+
+    assert _recorded_plan(question, (0, 0)).engine_actions == (int(dz.A_PASS),)
+    council_room = int(dz.A_SELECT_BASE + dz.def_id("Council Room"))
+    assert _recorded_plan(question, (1, 0, 0)).engine_actions == (council_room,)
+
+
+def test_live_archive_shows_the_server_rejecting_a_bare_empty_throne_answer() -> None:
+    if not THRONE_DECLINE_ARCHIVE.is_file():
+        pytest.skip(f"missing live arena fixture: {THRONE_DECLINE_ARCHIVE}")
+    events = _events_of_game(
+        parse_recording(THRONE_DECLINE_ARCHIVE).events, THRONE_DECLINE_GAME_ID
+    )
+    asked = next(
+        index
+        for index, event in enumerate(events)
+        if isinstance(event, PendingDecision)
+        and event.question_index == THRONE_DECLINE_QUESTION
+    )
+    question = events[asked]
+    assert isinstance(question, PendingDecision)
+    assert question.question_id == "THRONE_ROOM"
+    assert question.decision_type == "COMPLEX_AND"
+    assert (question.minimum, question.maximum) == (0, 2)
+
+    answer, reply = events[asked + 1], events[asked + 2]
+    assert isinstance(answer, DecisionResolved)
+    assert tuple(answer.answers) == ()
+    assert isinstance(reply, UnknownFrame)
+    assert (reply.direction, reply.msg_type) == ("in", 1)
+
+
+def test_human_throne_room_decline_is_logged_as_zero_zero() -> None:
+    """Game 181422355: an opponent's own client declined a Throne Room target.
+
+    The server echoes every player's answers.  Decision 195 follows the
+    Throne Room play directly, plays nothing, and is followed by the action
+    phase pass ``[0, 0, 0]`` as decision 196.
+    """
+    if not HUMAN_THRONE_DECLINE_ARCHIVE.is_file():
+        pytest.skip(f"missing live arena fixture: {HUMAN_THRONE_DECLINE_ARCHIVE}")
+    events = _events_of_game(
+        parse_recording(HUMAN_THRONE_DECLINE_ARCHIVE).events,
+        HUMAN_THRONE_DECLINE_GAME_ID,
+    )
+    declined = next(
+        index
+        for index, event in enumerate(events)
+        if isinstance(event, DecisionResolved)
+        and event.question_index == HUMAN_THRONE_DECLINE_QUESTION
+    )
+    answer = events[declined]
+    assert isinstance(answer, DecisionResolved)
+    assert tuple(answer.answers) == (0, 0)
+
+    seat = answer.seat
+    before = [
+        event
+        for event in events[:declined]
+        if isinstance(event, Play) and event.seat == seat
+    ]
+    assert tuple(before[-1].cards) == ("Throne Room",)
+    next_question = next(
+        index
+        for index in range(declined + 1, len(events))
+        if isinstance(events[index], DecisionResolved)
+        and events[index].question_index == HUMAN_THRONE_DECLINE_QUESTION + 1
+    )
+    assert tuple(events[next_question].answers) == (0, 0, 0)
+    assert not any(
+        isinstance(event, Play) and event.seat == seat
+        for event in events[declined:next_question]
+    )
