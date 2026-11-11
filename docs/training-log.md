@@ -2898,6 +2898,7 @@ The CUDA numbers match the local ones. The deep slice (32 in flight at 4096 sims
 | 2 | 0.688 | 88/2048 (4.3%) | 0.677 | 0.5713 (223W-166L-11T) vs bc_a | 0.5466 | 0.5825 vs bc_a 0.5125 | accepted |
 | 3 (redone) | 0.691 | 17/2048 (0.8%) on the first run | 0.648 on the first run | 0.5413 (210W-177L-13T) vs gen 2 | 0.5204 | 0.5350 vs gen 2 0.5825 | accepted |
 | 4 | 0.703 | 9/2048 (0.4%) | 0.633 | 0.5225 vs gen 3 | 0.5018 | 0.5575 (111W-88L-1T) vs gen 3 0.5350 | accepted |
+| 5 | 0.713 | 6/2048 (0.3%) | 0.661 | 0.4650 vs gen 4 | 0.4449 | not played | rejected |
 
 - Gen 1 per-generation evals against engine3: 61-38-1 and 55-44-1, 58.6% over 200 games (`bc_a` 50.5%, c28 gen 1 40.5%). Stop rule passed: targets are sharp (c28 gen 1 entropy was 1.11) and engine3 strength rose.
 - Gen 1 missed the gate by 0.0008 on the lower bound. Gen 2, trained on both generations' data, passed both terms. `bc_a` scored 0.5125 on the gate's 200 engine3 boards.
@@ -2924,3 +2925,4 @@ The CUDA numbers match the local ones. The deep slice (32 in flight at 4096 sims
 - Gen 3 was accepted while scoring 4.75 points below gen 2 on the gate's engine3 boards (107W-93L against 0.5825), inside the 5-point margin by half a game. Gen 2's per-generation evals: 71-28-1 and 53-47-0 (62.3%).
 - Gen 3's per-generation evals: 68-32-0 and 52-48-0 (60.0%). Pooled with the gate boards over 400 games, gen 2 is 60.3% and gen 3 56.8% against engine3: one standard error apart. The head-to-head gains (gen 2 over bc_a, gen 3 over gen 2, gen 4 over gen 3) have not shown up as engine3 gains since gen 2.
 - Eval cadence (2026-11-11 05:33 UTC, `d5bb8c7`): back to every 5th generation plus gen 1, as in c15-c28. The trainer used to evaluate the first generation after any restart, which on the box (OOM restart every generation) meant every generation whatever the setting; the cadence now also follows the config file on resume. Deployed by stop, merge, start at the start of gen 5 self-play. Gens 1-4 have evals; the next are gen 5 and gen 10. The gate's engine3 match still scores every head-to-head winner.
+- Gen 4's per-generation evals: 66-34-0 and 60-40-0 (63.0%); pooled with the gate boards 59.4% over 400 games. Gen 5 lost the head-to-head to gen 4 outright (0.465), the first candidate to score below 0.5; best stays gen 4.
