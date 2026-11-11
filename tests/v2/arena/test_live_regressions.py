@@ -31,6 +31,7 @@ from src.v2.arena.fsm.game import (
     BotDecisionProvider,
     DecisionPlan,
     RecordedDecisionProvider,
+    _step_actions,
     run_game_loop,
 )
 from src.v2.arena.protocol.events import (
@@ -1662,3 +1663,87 @@ def test_cellar_discards_shuffled_back_into_its_own_draw_do_not_abort() -> None:
         (CELLAR_QUESTION, "CELLAR"),
         (ACTION_QUESTION_AFTER_CELLAR, "GAME_ACTION_PHASE"),
     ]
+
+
+MERCHANT_TRIGGERS_ARCHIVE = Path("exports/arena/20261111T103516.286873Z/frames.jsonl")
+MERCHANT_TRIGGERS_GAME_ID = 185804954
+MERCHANT_BUY_QUESTION = 166
+_PLAY_COPPER = int(dz.A_PLAY_BASE + dz.def_id("Copper"))
+_PLAY_SILVER = int(dz.A_PLAY_BASE + dz.def_id("Silver"))
+_BUY_PROVINCE = int(dz.A_BUY_BASE + dz.def_id("Province"))
+
+
+class _RecordedReplayWithBuyBot:
+    """Use the live provider for one buy question and keep its shadow."""
+
+    def __init__(self, events: tuple[object, ...]) -> None:
+        self.recorded = RecordedDecisionProvider(events)
+        self.bot = BotDecisionProvider(self._buy_province)
+        self.shadow: Any = None
+        self.plan_at_buy: DecisionPlan | None = None
+        self.coins_when_choosing: int | None = None
+
+    def _buy_province(self, game: Any, seat: int) -> int:
+        self.coins_when_choosing = int(game.resources()["coins"])
+        return _BUY_PROVINCE if game.legal_mask()[_BUY_PROVINCE] else int(dz.A_PASS)
+
+    async def plan(
+        self,
+        *,
+        frame_index: int,
+        game: Any,
+        snapshot: TrackerSnapshot,
+        decision: PendingDecisionSnapshot,
+    ) -> DecisionPlan | None:
+        if (
+            snapshot.game_id == MERCHANT_TRIGGERS_GAME_ID
+            and decision.question_index == MERCHANT_BUY_QUESTION
+        ):
+            self.shadow = game.clone()
+            self.plan_at_buy = await self.bot.plan(
+                frame_index=frame_index,
+                game=game,
+                snapshot=snapshot,
+                decision=decision,
+            )
+            return self.plan_at_buy
+        return await self.recorded.plan(
+            frame_index=frame_index,
+            game=game,
+            snapshot=snapshot,
+            decision=decision,
+        )
+
+
+def test_silver_played_with_several_merchants_resolves_trigger_order() -> None:
+    """Game 185804954: four Merchants in play, two Silvers in hand at $2.
+
+    The first Silver triggers all four Merchants.  The native game asks in
+    which order to resolve them; the client does not.  The buy planner left
+    that choice pending, so the second Silver was illegal and the driver
+    aborted with "offered hand treasure is not legal in the shadow game".
+    """
+    if not MERCHANT_TRIGGERS_ARCHIVE.is_file():
+        pytest.skip(f"missing live arena fixture: {MERCHANT_TRIGGERS_ARCHIVE}")
+    events = parse_recording(MERCHANT_TRIGGERS_ARCHIVE).events
+    provider = _RecordedReplayWithBuyBot(events)
+
+    results = asyncio.run(
+        run_game_loop(
+            events,
+            actuator=MockActuator(replay=True),
+            decision_provider=provider,
+        )
+    )
+
+    assert not any(result.divergence_aborted for result in results)
+    treasures = (*([_PLAY_COPPER] * 6), *([_PLAY_SILVER] * 2))
+    assert provider.plan_at_buy is not None
+    assert provider.plan_at_buy.gesture_actions == treasures
+    # 2 + six Coppers + two Silvers + four Merchant bonuses.
+    assert provider.coins_when_choosing == 16
+
+    # The same plays applied to the live shadow once the client answers.
+    _step_actions(provider.shadow, treasures, frame_index=0, intended=None)
+    assert int(provider.shadow.current_decision()["kind"]) == 2
+    assert int(provider.shadow.resources()["coins"]) == 16

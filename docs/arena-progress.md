@@ -193,6 +193,19 @@ Restart after three idle months, serving c29 gen 10 through
   Sentry draw after cards left the hand) still aborts, because the binding
   can order the current deck but cannot rebuild a post-shuffle deck from
   cards the turn-start pool lacks.
+- **Several Merchants and the first Silver.** With four Merchants in play the
+  native game asks in which order to resolve their "+$1 on the first Silver"
+  triggers (decision kind 9, OrderTriggers); dominion.games asks nothing. The
+  buy planner plays every offered treasure in a clone of the shadow game, so
+  after the first Silver the clone sat on that question, the second Silver was
+  illegal, and the driver exited 4 with "offered hand treasure is not legal in
+  the shadow game" (run `20261111T103516.286873Z`, game 185804954, abandoned
+  on turn 13, not in `record.jsonl`). The triggers are identical, so
+  `_resolve_trigger_orders` now answers those questions with the first legal
+  choice after every shadow step, both in the planner and when the shadow is
+  stepped after the client confirms. Test:
+  `test_silver_played_with_several_merchants_resolves_trigger_order`.
+  The arena plays gen 17 from this relaunch.
 
 Open: `lobby.rated` is read from the config but nothing applies it. The
 account's own automatch preference decides, and the saved lobby pages from

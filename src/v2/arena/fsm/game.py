@@ -2097,6 +2097,7 @@ def _step_actions(
                 ),
             )
         game.step(action)
+        _resolve_trigger_orders(game)
         game.validate()
 
 
@@ -2309,8 +2310,28 @@ def _collapse_offered_treasures(
                     "offered hand treasure is not legal in the shadow game"
                 )
             game.step(action)
+            _resolve_trigger_orders(game)
             actions.append(action)
     return tuple(actions)
+
+
+_ORDER_TRIGGERS_KIND = 9
+
+
+def _resolve_trigger_orders(game: Any) -> None:
+    """Resolve native trigger-order choices the web client never asks.
+
+    Several Merchants in play all trigger on the first Silver.  The native
+    interpreter asks in which order to resolve them; dominion.games resolves
+    them without a question.  The triggers are identical, so any order gives
+    the same state.
+    """
+    for _ in range(64):
+        if int(game.current_decision().get("kind", -1)) != _ORDER_TRIGGERS_KIND:
+            return
+        legal = game.legal_mask()
+        game.step(next(index for index, value in enumerate(legal) if value))
+    raise BridgeError("native trigger ordering did not finish")
 
 
 def _require_buy_or_pass(game: Any, action: int) -> None:
