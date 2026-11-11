@@ -30,6 +30,7 @@ from .config import (
     SelfPlayConfig,
     TrainConfig,
     validate_deep_slice_config,
+    validate_gate_config,
 )
 from .model import build_model, model_config_dict
 from .observation import obs_size_for_config, obs_size_for_version, obs_version_for_checkpoint
@@ -51,6 +52,26 @@ class GateStats:
     @property
     def win_pct(self) -> float:
         return self.wins / self.decisive if self.decisive else 0.0
+
+
+@dataclass(frozen=True)
+class GateOutcome:
+    """Decision and evidence from one paired gate.
+
+    ``score`` is the candidate's score over all games with ties as half;
+    ``ci_lo`` is that score minus ``gate_ci_z`` paired standard errors, which
+    is the number compared with ``gate_threshold``. The third-party scores
+    are ``None`` when that check is disabled or was not reached.
+    """
+
+    stats: GateStats
+    result: str
+    reason: str
+    score: float
+    paired_se: float
+    ci_lo: float
+    third_party_candidate: float | None = None
+    third_party_best: float | None = None
 
 
 @dataclass(frozen=True)
@@ -1225,3 +1246,152 @@ def run_gate_match(
         seed=gate_match_seed(config, generation),
         device=device,
     ).stats
+
+
+# The third-party term replays the same boards for every candidate and best,
+# so a best's score is measured once and two nets are compared like for like.
+GATE_THIRD_PARTY_SEED_SALT = 0x4733_5244
+
+
+def paired_gate_passes(score: float, paired_se: float, threshold: float, ci_z: float) -> bool:
+    """Whether a paired head-to-head clears the threshold with margin.
+
+    The lower bound must exceed the threshold: a candidate identical to the
+    best scores exactly one half with zero spread and is not a promotion. A
+    standard error that cannot be estimated (fewer than two boards) never
+    passes: the gate exists to refuse promotions the data cannot support.
+    """
+    if not math.isfinite(score) or not math.isfinite(paired_se):
+        return False
+    return score - float(ci_z) * paired_se > float(threshold)
+
+
+def third_party_gate_passes(candidate: float, best: float, margin: float) -> bool:
+    return candidate >= best - float(margin)
+
+
+def third_party_score(
+    model: torch.nn.Module,
+    config: TrainConfig,
+    device: torch.device,
+) -> float:
+    """Score (ties half) of ``model`` against the configured scripted opponent."""
+    from .evaluate import evaluate_model
+
+    was_training = model.training
+    stats = evaluate_model(
+        model,
+        opponent=config.gate_third_party_opponent,
+        games=int(config.gate_third_party_games),
+        sims=int(config.gate_third_party_sims),
+        kingdoms=config.eval.eval_kingdoms,
+        seed=int(config.seed) ^ GATE_THIRD_PARTY_SEED_SALT,
+        device=device,
+        n_games=int(config.eval.eval_n_games),
+        max_batch=int(config.eval.eval_max_batch),
+        c_puct=config.selfplay.c_puct,
+        c_puct_schedule=config.selfplay.c_puct_schedule,
+        c_puct_init=config.selfplay.c_puct_init,
+        c_puct_base=config.selfplay.c_puct_base,
+        fixed_kingdom=config.selfplay.fixed_kingdom,
+        max_tree_nodes=config.selfplay.max_tree_nodes,
+        auto_play_treasures=config.selfplay.auto_play_treasures,
+        prune_treasure_plays=config.selfplay.prune_treasure_plays,
+        obs_version=config.selfplay.obs_version,
+        honest=bool(config.eval.eval_honest),
+    )
+    model.train(was_training)
+    if stats.games <= 0:
+        return 0.0
+    return (stats.wins + 0.5 * stats.ties) / stats.games
+
+
+def run_paired_gate_match(
+    candidate: torch.nn.Module,
+    best: torch.nn.Module,
+    config: TrainConfig,
+    generation: int,
+    device: torch.device,
+    log: Callable[[str], None] | None = None,
+) -> dict[str, Any]:
+    """Candidate versus best under the corrected protocol; returns the summary."""
+    from .diagnostics import match_selfplay_config, run_paired_match
+
+    pairs = int(config.gate_games) // 2
+    match_config = match_selfplay_config(
+        config.selfplay,
+        sims=int(config.gate_sims),
+        determinize=config.gate_determinize or None,
+    )
+    started = time.perf_counter()
+    last = [started]
+
+    def tick(games_done: int, evals: int) -> None:
+        now = time.perf_counter()
+        if log is None or now - last[0] < 60.0:
+            return
+        last[0] = now
+        log(f"gate gen {generation}: {games_done}/{2 * pairs} games, {evals} evals, {now - started:.0f}s")
+
+    was_training = (candidate.training, best.training)
+    candidate.eval()
+    best.eval()
+    match = run_paired_match(
+        candidate,
+        best,
+        match_config,
+        pairs=pairs,
+        seed=gate_match_seed(config, generation),
+        device=device,
+        independent_search=True,
+        chunk=int(config.gate_chunk),
+        tick=tick,
+    )
+    candidate.train(was_training[0])
+    best.train(was_training[1])
+    return match.summary()
+
+
+def run_paired_gate(
+    candidate: torch.nn.Module,
+    best: torch.nn.Module,
+    config: TrainConfig,
+    generation: int,
+    device: torch.device,
+    *,
+    best_third_party: float | None = None,
+    log: Callable[[str], None] | None = None,
+) -> GateOutcome:
+    """Gate a candidate with the paired head-to-head, then the third-party check.
+
+    ``best_third_party`` is the current best's cached score against the
+    third-party opponent; when ``None`` it is measured here. The third-party
+    games are only played for a candidate that passed the head-to-head.
+    """
+    validate_gate_config(config)
+    summary = run_paired_gate_match(candidate, best, config, generation, device, log)
+    stats = GateStats(int(summary["wins"]), int(summary["losses"]), int(summary["ties"]))
+    score = float(summary["a_score"])
+    paired_se = float(summary["paired_se"])
+    ci_lo = score - float(config.gate_ci_z) * paired_se
+    if not paired_gate_passes(score, paired_se, config.gate_threshold, config.gate_ci_z):
+        return GateOutcome(stats, "rejected", "head_to_head", score, paired_se, ci_lo, None, best_third_party)
+    if not config.gate_third_party_opponent:
+        return GateOutcome(stats, "accepted", "head_to_head", score, paired_se, ci_lo)
+    if log is not None:
+        log(f"gate gen {generation}: head-to-head passed ({score:.3f}, lower {ci_lo:.3f}); "
+            f"checking against {config.gate_third_party_opponent}")
+    if best_third_party is None:
+        best_third_party = third_party_score(best, config, device)
+    candidate_third_party = third_party_score(candidate, config, device)
+    passed = third_party_gate_passes(candidate_third_party, best_third_party, config.gate_third_party_margin)
+    return GateOutcome(
+        stats,
+        "accepted" if passed else "rejected",
+        "third_party" if not passed else "head_to_head+third_party",
+        score,
+        paired_se,
+        ci_lo,
+        candidate_third_party,
+        best_third_party,
+    )

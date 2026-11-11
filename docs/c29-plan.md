@@ -172,13 +172,14 @@ Run locally 2026-11-10 with the fixed search (honest, 50 boards x 2 seats):
 | 128 sims vs raw policy | 0.580 | [0.498, 0.662] | +56 |
 | 128 sims vs raw policy, sequential search | 0.590 | [0.492, 0.688] | +63 |
 | 512 sims vs raw policy | 0.620 | [0.531, 0.709] | +85 |
+| 512 sims vs raw policy, sequential search | 0.630 | [0.557, 0.703] | +92 |
 | 128 vs 128 with the value output zeroed | 0.590 | [0.501, 0.679] | +63 |
 
 Search is an improvement operator on `bc_a` and the value head contributes to
-it. The gain is modest and the intervals are wide. Still to run, on a GPU:
-512 vs 128, 512 vs zero-value 512, clairvoyant variants, and 8 leaves in
-flight against sequential search at 512 sims (only 4 in flight at 128 sims
-has been checked against sequential).
+it. The gain is modest and the intervals are wide. Several leaves in flight
+play as well as sequential search at both budgets (step 6 has the detail).
+Still to run, on a GPU: 512 vs 128, 512 vs zero-value 512, and the
+clairvoyant variants.
 
 ### Step 2: decision regret (is the search's move actually better?)
 
@@ -229,14 +230,136 @@ the fix: the raw policy already buys Province 16% -> 87% of the time as the
 game goes on and 92-95% once two Provinces are gone, and it reads that from
 the pile counts. Revisit only if a fixed-search campaign still greens late.
 
-### Step 4: change the trainer's gate
+### Step 4: change the trainer's gate (done 2026-11-10)
 
-Whatever step 3 says, the trainer should stop gating with the legacy path.
-`run_gate_match` should use `run_paired_match` (greedy, independent search,
-paired boards) and accept on the lower end of the paired confidence interval
-rather than on a raw 55% of 200 games, and it should also require no loss
-against engine3 on paired seeds. This is not implemented yet; the legacy
-path is kept so old numbers stay reproducible (`--legacy-gate`).
+`gate_mode: "paired"` in the training config switches the trainer to the
+corrected protocol. The legacy path stays the default so old configs and
+numbers reproduce.
+
+- Head-to-head: `run_paired_match` at `gate_sims`, greedy, each side's tree
+  scored by its own net, fresh trees, `gate_games / 2` boards each played in
+  both seat orders, information model `gate_determinize`.
+- Accept only if `score - gate_ci_z * paired_se > gate_threshold`. The
+  comparison is strict, so a net identical to the best (exactly 0.5 with no
+  spread) is rejected.
+- Third-party term: if the head-to-head passes, the candidate plays
+  `gate_third_party_games` against `gate_third_party_opponent` at
+  `gate_third_party_sims` and must score at least the best net's score on the
+  same seeds minus `gate_third_party_margin`. The best net's score is played
+  once per promotion and cached.
+- New metrics columns: `gate_score`, `gate_ci_lo`, `gate_reason`
+  (`head_to_head`, `third_party`, `head_to_head+third_party`),
+  `gate_third_party_candidate`, `gate_third_party_best`.
+
+Code: `src/v2/train/gating.py` (`run_paired_gate`), `src/v2/train/config.py`
+(`validate_gate_config`), tests in `src/v2/train/test_gating.py`.
+
+### Step 5: the c29 config (written 2026-11-10)
+
+`configs/run_c29.json` is `run_c28.json` with:
+
+| Setting | c28 | c29 | Why |
+|---|---|---|---|
+| start | `bc_a`, empty buffer | the same, in `checkpoints/campaign29` | no data from the broken search |
+| gate | legacy, 200 games at 128 sims | `paired`, 400 games at 128 sims, honest (`per_decision`) | step 4 |
+| acceptance | 55% of decisive games | lower end of the interval (`gate_ci_z` 1.0) above 0.5 | |
+| third party | none | engine3, 200 games, 400 sims, margin 0.05 | head-to-head gains were non-transitive |
+| `tail_leaves_in_flight` | 64 | 8 | 16 in flight at 512 sims is visibly flatter than sequential search (step 6) |
+| `eval_every_n_generations` | 5 | 1 | the stop rule needs engine3 every generation; c28 got it only because it was restarted each generation |
+
+Launch: `scripts/box/resume.sh configs/run_c29.json checkpoints/campaign25/bc_a.pt`.
+
+Open choices, both left as c28 had them:
+- Self-play search is still clairvoyant (`determinize: "off"`) while the gate
+  and the evals are honest. Switching self-play to `per_decision` is a
+  one-line change and costs speed.
+- `gate_ci_z` 1.0 promotes an exactly-equal candidate about 16% of the time
+  before the engine3 term. Raise it to 1.64 for 5%.
+
+Stop rule (manual; the config still says 100 generations). Stop after
+generation 1 and re-diagnose if either holds:
+
+- The targets are flat again. In `metrics.csv` that shows as `entropy` near
+  1.1 (c28 gen 1: 1.11; expected now: about 0.6) and `truncated_games` at 5%
+  or more of the games (c28: 106 of 2048; expected now: close to none).
+- Generation 1 neither passes the gate nor holds `bc_a`'s engine3 level
+  (50.5%). The main and sentinel evals are 100 games each; below 43% over
+  the 200 is a clear miss, 43-50% is inside the noise and worth one more
+  generation.
+
+### Step 6: pre-box checks (2026-11-10, local)
+
+Leaves in flight against sequential search. `scripts/c29_leaf_parity.py`
+plays the same greedy games with 1 leaf in flight and with several, and
+compares root visits on decisions reached by an identical history (`bc_a`,
+honest search, 32 games):
+
+| Sims | In flight | Used by c29 | Same top move | Total variation | Root entropy (seq -> batched) | Top-move share (seq -> batched) |
+|---|---|---|---|---|---|---|
+| 128 | 4 | gate | 97.5% | 0.040 | 0.41 -> 0.48 | 0.834 -> 0.809 |
+| 128 | 8 | no | 96.1% | 0.086 | 0.42 -> 0.64 | 0.828 -> 0.768 |
+| 512 | 8 | self-play | 93.8% | 0.064 | 0.42 -> 0.53 | 0.832 -> 0.806 |
+| 512 | 16 | no (was the tail setting) | 90.0% | 0.100 | 0.49 -> 0.69 | 0.804 -> 0.752 |
+
+Match strength agrees: against the raw policy, 512 sims scores 0.620 with 8
+in flight and 0.630 sequential; 128 sims scores 0.580 with 4 and 0.590
+sequential. So 8 in flight at 512 sims costs no measurable strength but does
+leave the visit targets about 0.1 nats flatter than sequential search would
+(c25-c28 targets were about 0.6 nats flatter). 16 at 512 is as flat as 8 at
+128, so `tail_leaves_in_flight` stays at 8. The flattening follows the number
+of leaves more than the leaves-to-sims ratio (4 at 128 and 16 at 512 are the
+same ratio).
+
+The deep slice (32 in flight at 4096 sims) is checked only on the synthetic
+tree in `tests/v2/test_mcts.cpp` (top-move share 0.878 against 0.888
+sequential; 64 in flight 0.840). The synthetic tree overstated the real
+flattening at the other budgets, so this is probably fine; the real check is
+`scripts/box/c29_diagnostics.sh parity`, which adds the 4096-sim run.
+
+If the flatter targets turn out to matter, `leaves_in_flight: 4` is the
+lever; its cost in self-play speed has to be measured on the box.
+
+Self-play through the trainer's own path (`play_routed_games`, the c29
+self-play settings, `bc_a`, 24 games, deep slice off):
+
+| | c29 smoke | Target | c28 (broken search) |
+|---|---|---|---|
+| Turns per game | 38.2 | about 41 | 65 |
+| Provinces per seat | 3.02 | over 2 | 1.1 |
+| Truncated games | 0 of 24 | | 5-7% |
+| Policy-target entropy | 0.58 (prior on the same positions 0.49) | near 0.5 | 1.1 |
+| Target top move = prior top move | 91% | | |
+
+One tiny generation through `run_training` with the c29 config (4 games, 64
+sims, 8-game gate, 4-game engine3 term) ran end to end and wrote the new
+gate columns. At that size the engine3 term passed trivially (both nets 0 of
+4), so the veto path is covered by the unit tests only.
+
+Old gate conditions re-measured with the fixed search: c28 gen1 against
+`bc_a`, 50 boards in both seat orders (100 games each), 128 sims
+(`bench/c29_fixed/`):
+
+| Conditions | Broken search (32 boards) | Fixed search | 95% CI |
+|---|---|---|---|
+| Corrected protocol, clairvoyant | 0.859 | 0.615 | [0.528, 0.702] |
+| Corrected protocol, honest | 0.812 | 0.600 | [0.511, 0.689] |
+| Corrected + cross-routed leaves only | 0.266 | 0.625 | [0.529, 0.721] |
+| Corrected + shared reused tree (implies cross-routing) | | 0.550 | [0.466, 0.634] |
+| Corrected + sampled openings only | 0.766 | 0.530 | [0.424, 0.636] |
+| Full legacy conditions | 0.438 | 0.360 | [0.259, 0.461] |
+| `bc_a` vs a second copy of `bc_a` | 0.500 exactly | 0.500 exactly | |
+
+- The legacy gate still gives the opposite verdict to the corrected one on
+  the same boards (0.360 against 0.615), so replacing it was needed whatever
+  the search did.
+- Cross-routing alone no longer moves the result; its sign flip was an
+  interaction with the broken search. The shared tree and the sampled
+  openings each cost 7-9 points, inside the noise one at a time.
+- gen1 keeps a head-to-head edge over `bc_a` with a working search (about
+  +75 Elo, both intervals just clear of even) while scoring 40.5% against
+  engine3 (c28's two 100-game evals) to `bc_a`'s 50.5%. One generation of
+  training on `bc_a`'s self-play is enough to beat `bc_a` without getting
+  stronger. The engine3 term in the gate is what catches this.
 
 ## Costs
 

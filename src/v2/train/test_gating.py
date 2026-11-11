@@ -9,7 +9,13 @@ import torch
 
 import dominion_v2_py as dz
 from .config import TrainConfig
+from .config import validate_gate_config
 from .gating import (
+    GateOutcome,
+    paired_gate_passes,
+    run_paired_gate,
+    third_party_score,
+    gate_match_seed,
     GateStats,
     SelfPlaySegment,
     archive_previous_best,
@@ -758,3 +764,205 @@ def test_gate_force_accepts_only_after_configured_stale_generations(monkeypatch,
     assert [row["best_generation"] for row in rows] == [0, 0, 3]
     csv_rows = read_metrics(Path(cfg.metrics_csv))
     assert [row["gate_result"] for row in csv_rows] == ["rejected", "rejected", "forced_accepted"]
+
+
+def _paired_gate_config(tmp_path: Path, *, generations: int = 1) -> TrainConfig:
+    cfg = _small_gated_config(tmp_path, generations=generations)
+    cfg.selfplay.max_turns = 24
+    cfg.gate_mode = "paired"
+    cfg.gate_games = 4
+    cfg.gate_sims = 2
+    cfg.gate_threshold = 0.5
+    cfg.gate_ci_z = 1.0
+    return cfg
+
+
+def _summary(score: float, paired_se: float, *, wins: int = 6, losses: int = 2, ties: int = 0) -> dict:
+    return {"wins": wins, "losses": losses, "ties": ties, "a_score": score, "paired_se": paired_se}
+
+
+def test_paired_gate_accepts_only_when_lower_bound_exceeds_threshold() -> None:
+    assert paired_gate_passes(0.56, 0.03, threshold=0.5, ci_z=1.0)
+    assert not paired_gate_passes(0.56, 0.03, threshold=0.5, ci_z=2.5)
+    # The point estimate alone is not enough.
+    assert not paired_gate_passes(0.52, 0.03, threshold=0.5, ci_z=1.0)
+    # An identical candidate ties every pair: exactly one half, zero spread.
+    assert not paired_gate_passes(0.5, 0.0, threshold=0.5, ci_z=1.0)
+    assert not paired_gate_passes(0.9, float("nan"), threshold=0.5, ci_z=1.0)
+
+
+def test_gate_config_validation_rejects_unusable_paired_settings(tmp_path: Path) -> None:
+    cfg = _paired_gate_config(tmp_path)
+    validate_gate_config(cfg)
+    for name, value in (
+        ("gate_mode", "pairs"),
+        ("gate_games", 5),
+        ("gate_games", 2),
+        ("gate_sims", 1),
+        ("gate_ci_z", -1.0),
+        ("gate_chunk", 0),
+        ("gate_determinize", "sometimes"),
+    ):
+        bad = _paired_gate_config(tmp_path)
+        setattr(bad, name, value)
+        with pytest.raises(ValueError):
+            validate_gate_config(bad)
+    legacy = _small_gated_config(tmp_path, generations=1)
+    legacy.gate_games = 5
+    validate_gate_config(legacy)
+
+
+def test_paired_gate_identical_networks_are_rejected(tmp_path: Path) -> None:
+    cfg = _paired_gate_config(tmp_path)
+    cfg.gate_determinize = "per_decision"
+    candidate, _, _ = build_objects(cfg, torch.device("cpu"))
+    best, _, _ = build_objects(cfg, torch.device("cpu"))
+    best.load_state_dict(candidate.state_dict())
+    candidate.train()
+    best.eval()
+    outcome = run_paired_gate(candidate, best, cfg, generation=1, device=torch.device("cpu"))
+    assert outcome.stats.wins + outcome.stats.losses + outcome.stats.ties == 4
+    assert outcome.score == pytest.approx(0.5)
+    assert outcome.result == "rejected" and outcome.reason == "head_to_head"
+    assert outcome.third_party_candidate is None
+    # The caller's training mode is restored.
+    assert candidate.training and not best.training
+
+
+def test_paired_gate_uses_corrected_match_settings(monkeypatch, tmp_path: Path) -> None:
+    from . import diagnostics as diagnostics_module
+
+    cfg = _paired_gate_config(tmp_path)
+    cfg.gate_games = 12
+    cfg.gate_sims = 16
+    cfg.gate_chunk = 3
+    cfg.gate_determinize = "per_decision"
+    cfg.selfplay.determinize = "off"
+    cfg.selfplay.tree_reuse = True
+    cfg.selfplay.temp_mode = "per_seat_buy"
+    cfg.selfplay.dirichlet_frac = 0.25
+    captured: dict = {}
+
+    class FakeMatch:
+        def summary(self) -> dict:
+            return _summary(0.75, 0.05)
+
+    def fake_paired_match(model_a, model_b, config, **kwargs):
+        captured.update(kwargs, config=config, models=(model_a, model_b))
+        return FakeMatch()
+
+    monkeypatch.setattr(diagnostics_module, "run_paired_match", fake_paired_match)
+    candidate, _, _ = build_objects(cfg, torch.device("cpu"))
+    best, _, _ = build_objects(cfg, torch.device("cpu"))
+    outcome = run_paired_gate(candidate, best, cfg, generation=7, device=torch.device("cpu"))
+    assert outcome.result == "accepted" and outcome.ci_lo == pytest.approx(0.70)
+    assert captured["models"] == (candidate, best)
+    assert captured["pairs"] == 6 and captured["chunk"] == 3
+    assert captured["independent_search"] is True
+    assert captured["seed"] == gate_match_seed(cfg, 7)
+    match_config = captured["config"]
+    assert match_config.sims_per_move == 16
+    assert match_config.determinize == "per_decision"
+    assert match_config.tree_reuse is False and match_config.dirichlet_frac == 0.0
+    assert (match_config.temp_mode, match_config.temp_final) == ("legacy", 0.0)
+    # The training self-play settings are untouched.
+    assert cfg.selfplay.tree_reuse is True and cfg.selfplay.determinize == "off"
+
+
+def test_paired_gate_third_party_term_vetoes_and_is_skipped_on_head_to_head_loss(
+    monkeypatch, tmp_path: Path
+) -> None:
+    from . import gating as gating_module
+
+    cfg = _paired_gate_config(tmp_path)
+    cfg.gate_third_party_opponent = "engine3"
+    cfg.gate_third_party_margin = 0.05
+    candidate, _, _ = build_objects(cfg, torch.device("cpu"))
+    best, _, _ = build_objects(cfg, torch.device("cpu"))
+    scores = {id(candidate): 0.40, id(best): 0.50}
+    calls: list[int] = []
+
+    def fake_third_party(model, _config, _device):
+        calls.append(id(model))
+        return scores[id(model)]
+
+    monkeypatch.setattr(gating_module, "third_party_score", fake_third_party)
+    head_to_head = {"summary": _summary(0.60, 0.03)}
+    monkeypatch.setattr(gating_module, "run_paired_gate_match", lambda *_a, **_k: head_to_head["summary"])
+    cpu = torch.device("cpu")
+
+    # Wins the head-to-head but drops ten points against the third party.
+    outcome = run_paired_gate(candidate, best, cfg, 1, cpu)
+    assert (outcome.result, outcome.reason) == ("rejected", "third_party")
+    assert (outcome.third_party_candidate, outcome.third_party_best) == (0.40, 0.50)
+    assert calls == [id(best), id(candidate)]
+
+    # Within the margin it is accepted, and a cached best score is reused.
+    calls.clear()
+    scores[id(candidate)] = 0.46
+    outcome = run_paired_gate(candidate, best, cfg, 1, cpu, best_third_party=0.50)
+    assert (outcome.result, outcome.reason) == ("accepted", "head_to_head+third_party")
+    assert calls == [id(candidate)]
+
+    # A head-to-head loss never reaches the third-party games.
+    calls.clear()
+    head_to_head["summary"] = _summary(0.52, 0.03)
+    outcome = run_paired_gate(candidate, best, cfg, 1, cpu, best_third_party=0.50)
+    assert (outcome.result, outcome.reason) == ("rejected", "head_to_head")
+    assert calls == [] and outcome.third_party_candidate is None
+
+
+def test_paired_gate_mode_drives_training_and_caches_best_third_party_score(
+    monkeypatch, tmp_path: Path
+) -> None:
+    from . import train as train_module
+
+    cfg = _paired_gate_config(tmp_path, generations=3)
+    cfg.gate_third_party_opponent = "engine3"
+    seen_best_scores: list[float | None] = []
+    script = [
+        # gen 1: head-to-head fails, third party never measured.
+        GateOutcome(GateStats(1, 3, 0), "rejected", "head_to_head", 0.25, 0.1, 0.15),
+        # gen 2: accepted; best measured at 0.50, candidate 0.55.
+        GateOutcome(GateStats(4, 0, 0), "accepted", "head_to_head+third_party", 1.0, 0.0, 1.0, 0.55, 0.50),
+        # gen 3: rejected by the third party against the new best.
+        GateOutcome(GateStats(3, 1, 0), "rejected", "third_party", 0.75, 0.1, 0.65, 0.40, 0.55),
+    ]
+
+    def scripted_gate(_candidate, _best, _config, generation, _device, *, best_third_party=None, log=None):
+        seen_best_scores.append(best_third_party)
+        return script[generation - 1]
+
+    def legacy_gate(*_args, **_kwargs):
+        raise AssertionError("legacy gate must not run in paired mode")
+
+    monkeypatch.setattr(train_module, "run_paired_gate", scripted_gate)
+    monkeypatch.setattr(train_module, "run_gate_match", legacy_gate)
+    rows = run_training(cfg)["metrics"]
+    assert [row["gate_result"] for row in rows] == ["rejected", "accepted", "rejected"]
+    assert [row["best_generation"] for row in rows] == [0, 2, 2]
+    assert [row["gate_reason"] for row in rows] == ["head_to_head", "head_to_head+third_party", "third_party"]
+    assert [row["gate_ci_lo"] for row in rows] == [0.15, 1.0, 0.65]
+    # Gen 3 is handed the accepted candidate's own score as the new best's.
+    assert seen_best_scores == [None, None, 0.55]
+    csv_rows = read_metrics(Path(cfg.metrics_csv))
+    assert [row["gate_score"] for row in csv_rows] == ["0.25", "1.0", "0.75"]
+    assert csv_rows[0]["gate_third_party_candidate"] == ""
+    assert csv_rows[2]["gate_third_party_best"] == "0.55"
+
+
+def test_third_party_score_plays_the_configured_opponent(tmp_path: Path) -> None:
+    cfg = _paired_gate_config(tmp_path)
+    cfg.gate_third_party_opponent = "engine3"
+    cfg.gate_third_party_games = 2
+    cfg.gate_third_party_sims = 4
+    cfg.eval.eval_n_games = 2
+    cfg.eval.eval_honest = True
+    model, _, _ = build_objects(cfg, torch.device("cpu"))
+    model.train()
+    first = third_party_score(model, cfg, torch.device("cpu"))
+    again = third_party_score(model, cfg, torch.device("cpu"))
+    assert 0.0 <= first <= 1.0
+    # Same boards every time, so a best's score can be cached.
+    assert first == again
+    assert model.training

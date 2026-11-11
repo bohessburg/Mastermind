@@ -47,6 +47,7 @@ elif __package__ in (None, ""):
         validate_determinize_config,
         validate_deep_slice_config,
         validate_forced_playouts_config,
+        validate_gate_config,
         validate_imitation_config,
         validate_opening_template_config,
         validate_optim_config,
@@ -73,6 +74,7 @@ elif __package__ in (None, ""):
         league_opponent_weights,
         plan_training_selfplay_segments,
         run_gate_match,
+        run_paired_gate,
         save_best_checkpoint,
         seed_league_checkpoints,
     )
@@ -104,6 +106,7 @@ else:
         validate_determinize_config,
         validate_deep_slice_config,
         validate_forced_playouts_config,
+        validate_gate_config,
         validate_imitation_config,
         validate_opening_template_config,
         validate_optim_config,
@@ -130,6 +133,7 @@ else:
         league_opponent_weights,
         plan_training_selfplay_segments,
         run_gate_match,
+        run_paired_gate,
         save_best_checkpoint,
         seed_league_checkpoints,
     )
@@ -946,6 +950,11 @@ METRICS_FIELDNAMES = [
         "heldout_value_corr",
         "heldout_policy_ce",
         "heldout_rows",
+        "gate_score",
+        "gate_ci_lo",
+        "gate_reason",
+        "gate_third_party_candidate",
+        "gate_third_party_best",
 ]
 
 
@@ -1194,6 +1203,14 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
         config.gate_sims = requested.gate_sims
         config.gate_threshold = requested.gate_threshold
         config.gate_temp_moves = requested.gate_temp_moves
+        config.gate_mode = requested.gate_mode
+        config.gate_ci_z = requested.gate_ci_z
+        config.gate_determinize = requested.gate_determinize
+        config.gate_chunk = requested.gate_chunk
+        config.gate_third_party_opponent = requested.gate_third_party_opponent
+        config.gate_third_party_games = requested.gate_third_party_games
+        config.gate_third_party_sims = requested.gate_third_party_sims
+        config.gate_third_party_margin = requested.gate_third_party_margin
         config.league_fraction = requested.league_fraction
         config.league_pool_size = requested.league_pool_size
         config.league_opponents_per_gen = requested.league_opponents_per_gen
@@ -1290,6 +1307,10 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
     pool: ParallelSelfPlayPool | None = None
     progress = TrainingProgress(config.checkpoint_dir)
     use_gating = gating_enabled(config)
+    validate_gate_config(config)
+    # Paired gate: the accepted best's score against the third-party opponent,
+    # keyed by its generation so it is measured once per best.
+    best_third_party_scores: dict[int, float] = {}
     if not isinstance(config.scripted_opponents, dict):
         raise ValueError("scripted_opponents must be an object mapping kind to fraction")
     effective_scripted_fractions(config.scripted_opponent_schedule, config.scripted_opponents, start_generation)
@@ -1632,6 +1653,7 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
                     losses["sampled_priority_max"] = float("nan")
 
             gate_row: dict[str, Any] = {}
+            gate_extra: dict[str, Any] = {}
             if use_gating:
                 progress.transition(
                     generation,
@@ -1653,6 +1675,50 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
                     # unconditionally until the data pool is net-guided.
                     gate_stats = GateStats(wins=0, losses=0, ties=0)
                     result = "warmup_accepted"
+                elif config.gate_mode == "paired":
+                    outcome = run_paired_gate(
+                        model,
+                        best_model,
+                        config,
+                        generation,
+                        device,
+                        best_third_party=best_third_party_scores.get(best_generation),
+                        log=lambda message: print(message, flush=True),
+                    )
+                    gate_stats = outcome.stats
+                    if outcome.third_party_best is not None:
+                        best_third_party_scores[best_generation] = outcome.third_party_best
+                    stale_generations = generation - best_generation - 1
+                    if outcome.result != "accepted" and (
+                        int(config.gate_force_accept_every) > 0
+                        and stale_generations >= int(config.gate_force_accept_every)
+                    ):
+                        result = "forced_accepted"
+                    else:
+                        result = outcome.result
+                    if result == "accepted" and outcome.third_party_candidate is not None:
+                        best_third_party_scores[generation] = outcome.third_party_candidate
+                    gate_extra = {
+                        "gate_score": outcome.score,
+                        "gate_ci_lo": outcome.ci_lo,
+                        "gate_reason": outcome.reason,
+                        "gate_third_party_candidate": outcome.third_party_candidate,
+                        "gate_third_party_best": outcome.third_party_best,
+                    }
+                    print(
+                        json.dumps(
+                            {
+                                "generation": generation,
+                                "gate_result": result,
+                                "wins": gate_stats.wins,
+                                "losses": gate_stats.losses,
+                                "ties": gate_stats.ties,
+                                **gate_extra,
+                            },
+                            sort_keys=True,
+                        ),
+                        flush=True,
+                    )
                 else:
                     gate_stats = run_gate_match(model, best_model, config, generation, device)
                     stale_generations = generation - best_generation - 1
@@ -1673,6 +1739,7 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
                     "gate_result": result,
                     "gate_win_pct": gate_stats.win_pct,
                     "best_generation": best_generation,
+                    **gate_extra,
                 }
 
             progress.transition(

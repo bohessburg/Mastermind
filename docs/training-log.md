@@ -2806,3 +2806,49 @@ Reading:
 - Unaffected: everything measured with `EvalRunner` (engine3 evals, the deciding-player fix), c24 and earlier, and the BC pretraining of bc_a.
 
 Results: `bench/c29_ladder/*_L1.json`, `*_vlfix.json` (local, untracked).
+
+## c29 pre-box work (2026-11-10, local)
+
+Everything on the pre-box list is done; detail and tables are in `docs/c29-plan.md` steps 4-6.
+
+### Trainer gate
+
+`gate_mode: "paired"` (`src/v2/train/gating.py::run_paired_gate`): greedy, own-network search, fresh trees, each board in both seat orders; accept when `score - gate_ci_z * paired_se > gate_threshold` (strict), then require the candidate's engine3 score to be within `gate_third_party_margin` of the best net's on the same seeds. New metrics columns `gate_score`, `gate_ci_lo`, `gate_reason`, `gate_third_party_candidate`, `gate_third_party_best`. Legacy stays the default.
+
+### Config
+
+`configs/run_c29.json`: the c28 recipe from `bc_a` with an empty buffer, the paired gate (400 games, 128 sims, honest, one standard error above 0.5, engine3 term 200 games at 400 sims with a 5-point margin), `tail_leaves_in_flight` 8 (was 64), engine3 eval every generation (c28 only had one per generation because it was restarted each generation; the trainer evaluates the first generation after a start and then every `eval_every_n_generations`).
+
+### Leaves in flight against sequential search (`bc_a`, honest, matched decisions over 32 games)
+
+| Sims | In flight | Same top move | Total variation | Root entropy (seq -> batched) |
+|---|---|---|---|---|
+| 128 | 4 | 97.5% | 0.040 | 0.41 -> 0.48 |
+| 128 | 8 | 96.1% | 0.086 | 0.42 -> 0.64 |
+| 512 | 8 | 93.8% | 0.064 | 0.42 -> 0.53 |
+| 512 | 16 | 90.0% | 0.100 | 0.49 -> 0.69 |
+
+512 sims against the raw policy: 0.620 [0.531, 0.709] with 8 in flight, 0.630 [0.557, 0.703] sequential. No strength cost at 8; targets about 0.1 nats flatter than sequential. 16 at 512 is as flat as 8 at 128, so the tail cap is 8. The flattening tracks the leaf count, not the leaves-to-sims ratio. The deep slice (32 at 4096) is checked on the synthetic tree only (0.878 vs 0.888 top-move share); `scripts/box/c29_diagnostics.sh parity` runs the real check on the box.
+
+### Self-play smoke (trainer path, c29 settings, 24 games)
+
+38.2 turns per game, 3.02 Provinces per seat, no truncations, policy-target entropy 0.58 against the prior's 0.49 on the same positions, target top move = prior top move 91%. One tiny generation through `run_training` with the paired gate ran end to end.
+
+### Old gate re-measured with the fixed search (c28 gen1 vs bc_a, 50 boards x 2 seats)
+
+| Conditions | Broken search | Fixed search |
+|---|---|---|
+| Corrected, clairvoyant | 0.859 | 0.615 [0.528, 0.702] |
+| Corrected, honest | 0.812 | 0.600 [0.511, 0.689] |
+| + cross-routed leaves only | 0.266 | 0.625 [0.529, 0.721] |
+| + shared reused tree | | 0.550 [0.466, 0.634] |
+| + sampled openings only | 0.766 | 0.530 [0.424, 0.636] |
+| Full legacy | 0.438 | 0.360 [0.259, 0.461] |
+
+- The legacy gate still reverses the corrected verdict on the same boards.
+- Cross-routing alone no longer matters; its sign flip came from the broken search.
+- gen1 beats `bc_a` head to head (about +75 Elo) and is 10 points worse against engine3 (40.5% over c28's two 100-game evals, `bc_a` 50.5%). This corrects the line above that put the non-transitive gain down entirely to the broken search: for gen1 it survives the fix. Head-to-head alone is not a safe gate.
+
+### Does the 3x weight make bc_a memorize level 50+ moves?
+
+No. Move accuracy on level 50+ rows: 80.3% on the 71K it trained on, 79.6% on 4.2K held out (40-50 rows: 78.6% and 78.4%). Per row a 50+ move carries about 7x a median 40-50 move (mean weight 2.05 against 0.29).

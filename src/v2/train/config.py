@@ -345,6 +345,32 @@ class TrainConfig:
     # following candidate to refresh a stale self-play lineage. Zero disables
     # this pressure valve.
     gate_force_accept_every: int = 0
+    # "legacy" is the original gate: one tree per game scored by whichever
+    # model is to move at the leaf, the self-play tree-reuse setting, and
+    # acceptance on the decisive win rate. "paired" is the corrected protocol
+    # (docs/c29-plan.md): greedy play, a fresh tree per decision searched by
+    # each side's own network, every board played once in each seat, ties
+    # counted as half, and acceptance only when the candidate's score minus
+    # gate_ci_z paired standard errors exceeds gate_threshold.
+    gate_mode: str = "legacy"
+    # Paired mode: how many paired standard errors the score must clear the
+    # threshold by. Zero accepts on the point estimate.
+    gate_ci_z: float = 1.0
+    # Paired mode: search information model for the match. Empty inherits
+    # the self-play setting; evaluation against scripted bots is "honest",
+    # which corresponds to "per_decision".
+    gate_determinize: str = ""
+    # Paired mode: boards played concurrently (bounds memory, sets batch size).
+    gate_chunk: int = 64
+    # Paired mode: a candidate that passes the head-to-head must also not
+    # lose ground against a fixed scripted opponent. Both the candidate and
+    # the current best play gate_third_party_games against it on the same
+    # boards; the candidate is rejected when its score (ties half) is below
+    # the best's by more than gate_third_party_margin. Empty disables it.
+    gate_third_party_opponent: str = ""
+    gate_third_party_games: int = 200
+    gate_third_party_sims: int = 400
+    gate_third_party_margin: float = 0.05
     checkpoint_dir: str = "checkpoints"
     metrics_csv: str = "checkpoints/metrics.csv"
     # KataGo-style decomposed terminal-margin supervision. Zero preserves the
@@ -749,6 +775,36 @@ def validate_server_shards(config: TrainConfig) -> None:
         raise ValueError("server_gpu_ids must be a list of non-negative integers")
 
 
+GATE_MODES = ("legacy", "paired")
+
+
+def validate_gate_config(config: TrainConfig) -> None:
+    if config.gate_mode not in GATE_MODES:
+        raise ValueError(f"gate_mode must be one of {GATE_MODES}, got {config.gate_mode!r}")
+    if config.gate_mode != "paired" or int(config.gate_games) <= 0:
+        return
+    if int(config.gate_games) % 2 != 0 or int(config.gate_games) < 4:
+        raise ValueError("paired gate needs an even gate_games of at least 4 (two games per board)")
+    if int(config.gate_sims) < 2:
+        raise ValueError("paired gate needs gate_sims of at least 2")
+    if not 0.0 <= float(config.gate_threshold) <= 1.0:
+        raise ValueError("gate_threshold must be between zero and one")
+    if float(config.gate_ci_z) < 0.0:
+        raise ValueError("gate_ci_z must be non-negative")
+    if int(config.gate_chunk) <= 0:
+        raise ValueError("gate_chunk must be positive")
+    if config.gate_determinize not in ("", *DETERMINIZE_MODES):
+        allowed = ", ".join(sorted(DETERMINIZE_MODES))
+        raise ValueError(f"gate_determinize must be empty or one of {allowed}")
+    if not isinstance(config.gate_third_party_opponent, str):
+        raise ValueError("gate_third_party_opponent must be a string")
+    if config.gate_third_party_opponent:
+        if int(config.gate_third_party_games) <= 0 or int(config.gate_third_party_sims) <= 0:
+            raise ValueError("gate_third_party_games and gate_third_party_sims must be positive")
+        if float(config.gate_third_party_margin) < 0.0:
+            raise ValueError("gate_third_party_margin must be non-negative")
+
+
 def load_config(path: str | Path | None) -> TrainConfig:
     cfg = TrainConfig()
     if path is None:
@@ -771,6 +827,7 @@ def load_config(path: str | Path | None) -> TrainConfig:
     validate_deep_slice_config(cfg.selfplay)
     validate_opening_template_config(cfg.selfplay)
     validate_server_shards(cfg)
+    validate_gate_config(cfg)
     return cfg
 
 

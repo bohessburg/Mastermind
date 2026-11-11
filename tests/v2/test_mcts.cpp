@@ -889,19 +889,19 @@ TEST_CASE("v2 MCTS leaves in flight do not flatten root visits", "[v2][mcts][vir
 
     MctsConfig config{};
     config.determinizations = 1U;
-    config.max_tree_nodes = 2048U;
     config.c_puct = 1.25F;
     config.fpu_reduction = 0.2F;
     config.rollout_policy = MctsRolloutPolicy::External;
 
-    constexpr std::uint32_t simulations = 128U;
-    const auto top_share = [&](std::uint32_t leaves_in_flight) {
-        Mcts search(config);
+    const auto top_share = [&](std::uint32_t simulations, std::uint32_t leaves_in_flight) {
+        MctsConfig sized = config;
+        sized.max_tree_nodes = 2U * simulations + 64U;
+        Mcts search(sized);
         search.reset(state, 0U);
         Xoshiro256pp rng = Xoshiro256pp::seeded(0x1EAF'0001ULL);
         std::uint32_t started = 0U;
         while (started < simulations) {
-            std::array<MctsPendingLeaf, 8> batch{};
+            std::array<MctsPendingLeaf, 64> batch{};
             std::uint32_t count = 0U;
             while (count < leaves_in_flight && started < simulations) {
                 MctsPendingLeaf leaf{};
@@ -934,13 +934,23 @@ TEST_CASE("v2 MCTS leaves in flight do not flatten root visits", "[v2][mcts][vir
         return static_cast<float>(search.root_visits_for(support[0])) / static_cast<float>(child_visits);
     };
 
-    const float sequential = top_share(1U);
-    REQUIRE(sequential > 0.75F);
-    for (const std::uint32_t leaves : {4U, 8U}) {
-        const float batched = top_share(leaves);
-        INFO("leaves in flight " << leaves << " top share " << batched << " sequential " << sequential);
-        REQUIRE(batched > 0.70F);
-        REQUIRE(batched > sequential - 0.15F);
+    // Budgets and in-flight caps the trainer actually runs: 4 at 128 sims
+    // (gates), 8 at 512 (self-play; 16 in tail mode), 32 at 4096 (deep slice;
+    // 64 in tail mode).
+    struct Case {
+        std::uint32_t simulations;
+        std::array<std::uint32_t, 2> leaves;
+    };
+    for (const Case& c : {Case{128U, {4U, 8U}}, Case{512U, {8U, 16U}}, Case{4096U, {32U, 64U}}}) {
+        const float sequential = top_share(c.simulations, 1U);
+        REQUIRE(sequential > 0.75F);
+        for (const std::uint32_t leaves : c.leaves) {
+            const float batched = top_share(c.simulations, leaves);
+            INFO("sims " << c.simulations << " leaves in flight " << leaves << " top share " << batched
+                         << " sequential " << sequential);
+            REQUIRE(batched > 0.70F);
+            REQUIRE(batched > sequential - 0.15F);
+        }
     }
 }
 
