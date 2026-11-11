@@ -2954,3 +2954,28 @@ The CUDA numbers match the local ones. The deep slice (32 in flight at 4096 sims
 - Vassal board: gen 6 bought 9-10 Vassals and no Silver or Gold in both games and lost both by more than bc_a, which bought no Vassals. This habit was learned in self-play.
 - random:1: 6-10 Festivals plus 4 Smithies, both wins. random:2 as first player: lost the Witch race (7 Curses, no trasher on the board) with 13 Silvers.
 - Small oddities: 5 Moats bought and 3 trashed in one game, surplus Witches after the Curses ran out, a Village and a Silver trashed with Sentry, Coppers bought with spare buys on the last turn, the last Province taken while 10 behind.
+
+### c29 gen 8 vibe check (2026-11-11, local)
+
+Same boards, seats, seed and search as the gen 6 check above.
+
+| Board | Seat | gen 8 | gen 6 | bc_a |
+|---|---|---|---|---|
+| chapel | first | W 48-1 | W 43-3 | W 47-8 |
+| chapel | second | W 48-4 | L 34-44 | L -1-62 |
+| sentry | first | W 35-22 | W 41-17 | W 43-14 |
+| sentry | second | W 42-19 | W 46-25 | W 45-14 |
+| random | first | W 36-34 | L 31-43 | L 38-45 |
+| random | second | L 18-46 | L 26-43 | L 35-36 |
+| random:1 | first | W 30-21 | W 36-22 | not played |
+| random:1 | second | L 25-31 | W 36-24 | not played |
+| random:2 | first | L 29-31 | L 25-45 | not played |
+| random:2 | second | W 26-24 | W 38-32 | not played |
+
+Gen 8 won 7 of 10, gen 6 won 6 of 10.
+
+- Chapel as second player is fixed in this game: gen 8 trashed 7 Coppers and 3 Estates but bought Silver, then 3 Golds, and took all 8 Provinces (three double-Province turns, $15-$18 hands) while handing out 8 Curses.
+- Vassal spam is down from 9-10 Vassals to 2-3, and it buys Silver on that board now. It still buys no Gold there and overbuys Markets (6 as second player, first Province round 13 against engine3's round 6).
+- Witch board (random:2): 2 Witches in both seats and an even Curse split as first player (5-5, was 7 Curses taken), with 3 Golds; lost by 2 instead of 20.
+- Still slow to green against money: its first Province comes 4-8 rounds after engine3's on every board without an attack. The random:1 loss was a 20-card Chapel/Festival deck with $16 and $10 turns that started buying Provinces in round 13, five rounds after engine3.
+- Remaining oddities: 3-4 Moats in several decks, 2 Moats trashed with Chapel after buying them.
