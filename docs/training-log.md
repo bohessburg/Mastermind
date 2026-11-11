@@ -2925,6 +2925,8 @@ The CUDA numbers match the local ones. The deep slice (32 in flight at 4096 sims
 | 29 | 0.771 | 8/2048 (0.4%) | 0.666 | 0.4963 vs gen 28 | 0.4740 | not played | rejected |
 | 30 | 0.760 | 5/2048 (0.2%) | 0.656 | 0.5150 vs gen 28 | 0.4940 | not played | rejected |
 
+- Box outage (2026-11-11): the vast container went down at about 16:38 UTC and came back at 17:33 UTC with `dominion-c29` stopped. Files through gen 30 were intact. Gen 31 self-play (1612/2048 games) was lost and restarted from `gen_0030.pt` at 17:36 UTC. The gen 30 engine3 eval was cut off at 75 of 100 games in each half: 53-22-0 and 54-20-1, 107-42-1 over 150 games, 71.7%. It was not rerun and has no `evals.csv` row. The campaign's small result files were copied to `checkpoints/remote/campaign29/box_files/`.
+
 - Gen 25 against gen 10 directly (2026-11-11, local, `bench/c29_ladder/c29_g25_vs_g10.json`): the gate's protocol (200 boards from both seats, 128 sims, per-decision determinization) on seed 20261110, which no generation's gate used. Gen 25 scored 0.550 (214-174-12), paired SE 0.024, 95% interval 0.504 to 0.596, about +35 Elo. It would pass the gate (lower bound 0.526). The six accepted gates between them (0.545, 0.530, 0.5425, 0.5213, 0.530, 0.5225) add up to about +133 Elo, an expected 0.68, which is above the interval. The accepted scores overstate each step: a gate that accepts on a noisy score near 0.52 selects for lucky draws.
 
 - Gen 1 per-generation evals against engine3: 61-38-1 and 55-44-1, 58.6% over 200 games (`bc_a` 50.5%, c28 gen 1 40.5%). Stop rule passed: targets are sharp (c28 gen 1 entropy was 1.11) and engine3 strength rose.
