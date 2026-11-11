@@ -8,7 +8,7 @@ from typing import Any
 
 from .events import GameEvent, Reconnect, SessionStart
 from .parser import ArenaParser
-from .recording import decode_record_binary
+from .recording import GameChannelSelector, decode_record_binary
 
 
 RawFrameRecord = Mapping[str, Any]
@@ -44,9 +44,11 @@ async def events_from_raw_records(
     This is the streaming equivalent of ``parse_recording``.  In particular,
     parser state survives a new game-channel socket and a :class:`Reconnect`
     records the final sequence of the preceding connection, exactly as the
-    offline fixture loader does.
+    offline fixture loader does.  ``socket`` is the page-load game socket; a
+    :class:`GameChannelSelector` follows the channel to later sockets.
     """
     parser = ArenaParser()
+    selector = GameChannelSelector(socket)
     session_index = -1
     session_active = False
     previous_sequence: int | None = None
@@ -58,7 +60,7 @@ async def events_from_raw_records(
         timestamp = _optional_int(record.get("ts"))
         yield SessionStart(
             session_index=session_index,
-            socket=socket,
+            socket=selector.socket,
             url=str(record.get("url", "")),
             timestamp_ms=timestamp,
         )
@@ -69,29 +71,28 @@ async def events_from_raw_records(
                 timestamp_ms=timestamp,
             )
 
-    async for record in records:
-        if record.get("sock") != socket:
-            continue
-        kind = record.get("kind")
-        if kind == "open":
-            async for event in start_session(record):
+    async for raw_record in records:
+        for record in selector.select(raw_record):
+            kind = record.get("kind")
+            if kind == "open":
+                async for event in start_session(record):
+                    yield event
+                continue
+            if kind != "binary":
+                continue
+            if not session_active:
+                # ``recording.py`` accepts a binary frame before an observed
+                # open and creates a session from that record; retain that
+                # recovery behavior for an attach already in progress.
+                async for event in start_session(record):
+                    yield event
+            frame = decode_record_binary(dict(record))
+            if frame is None:
+                continue
+            for event in parser.parse_frame(frame):
                 yield event
-            continue
-        if kind != "binary":
-            continue
-        if not session_active:
-            # ``recording.py`` accepts a binary frame before an observed open
-            # and creates a session from that record; retain that recovery
-            # behavior for an attach already in progress.
-            async for event in start_session(record):
-                yield event
-        frame = decode_record_binary(dict(record))
-        if frame is None:
-            continue
-        for event in parser.parse_frame(frame):
-            yield event
-        if frame.sequence is not None:
-            previous_sequence = frame.sequence
+            if frame.sequence is not None:
+                previous_sequence = frame.sequence
 
 
 def _optional_int(value: object) -> int | None:

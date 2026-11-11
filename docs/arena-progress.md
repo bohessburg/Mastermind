@@ -135,6 +135,33 @@ snapshot, writes `exit.json` with exit code 3, and closes the browser for the
 supervisor. SIGINT and SIGTERM now cancel the bounded lobby waits and let the
 session close its persistent browser context before process exit.
 
+## Login and game-server moves (2026-11-11)
+
+Restart after three idle months, serving c29 gen 10 through
+`configs/arena_c29.json` (`obs_version` 3). Two failure classes closed:
+
+- **Expired login.** The saved browser session had expired and the homepage
+  wait timed out on the login page (exit 5, run `20261111T083535.064408Z`).
+  The client pre-fills the credentials it remembers, so the lobby FSM now
+  clicks its Login button (`_submit_remembered_login_if_ready`): only when
+  both fields are non-empty and the button is enabled, at most three times,
+  15 seconds apart. It never reads or types credentials; an empty form still
+  needs the operator.
+- **Game-server move.** The event stream listened to socket 3 only. When the
+  client is moved to the other game server between games it opens a fresh
+  socket (first outbound frame msg 46), so the driver never saw the next game:
+  it left the start handshake unanswered, was resigned on timeout after about
+  two minutes, and exited 3 on the idle watchdog (run
+  `20261111T084201.458865Z`, game 185802340, not in `record.jsonl`). The
+  archives hold eight such moves, including the last July exit.
+  `GameChannelSelector` (`protocol/recording.py`) now follows the channel to
+  any socket whose first outbound frame is a login (msg 24) or a move (msg
+  46); probe sockets (msg 45) are ignored. Tests: `test_game_channel.py`.
+
+Open: `lobby.rated` is read from the config but nothing applies it. The
+account's own automatch preference decides, and the saved lobby pages from
+July show it set to Rated, so every arena game so far has been rated.
+
 ## Status by phase
 
 - **P0 — Recording harness: complete (2026-07-24).**
