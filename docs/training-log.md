@@ -2904,6 +2904,7 @@ The CUDA numbers match the local ones. The deep slice (32 in flight at 4096 sims
 | 8 | 0.729 | 8/2048 (0.4%) | 0.655 | 0.5500 vs gen 6 | 0.5286 | 0.6575 vs gen 6 0.5900 | accepted |
 | 9 | 0.727 | 6/2048 (0.3%) | 0.641 | 0.4900 vs gen 8 | 0.4698 | not played | rejected |
 | 10 | 0.731 | 5/2048 (0.2%) | 0.665 | 0.5263 vs gen 8 | 0.5062 | 0.6750 vs gen 8 0.6575 | accepted |
+| 11 | 0.748 | 12/2048 (0.6%) | 0.687 | 0.4888 vs gen 10 | 0.4693 | not played | rejected |
 
 - Gen 1 per-generation evals against engine3: 61-38-1 and 55-44-1, 58.6% over 200 games (`bc_a` 50.5%, c28 gen 1 40.5%). Stop rule passed: targets are sharp (c28 gen 1 entropy was 1.11) and engine3 strength rose.
 - Gen 1 missed the gate by 0.0008 on the lower bound. Gen 2, trained on both generations' data, passed both terms. `bc_a` scored 0.5125 on the gate's 200 engine3 boards.
