@@ -89,6 +89,22 @@ GAME_CHAT_SELECTOR = 'input[placeholder="message"]'
 TABLE_CONTAINER_SELECTOR = (
     'score-table, score-table-buttons, input[placeholder="message"]'
 )
+# Evidence: exports/arena/20261111T083535.064408Z/dom-20261111T083708.949962Z-
+# lobby-failure-homepage-start-search-not-found.html is the logged-out page.
+# The client pre-fills the username and password it remembers and shows this
+# submit control; a live probe on 2026-11-11 confirmed one click on it reaches
+# the lobby. The driver only clicks: it never reads or types credentials.
+# While the page is not ready to submit, the control carries
+# ``disabled-button``.
+LOGIN_FORM_SELECTOR = 'form[name="loginForm"]'
+LOGIN_SUBMIT_SELECTOR = f'{LOGIN_FORM_SELECTOR} input.login-button[type="submit"]'
+LOGIN_USERNAME_SELECTOR = f'{LOGIN_FORM_SELECTOR} input[name="username"]'
+LOGIN_PASSWORD_SELECTOR = f'{LOGIN_FORM_SELECTOR} input[name="password"]'
+LOGIN_DISABLED_CLASS = "disabled-button"
+_LOGIN_SETTLE_SECONDS = 2.0
+_LOGIN_RETRY_SECONDS = 15.0
+_LOGIN_MAX_SUBMITS = 3
+_FIELD_HAS_VALUE_SCRIPT = "element => element.value.length > 0"
 # These main-window component tags are always present in the client DOM, even
 # when Angular has rendered only their empty comment shell.  A component is a
 # blocker only when it is visible and has rendered human-visible content.
@@ -202,6 +218,10 @@ class LobbyFSM:
         self.poll_seconds = poll_seconds
         self.snapshot_dom = snapshot_dom
         self.state = LobbyState.HOMEPAGE
+        self._login_seen_at: float | None = None
+        self._login_submitted_at: float | None = None
+        self._login_submits = 0
+        self._login_needs_operator_logged = False
 
     @property
     def max_games_per_session(self) -> int:
@@ -633,6 +653,8 @@ class LobbyFSM:
             locator = await self._control_if_present(LobbyControl.START_SEARCH)
             if locator is not None:
                 return locator
+            if await self._submit_remembered_login_if_ready():
+                continue
 
             reloaded_now = False
             if (
@@ -664,6 +686,66 @@ class LobbyFSM:
             if reloaded_now:
                 continue
             await self._sleep_poll()
+
+    async def _submit_remembered_login_if_ready(self) -> bool:
+        """Click Login when the logged-out page shows its pre-filled form.
+
+        The saved browser session expires; the client then shows the login
+        form with the credentials it remembers. Nothing is typed here: with an
+        empty field the page is left for the operator and the homepage wait
+        times out as before.
+        """
+        if await self._selector_count(LOGIN_SUBMIT_SELECTOR) != 1:
+            self._login_seen_at = None
+            return False
+        now = self.clock()
+        if self._login_seen_at is None:
+            self._login_seen_at = now
+        if (
+            self._login_submits >= _LOGIN_MAX_SUBMITS
+            or now < self._login_seen_at + _LOGIN_SETTLE_SECONDS
+            or (
+                self._login_submitted_at is not None
+                and now < self._login_submitted_at + _LOGIN_RETRY_SECONDS
+            )
+        ):
+            return False
+        submit = self.page.locator(LOGIN_SUBMIT_SELECTOR)
+        try:
+            if not await submit.is_visible():
+                return False
+            classes = (await submit.get_attribute("class") or "").split()
+            fields_filled = [
+                bool(await self.page.locator(selector).evaluate(_FIELD_HAS_VALUE_SCRIPT))
+                for selector in (LOGIN_USERNAME_SELECTOR, LOGIN_PASSWORD_SELECTOR)
+            ]
+        except Exception as error:
+            raise self._error(f"could not inspect the login form: {error}") from error
+        if LOGIN_DISABLED_CLASS in classes:
+            return False
+        if not all(fields_filled):
+            if not self._login_needs_operator_logged:
+                LOGGER.warning(
+                    "login page has no remembered credentials; it needs the "
+                    "operator to log in by hand"
+                )
+                self._login_needs_operator_logged = True
+            return False
+        self._login_submits += 1
+        self._login_submitted_at = now
+        LOGGER.warning(
+            "logged out: clicking Login with the client's remembered "
+            "credentials (attempt %d of %d)",
+            self._login_submits,
+            _LOGIN_MAX_SUBMITS,
+        )
+        try:
+            await submit.click()
+        except Exception as error:
+            raise self._error(
+                f"could not click Login ({LOGIN_SUBMIT_SELECTOR}): {error}"
+            ) from error
+        return True
 
     async def _homepage_has_active_blocker(self) -> bool:
         """Whether a visible modal or main-window recovery state is active."""

@@ -15,6 +15,11 @@ from src.v2.arena.fsm.lobby import (
     IN_GAME_SELECTOR,
     LEAVE_TABLE_SELECTOR,
     LOADING_GAME_SELECTOR,
+    LOGIN_DISABLED_CLASS,
+    LOGIN_FORM_SELECTOR,
+    LOGIN_PASSWORD_SELECTOR,
+    LOGIN_SUBMIT_SELECTOR,
+    LOGIN_USERNAME_SELECTOR,
     MODAL_WINDOW_SELECTOR,
     RECONNECT_LIMIT_MODAL_SELECTOR,
     RECONNECT_LIMIT_RECONNECT_SELECTOR,
@@ -44,6 +49,10 @@ RECONNECT_LIMIT_DOM = Path(
 LATE_RECONNECT_LIMIT_DOM = Path(
     "exports/arena/20260725T033239.293293Z/"
     "dom-20260725T033411.018769Z-lobby-failure-homepage-start-search-not-found.html"
+)
+LOGGED_OUT_DOM = Path(
+    "exports/arena/20261111T083535.064408Z/"
+    "dom-20261111T083708.949962Z-lobby-failure-homepage-start-search-not-found.html"
 )
 SEARCHING_DOM = Path(
     "exports/arena/20260724T234015.530752Z/"
@@ -933,3 +942,136 @@ def test_late_reconnect_limit_evidence_matches_the_live_modal_selectors() -> Non
     ) == ("Return to lobby",)
     assert f'<{IN_GAME_SELECTOR}' not in html
     assert START_SEARCH_SELECTOR not in html
+
+
+class _LoggedOutLocator(_FakeLocator):
+    async def get_attribute(self, name: str) -> str | None:
+        assert name == "class" and self.selector == LOGIN_SUBMIT_SELECTOR
+        return self.page.login_button_class
+
+    async def evaluate(self, script: str) -> bool:
+        assert "value.length" in script
+        return self.page.login_fields[self.selector]
+
+
+class _LoggedOutPage(_FakePage):
+    """The homepage behind the client's login form with remembered fields."""
+
+    def __init__(
+        self,
+        *,
+        clock: _FakeClock,
+        password_filled: bool = True,
+        login_button_class: str = "login-button gold-button legal-login activated",
+        login_works: bool = True,
+    ) -> None:
+        super().__init__(clock=clock)
+        self.screen = "login"
+        self.login_button_class = login_button_class
+        self.login_works = login_works
+        self.login_fields = {
+            LOGIN_USERNAME_SELECTOR: True,
+            LOGIN_PASSWORD_SELECTOR: password_filled,
+        }
+        self.login_click_times: list[float] = []
+
+    def locator(self, selector: str) -> _LoggedOutLocator:
+        return _LoggedOutLocator(self, selector)
+
+    def count(self, selector: str) -> int:
+        if self.screen == "login":
+            return int(selector == LOGIN_SUBMIT_SELECTOR)
+        return super().count(selector)
+
+    def click(self, selector: str) -> None:
+        if self.screen == "login" and selector == LOGIN_SUBMIT_SELECTOR:
+            assert self.clock is not None
+            self.login_click_times.append(self.clock())
+            if self.login_works:
+                self.screen = "homepage"
+            return
+        super().click(selector)
+
+
+def test_lobby_clicks_login_when_the_session_expired_with_remembered_fields(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    clock = _FakeClock()
+    page = _LoggedOutPage(clock=clock)
+    lobby = LobbyFSM(
+        page,
+        _config(homepage_timeout_seconds=90.0),
+        clock=clock,
+        sleep=clock.sleep,
+    )
+
+    with caplog.at_level(logging.WARNING, logger="src.v2.arena.fsm.lobby"):
+        asyncio.run(lobby.queue_next_game())
+
+    assert lobby.state is LobbyState.IN_GAME
+    assert page.login_click_times == [2.0]
+    assert page.clicks == [START_SEARCH_SELECTOR, START_GAME_SELECTOR]
+    assert page.reloads == 0
+    assert "clicking Login" in caplog.text
+
+
+@pytest.mark.parametrize(
+    "page_changes, expected_log",
+    [
+        ({"password_filled": False}, "needs the operator to log in by hand"),
+        (
+            {"login_button_class": f"login-button gold-button {LOGIN_DISABLED_CLASS}"},
+            "",
+        ),
+    ],
+)
+def test_lobby_never_submits_an_empty_or_disabled_login_form(
+    page_changes: dict[str, object],
+    expected_log: str,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    clock = _FakeClock()
+    page = _LoggedOutPage(clock=clock, **page_changes)
+    lobby = LobbyFSM(
+        page,
+        _config(homepage_timeout_seconds=20.0),
+        clock=clock,
+        sleep=clock.sleep,
+    )
+
+    with caplog.at_level(logging.WARNING, logger="src.v2.arena.fsm.lobby"):
+        with pytest.raises(LobbyError, match=r"\[homepage\].*Start search"):
+            asyncio.run(lobby.queue_next_game())
+
+    assert page.login_click_times == []
+    assert caplog.text.count("needs the operator") == (1 if expected_log else 0)
+
+
+def test_lobby_retries_a_login_that_does_not_take_a_bounded_number_of_times() -> None:
+    clock = _FakeClock()
+    page = _LoggedOutPage(clock=clock, login_works=False)
+    lobby = LobbyFSM(
+        page,
+        _config(homepage_timeout_seconds=90.0),
+        clock=clock,
+        sleep=clock.sleep,
+    )
+
+    with pytest.raises(LobbyError, match=r"\[homepage\].*Start search"):
+        asyncio.run(lobby.queue_next_game())
+
+    assert page.login_click_times == [2.0, 17.0, 32.0]
+
+
+def test_logged_out_dom_evidence_matches_the_login_selectors() -> None:
+    if not LOGGED_OUT_DOM.is_file():
+        pytest.skip("missing logged-out DOM evidence")
+    html = LOGGED_OUT_DOM.read_text(encoding="utf-8")
+    form_start = html.index('name="loginForm"')
+    form = html[html.rindex("<form", 0, form_start) : html.index("</form>", form_start)]
+    assert LOGIN_FORM_SELECTOR == 'form[name="loginForm"]'
+    assert 'type="text" name="username"' in form
+    assert 'type="password" name="password"' in form
+    assert form.count('type="submit"') == 1
+    assert '<input type="submit" class="login-button gold-button' in form
+    assert START_SEARCH_SELECTOR.split("[")[0].split(".")[1] not in html
