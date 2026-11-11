@@ -247,3 +247,157 @@ def test_unparseable_question_mid_game_aborts_loudly() -> None:
     assert screenshots == [(1, 999)]
     assert actuator.stopped
     assert actuator.gestures == []
+
+
+COPY_FIELDS_ARCHIVE = Path("exports/arena/20261111T151610.685744Z/frames.jsonl")
+COPY_FIELDS_GAME_ID = 185812617
+COPY_FIELDS_QUESTION_INDEX = 96
+MOAT_INSTANCE = 209
+WITCH_INSTANCE = 178
+
+
+def _moat_reaction_payload(*, copy_fields: bool) -> bytes:
+    """The Moat reaction question as the server sends it.
+
+    Field for field the 281-byte frame of live game 185812617 (web client
+    bundle 2.3.7).  Without ``copy_fields`` it is the 273-byte layout that
+    bundle 2.2.8 recordings carry: the same frame minus the copyIndex and
+    copyTotal that 2.3.7 appends to every ability offered as an element.
+    """
+    writer = Writer()
+
+    def empty_story(question_id: int) -> None:
+        writer.u32(question_id).u32(0).boolean(False)
+
+    def ability(name: int, association: int) -> None:
+        writer.u32(1).u32(name).s32(association)
+
+    writer.s32(COPY_FIELDS_QUESTION_INDEX).u32(2)
+    writer.u32(19).s32(-1)
+    empty_story(1)
+    empty_story(1)
+    writer.u32(3)
+
+    # May resolve ability: the Moat, in response to the Witch being played.
+    writer.u32(0).u32(7).s32(-1)
+    writer.u32(1).u32(1).u32(8)
+    ability(101, MOAT_INSTANCE)
+    writer.boolean(True).u32(9).u32(1)
+    ability(3, WITCH_INSTANCE)
+    writer.u32(2).u32(1).s32(1).u32(0).u32(1).u32(32).s32(1)
+    empty_story(356)
+    writer.s32(0).s32(1)
+    writer.u32(1).u32(1)
+    ability(101, MOAT_INSTANCE)
+    writer.boolean(True)
+    if copy_fields:
+        writer.s32(0).s32(1)
+    writer.s32(4).u32(0).u32(0)
+
+    # Reject ability: a number question, 0 to 1, default 0.
+    writer.u32(1).u32(49).s32(-1)
+    empty_story(0)
+    empty_story(0)
+    writer.s32(0).s32(1).s32(0).s32(-1)
+
+    # Way: nothing offered.
+    writer.u32(0).u32(43).s32(-1)
+    empty_story(0)
+    empty_story(0)
+    writer.s32(0).s32(0).u32(0).s32(-1).u32(0).u32(0)
+    return writer.build()
+
+
+@pytest.mark.parametrize(("copy_fields", "size"), ((True, 281), (False, 273)))
+def test_moat_reaction_parses_with_and_without_ability_copy_fields(
+    copy_fields: bool,
+    size: int,
+) -> None:
+    payload = _moat_reaction_payload(copy_fields=copy_fields)
+    assert len(payload) == size
+    parser = ArenaParser()
+    parser.card_by_instance[MOAT_INSTANCE] = "Moat"
+
+    parsed = parser.parse_frame(
+        DecodedFrame(
+            direction=Direction.INBOUND,
+            msg_type=37,
+            payload=payload,
+            raw=b"",
+            sequence=13707,
+        )
+    )
+
+    assert [type(event) for event in parsed] == [PendingDecision, ReactionWindow]
+    decision = parsed[0]
+    assert isinstance(decision, PendingDecision)
+    assert decision.question_index == COPY_FIELDS_QUESTION_INDEX
+    assert decision.question_id == "GAME_MAY_REACT_WITH"
+    assert decision.decision_type == "REVEAL"
+    assert decision.offered == ("Moat",)
+    assert (decision.minimum, decision.maximum) == (0, 1)
+
+
+def test_live_281_byte_frame_parses_as_moat_reaction() -> None:
+    """Game 185812617: the opponent played Witch while the bot held a Moat.
+
+    The question did not parse and the run aborted on the opponent's turn.
+    """
+    if not COPY_FIELDS_ARCHIVE.is_file():
+        pytest.skip(f"missing live Moat fixture: {COPY_FIELDS_ARCHIVE}")
+    events = parse_recording(COPY_FIELDS_ARCHIVE).events
+    start = next(
+        index
+        for index, event in enumerate(events)
+        if isinstance(event, GameStart) and event.game_id == COPY_FIELDS_GAME_ID
+    )
+    reactions = [
+        event
+        for event in events[start:]
+        if isinstance(event, PendingDecision)
+        and event.question_id == "GAME_MAY_REACT_WITH"
+    ]
+    assert [reaction.question_index for reaction in reactions] == [
+        COPY_FIELDS_QUESTION_INDEX
+    ]
+    assert reactions[0].offered == ("Moat",)
+    assert any(
+        isinstance(event, ReactionWindow)
+        and event.question_index == COPY_FIELDS_QUESTION_INDEX
+        for event in events[start:]
+    )
+    assert not any(
+        isinstance(event, UnknownFrame)
+        and event.direction == "in"
+        and event.msg_type == 37
+        for event in events
+    )
+
+
+def test_live_moat_question_reaches_a_legal_reveal_in_the_shadow_game() -> None:
+    if not COPY_FIELDS_ARCHIVE.is_file():
+        pytest.skip(f"missing live Moat fixture: {COPY_FIELDS_ARCHIVE}")
+    events = parse_recording(COPY_FIELDS_ARCHIVE).events
+    start = next(
+        index
+        for index, event in enumerate(events)
+        if isinstance(event, GameStart) and event.game_id == COPY_FIELDS_GAME_ID
+    )
+    game_events = events[start:]
+    reveal = int(dz.A_SELECT_BASE + dz.def_id("Moat"))
+    provider = _ReactionProvider(game_events, reveal)
+    actuator = MockActuator(replay=True)
+
+    results = asyncio.run(
+        run_game_loop(
+            game_events,
+            actuator=actuator,
+            decision_provider=provider,
+        )
+    )
+
+    assert not any(result.divergence_aborted for result in results)
+    assert provider.legal_actions == (int(dz.A_PASS), reveal)
+    gesture = actuator.gestures[-1]
+    assert gesture.question_index == COPY_FIELDS_QUESTION_INDEX
+    assert gesture.answer_indices == (1, 0, 1, 0, 0)

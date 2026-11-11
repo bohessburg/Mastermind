@@ -317,6 +317,7 @@ class ArenaParser:
         self.zone_type: dict[int, int] = {}
         self.zone_display: dict[int, str | None] = {}
         self.counter_info: dict[int, tuple[int | None, str]] = {}
+        self._ability_element_copies = True
 
     def parse_frames(self, frames: Iterable[DecodedFrame]) -> tuple[GameEvent, ...]:
         """Parse an ordered session (or consecutive sessions) in one call."""
@@ -1211,6 +1212,12 @@ class ArenaParser:
             else ()
         )
         optional = reader.boolean() if include_optional else False
+        if include_optional and self._ability_element_copies:
+            # Bundle 2.3.7 (Ability.parse with the optional flag) appends
+            # copyIndex and copyTotal to every ability offered as a question
+            # element.  Bundle 2.2.8 stopped at the optional flag.
+            reader.s32()
+            reader.s32()
         return _AbilityDescription(
             description_type=description_type,
             name_ordinal=name_ordinal,
@@ -1247,12 +1254,38 @@ class ArenaParser:
                 cards.extend([card_name(wire_id)] * frequency)
         return tuple(cards)
 
-    def _parse_question(self, frame: DecodedFrame) -> list[GameEvent]:
+    def _read_question_frame(
+        self,
+        frame: DecodedFrame,
+        *,
+        ability_element_copies: bool,
+    ) -> tuple[int, _Question]:
         reader = Reader(frame.payload)
-        question_index = reader.s32()
-        question_class = reader.u32()
-        question = self._read_question(reader, question_class)
-        reader.finish()
+        self._ability_element_copies = ability_element_copies
+        try:
+            question_index = reader.s32()
+            question_class = reader.u32()
+            question = self._read_question(reader, question_class)
+            reader.finish()
+        finally:
+            self._ability_element_copies = True
+        return question_index, question
+
+    def _parse_question(self, frame: DecodedFrame) -> list[GameEvent]:
+        try:
+            question_index, question = self._read_question_frame(
+                frame, ability_element_copies=True
+            )
+        except ProtocolError as current_layout_error:
+            # Recordings made against bundle 2.2.8 carry ability elements
+            # without the copy fields.  A frame in one layout does not
+            # consume cleanly in the other, so the fallback is unambiguous.
+            try:
+                question_index, question = self._read_question_frame(
+                    frame, ability_element_copies=False
+                )
+            except ProtocolError:
+                raise current_layout_error from None
         association = self.card_by_instance.get(question.association)
         pending = PendingDecision(
             question_index=question_index,
