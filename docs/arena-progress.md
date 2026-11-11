@@ -380,6 +380,30 @@ Restart after three idle months, serving c29 gen 10 through
   aborts (the fifth fix covers only the case where the next question
   rebuilds the shadow). That run went 5-0-0 on gen 39 before the abort.
   Relaunched on gen 43.
+- Fifteenth abort, 23:11 UTC: a native engine rules bug, found by the arena
+  (exit 4, run `20261111T230432.642140Z`, game 185829493, turn 14, the first
+  game on gen 43, abandoned and not in `record.jsonl`). The bot played three
+  Throne Rooms and then Library, and Library drew an Artisan. The shadow set
+  that Artisan aside without asking and asked about the next Action instead,
+  one card further down the deck ("shadow/tracker deck counts differ before
+  rigged step: 12 vs 13"). Cause: `Game::step` resumed the Throne Room
+  choice, which ran the interpreter up to Library's keep-or-skip question,
+  and then `drive_until_decision` ran the interpreter again on the suspended
+  frame. DSL ops and Sentry re-issue their decision when that happens.
+  `library_step` had no case for it, reported the frame done, and Throne
+  Room's repeat counter restarted Library from the top. So in the engine a
+  Throne Roomed Library was resolved once, with its first drawn Action set
+  aside unasked. Vassal playing a Library had the same fault, and there the
+  Library simply ended with the Action stranded in the set-aside zone. Every
+  self-play and eval game up to now ran with this. Fix: `Game::step` no
+  longer re-runs the interpreter when the resume already stopped on an
+  effect decision, and `library_step` re-asks if it is run while suspended.
+  Tests: native `v2 Throne Room Library asks about the first Action it
+  draws` and `v2 Vassal Library asks about the first Action it draws`, arena
+  `test_throned_library_asks_about_the_first_action_it_draws`. The golden
+  replays and all 201 native tests pass unchanged. The box still runs the old
+  engine; shipping this needs a stop, merge, rebuild, start between
+  generations.
 
 Open: `lobby.rated` is read from the config but nothing applies it. The
 account's own automatch preference decides, and the saved lobby pages from

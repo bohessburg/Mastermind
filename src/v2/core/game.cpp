@@ -100,6 +100,23 @@ constexpr bool kAutoAdvanceForcedPass = true;
     return false;
 }
 
+[[nodiscard]] bool effect_decision_pending(const GameState& state) noexcept {
+    if (state.effect_depth == 0U) {
+        return false;
+    }
+    switch (static_cast<DecisionKind>(state.decision.kind)) {
+    case DecisionKind::Choose:
+    case DecisionKind::ChooseGain:
+    case DecisionKind::ChooseOption:
+    case DecisionKind::ChooseOrder:
+    case DecisionKind::ReactWindow:
+    case DecisionKind::OrderTriggers:
+        return true;
+    default:
+        return false;
+    }
+}
+
 [[nodiscard]] bool drive_until_decision(GameState& state) noexcept {
     for (;;) {
         if (state.effect_depth > 0U) {
@@ -158,5 +175,11 @@ bool Game::step(GameState& state, Action action) noexcept {
 #endif
 
     apply_action(state, action);
+    if (effect_decision_pending(state)) {
+        // Resuming an effect already ran the interpreter up to its next
+        // decision. Running a suspended frame again is only safe for frames
+        // that re-issue their decision, and a custom step need not.
+        return false;
+    }
     return drive_until_decision(state);
 }

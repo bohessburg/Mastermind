@@ -173,6 +173,17 @@ RunResult library_step(GameState& state, EffectFrame& frame) noexcept {
         };
         return RunResult::NeedDecision;
     }
+    case 1:
+        // Still waiting on the option for the Action in data[1]. Ask again
+        // rather than fall through to the end of the frame.
+        state.decision = PendingDecision{
+            frame.player,
+            static_cast<std::uint8_t>(DecisionKind::ChooseOption),
+            DEF_LIBRARY,
+            0,
+            2,
+        };
+        return RunResult::NeedDecision;
     case 2: {
         const Slot slot = static_cast<Slot>(frame.data[1]);
         assert(slot != NONE);

@@ -2327,3 +2327,50 @@ def test_shuffle_rebuild_without_the_discard_return_reproduces_the_abort(
     report = results[0].divergence_report
     assert report is not None
     assert "deck counts differ before rigged step: 12 vs 15" in report.message
+
+
+THRONED_LIBRARY_ARCHIVE = Path("exports/arena/20261111T230432.642140Z/frames.jsonl")
+THRONED_LIBRARY_GAME_ID = 185829493
+FIRST_LIBRARY_QUESTION = 155
+SECOND_LIBRARY_QUESTION = 156
+
+
+def test_throned_library_asks_about_the_first_action_it_draws() -> None:
+    """Game 185829493: three Throne Rooms, then Library drew an Artisan.
+
+    This was a native engine bug, not an arena one.  Resuming the Throne Room
+    choice ran the interpreter up to Library's keep-or-skip question, and the
+    step loop then ran the suspended Library frame a second time.  Library's
+    step had no case for that, ended the resolution, and Throne Room's repeat
+    started it again: the Artisan was set aside unasked and the shadow asked
+    about the next Action instead, one card further down the deck ("deck
+    counts differ before rigged step: 12 vs 13").
+    """
+    if not THRONED_LIBRARY_ARCHIVE.is_file():
+        pytest.skip(f"missing live arena fixture: {THRONED_LIBRARY_ARCHIVE}")
+    events = _events_of_game(
+        parse_recording(THRONED_LIBRARY_ARCHIVE).events,
+        THRONED_LIBRARY_GAME_ID,
+    )
+    provider = _RecordedReplayWithShadowLog(events)
+
+    results = asyncio.run(
+        run_game_loop(
+            events,
+            actuator=MockActuator(replay=True),
+            decision_provider=provider,
+        )
+    )
+
+    assert not any(result.divergence_aborted for result in results)
+    _, shadow, snapshot, decision = provider.seen[FIRST_LIBRARY_QUESTION]
+    seat = snapshot.seats[snapshot.our_seat]
+    assert decision.question_id == "LIBRARY"
+    assert shadow.deck_count(snapshot.our_seat) == seat.deck_count
+    assert shadow.set_aside(snapshot.our_seat) == [int(dz.def_id("Artisan"))]
+    assert shadow.decision_context()["subject_defs"] == [int(dz.def_id("Artisan"))]
+    _, shadow, snapshot, _ = provider.seen[SECOND_LIBRARY_QUESTION]
+    seat = snapshot.seats[snapshot.our_seat]
+    assert shadow.deck_count(snapshot.our_seat) == seat.deck_count
+    assert shadow.set_aside(snapshot.our_seat) == [int(dz.def_id("Throne Room"))]
+    assert shadow.hand(snapshot.our_seat)[int(dz.def_id("Artisan"))] == 1

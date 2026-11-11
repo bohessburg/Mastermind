@@ -812,6 +812,55 @@ CARD_SPEC("v2 Throne Room plays Library twice") {
     expect_conservation();
 }
 
+CARD_SPEC("v2 Throne Room Library asks about the first Action it draws") {
+    given()
+        .hand("Throne Room", "Library", "Copper")
+        .deck("Copper", "Copper", "Copper", "Copper", "Copper", "Copper", "Smithy");
+
+    play("Throne Room");
+    choose("Library");
+
+    // The first Library resolution stops on Smithy.  It must not be dropped
+    // and restarted as the second resolution.
+    REQUIRE(state().decision.kind == static_cast<std::uint8_t>(DecisionKind::ChooseOption));
+    REQUIRE(state().decision.source == DEF_LIBRARY);
+    REQUIRE(state().players[0].set_aside.size == 1U);
+    REQUIRE(state().players[0].deck.size == 6U);
+    REQUIRE(hand_total(state()) == 1U);
+    expect_conservation();
+
+    option(0);
+
+    REQUIRE(state().players[0].set_aside.size == 0U);
+    REQUIRE(hand_total(state()) == 7U);
+    expect().hand_has("Smithy").discard_lacks("Smithy");
+    expect_conservation();
+}
+
+CARD_SPEC("v2 Vassal Library asks about the first Action it draws") {
+    given()
+        .hand("Vassal", "Copper")
+        .deck("Copper", "Copper", "Copper", "Copper", "Copper", "Copper", "Smithy", "Library");
+
+    play("Vassal");
+    REQUIRE(state().decision.kind == static_cast<std::uint8_t>(DecisionKind::ChooseOption));
+    REQUIRE(state().decision.source == DEF_VASSAL);
+    option(1);
+
+    REQUIRE(state().decision.kind == static_cast<std::uint8_t>(DecisionKind::ChooseOption));
+    REQUIRE(state().decision.source == DEF_LIBRARY);
+    REQUIRE(state().players[0].set_aside.size == 1U);
+    REQUIRE(hand_total(state()) == 1U);
+    expect_conservation();
+
+    option(1);
+
+    REQUIRE(state().players[0].set_aside.size == 0U);
+    REQUIRE(hand_total(state()) == 7U);
+    expect().discard_has("Smithy").hand_lacks("Smithy");
+    expect_conservation();
+}
+
 CARD_SPEC("v2 clone-equivalence holds while suspended in Library") {
     given()
         .hand("Library", "Copper", "Copper", "Estate", "Estate", "Silver")
