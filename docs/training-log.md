@@ -2896,6 +2896,7 @@ The CUDA numbers match the local ones. The deep slice (32 in flight at 4096 sims
 |---|---|---|---|---|---|---|---|
 | 1 | 0.681 | 67/2048 (3.3%) | 0.609 | 0.5225 (201W-183L-16T) vs bc_a | 0.4992 | not played | rejected, head-to-head |
 | 2 | 0.688 | 88/2048 (4.3%) | 0.677 | 0.5713 (223W-166L-11T) vs bc_a | 0.5466 | 0.5825 vs bc_a 0.5125 | accepted |
+| 3 (redone) | 0.691 | 17/2048 (0.8%) on the first run | 0.648 on the first run | 0.5413 (210W-177L-13T) vs gen 2 | 0.5204 | 0.5350 vs gen 2 0.5825 | accepted |
 
 - Gen 1 per-generation evals against engine3: 61-38-1 and 55-44-1, 58.6% over 200 games (`bc_a` 50.5%, c28 gen 1 40.5%). Stop rule passed: targets are sharp (c28 gen 1 entropy was 1.11) and engine3 strength rose.
 - Gen 1 missed the gate by 0.0008 on the lower bound. Gen 2, trained on both generations' data, passed both terms. `bc_a` scored 0.5125 on the gate's 200 engine3 boards.
@@ -2918,3 +2919,5 @@ The CUDA numbers match the local ones. The deep slice (32 in flight at 4096 sims
 - Expected gate time: 9 to 11 minutes whether or not the head-to-head passes.
 - **The deployment crashed gen 3's gate.** The new source was merged into the box repo at 04:21 UTC while the old trainer was mid-generation. At 04:38 gen 3 passed the head-to-head (0.541, lower 0.519) and the old process ran its first lazy `from .evaluate import evaluate_model`; `evaluate` imports `train`, which loaded the NEW `train.py` from disk against the OLD `gating` already in memory: `ImportError: cannot import name 'load_third_party_score'`. Supervisor restarted from `gen_0002.pt` and gen 3 was redone on the new code. Cost: 25 minutes of work redone, about 12 minutes net (the old gate would have spent 16-18 minutes on its two engine3 matches), and that gen 3 candidate was lost.
 - Rule: never change `src/` on the box under a running trainer. Stop the program, merge, start it.
+- First real run, gen 3 redone: the candidate's engine3 match started at 04:53:36 with the head-to-head and finished 19 s after it (559 s); the best's 0.5825 came from its score file. Gate 9.3 minutes, generation 25.1 minutes (self-play at 8,590 games/hr). The redone head-to-head reproduced the lost one (0.541, lower 0.520 against 0.519).
+- Gen 3 was accepted while scoring 4.75 points below gen 2 on the gate's engine3 boards (107W-93L against 0.5825), inside the 5-point margin by half a game. Gen 2's per-generation evals: 71-28-1 and 53-47-0 (62.3%).
