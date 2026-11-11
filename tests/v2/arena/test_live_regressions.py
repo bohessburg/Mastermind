@@ -1600,3 +1600,65 @@ def test_throne_room_chapel_plans_each_chapel_question_separately() -> None:
         100: (_TRASH_ESTATE, _TRASH_CURSE, int(dz.A_PASS)),
         101: (int(dz.A_PASS),),
     }
+
+
+CELLAR_SHUFFLE_ARCHIVE = Path("exports/arena/20261111T100415.808272Z/frames.jsonl")
+CELLAR_SHUFFLE_GAME_ID = 185803914
+CELLAR_QUESTION = 115
+ACTION_QUESTION_AFTER_CELLAR = 116
+
+
+class _RecordedReplayWithQuestionLog:
+    """Replay the recorded answers and note each question one game reached."""
+
+    def __init__(self, events: tuple[object, ...], game_id: int) -> None:
+        self.recorded = RecordedDecisionProvider(events)
+        self.game_id = game_id
+        self.questions: list[tuple[int, str]] = []
+
+    async def plan(
+        self,
+        *,
+        frame_index: int,
+        game: Any,
+        snapshot: TrackerSnapshot,
+        decision: PendingDecisionSnapshot,
+    ) -> DecisionPlan | None:
+        if snapshot.game_id == self.game_id:
+            self.questions.append((decision.question_index, decision.question_id))
+        return await self.recorded.plan(
+            frame_index=frame_index,
+            game=game,
+            snapshot=snapshot,
+            decision=decision,
+        )
+
+
+def test_cellar_discards_shuffled_back_into_its_own_draw_do_not_abort() -> None:
+    """Game 185803914: Cellar discarded five cards and drew through a shuffle.
+
+    The deck was short, so the shuffle took in the Coppers and Estates that
+    Cellar had just discarded from hand and the draw returned some of them.
+    The turn-start deck/discard pool cannot supply those cards, and the driver
+    aborted with "shuffle reconstruction observed unavailable 'Estate'" although
+    the next question was a clean action phase that rebuilds the shadow from
+    the tracker anyway.
+    """
+    if not CELLAR_SHUFFLE_ARCHIVE.is_file():
+        pytest.skip(f"missing live arena fixture: {CELLAR_SHUFFLE_ARCHIVE}")
+    events = parse_recording(CELLAR_SHUFFLE_ARCHIVE).events
+    provider = _RecordedReplayWithQuestionLog(events, CELLAR_SHUFFLE_GAME_ID)
+
+    results = asyncio.run(
+        run_game_loop(
+            events,
+            actuator=MockActuator(replay=True),
+            decision_provider=provider,
+        )
+    )
+
+    assert not any(result.divergence_aborted for result in results)
+    assert provider.questions[-2:] == [
+        (CELLAR_QUESTION, "CELLAR"),
+        (ACTION_QUESTION_AFTER_CELLAR, "GAME_ACTION_PHASE"),
+    ]

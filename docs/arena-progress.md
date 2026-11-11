@@ -164,7 +164,7 @@ Restart after three idle months, serving c29 gen 10 through
   "shuffle reconstruction observed unavailable 'Province'" and the driver
   exited 4 on a game it had already won 30-19 (run `20261111T090857.411949Z`,
   game 185802782, not in `record.jsonl`). `settle` now drops the shadow
-  instead of rebuilding it when the game is over. Test:
+  when that rebuild fails and the game is over. Test:
   `test_game_ending_on_our_turn_with_a_cleanup_shuffle_completes`.
 - **Throne Room on Chapel.** The second Chapel is a new native decision with
   the same player, kind and source as the first, so the planner's batching
@@ -176,6 +176,23 @@ Restart after three idle months, serving c29 gen 10 through
   at a pass, or when the picks left do not go down (a fresh decision). The
   same applies to Throne Room on Cellar. Test:
   `test_throne_room_chapel_plans_each_chapel_question_separately`.
+- **Cellar drawing its own discards.** Cellar discarded two Coppers and three
+  Estates from hand with a short deck, so the shuffle took those cards in and
+  the draw returned some of them. The turn-start deck/discard pool does not
+  hold cards that left the hand this turn, so the rebuild raised "shuffle
+  reconstruction observed unavailable 'Estate'" and the driver exited 4
+  mid-turn (run `20261111T100415.808272Z`, game 185803914, abandoned on turn
+  11, not in `record.jsonl`). The next question was a clean action phase,
+  which rebuilds the shadow from the tracker anyway. `settle` is now told
+  when the shadow is about to be replaced (a clean action or buy question, a
+  question on the opponent's turn, game end) and drops the shadow instead of
+  aborting when the turn replay fails there. Test:
+  `test_cellar_discards_shuffled_back_into_its_own_draw_do_not_abort`.
+  Still open: the same shuffle followed by a question that is not a clean
+  phase boundary (Throne Room on Cellar's second Cellar, or a Library or
+  Sentry draw after cards left the hand) still aborts, because the binding
+  can order the current deck but cannot rebuild a post-shuffle deck from
+  cards the turn-start pool lacks.
 
 Open: `lobby.rated` is read from the config but nothing applies it. The
 account's own automatch preference decides, and the saved lobby pages from

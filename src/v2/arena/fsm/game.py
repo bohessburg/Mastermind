@@ -801,7 +801,11 @@ async def run_game_loop(
     active: _ActiveGame | None = None
     results: list[GameRunResult] = []
 
-    async def settle(frame_index: int, *, game_over: bool = False) -> None:
+    async def settle(
+        frame_index: int,
+        *,
+        shadow_replaced: bool = False,
+    ) -> None:
         nonlocal active
         assert active is not None
         if active.pending is None:
@@ -888,18 +892,22 @@ async def run_game_loop(
                 active.pending_snapshot,
                 active.pending_events,
             ):
-                if game_over:
-                    # A game that ends on our turn never crosses a turn
-                    # boundary, so the final step carries the cleanup shuffle.
-                    # That shuffle mixes in this turn's hand, plays and gains,
-                    # which the turn-start pool cannot supply, and nothing
-                    # reads the shadow after the game ends.
+                try:
+                    _rebuild_turn_after_shuffle(active, current_step)
+                except BridgeError:
+                    if not shadow_replaced:
+                        raise
+                    # The shuffle took in cards that left the hand this turn
+                    # (a Cellar discard, or the cleanup of a game that ends on
+                    # our turn), which the turn-start deck/discard pool cannot
+                    # supply.  The caller rebuilds the shadow from the tracker
+                    # next (a clean action/buy question) or never reads it
+                    # again (game end), so the replay is not needed.
                     active.shadow = None
                     active.shadow_turn = None
                     active.turn_start_snapshot = None
                     active.turn_history.clear()
                 else:
-                    _rebuild_turn_after_shuffle(active, current_step)
                     active.rigged_steps += 1
             else:
                 if _rig_observed_draws(
@@ -1185,7 +1193,7 @@ async def run_game_loop(
                         for observed in active.pending_events
                     )
                 ):
-                    await settle(frame_index, game_over=True)
+                    await settle(frame_index, shadow_replaced=True)
                 else:
                     # A server-side game end supersedes an outstanding client
                     # prompt; the fixture contains both unanswered and
@@ -1312,13 +1320,16 @@ async def run_game_loop(
                     question_index=event.question_index,
                 )
 
-            await settle(frame_index)
             turn_key = (snapshot.game_id, snapshot.turn_number)
             our_turn = snapshot.turn_owner == snapshot.our_seat
             clean_phase_boundary = event.question_id in {
                 "GAME_ACTION_PHASE",
                 "GAME_BUY_PHASE",
             }
+            await settle(
+                frame_index,
+                shadow_replaced=not our_turn or clean_phase_boundary,
+            )
             if (
                 active.shadow is None
                 or (our_turn and active.shadow_turn != turn_key)
