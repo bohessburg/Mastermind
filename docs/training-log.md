@@ -2852,3 +2852,67 @@ Everything on the pre-box list is done; detail and tables are in `docs/c29-plan.
 ### Does the 3x weight make bc_a memorize level 50+ moves?
 
 No. Move accuracy on level 50+ rows: 80.3% on the 71K it trained on, 79.6% on 4.2K held out (40-50 rows: 78.6% and 78.4%). Per row a 50+ move carries about 7x a median 40-50 move (mean weight 2.05 against 0.29).
+
+## Human-data learning curve (2026-11-10, local)
+
+`scripts/bc_learning_curve.py` retrains the `bc_a` recipe on subsets of the 40+ corpus; one seed per arm. Strength is the raw policy (no search) against engine3 over 2,000 games, about +-1 point. Checkpoints in `checkpoints/bc_curve/`, reports in `bench/bc_curve/`.
+
+| Arm | Train games | Val move accuracy (all / 50+) | Raw policy vs engine3 |
+|---|---|---|---|
+| f25 (25% of games) | 2,339 | 75.7% / 75.5% | 11.7% (232W-1759L-9T) |
+| f50 | 4,678 | 77.9% / 78.4% | 21.9% (436-1558-6) |
+| f100 (re-run of bc_a) | 9,355 | 78.6% / 78.4% | 23.5% (466-1521-13) |
+| x50 (half the 50+ seat-games) | 9,295 | 78.1% / 78.1% | 24.1% (479-1513-8) |
+| x0 (no 50+ seat-games) | 9,169 | 78.7% / 79.1% | 28.7% (572-1418-10) |
+| bc_a (original) | 9,355 | 78.5% / 79.6% | 29.4% (585-1406-9) |
+
+- 25% -> 50% of the games is worth 10 points; 50% -> 100% is worth 1.6. The curve is flattening.
+- f100 is the same recipe and data as `bc_a` and landed 6 points below it, so one retraining is only good to about 6 points. Every difference among the four full-size rows is inside that.
+- No detectable benefit from the level 50+ data: the arm with none of it scored highest of the retrained arms.
+- Scraping toward 10K level 50+ games is not supported by this. Not run: more seeds per arm, and the 400-sim comparison.
+
+## c29 on the box (started 2026-11-11 02:47 UTC)
+
+Same vast instance as c28 (RTX 5090, 384 cores), restarted. Build at `73d3d75`: 198/198 ctest, 61 pytest. Supervisor program `dominion-c29`; the c28 program had auto-resumed at boot on the old build and was stopped before it wrote anything.
+
+The ladder and regret diagnostics were stopped after 8 minutes: neither would change the launch, and the plan's stop rule covers the same risk for less box time. Run them only if c29 trips the stop rule.
+
+### Leaf parity on the box (`bc_a`, honest, against sequential search)
+
+| Sims | In flight | Same top move | Total variation | Root entropy (seq -> batched) |
+|---|---|---|---|---|
+| 128 | 4 | 97.3% | 0.040 | 0.41 -> 0.49 |
+| 128 | 8 | 96.1% | 0.086 | 0.42 -> 0.64 |
+| 512 | 8 | 93.9% | 0.063 | 0.42 -> 0.53 |
+| 512 | 16 | 90.2% | 0.099 | 0.48 -> 0.68 |
+| 4096 | 32 | 94.3% | 0.097 | 0.41 -> 0.63 |
+| 4096 | 64 | 93.6% | 0.109 | 0.41 -> 0.66 |
+
+The CUDA numbers match the local ones. The deep slice (32 in flight at 4096 sims, about 10% of games) flattens its targets as much as the rejected 16-at-512 setting. Open: cap the deep slice lower.
+
+### Generations
+
+| Gen | Target entropy | Truncated | Held-out value r2 | Head-to-head vs best (400 games) | Lower bound | engine3, gate (200 games) | Result |
+|---|---|---|---|---|---|---|---|
+| 1 | 0.681 | 67/2048 (3.3%) | 0.609 | 0.5225 (201W-183L-16T) vs bc_a | 0.4992 | not played | rejected, head-to-head |
+| 2 | 0.688 | 88/2048 (4.3%) | 0.677 | 0.5713 (223W-166L-11T) vs bc_a | 0.5466 | 0.5825 vs bc_a 0.5125 | accepted |
+
+- Gen 1 per-generation evals against engine3: 61-38-1 and 55-44-1, 58.6% over 200 games (`bc_a` 50.5%, c28 gen 1 40.5%). Stop rule passed: targets are sharp (c28 gen 1 entropy was 1.11) and engine3 strength rose.
+- Gen 1 missed the gate by 0.0008 on the lower bound. Gen 2, trained on both generations' data, passed both terms. `bc_a` scored 0.5125 on the gate's 200 engine3 boards.
+- Truncated games are near the 5% stop line and rose from gen 1 to gen 2.
+
+### Timing
+
+- Gen 1: self-play 19.0 min (188K evals/s, 6,472 games/hr), startup and training 1.6 min, gate 8.2 min (head-to-head only), 29.1 min in all.
+- Gen 2: self-play 21.5 min (gen 1's background evals overlap it), gate about 25 min: head-to-head 9, then two engine3 matches in sequence at about 9 min per 200 games with the GPU at 19%. 55 min in all.
+- The trainer is OOM-killed at every generation boundary, as in c28, and resumes from the generation checkpoint in under a minute. `/root/memprof.log`: the container goes from 213 GB to 339 GB within seconds of the next generation's self-play starting (64 workers grow from 3 GB to 5 GB each) against a 342 GiB limit. Not fixed. A side effect: the in-memory cache of the best net's engine3 score never survived, so the best was re-measured in every gate that reached the engine3 term.
+
+### Gate engine3 matches moved to the background (`75e5d8f`, deployed during gen 3)
+
+`gate_third_party_background: true`. The same acceptance rule and the same matches; they start when the gate starts and overlap the head-to-head.
+
+- `gating.start_gate_third_party_jobs` saves the candidate to `gate_candidate_NNNN.pt` and starts `python -m src.v2.train.gate_bg` for it, and for the best when its score is unknown. A head-to-head loss stops the candidate's match. A failed background match is replayed in process.
+- A net's score is kept in `gate_third_party_NNNN.json` beside the checkpoints, tied to the match settings, so it survives restarts and a promoted candidate's score becomes the best's without a replay.
+- Checked: background and in-process scores are identical for `bc_a` on a 16-game, 48-sim match (0.28125 both), and through `run_training` in `test_gating.py`.
+- Gen 2's measured 0.5825 was written to `gate_third_party_0002.json` by hand from its metrics row, since the gate that measured it ran the old code.
+- Expected gate time: 9 to 11 minutes whether or not the head-to-head passes. First generation on the new code: gen 4.
