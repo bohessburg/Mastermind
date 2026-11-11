@@ -52,6 +52,7 @@ from ..protocol.events import (
     Shuffle,
     TimeoutOffer,
     Topdeck,
+    Trash,
     TurnStart,
     UndoRequest,
     UndoResync,
@@ -1346,6 +1347,7 @@ async def run_game_loop(
                 "GAME_ACTION_PHASE",
                 "GAME_BUY_PHASE",
             }
+            events_since_answer = tuple(active.pending_events)
             await settle(
                 frame_index,
                 shadow_replaced=not our_turn or clean_phase_boundary,
@@ -1360,12 +1362,18 @@ async def run_game_loop(
                 active.shadow_turn = turn_key if our_turn else None
                 active.turn_start_snapshot = snapshot if our_turn else None
                 active.turn_history.clear()
+                # The tracker state already includes everything observed.
+                events_since_answer = ()
             active.shadow.validate()
             active.validations += 1
             forced_actions = _advance_forced_to_client_question(
                 active.shadow,
                 snapshot.pending_decision,
                 frame_index=frame_index,
+                auto_trashed_coppers=_auto_trashed_coppers(
+                    events_since_answer,
+                    snapshot.our_seat,
+                ),
             )
             if forced_actions:
                 active.turn_history.append(
@@ -2389,11 +2397,39 @@ def _require_buy_or_pass(game: Any, action: int) -> None:
         )
 
 
+_SELECT_CARDS_KIND = 4
+_SELECT_COPPER = int(dz.A_SELECT_BASE + dz.def_id("Copper"))
+
+
+def _auto_trashed_coppers(
+    events: Iterable[GameEvent],
+    seat: int | None,
+) -> int:
+    """Count Coppers the client trashed from our hand without asking us.
+
+    The server logs the answer it gave on our behalf as an auto-played
+    resolution and follows it with the Trash it caused.
+    """
+    count = 0
+    auto_resolved = False
+    for event in events:
+        if isinstance(event, DecisionResolved):
+            auto_resolved = event.seat == seat and event.auto_played
+        elif isinstance(event, (PendingDecision, Play)):
+            auto_resolved = False
+        elif isinstance(event, Trash) and auto_resolved:
+            auto_resolved = False
+            if event.seat == seat and event.from_zone == "hand":
+                count += sum(1 for name in event.cards if name == "Copper")
+    return count
+
+
 def _advance_forced_to_client_question(
     game: Any,
     decision: PendingDecisionSnapshot,
     *,
     frame_index: int,
+    auto_trashed_coppers: int = 0,
 ) -> tuple[int, ...]:
     """Apply engine-only forced choices the web client auto-resolved.
 
@@ -2401,6 +2437,11 @@ def _advance_forced_to_client_question(
     answer (for example the second forced Remodel trash in a Throne Room
     chain).  The native interpreter deliberately exposes that choice.  Decision
     kind is sufficient to bridge the gap without guessing a non-forced move.
+
+    Moneylender is the one optional choice the client also resolves itself: it
+    trashes a Copper without asking.  ``auto_trashed_coppers`` is how many such
+    trashes were observed since the last answer; each one resolves one native
+    Moneylender question the same way.
     """
     expected = {
         "GAME_ACTION_PHASE": 1,
@@ -2432,6 +2473,17 @@ def _advance_forced_to_client_question(
             for index, value in enumerate(game.legal_mask())
             if value
         )
+        if (
+            auto_trashed_coppers > 0
+            and int(current.get("kind", -1)) == _SELECT_CARDS_KIND
+            and int(current.get("source", -1)) == int(dz.def_id("Moneylender"))
+            and set(legal) == {int(dz.A_PASS), _SELECT_COPPER}
+        ):
+            auto_trashed_coppers -= 1
+            game.step(_SELECT_COPPER)
+            game.validate()
+            forced.append(_SELECT_COPPER)
+            continue
         if len(legal) != 1:
             raise DivergenceError(
                 "native/client decision kinds differ without a forced bridge: "

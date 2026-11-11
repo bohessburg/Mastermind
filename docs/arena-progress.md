@@ -292,6 +292,24 @@ Restart after three idle months, serving c29 gen 10 through
   went 2-1 on gen 26 before the abort. The arena plays gen 28 from the next
   relaunch.
 
+- Eleventh abort, 18:10 UTC: the shadow game fell behind the client (exit 4,
+  run `20261111T160015.763535Z`, game 185817129, turn 13, abandoned and not
+  in `record.jsonl`). The bot played Throne Room on Vassal. The first Vassal
+  discarded a Moneylender and the bot chose to play it. dominion.games
+  trashes Moneylender's Copper without asking and logs the answer as
+  auto-played; the native interpreter asks. After a Moneylender played from
+  hand the next question is a clean action or buy phase, which rebuilds the
+  shadow from the tracker, so the gap never showed. Here the next question
+  was the second Vassal's, mid-chain, and the forced bridge refused two
+  legal native answers: "native=4 client=6 legal=(0, 251)". Fix: the bridge
+  counts the Coppers the client trashed from our hand after an auto-played
+  answer since the last answer, and resolves that many native Moneylender
+  questions by trashing a Copper. Test:
+  `test_moneylender_played_by_a_throned_vassal_follows_the_client_auto_trash`.
+  Still open: any other optional choice the client resolves by itself would
+  abort the same way when it lands mid-chain; Moneylender is the only one
+  seen. That run went 11-2-1 on gen 28 before the abort.
+
 Open: `lobby.rated` is read from the config but nothing applies it. The
 account's own automatch preference decides, and the saved lobby pages from
 July show it set to Rated, so every arena game so far has been rated.

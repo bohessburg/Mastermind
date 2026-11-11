@@ -1910,3 +1910,72 @@ def test_human_throne_room_decline_is_logged_as_zero_zero() -> None:
         isinstance(event, Play) and event.seat == seat
         for event in events[declined:next_question]
     )
+
+
+THRONED_VASSAL_MONEYLENDER_ARCHIVE = Path(
+    "exports/arena/20261111T160015.763535Z/frames.jsonl"
+)
+THRONED_VASSAL_MONEYLENDER_GAME_ID = 185817129
+SECOND_VASSAL_QUESTION = 193
+
+
+class _RecordedReplayWithDecisionLog:
+    """Replay the recorded answers and note the native decision at each one."""
+
+    def __init__(self, events: tuple[object, ...]) -> None:
+        self.recorded = RecordedDecisionProvider(events)
+        self.native: dict[int, tuple[int, tuple[int, ...]]] = {}
+
+    async def plan(
+        self,
+        *,
+        frame_index: int,
+        game: Any,
+        snapshot: TrackerSnapshot,
+        decision: PendingDecisionSnapshot,
+    ) -> DecisionPlan | None:
+        self.native[decision.question_index] = (
+            int(game.current_decision()["kind"]),
+            tuple(index for index, legal in enumerate(game.legal_mask()) if legal),
+        )
+        return await self.recorded.plan(
+            frame_index=frame_index,
+            game=game,
+            snapshot=snapshot,
+            decision=decision,
+        )
+
+
+def test_moneylender_played_by_a_throned_vassal_follows_the_client_auto_trash() -> None:
+    """Game 185817129: Throne Room on Vassal, whose first play hit Moneylender.
+
+    dominion.games trashes Moneylender's Copper without asking (the answer is
+    logged as auto-played).  The native interpreter asks.  After a Moneylender
+    played from hand the next question is a clean action or buy phase, which
+    rebuilds the shadow, so the gap never showed.  Here the next question was
+    the second Vassal's, mid-chain, and the driver aborted with "native/client
+    decision kinds differ without a forced bridge: native=4 client=6
+    legal=(0, 251)".
+    """
+    if not THRONED_VASSAL_MONEYLENDER_ARCHIVE.is_file():
+        pytest.skip(
+            f"missing live arena fixture: {THRONED_VASSAL_MONEYLENDER_ARCHIVE}"
+        )
+    events = _events_of_game(
+        parse_recording(THRONED_VASSAL_MONEYLENDER_ARCHIVE).events,
+        THRONED_VASSAL_MONEYLENDER_GAME_ID,
+    )
+    provider = _RecordedReplayWithDecisionLog(events)
+
+    results = asyncio.run(
+        run_game_loop(
+            events,
+            actuator=MockActuator(replay=True),
+            decision_provider=provider,
+        )
+    )
+
+    assert not any(result.divergence_aborted for result in results)
+    kind, legal = provider.native[SECOND_VASSAL_QUESTION]
+    assert kind == 6
+    assert len(legal) == 2
