@@ -793,7 +793,7 @@ async def run_game_loop(
     active: _ActiveGame | None = None
     results: list[GameRunResult] = []
 
-    async def settle(frame_index: int) -> None:
+    async def settle(frame_index: int, *, game_over: bool = False) -> None:
         nonlocal active
         assert active is not None
         if active.pending is None:
@@ -880,8 +880,19 @@ async def run_game_loop(
                 active.pending_snapshot,
                 active.pending_events,
             ):
-                _rebuild_turn_after_shuffle(active, current_step)
-                active.rigged_steps += 1
+                if game_over:
+                    # A game that ends on our turn never crosses a turn
+                    # boundary, so the final step carries the cleanup shuffle.
+                    # That shuffle mixes in this turn's hand, plays and gains,
+                    # which the turn-start pool cannot supply, and nothing
+                    # reads the shadow after the game ends.
+                    active.shadow = None
+                    active.shadow_turn = None
+                    active.turn_start_snapshot = None
+                    active.turn_history.clear()
+                else:
+                    _rebuild_turn_after_shuffle(active, current_step)
+                    active.rigged_steps += 1
             else:
                 if _rig_observed_draws(
                     active.shadow,
@@ -1166,7 +1177,7 @@ async def run_game_loop(
                         for observed in active.pending_events
                     )
                 ):
-                    await settle(frame_index)
+                    await settle(frame_index, game_over=True)
                 else:
                     # A server-side game end supersedes an outstanding client
                     # prompt; the fixture contains both unanswered and

@@ -1481,3 +1481,39 @@ def test_actuation_error_reports_offered_targets_and_failed_step() -> None:
     assert "target=DOMClickTarget(region='hand', identity='Copper'" in message
     assert "status=not-found" in message
     assert "found=0" in message
+
+
+CLEANUP_SHUFFLE_AT_GAME_END_ARCHIVE = Path(
+    "exports/arena/20261111T090857.411949Z/frames.jsonl"
+)
+
+
+def test_game_ending_on_our_turn_with_a_cleanup_shuffle_completes() -> None:
+    """Game 185802782: our Province buy ended the game and cleanup reshuffled.
+
+    The final step never crosses a turn boundary, so it carries the cleanup
+    shuffle, whose draw (four Provinces from this turn's hand and gain) is not
+    in the turn-start deck/discard pool.  The driver aborted a won game with
+    "shuffle reconstruction observed unavailable 'Province'".
+    """
+    if not CLEANUP_SHUFFLE_AT_GAME_END_ARCHIVE.is_file():
+        pytest.skip(
+            f"missing live arena fixture: {CLEANUP_SHUFFLE_AT_GAME_END_ARCHIVE}"
+        )
+    events = parse_recording(CLEANUP_SHUFFLE_AT_GAME_END_ARCHIVE).events
+
+    results = asyncio.run(
+        run_game_loop(
+            events,
+            actuator=MockActuator(replay=True),
+            decision_provider=RecordedDecisionProvider(events),
+        )
+    )
+
+    assert [result.game_id for result in results] == [185802619, 185802782]
+    won = results[1]
+    assert won.completed
+    assert not won.divergence_aborted
+    assert won.reason == "game-finished"
+    assert won.scores == (30, 19)
+    assert won.outcome == "win"

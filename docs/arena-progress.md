@@ -157,6 +157,15 @@ Restart after three idle months, serving c29 gen 10 through
   `GameChannelSelector` (`protocol/recording.py`) now follows the channel to
   any socket whose first outbound frame is a login (msg 24) or a move (msg
   46); probe sockets (msg 45) are ignored. Tests: `test_game_channel.py`.
+- **Cleanup shuffle at game end.** A game that ends on our own turn never
+  crosses a turn boundary, so the final step carries the cleanup shuffle. Its
+  draw can include cards from this turn's hand, plays and gains, which the
+  turn-start deck/discard pool cannot supply, so the shadow rebuild raised
+  "shuffle reconstruction observed unavailable 'Province'" and the driver
+  exited 4 on a game it had already won 30-19 (run `20261111T090857.411949Z`,
+  game 185802782, not in `record.jsonl`). `settle` now drops the shadow
+  instead of rebuilding it when the game is over. Test:
+  `test_game_ending_on_our_turn_with_a_cleanup_shuffle_completes`.
 
 Open: `lobby.rated` is read from the config but nothing applies it. The
 account's own automatch preference decides, and the saved lobby pages from
