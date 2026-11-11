@@ -639,8 +639,15 @@ async def _start_or_resume_game(
     while await lobby.resolve_startup_blocking_modal():
         pass
     if not await lobby.resume_running_game_if_present():
-        await lobby.queue_next_game()
-        return False, None
+        if not await lobby.queue_next_game():
+            return False, None
+        # The retained board rendered only after the first check, while the
+        # homepage wait was polling.  It is still a reconnect, not a new game:
+        # no GameStart will come, so it must take the resume path below.
+        LOGGER.warning(
+            "startup found an in-progress game board after the page finished "
+            "loading; waiting for its authoritative FullState"
+        )
 
     buffered = await _wait_for_resumed_full_state(
         events,

@@ -22,8 +22,10 @@ class _StartupLobby:
         *,
         has_running_game: bool,
         modal_results: tuple[bool, ...] = (),
+        board_appears_late: bool = False,
     ) -> None:
         self.has_running_game = has_running_game
+        self.board_appears_late = board_appears_late
         self.modal_results = list(modal_results)
         self.queue_calls = 0
         self.recovery_calls = 0
@@ -36,8 +38,9 @@ class _StartupLobby:
     async def resume_running_game_if_present(self) -> bool:
         return self.has_running_game
 
-    async def queue_next_game(self) -> None:
+    async def queue_next_game(self) -> bool:
         self.queue_calls += 1
+        return self.board_appears_late
 
     async def recover_resumed_game_and_queue_next(self) -> None:
         self.recovery_calls += 1
@@ -179,5 +182,50 @@ def test_startup_homepage_keeps_the_existing_search_path() -> None:
         assert lobby.queue_calls == 1
         assert lobby.recovery_calls == 0
         assert lobby.startup_modal_checks == 1
+
+    asyncio.run(run())
+
+
+def test_board_that_renders_after_the_first_check_takes_the_resume_path() -> None:
+    # Live run 20261111T122844.386627Z: a restart reconnected to game
+    # 185806100, the board rendered after the first check, and the driver
+    # waited on it as if a new game were about to start.
+    async def run() -> None:
+        lobby = _StartupLobby(has_running_game=False, board_appears_late=True)
+        events = asyncio.Queue()
+        start = _game_start()
+        await events.put(start)
+        await events.put(_full_state())
+        await events.put(GameEnd(game_id=start.game_id, reason="completed"))
+
+        resumed, game_events = await _start_or_resume_game(
+            lobby,
+            events,
+            resume_full_state_timeout_seconds=1.0,
+        )
+
+        assert resumed
+        assert game_events is not None
+        assert lobby.queue_calls == 1
+        assert lobby.recovery_calls == 0
+
+    asyncio.run(run())
+
+
+def test_late_board_without_full_state_recovers_to_the_search_cycle() -> None:
+    async def run() -> None:
+        lobby = _StartupLobby(has_running_game=False, board_appears_late=True)
+        events = asyncio.Queue()
+
+        resumed, game_events = await _start_or_resume_game(
+            lobby,
+            events,
+            resume_full_state_timeout_seconds=0.01,
+        )
+
+        assert not resumed
+        assert game_events is None
+        assert lobby.queue_calls == 1
+        assert lobby.recovery_calls == 1
 
     asyncio.run(run())

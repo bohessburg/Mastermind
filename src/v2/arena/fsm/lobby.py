@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import time
 from dataclasses import dataclass
 from enum import Enum
@@ -79,6 +80,25 @@ RECONNECT_LIMIT_RECONNECT_SELECTOR = (
 RECONNECT_LIMIT_RETURN_TO_LOBBY_SELECTOR = (
     f'{RECONNECT_LIMIT_MODAL_SELECTOR} '
     'button.lobby-button[ng-click="$ctrl.decline()"]'
+)
+# Evidence: exports/arena/20261111T122844.386627Z/
+# dom-20261111T124345.768671Z-idle-stall.html.  A restart reconnected to a
+# game whose opponent had run out of clock: the board's ticker read
+# "Waiting for <opponent> ." and the client showed its own prompt,
+# "Make <opponent> resign?", with this Yes control.  The claim selector is the
+# in-game actuator's ``TIMEOUT_CLAIM_SELECTOR`` scoped to the inner
+# ``div.modal-window`` (see the visibility note above).
+TIMEOUT_REQUEST_TITLE_SELECTOR = (
+    "timeout-request div.modal-window div.timeout-title"
+)
+TIMEOUT_REQUEST_CLAIM_SELECTOR = (
+    'timeout-request div.modal-window '
+    'button.lobby-button[ng-click="$ctrl.click()"]'
+)
+STATUS_TICKER_SELECTOR = "status-bar-ticker"
+_TIMEOUT_TITLE_PATTERN = re.compile(r"make (?P<name>.+) resign\?", re.IGNORECASE)
+_WAITING_FOR_PATTERN = re.compile(
+    r"waiting for (?P<name>.+?)\s*\.?", re.IGNORECASE
 )
 # dom-3978828.html and dom-2848087.html both contain the in-play board,
 # ``game-area``.  dom-530325.html is a table-waiting snapshot with a
@@ -233,10 +253,10 @@ class LobbyFSM:
         limit = self.max_games_per_session
         return limit != 0 and completed_games >= limit
 
-    async def queue_next_game(self) -> None:
-        """Resume a retained board or search and start the next table."""
+    async def queue_next_game(self) -> bool:
+        """Search and start the next table; True if a retained board resumed."""
         LOGGER.info("lobby requeue requested at %.3f", self.clock())
-        await self.start_or_resume_game()
+        return await self.start_or_resume_game()
 
     async def start_or_resume_game(self) -> bool:
         """Poll startup controls until automatch starts or a board resumes.
@@ -506,11 +526,71 @@ class LobbyFSM:
             "rejected; archiving the DOM and leaving the table before requeue"
         )
         await self._snapshot_dom("lobby-resume-recovery")
+        if await self._claim_opponent_timeout_if_offered():
+            # The claim ends the game on the server; give its game-ended
+            # notification the full game-over allowance before leaving.
+            await self._wait_for_optional_control(
+                LobbyControl.DISMISS_GAME_ENDED,
+                timeout_seconds=self._timeout_for(LobbyState.GAME_OVER),
+            )
         # The recorded table exit is the safe path after a terminal game.  A
         # reconnect that cannot produce a trustworthy FullState is deliberately
         # abandoned rather than played from an unknown local state.
         self._transition(LobbyState.GAME_OVER)
         await self.leave_after_game(requeue=True)
+
+    async def _claim_opponent_timeout_if_offered(self) -> bool:
+        """Answer Yes to the client's prompt to end a timed-out opponent's game.
+
+        A reconnect into a game that is waiting on an opponent whose clock has
+        run out sends no FullState and no further events, and the table has no
+        leave control while the game is live, so the prompt is the only way
+        out.  The click is made only when the prompt names exactly the player
+        the board's own ticker says it is waiting for, which can never be the
+        local player.
+        """
+        titles = await self._visible_selector_texts(TIMEOUT_REQUEST_TITLE_SELECTOR)
+        if not titles:
+            return False
+        tickers = await self._visible_selector_texts(STATUS_TICKER_SELECTOR)
+        named = _TIMEOUT_TITLE_PATTERN.fullmatch(titles[0])
+        waiting = (
+            _WAITING_FOR_PATTERN.fullmatch(tickers[0]) if len(tickers) == 1 else None
+        )
+        if (
+            len(titles) != 1
+            or named is None
+            or waiting is None
+            or named["name"].casefold() != waiting["name"].casefold()
+        ):
+            LOGGER.error(
+                "TIMEOUT CLAIM SKIPPED: prompt %r does not name the one player "
+                "the board is waiting for (ticker %r)",
+                titles,
+                tickers,
+            )
+            return False
+        count = await self._selector_count(TIMEOUT_REQUEST_CLAIM_SELECTOR)
+        if count != 1:
+            LOGGER.error(
+                "TIMEOUT CLAIM SKIPPED: %s matched %d controls",
+                TIMEOUT_REQUEST_CLAIM_SELECTOR,
+                count,
+            )
+            return False
+        LOGGER.warning(
+            "RESUME RECOVERY: the board is waiting for a timed-out opponent; "
+            "answering Yes to the client's prompt %r",
+            titles[0],
+        )
+        try:
+            await self.page.locator(TIMEOUT_REQUEST_CLAIM_SELECTOR).click()
+        except Exception as error:
+            raise self._error(
+                "could not click the recorded timeout-claim control "
+                f"({TIMEOUT_REQUEST_CLAIM_SELECTOR}): {error}"
+            ) from error
+        return True
 
     def game_ended(self) -> None:
         """Advance on the decoded ``GameEnd`` feed event."""

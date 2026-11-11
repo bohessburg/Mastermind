@@ -6,7 +6,10 @@ from pathlib import Path
 
 import pytest
 
-from src.v2.arena.actuate.clicks import UNDO_DECLINE_SELECTOR
+from src.v2.arena.actuate.clicks import (
+    TIMEOUT_CLAIM_SELECTOR,
+    UNDO_DECLINE_SELECTOR,
+)
 from src.v2.arena.config import LobbyConfig
 from src.v2.arena.fsm.lobby import (
     CANCEL_SEARCH_SELECTOR,
@@ -28,7 +31,10 @@ from src.v2.arena.fsm.lobby import (
     RECONNECTING_SELECTOR,
     START_GAME_SELECTOR,
     START_SEARCH_SELECTOR,
+    STATUS_TICKER_SELECTOR,
     TABLE_CONTAINER_SELECTOR,
+    TIMEOUT_REQUEST_CLAIM_SELECTOR,
+    TIMEOUT_REQUEST_TITLE_SELECTOR,
     LobbyControl,
     LobbyError,
     LobbyFSM,
@@ -53,6 +59,10 @@ LATE_RECONNECT_LIMIT_DOM = Path(
 LOGGED_OUT_DOM = Path(
     "exports/arena/20261111T083535.064408Z/"
     "dom-20261111T083708.949962Z-lobby-failure-homepage-start-search-not-found.html"
+)
+OPPONENT_TIMEOUT_DOM = Path(
+    "exports/arena/20261111T122844.386627Z/"
+    "dom-20261111T124345.768671Z-idle-stall.html"
 )
 SEARCHING_DOM = Path(
     "exports/arena/20260724T234015.530752Z/"
@@ -148,6 +158,8 @@ class _FakePage:
         self.search_engages = search_engages
         self.fruitless_search_seconds = fruitless_search_seconds
         self.search_started_at: float | None = None
+        self.timeout_prompt_name: str | None = None
+        self.ticker_text = ""
         self.reloaded = False
         self.reloads = 0
         self.clicks: list[str] = []
@@ -200,6 +212,13 @@ class _FakePage:
         if self.screen == "game":
             if selector in {IN_GAME_SELECTOR, GAME_CHAT_SELECTOR}:
                 return 1
+            if selector == STATUS_TICKER_SELECTOR:
+                return int(bool(self.ticker_text))
+            if self.timeout_prompt_name is not None and selector in {
+                TIMEOUT_REQUEST_TITLE_SELECTOR,
+                TIMEOUT_REQUEST_CLAIM_SELECTOR,
+            }:
+                return 1
         if self.screen == "game_over":
             if selector == DISMISS_GAME_ENDED_SELECTOR and self.end_game_dialog:
                 return 1
@@ -219,6 +238,10 @@ class _FakePage:
         if self.screen == "unknown_modal" and selector == MODAL_WINDOW_SELECTOR:
             assert self.unknown_modal_text is not None
             return self.unknown_modal_text
+        if selector == STATUS_TICKER_SELECTOR:
+            return self.ticker_text
+        if selector == TIMEOUT_REQUEST_TITLE_SELECTOR:
+            return f"Make {self.timeout_prompt_name} resign?"
         if selector == RECONNECTING_SELECTOR and self.reconnecting_content:
             return "Reconnecting to game server"
         if (
@@ -286,6 +309,13 @@ class _FakePage:
             self.screen = "homepage"
         elif self.screen == "table" and selector == START_GAME_SELECTOR:
             self.screen = "game"
+        elif (
+            self.screen == "game"
+            and self.timeout_prompt_name is not None
+            and selector == TIMEOUT_REQUEST_CLAIM_SELECTOR
+        ):
+            self.timeout_prompt_name = None
+            self.screen = "game_over"
         elif self.screen == "game_over" and selector == DISMISS_GAME_ENDED_SELECTOR:
             if self.unclickable_end_game_dialog:
                 raise RuntimeError("modal button is obscured")
@@ -784,6 +814,75 @@ def test_lobby_fsm_resume_recovery_leaves_then_requeues() -> None:
         "lobby-searching-wait",
         "lobby-table-waiting-wait",
     ]
+
+
+def test_resume_recovery_claims_a_timed_out_opponents_game_then_requeues() -> None:
+    # Live run 20261111T122844.386627Z: a restart reconnected to game
+    # 185806100 after the opponent's clock had run out.  No FullState came and
+    # the live table had no leave control; only the client's prompt did.
+    page = _FakePage()
+    page.screen = "game"
+    page.timeout_prompt_name = "villain"
+    page.ticker_text = "Waiting for villain ."
+    clock = _FakeClock()
+    lobby = LobbyFSM(page, _config(), clock=clock, sleep=clock.sleep)
+    assert asyncio.run(lobby.resume_running_game_if_present())
+
+    asyncio.run(lobby.recover_resumed_game_and_queue_next())
+
+    assert lobby.state is LobbyState.IN_GAME
+    assert page.clicks == [
+        TIMEOUT_REQUEST_CLAIM_SELECTOR,
+        DISMISS_GAME_ENDED_SELECTOR,
+        LEAVE_TABLE_SELECTOR,
+        START_SEARCH_SELECTOR,
+        START_GAME_SELECTOR,
+    ]
+
+
+@pytest.mark.parametrize(
+    "ticker_text",
+    ["Waiting for someone else .", "You may play Actions.", ""],
+)
+def test_resume_recovery_never_claims_unless_the_board_waits_on_that_player(
+    ticker_text: str,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    page = _FakePage()
+    page.screen = "game"
+    page.timeout_prompt_name = "villain"
+    page.ticker_text = ticker_text
+    clock = _FakeClock()
+    lobby = LobbyFSM(page, _config(), clock=clock, sleep=clock.sleep)
+    assert asyncio.run(lobby.resume_running_game_if_present())
+
+    with caplog.at_level(logging.ERROR):
+        with pytest.raises(LobbyError, match="Leave Table"):
+            asyncio.run(lobby.recover_resumed_game_and_queue_next())
+
+    assert page.clicks == []
+    assert "TIMEOUT CLAIM SKIPPED" in caplog.text
+
+
+def test_opponent_timeout_dom_evidence_matches_the_claim_selectors() -> None:
+    if not OPPONENT_TIMEOUT_DOM.is_file():
+        pytest.skip("missing opponent-timeout DOM evidence")
+    html = OPPONENT_TIMEOUT_DOM.read_text(encoding="utf-8")
+    start = html.index("<timeout-request>")
+    prompt = html[start : html.index("</timeout-request>", start)]
+    assert '<div class="modal-window centered-content">' in prompt
+    assert '<div class="timeout-title">Make mbvons resign?</div>' in prompt
+    assert prompt.count('<button class="lobby-button" ng-click="$ctrl.click()">Yes') == 1
+    assert html.count(f"<{STATUS_TICKER_SELECTOR}") == 1
+    ticker_start = html.index(f"<{STATUS_TICKER_SELECTOR}")
+    ticker = html[ticker_start : html.index(f"</{STATUS_TICKER_SELECTOR}>", ticker_start)]
+    assert ">Waiting for </span>" in ticker
+    assert ">mbvons</span>" in ticker
+    assert f"<{IN_GAME_SELECTOR}" in html
+    assert LEAVE_TABLE_SELECTOR.split("[")[1].rstrip("]") not in html
+    assert TIMEOUT_REQUEST_CLAIM_SELECTOR.split(" ", 2)[2] == (
+        TIMEOUT_CLAIM_SELECTOR.split(" ", 2)[2]
+    )
 
 
 def test_lobby_fsm_does_not_treat_game_chat_without_board_as_in_game() -> None:
