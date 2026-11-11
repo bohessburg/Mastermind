@@ -2974,8 +2974,8 @@ Same boards, seats, seed and search as the gen 6 check above.
 
 Gen 8 won 7 of 10, gen 6 won 6 of 10.
 
-- Chapel as second player is fixed in this game: gen 8 trashed 7 Coppers and 3 Estates but bought Silver, then 3 Golds, and took all 8 Provinces (three double-Province turns, $15-$18 hands) while handing out 8 Curses.
+- Chapel as second player is fixed in this game: gen 8 trashed 7 Coppers and 3 Estates but bought Silver, then 3 Golds, and took all 8 Provinces (two double-Province turns, $15-$18 hands) while handing out 8 Curses.
 - Vassal spam is down from 9-10 Vassals to 2-3, and it buys Silver on that board now. It still buys no Gold there and overbuys Markets (6 as second player, first Province round 13 against engine3's round 6).
 - Witch board (random:2): 2 Witches in both seats and an even Curse split as first player (5-5, was 7 Curses taken), with 3 Golds; lost by 2 instead of 20.
-- Still slow to green against money: its first Province comes 4-8 rounds after engine3's on every board without an attack. The random:1 loss was a 20-card Chapel/Festival deck with $16 and $10 turns that started buying Provinces in round 13, five rounds after engine3.
+- Still slow to green against money: its first Province comes 4-8 rounds after engine3's in all six random-board games. The random:1 loss was a 20-card Chapel/Festival deck with $16 and $10 turns that started buying Provinces in round 13, five rounds after engine3.
 - Remaining oddities: 3-4 Moats in several decks, 2 Moats trashed with Chapel after buying them.
