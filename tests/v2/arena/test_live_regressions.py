@@ -2205,6 +2205,77 @@ def test_opponent_militia_discard_is_resolved_inside_a_throne_room_chain() -> No
     }
 
 
+FOUR_CARD_MILITIA_ARCHIVE = Path(
+    "exports/arena/20261112T214112.021802Z/"
+    "20261112T233826.547837Z-game-185871928/frames.jsonl"
+)
+FOUR_CARD_MILITIA_GAME_ID = 185871928
+FOUR_CARD_MILITIA_QUESTION = 46
+
+
+def test_militia_against_a_four_card_hand_plans_three_keeps() -> None:
+    """Game 185871928: our whole deck was Chapel, Vassal, Vassal, Militia.
+
+    The opponent's Militia asked for one discard.  One client answer was taken
+    to mean one native action, so the plan held a single keep and the send
+    failed with "expected 3 keep actions for 1 discards, got 1".
+    """
+    if not FOUR_CARD_MILITIA_ARCHIVE.is_file():
+        pytest.skip(f"missing live arena fixture: {FOUR_CARD_MILITIA_ARCHIVE}")
+    events = _events_of_game(
+        parse_recording(FOUR_CARD_MILITIA_ARCHIVE).events,
+        FOUR_CARD_MILITIA_GAME_ID,
+    )
+    provider = _RecordedReplayWithShadowLog(events)
+    asyncio.run(
+        run_game_loop(
+            events,
+            actuator=MockActuator(replay=True),
+            decision_provider=provider,
+        )
+    )
+    frame_index, shadow, snapshot, decision = provider.seen[
+        FOUR_CARD_MILITIA_QUESTION
+    ]
+    assert decision.question_id == "MILITIA"
+    assert decision.offered == ("Chapel", "Vassal", "Vassal", "Militia")
+    assert (decision.minimum, decision.maximum) == (1, 1)
+    assert shadow.hand_count(snapshot.our_seat) == 4
+
+    def first_legal(game: Any, seat: int) -> int:
+        del seat
+        return next(
+            index for index, value in enumerate(game.legal_mask()) if value
+        )
+
+    plan = asyncio.run(
+        BotDecisionProvider(first_legal).plan(
+            frame_index=frame_index,
+            game=shadow,
+            snapshot=snapshot,
+            decision=decision,
+        )
+    )
+
+    assert len(plan.engine_actions) == 3
+    answers = possible_answer_indices(plan.engine_actions, decision)
+    assert answers
+    assert all(len(answer) == 1 for answer in answers)
+    kept = Counter(
+        int(action) - int(dz.A_SELECT_BASE) for action in plan.engine_actions
+    )
+    for answer in answers:
+        left = Counter(
+            int(dz.def_id(name))
+            for index, name in enumerate(decision.offered)
+            if index != answer[0]
+        )
+        assert left == kept
+    after = shadow.clone()
+    _step_actions(after, plan.engine_actions, frame_index=0, intended=None)
+    assert after.hand_count(snapshot.our_seat) == 3
+
+
 def test_opponent_response_is_stepped_only_on_our_own_turn() -> None:
     """Without the local seat the plan is stepped alone, as on their turn."""
     provider, _ = _replay_throned_militia_game()

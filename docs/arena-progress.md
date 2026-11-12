@@ -463,6 +463,23 @@ after game 14, exit 0, no abort. It ended 8-6-0. Preflight green (197 arena
 tests, dry run 3/3), no engine change, relaunched on c31 gen 12
 (`checkpoints/remote/campaign31/gen_0012.pt`). Ledger at restart: 427 rows.
 
+Abort, 2026-11-12 23:40 UTC: game 185871928 against DuckStorm (our seat 1,
+turn 8) stopped with `ActuationError: MILITIA native frame selects cards to
+keep: expected 3 keep actions for 1 discards, got 1`. The bot had trashed
+down to a four-card deck (Chapel, Vassal, Vassal, Militia), so the opponent's
+Militia asked for one discard. `BotDecisionProvider.plan` treats a question
+with exactly one client answer as one native action; Militia is the exception,
+because the shadow picks the cards to keep. A five-card hand never hit this
+(two discards, three keeps, and the loop bound of maximum + 1 happened to be
+three). Fix: Militia skips the one-answer shortcut and the loop runs for
+hand size minus discards. Test
+`test_militia_against_a_four_card_hand_plans_three_keeps` replays the archive
+`exports/arena/20261112T214112.021802Z/20261112T233826.547837Z-game-185871928`
+to the question and fails without the change. The game has no ledger row and
+its outcome is unknown. That session stood at 9-5-0 on c31 gen 12 over 14
+recorded games; relaunched on gen 12 at 23:42 UTC, 198 arena tests, dry run
+3/3. Ledger at restart: 441 rows.
+
 ## Status by phase
 
 - **P0 — Recording harness: complete (2026-07-24).**

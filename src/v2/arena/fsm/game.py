@@ -572,7 +572,10 @@ class BotDecisionProvider:
             )
 
         planning = game.clone()
-        if expected_answer_count(decision) == 1:
+        # Militia asks the client which cards to discard and the shadow which
+        # cards to keep, so one discard from a four-card hand is three picks.
+        keeps = decision.question_id == "MILITIA"
+        if expected_answer_count(decision) == 1 and not keeps:
             action = await self._choose(planning, seat)
             return DecisionPlan(
                 engine_actions=(action,),
@@ -580,7 +583,10 @@ class BotDecisionProvider:
             )
         initial = _decision_signature(planning)
         actions: list[int] = []
-        for _ in range(max(1, decision.maximum + 1)):
+        picks = max(1, decision.maximum + 1)
+        if keeps:
+            picks = max(picks, len(decision.offered) - decision.minimum)
+        for _ in range(picks):
             action = await self._choose(planning, seat)
             actions.append(action)
             picks_left = _decision_picks_left(planning)
