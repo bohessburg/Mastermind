@@ -3162,6 +3162,7 @@ Ladder against c29 gen 43 every fifth generation (`bench/c31_ladder`, 200 pairs 
 | 6 | 0.5300 | 0.5156 | **accepted** | 0.743 | 0.680 | 3 | 35.1 |
 | 7 | 0.4944 | 0.4799 | rejected | 0.728 | 0.675 | 1 | 41.0 |
 | 8 | 0.5000 | 0.4847 | rejected | 0.733 | 0.671 | 5 | 42.8 |
+| 9 | 0.4969 | 0.4821 | rejected | 0.731 | 0.672 | 2 | 39.2 |
 
 Gen 1 notes: 31.1 minutes, inside c30's 29 to 33 minute range. Self-play mix was 820 self games, 102 league games
 (25, 26 and 19 wins of 34 against c29 gen 10, 25 and 35) and 102 scripted
