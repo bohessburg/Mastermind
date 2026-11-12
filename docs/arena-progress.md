@@ -449,6 +449,14 @@ the shadow's hand, deck count and discard count agree with the tracker at
 the same questions in both. Deployed at the next arena restart: the running
 process holds the old module, and `build/` is rebuilt only while it is down.
 
+Restart, 2026-11-12 18:54 UTC: the c30 gen 4 session
+(`exports/arena/20261112T090914.519833Z`) was stopped on purpose with SIGINT
+after game 185860037 finished, exit 0, no abort in 61 games. It ended 42-19-0
+(seven of the wins were opponents leaving before turn 10). `build/` was
+rebuilt, so the shuffle rig above is now live, preflight was green (197 arena
+tests, dry run 3/3), and the arena was relaunched on c31 gen 6
+(`checkpoints/remote/campaign31/gen_0006.pt`). Ledger at restart: 413 rows.
+
 ## Status by phase
 
 - **P0 — Recording harness: complete (2026-07-24).**
