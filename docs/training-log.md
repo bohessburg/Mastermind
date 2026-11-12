@@ -3037,3 +3037,44 @@ Gen 8 won 7 of 10, gen 6 won 6 of 10.
 - Witch board (random:2): 2 Witches in both seats and an even Curse split as first player (5-5, was 7 Curses taken), with 3 Golds; lost by 2 instead of 20.
 - Still slow to green against money: its first Province comes 4-8 rounds after engine3's in all six random-board games. The random:1 loss was a 20-card Chapel/Festival deck with $16 and $10 turns that started buying Provinces in round 13, five rounds after engine3.
 - Remaining oddities: 3-4 Moats in several decks, 2 Moats trashed with Chapel after buying them.
+
+### c29 gen 50 against gen 43 (2026-11-12, local)
+
+Jack asked for a look at gen 50 because its engine3 eval was the c29 high (73.9% against gen 43's 72.7%). Same 8 boards, seats and seed for both nets, 400 sims, engine3 as the opponent, terminals scored win/loss.
+
+| Board | Seat | gen 50 | gen 43 |
+|---|---|---|---|
+| sentry | first | L 21-24 | L 27-32 |
+| sentry | second | W 35-25 | L 37-40 |
+| chapel | first | W 46-10 | W 46-10 |
+| chapel | second | W 48-25 | W 52-8 |
+| random (Vassal, Council Room) | first | L 30-36 | L 36-48 |
+| random | second | W 45-33 | W 50-34 |
+| random:5 (Gardens, Bandit) | first | W 55-32 | W 45-38 |
+| random:5 | second | L 25-39 | W 32-30 |
+
+Both won 5 of 8; total margin +81 for gen 50 and +85 for gen 43. They play the same game: an engine builder that takes its first Province in rounds 10-18 against engine3's 6-11, wins big on the Chapel board, buys a late Witch on the Sentry board, and still takes the second-to-last Province while behind. Gen 50 is not a different or better player; the eval gap is noise. A copy is at `checkpoints/remote/campaign29/gen_0050.pt`.
+
+## c30 on the box (started 2026-11-12 02:26 UTC)
+
+`configs/run_c30.json`, warm start from c29 gen 43 with an empty buffer, box at `82da378`. Launch: `scripts/box/resume.sh configs/run_c30.json checkpoints/campaign29/gen_0043.pt` under supervisor program `dominion-c30`.
+
+### What changed from c29
+
+- **Terminal values at inference (`677c197`).** Training targets, self-play search and the paired gate already graded wins by point margin (`sign x (0.5 + 0.5 x min(|margin|, 20) / 20)`). The engine3 evals, the engine3 half of the gate and the arena search scored a finished game as plus or minus 1, a scale the value head never saw. `EvalRunner` and `DecisionSearcher` now take the scale from the checkpoint's config. So c30 has no new margin term in training; the change is on the measuring and playing side, and engine3 numbers from c30 are not on the same footing as c29's. `--legacy-terminals` (or `scaled_terminals: false` in an eval job) gives the old scoring.
+- **Stop rule (`6b36a9e`).** `stop_after_rejections: 10`. When ten generations in a row fail to replace the best, the trainer writes `checkpoints/campaign30/STOPPED` and exits 0; supervisor (`autorestart=unexpected`, `exitcodes=0`) leaves it down. It refuses to start while the marker exists. The box keeps billing after a stop.
+- **Stricter gate.** 800 games (was 400) and `gate_ci_z` 2.0 (was 1.0) at 128 sims. Promotion needs about 53% head to head; a net no better than the best passes about 2% of the time (c29: about 16%). The gate takes about 13-14 minutes.
+- **Worker memory (`6b36a9e`).** The kill at every c29 generation boundary was the container's memory limit (342 GiB, `oom_kill` 94 by the end of c29): each of the 64 workers held its manifest-game runner while building the next self-play runner, 213 GB to 339 GB. The manifest runner is now freed first.
+- **Library rule fix** (Throne Room or Vassal playing Library), built on the box since 01:47 UTC. All of c29 ran before it.
+- Learning rate continues from where c29 gen 43 was: 1.4e-4, cosine to 5e-5 over 60 generations.
+
+Not changed, noted for later: eval and arena search use the default first-play urgency and no top-k expansion, self-play and the gate use `fpu_reduction` 0.2 and `expand_top_k` 8, and the arena hardcodes `c_puct` 1.25.
+
+### Rules check before launch
+
+Replayed every recorded arena game through the engine with the arena's differential replay (16 archives): 73 games completed, 0 diverged. One archive stopped on a recorded answer the engine cannot produce, the bare Throne Room decline the driver itself sent before `efc9344`; that is a driver bug already fixed, not a rules difference.
+
+### Benchmarks running beside it
+
+- `scripts/box/ladder_watch.sh`: every 5th generation plays 200 board pairs against c29 gen 43 at 128 sims, results in `bench/c30_ladder/`. Reference: c29 gen 25 against gen 10 scored 55.0%.
+- Engine3 eval every 5 generations (2 x 100 games, scaled terminals).
