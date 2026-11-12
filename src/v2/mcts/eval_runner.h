@@ -44,6 +44,11 @@ struct EvalRunnerConfig {
     // Opt-in honest hidden-information root sampling for the NN seat.  The
     // scripted opponent continues to act on the live game state.
     SelfPlayDeterminizeMode determinize = SelfPlayDeterminizeMode::Off;
+    // Terminal nodes are scored on the scale the value head was trained on
+    // (see MctsConfig::terminal_margin_scale). Zero keeps the legacy +-1,
+    // which is only right for an outcome-trained network.
+    float terminal_margin_scale = 0.0F;
+    float terminal_margin_alpha = 0.0F;
 };
 
 struct EvalRunnerResult {

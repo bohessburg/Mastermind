@@ -846,6 +846,11 @@ EvalRunner::EvalRunner(const EvalRunnerConfig& config)
     if (!valid_determinize_mode(config_.determinize)) {
         throw std::invalid_argument("EvalRunnerConfig.determinize is invalid");
     }
+    if (!std::isfinite(config_.terminal_margin_scale) || config_.terminal_margin_scale < 0.0F
+        || !std::isfinite(config_.terminal_margin_alpha) || config_.terminal_margin_alpha < 0.0F
+        || config_.terminal_margin_alpha > 1.0F) {
+        throw std::invalid_argument("EvalRunnerConfig terminal margin settings are invalid");
+    }
     if (config_.fixed_setup.num_players == 0U) {
         config_.fixed_setup = default_fixed_setup();
     }
@@ -860,6 +865,8 @@ EvalRunner::EvalRunner(const EvalRunnerConfig& config)
     mcts_config_.max_tree_nodes = config_.max_tree_nodes == 0U ? 4096U : config_.max_tree_nodes;
     mcts_config_.rollout_policy = MctsRolloutPolicy::External;
     mcts_config_.prune_treasure_plays = config_.prune_treasure_plays;
+    mcts_config_.terminal_margin_scale = config_.terminal_margin_scale;
+    mcts_config_.terminal_margin_alpha = config_.terminal_margin_alpha;
 
     scaffold_mcts_config_ = make_scaffold_mcts_config(
         config_.sims_per_move,

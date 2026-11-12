@@ -375,6 +375,12 @@ class TrainConfig:
     # head-to-head, instead of in the trainer after it. Same games and same
     # decision; the gate only waits for what is left of them.
     gate_third_party_background: bool = False
+    # Stop rule: end the run cleanly once this many generations in a row have
+    # failed to replace the best. The trainer writes a STOPPED marker into
+    # checkpoint_dir, exits 0 and refuses to resume while the marker exists.
+    # Zero disables it. The streak is generation - best_generation, so it
+    # survives restarts.
+    stop_after_rejections: int = 0
     checkpoint_dir: str = "checkpoints"
     metrics_csv: str = "checkpoints/metrics.csv"
     # KataGo-style decomposed terminal-margin supervision. Zero preserves the
@@ -420,6 +426,26 @@ def validate_value_target_config(config: SelfPlayConfig) -> None:
     alpha = float(alpha)
     if not math.isfinite(alpha) or not 0.0 <= alpha <= 1.0:
         raise ValueError("margin_blend_alpha must be a finite number between zero and one")
+
+
+def terminal_margin_settings(selfplay: Any) -> tuple[float, float]:
+    """(scale, alpha) that search must score terminal nodes with for a network
+    trained under ``selfplay`` (a SelfPlayConfig or its checkpoint dict).
+
+    Mirrors SelfPlayRunner: a margin-trained value head outputs graded wins
+    (0.5 to 1.0), so every search over that network -- self-play, gate, eval,
+    arena -- has to grade terminal nodes the same way. (0.0, 0.0) is the
+    legacy +-1 and is right only for outcome targets.
+    """
+    if selfplay is None:
+        return 0.0, 0.0
+    get = selfplay.get if isinstance(selfplay, dict) else lambda key, default: getattr(selfplay, key, default)
+    target = str(get("value_target", "outcome")).lower()
+    if not bool(get("scaled_terminal_values", False)) or target in ("outcome", "winloss"):
+        return 0.0, 0.0
+    scale = float(get("margin_scale", 20.0))
+    alpha = float(get("margin_blend_alpha", 0.6)) if target == "margin_blend" else 0.0
+    return scale, alpha
 
 
 def validate_c_puct_config(config: SelfPlayConfig) -> None:
@@ -785,6 +811,9 @@ GATE_MODES = ("legacy", "paired")
 def validate_gate_config(config: TrainConfig) -> None:
     if config.gate_mode not in GATE_MODES:
         raise ValueError(f"gate_mode must be one of {GATE_MODES}, got {config.gate_mode!r}")
+    stop_after = config.stop_after_rejections
+    if not isinstance(stop_after, int) or isinstance(stop_after, bool) or stop_after < 0:
+        raise ValueError("stop_after_rejections must be a non-negative integer")
     if config.gate_mode != "paired" or int(config.gate_games) <= 0:
         return
     if int(config.gate_games) % 2 != 0 or int(config.gate_games) < 4:

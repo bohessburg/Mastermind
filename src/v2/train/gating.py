@@ -33,6 +33,7 @@ from .config import (
     SCRIPTED_OPPONENT_KINDS,
     SelfPlayConfig,
     TrainConfig,
+    terminal_margin_settings,
     validate_deep_slice_config,
     validate_gate_config,
 )
@@ -1298,6 +1299,8 @@ def third_party_eval_kwargs(config: TrainConfig) -> dict[str, Any]:
         prune_treasure_plays=config.selfplay.prune_treasure_plays,
         obs_version=config.selfplay.obs_version,
         honest=bool(config.eval.eval_honest),
+        terminal_margin_scale=terminal_margin_settings(config.selfplay)[0],
+        terminal_margin_alpha=terminal_margin_settings(config.selfplay)[1],
     )
 
 

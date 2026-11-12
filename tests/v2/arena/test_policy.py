@@ -120,3 +120,48 @@ def test_arena_policy_loader_auto_shims_legacy_checkpoint(
         "compatibility shim on generation 2 engine"
     )
     assert [record.getMessage() for record in caplog.records].count(expected) == 1
+
+
+def test_policy_searches_on_the_terminal_scale_the_checkpoint_was_trained_on(tmp_path: Path) -> None:
+    plain = load_policy(_checkpoint(tmp_path / "plain"))
+    assert (plain.terminal_margin_scale, plain.terminal_margin_alpha) == (0.0, 0.0)
+
+    config = TrainConfig()
+    config.device = "cpu"
+    config.checkpoint_dir = str(tmp_path / "margin")
+    config.metrics_csv = str(tmp_path / "margin" / "metrics.csv")
+    config.model.hidden_sizes = [8]
+    config.selfplay.obs_version = 2
+    config.selfplay.value_target = "margin"
+    config.selfplay.scaled_terminal_values = True
+    config.selfplay.margin_scale = 20.0
+    model, optimizer, replay = build_objects(config, torch.device("cpu"))
+    policy = load_policy(save_checkpoint(config, 1, model, optimizer, replay))
+    assert (policy.terminal_margin_scale, policy.terminal_margin_alpha) == (20.0, 0.0)
+
+
+def test_arena_search_hands_the_terminal_scale_to_the_native_searcher(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.v2.arena.bot import policy as policy_module
+
+    policy = load_policy(_checkpoint(tmp_path))
+    policy.terminal_margin_scale = 20.0
+    policy.terminal_margin_alpha = 0.25
+    seen: list[dict] = []
+    real = dz.DecisionSearcher
+
+    def capture(game, seat, config):
+        seen.append(dict(config))
+        return real(game, seat, config)
+
+    monkeypatch.setattr(policy_module.dz, "DecisionSearcher", capture)
+    kingdom = ["Village", "Smithy", "Market", "Festival", "Laboratory", "Cellar", "Chapel", "Militia", "Witch", "Moat"]
+    game = dz.new_game(dz.Setup(players=2, kingdom=kingdom), 5)
+    seat = int(game.current_decision()["player"])
+    action = policy_module.choose_nnmcts_action(game, seat, policy, sims=4, determinizations=1)
+
+    assert bool(game.legal_mask()[action])
+    assert seen[0]["terminal_margin_scale"] == 20.0
+    assert seen[0]["terminal_margin_alpha"] == 0.25

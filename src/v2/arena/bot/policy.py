@@ -37,6 +37,10 @@ class NNPolicy:
     device: str
     encoder_generation: int
     obs_transform: Callable[[Any], Any] | None = None
+    # Terminal-node scale the checkpoint's value head was trained on (zero is
+    # the legacy +-1); read from the checkpoint by load_policy.
+    terminal_margin_scale: float = 0.0
+    terminal_margin_alpha: float = 0.0
 
     def transform_observations(self, observations: Any) -> Any:
         """Apply the policy's checkpoint-specific input compatibility layer."""
@@ -97,6 +101,7 @@ def load_policy(
 
     try:
         import torch
+        from src.v2.train.config import terminal_margin_settings
         from src.v2.train.model import build_model
     except ImportError as error:
         raise NNCheckpointError("neural-network bot requires PyTorch") from error
@@ -138,6 +143,9 @@ def load_policy(
         arch = model_config.get("arch", "mlp")
 
         selfplay_config = config.get("selfplay")
+        terminal_margin_scale, terminal_margin_alpha = terminal_margin_settings(
+            selfplay_config if isinstance(selfplay_config, dict) else None
+        )
         if isinstance(selfplay_config, dict) and "obs_version" in selfplay_config:
             checkpoint_obs_version = int(selfplay_config["obs_version"])
             if checkpoint_obs_version not in (1, 2, 3):
@@ -208,6 +216,8 @@ def load_policy(
         device=device,
         encoder_generation=checkpoint_generation,
         obs_transform=_legacy_obs_transform(obs_version) if use_legacy_shim else None,
+        terminal_margin_scale=terminal_margin_scale,
+        terminal_margin_alpha=terminal_margin_alpha,
     )
 
 
@@ -251,6 +261,11 @@ def choose_nnmcts_action(
             # 2026-07-11 eval-flag bug in docs/training-log.md).
             "auto_play_treasures": True,
             "prune_treasure_plays": True,
+            # A margin-trained value head grades wins 0.5 to 1.0; terminal
+            # nodes must be on that scale or any game-ending win outranks
+            # every better-scoring line (c29 arena: self-bought Curses).
+            "terminal_margin_scale": float(policy.terminal_margin_scale),
+            "terminal_margin_alpha": float(policy.terminal_margin_alpha),
             # State-derived seeding also makes replay/undo decisions stable.
             "seed": (
                 int(game.state_hash()) ^ ((seat + 1) * 0x9E3779B97F4A7C15)

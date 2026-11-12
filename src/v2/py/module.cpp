@@ -1043,6 +1043,18 @@ struct PyDecisionSearcher {
             && py::cast<bool>(config["auto_play_treasures"]);
         const bool prune_treasure_plays = config.contains("prune_treasure_plays")
             && py::cast<bool>(config["prune_treasure_plays"]);
+        // Terminal nodes on the value head's training scale; zero is +-1.
+        const float terminal_margin_scale = config.contains("terminal_margin_scale")
+            ? py::cast<float>(config["terminal_margin_scale"])
+            : 0.0F;
+        const float terminal_margin_alpha = config.contains("terminal_margin_alpha")
+            ? py::cast<float>(config["terminal_margin_alpha"])
+            : 0.0F;
+        if (!std::isfinite(terminal_margin_scale) || terminal_margin_scale < 0.0F
+            || !std::isfinite(terminal_margin_alpha) || terminal_margin_alpha < 0.0F
+            || terminal_margin_alpha > 1.0F) {
+            throw std::invalid_argument("DecisionSearcher config terminal margin settings are invalid");
+        }
         if (sims == 0U) {
             throw std::invalid_argument("DecisionSearcher config sims must be positive");
         }
@@ -1084,6 +1096,8 @@ struct PyDecisionSearcher {
         mcts_config.rollout_policy = MctsRolloutPolicy::External;
         mcts_config.rollout_seed = seed;
         mcts_config.prune_treasure_plays = prune_treasure_plays;
+        mcts_config.terminal_margin_scale = terminal_margin_scale;
+        mcts_config.terminal_margin_alpha = terminal_margin_alpha;
 
         const std::uint32_t base_sims = sims / determinizations;
         const std::uint32_t extra_sims = sims % determinizations;
@@ -2426,7 +2440,9 @@ PYBIND11_MODULE(dominion_v2_py, module) {
             const std::string& c_puct_schedule,
             float c_puct_init,
             float c_puct_base,
-            SelfPlayDeterminizeMode determinize) {
+            SelfPlayDeterminizeMode determinize,
+            float terminal_margin_scale,
+            float terminal_margin_alpha) {
             EvalRunnerConfig config{};
             config.n_games = n_games;
             config.sims_per_move = sims_per_move;
@@ -2445,6 +2461,8 @@ PYBIND11_MODULE(dominion_v2_py, module) {
             config.prune_treasure_plays = prune_treasure_plays;
             config.obs_version = parse_obs_version(obs_version);
             config.determinize = determinize;
+            config.terminal_margin_scale = terminal_margin_scale;
+            config.terminal_margin_alpha = terminal_margin_alpha;
             if (!kingdom.is_none()) {
                 PySetup setup(2, kingdom, false);
                 config.fixed_setup = setup.setup;
@@ -2468,7 +2486,9 @@ PYBIND11_MODULE(dominion_v2_py, module) {
             py::arg("c_puct_schedule") = "fixed",
             py::arg("c_puct_init") = 1.25F,
             py::arg("c_puct_base") = 19652.0F,
-            py::arg("determinize") = SelfPlayDeterminizeMode::Off)
+            py::arg("determinize") = SelfPlayDeterminizeMode::Off,
+            py::arg("terminal_margin_scale") = 0.0F,
+            py::arg("terminal_margin_alpha") = 0.0F)
         .def_readwrite("n_games", &EvalRunnerConfig::n_games)
         .def_readwrite("sims_per_move", &EvalRunnerConfig::sims_per_move)
         .def_readwrite("c_puct", &EvalRunnerConfig::c_puct)
@@ -2495,7 +2515,9 @@ PYBIND11_MODULE(dominion_v2_py, module) {
         .def_readwrite("retain_finished_games", &EvalRunnerConfig::retain_finished_games)
         .def_readwrite("auto_play_treasures", &EvalRunnerConfig::auto_play_treasures)
         .def_readwrite("prune_treasure_plays", &EvalRunnerConfig::prune_treasure_plays)
-        .def_readwrite("determinize", &EvalRunnerConfig::determinize);
+        .def_readwrite("determinize", &EvalRunnerConfig::determinize)
+        .def_readwrite("terminal_margin_scale", &EvalRunnerConfig::terminal_margin_scale)
+        .def_readwrite("terminal_margin_alpha", &EvalRunnerConfig::terminal_margin_alpha);
 
     py::class_<EvalRunner>(module, "EvalRunner")
         .def(py::init<const EvalRunnerConfig&>(), py::arg("config"))

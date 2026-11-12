@@ -86,3 +86,24 @@ def test_fixed_tiny_network_decision_search_is_deterministic_and_legal() -> None
 
     assert first == second
     assert bool(game.legal_mask()[first])
+
+
+def test_decision_searcher_takes_the_trained_terminal_scale() -> None:
+    game = _scripted_position()
+    perspective = int(game.current_decision()["player"])
+    base = {"sims": 8, "c_puct": 1.25, "determinizations": 1, "seed": 7}
+
+    dz.DecisionSearcher(game, perspective, {**base, "terminal_margin_scale": 20.0, "terminal_margin_alpha": 0.0})
+    dz.DecisionSearcher(game, perspective, {**base, "terminal_margin_scale": 20.0, "terminal_margin_alpha": 0.6})
+    for bad in (
+        {"terminal_margin_scale": -1.0},
+        {"terminal_margin_scale": float("nan")},
+        {"terminal_margin_scale": 20.0, "terminal_margin_alpha": 1.5},
+        {"terminal_margin_scale": 20.0, "terminal_margin_alpha": -0.1},
+    ):
+        try:
+            dz.DecisionSearcher(game, perspective, {**base, **bad})
+        except ValueError as error:
+            assert "terminal margin" in str(error)
+        else:
+            raise AssertionError(f"invalid terminal settings were accepted: {bad}")

@@ -19,13 +19,13 @@ except ModuleNotFoundError as exc:  # pragma: no cover - gives a clearer CLI err
 if __package__ in (None, ""):
     sys.path.append(str(Path(__file__).resolve().parents[3]))
     from src.v2.encoder_compat import require_native_runner_encoder_compatibility
-    from src.v2.train.config import TrainConfig, _merge_dataclass
+    from src.v2.train.config import TrainConfig, _merge_dataclass, terminal_margin_settings
     from src.v2.train.model import build_model, count_parameters
     from src.v2.train.observation import obs_size_for_version, obs_version_for_checkpoint
     from src.v2.train.train import load_full_checkpoint, seed_everything, select_device
 else:
     from src.v2.encoder_compat import require_native_runner_encoder_compatibility
-    from .config import TrainConfig, _merge_dataclass
+    from .config import TrainConfig, _merge_dataclass, terminal_margin_settings
     from .model import build_model, count_parameters
     from .observation import obs_size_for_version, obs_version_for_checkpoint
     from .train import load_full_checkpoint, seed_everything, select_device
@@ -205,6 +205,8 @@ def make_eval_runner_config(
     c_puct_init: float = 1.25,
     c_puct_base: float = 19652.0,
     honest: bool = False,
+    terminal_margin_scale: float = 0.0,
+    terminal_margin_alpha: float = 0.0,
 ):
     parallel_games = max(1, min(int(n_games), int(games)))
     return dz.EvalRunnerConfig(
@@ -226,6 +228,8 @@ def make_eval_runner_config(
         prune_treasure_plays=bool(prune_treasure_plays),
         obs_version=int(obs_version),
         determinize=_eval_determinize_mode(bool(honest)),
+        terminal_margin_scale=float(terminal_margin_scale),
+        terminal_margin_alpha=float(terminal_margin_alpha),
     )
 
 
@@ -250,6 +254,8 @@ def evaluate_model(
     prune_treasure_plays: bool = False,
     obs_version: int = 1,
     honest: bool = False,
+    terminal_margin_scale: float = 0.0,
+    terminal_margin_alpha: float = 0.0,
 ) -> EvalStats:
     if fixed_kingdom is None:
         fixed_kingdom = [
@@ -283,6 +289,8 @@ def evaluate_model(
             c_puct_init=c_puct_init,
             c_puct_base=c_puct_base,
             honest=honest,
+            terminal_margin_scale=terminal_margin_scale,
+            terminal_margin_alpha=terminal_margin_alpha,
         )
     )
     model.eval()
@@ -410,7 +418,14 @@ def evaluate_checkpoint(
     prune_treasure_plays: bool | None = None,
     honest: bool = False,
     legacy_shim: bool = False,
+    scaled_terminals: bool | None = None,
 ) -> EvalStats:
+    """Evaluate a checkpoint against a scripted opponent.
+
+    ``scaled_terminals`` None (default) scores terminal search nodes the way
+    the checkpoint's own self-play did (graded by margin for a margin-trained
+    value head); False forces the legacy +-1 that every eval before c30 used.
+    """
     device = select_device(device_name)
     seed_everything(seed, deterministic=device.type == "cpu")
     model, cfg = load_model(checkpoint, device, legacy_shim=legacy_shim)
@@ -418,6 +433,9 @@ def evaluate_checkpoint(
         auto_play_treasures = cfg.selfplay.auto_play_treasures
     if prune_treasure_plays is None:
         prune_treasure_plays = cfg.selfplay.prune_treasure_plays
+    terminal_margin_scale, terminal_margin_alpha = (
+        (0.0, 0.0) if scaled_terminals is False else terminal_margin_settings(cfg.selfplay)
+    )
     return evaluate_model(
         model,
         opponent=opponent,
@@ -438,6 +456,8 @@ def evaluate_checkpoint(
         prune_treasure_plays=prune_treasure_plays,
         obs_version=cfg.selfplay.obs_version,
         honest=honest,
+        terminal_margin_scale=terminal_margin_scale,
+        terminal_margin_alpha=terminal_margin_alpha,
     )
 
 
@@ -485,6 +505,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--prune-treasure-plays", action=argparse.BooleanOptionalAction, default=None)
     parser.add_argument("--honest", action="store_true", help="sample an honest hidden-information root per NN decision")
     parser.add_argument(
+        "--legacy-terminals",
+        action="store_true",
+        help="score terminal search nodes +-1 even for a margin-trained checkpoint (every eval before c30)",
+    )
+    parser.add_argument(
         "--legacy-shim",
         action="store_true",
         help="native EvalRunner cannot apply this shim; legacy checkpoints require a generation-1 build",
@@ -510,6 +535,9 @@ def main(argv: list[str] | None = None) -> int:
         if args.prune_treasure_plays is None
         else args.prune_treasure_plays
     )
+    terminal_margin_scale, terminal_margin_alpha = (
+        (0.0, 0.0) if args.legacy_terminals else terminal_margin_settings(cfg.selfplay)
+    )
     print(
         json.dumps(
             {
@@ -520,6 +548,7 @@ def main(argv: list[str] | None = None) -> int:
                 "kingdoms": args.kingdoms,
                 "honest": bool(args.honest),
                 "legacy_shim": bool(args.legacy_shim),
+                "terminal_margin_scale": terminal_margin_scale,
             },
             sort_keys=True,
         )
@@ -549,6 +578,8 @@ def main(argv: list[str] | None = None) -> int:
                     prune_treasure_plays=prune_treasure_plays,
                     obs_version=cfg.selfplay.obs_version,
                     honest=args.honest,
+                    terminal_margin_scale=terminal_margin_scale,
+                    terminal_margin_alpha=terminal_margin_alpha,
                 )
             )
     else:
@@ -573,6 +604,8 @@ def main(argv: list[str] | None = None) -> int:
                 prune_treasure_plays=prune_treasure_plays,
                 obs_version=cfg.selfplay.obs_version,
                 honest=args.honest,
+                terminal_margin_scale=terminal_margin_scale,
+                terminal_margin_alpha=terminal_margin_alpha,
             )
         )
     print_table(rows)
