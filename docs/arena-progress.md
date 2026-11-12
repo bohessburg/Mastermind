@@ -457,6 +457,12 @@ rebuilt, so the shuffle rig above is now live, preflight was green (197 arena
 tests, dry run 3/3), and the arena was relaunched on c31 gen 6
 (`checkpoints/remote/campaign31/gen_0006.pt`). Ledger at restart: 413 rows.
 
+Restart, 2026-11-12 21:40 UTC: c31 gen 12 was promoted at 21:32, so the gen 6
+session (`exports/arena/20261112T185558.028777Z`) was stopped the same way
+after game 14, exit 0, no abort. It ended 8-6-0. Preflight green (197 arena
+tests, dry run 3/3), no engine change, relaunched on c31 gen 12
+(`checkpoints/remote/campaign31/gen_0012.pt`). Ledger at restart: 427 rows.
+
 ## Status by phase
 
 - **P0 — Recording harness: complete (2026-07-24).**
