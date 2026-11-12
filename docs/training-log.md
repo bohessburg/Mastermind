@@ -3172,3 +3172,11 @@ Gen 6 is c31's first promotion (12:35 UTC), after five rejections that
 averaged 0.4999. Its engine3 eval started on accept. Checkpoint copied to
 `checkpoints/remote/campaign31/gen_0006.pt` (sha256 `50bf76c2...35fa83`) and
 `configs/arena_c29.json` points at it from the next arena launch.
+
+Box outage (2026-11-12): the vast box stopped answering ssh at about 13:09
+UTC, with gen 7's gate at 604 of 800 games. Jack confirmed the host machine
+is not responding. Still unreachable at 17:09 UTC. Gen 7's result, gen 6's
+engine3 eval, the replay buffer, `metrics.csv` and the gen 5 ladder file
+exist only on the box. Local copy of the best checkpoint is gen 6. If the
+host does not come back, c31 restarts from gen 6 on a replacement box with
+an empty buffer.
