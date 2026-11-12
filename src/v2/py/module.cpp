@@ -67,6 +67,8 @@ struct PySetup {
 
 struct PyGame {
     GameState state{};
+    // Prescriptions for the next reshuffles; never copied by clone().
+    ShuffleRig shuffle_rig{};
 };
 
 struct PyScriptedBot {
@@ -1795,7 +1797,14 @@ PYBIND11_MODULE(dominion_v2_py, module) {
             bool done = false;
             {
                 py::gil_scoped_release release;
+                const bool rigged = self.shuffle_rig.next < self.shuffle_rig.count;
+                if (rigged) {
+                    install_shuffle_rig(&self.shuffle_rig);
+                }
                 done = Game::step(self.state, action);
+                if (rigged) {
+                    install_shuffle_rig(nullptr);
+                }
             }
             return done;
         })
@@ -1852,6 +1861,43 @@ PYBIND11_MODULE(dominion_v2_py, module) {
                 std::span<const DefId>(defs.data(), defs.size()));
         }, py::arg("player"), py::arg("defs"),
            "Move the named cards from the discard pile to the bottom of the deck.")
+        .def("rig_shuffles", [](PyGame& self, int player, const py::sequence& shuffles) {
+            if (!valid_player(self.state, player)) {
+                throw std::invalid_argument("invalid player");
+            }
+            if (py::len(shuffles) > static_cast<std::size_t>(ShuffleRig::MAX_SHUFFLES)) {
+                throw std::invalid_argument("too many shuffles to rig");
+            }
+            ShuffleRig rig{};
+            rig.player = static_cast<PlayerId>(player);
+            for (const py::handle shuffle : shuffles) {
+                const py::sequence cards = py::reinterpret_borrow<py::sequence>(shuffle);
+                if (py::len(cards) > static_cast<std::size_t>(MAX_DECK_CARDS)) {
+                    throw std::invalid_argument("rigged shuffle is larger than a deck");
+                }
+                std::uint8_t size = 0;
+                for (const py::handle item : cards) {
+                    const DefId def = parse_def(item);
+                    if (slot_of(self.state, def) == NONE) {
+                        throw std::invalid_argument(
+                            "rigged shuffle contains a def absent from the game");
+                    }
+                    rig.cards[rig.count][size++] = def;
+                }
+                rig.sizes[rig.count++] = size;
+            }
+            self.shuffle_rig = rig;
+        }, py::arg("player"), py::arg("shuffles"),
+           "Prescribe the top cards, in draw order, of the player's next reshuffles "
+           "during step(). Replaces any earlier prescription.")
+        .def("clear_shuffle_rig", [](PyGame& self) {
+            py::dict status;
+            status["consumed"] = static_cast<int>(self.shuffle_rig.next);
+            status["pending"] = static_cast<int>(self.shuffle_rig.count - self.shuffle_rig.next);
+            status["failed"] = self.shuffle_rig.failed != 0U;
+            self.shuffle_rig = ShuffleRig{};
+            return status;
+        }, "Remove the shuffle prescriptions and report how many reshuffles used one.")
         .def("validate", [](const PyGame& self) {
             validate_game(self.state);
             return true;

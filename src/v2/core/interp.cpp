@@ -49,6 +49,43 @@ void shuffle_zone(OrderedZone& zone, Xoshiro256pp& rng) noexcept {
     }
 }
 
+thread_local ShuffleRig* t_shuffle_rig = nullptr;
+
+void apply_shuffle_rig(
+    ShuffleRig& rig,
+    const GameState& state,
+    PlayerId player_id,
+    OrderedZone& deck) noexcept {
+    if (rig.player != player_id || rig.next >= rig.count) {
+        return;
+    }
+    const std::uint8_t wanted = rig.sizes[rig.next];
+    const DefId* cards = rig.cards[rig.next];
+    ++rig.next;
+    if (wanted > deck.size) {
+        rig.failed = 1U;
+        return;
+    }
+    // The deck's top is its last element, so draw position i is size - 1 - i.
+    for (std::uint8_t i = 0; i < wanted; ++i) {
+        const Slot slot = slot_of(state, cards[i]);
+        const int target = static_cast<int>(deck.size) - 1 - static_cast<int>(i);
+        int found = -1;
+        for (int j = target; j >= 0; --j) {
+            if (deck.cards[j] == slot) {
+                found = j;
+                break;
+            }
+        }
+        if (slot == NONE || found < 0) {
+            rig.failed = 1U;
+            return;
+        }
+        deck.cards[found] = deck.cards[target];
+        deck.cards[target] = slot;
+    }
+}
+
 void reshuffle_discard_into_deck(GameState& state, PlayerId player_id) noexcept {
     PlayerState& player = state.players[player_id];
     if (player.discard.size == 0U) {
@@ -61,6 +98,9 @@ void reshuffle_discard_into_deck(GameState& state, PlayerId player_id) noexcept 
     player.deck.size = player.discard.size;
     player.discard.size = 0;
     shuffle_zone(player.deck, state.rng);
+    if (ShuffleRig* rig = t_shuffle_rig; rig != nullptr) [[unlikely]] {
+        apply_shuffle_rig(*rig, state, player_id, player.deck);
+    }
     if (!trigger_table_clean_empty(state)) {
         emit(state, TriggerKind::OnShuffle, TriggerPayload{player_id, 0, NONE, 0U});
     }
@@ -1139,6 +1179,10 @@ void resume_trigger_order(GameState& state, Action action) noexcept {
 }
 
 } // namespace
+
+void install_shuffle_rig(ShuffleRig* rig) noexcept {
+    t_shuffle_rig = rig;
+}
 
 Slot take_deck_top_slot(GameState& state, PlayerId player) noexcept {
     return take_deck_top_slot_impl(state, player);

@@ -417,9 +417,37 @@ the feed showed Moat and Village drawn. The tracker did not count the Moat
 just discarded as part of that shuffle. The game has no ledger row and its
 outcome is unknown. Archive:
 `exports/arena/20261111T231744.478115Z/20261112T085916.005746Z-game-185844266`.
-Cause not investigated yet. That session ended 24-27-2 on c29 gen 43; the
-arena was restarted on c30 gen 4 (`checkpoints/remote/campaign30/gen_0004.pt`)
-with a rebuilt engine module.
+That session ended 24-27-2 on c29 gen 43; the arena was restarted on c30
+gen 4 (`checkpoints/remote/campaign30/gen_0004.pt`) with a rebuilt engine
+module.
+
+Fix for that abort (2026-11-12), the case left open under the fourteenth
+abort. The turn rebuild at a shuffle started from the last clean question
+with deck and discard pile merged. The Moat was in hand at that question, so
+no replay of the turn could deal it out of the merged pool. The rebuild is
+gone (`_rebuild_turn_after_shuffle`, `_return_shuffled_discards`,
+`_deck_source_sequence`, the turn history). The live shadow now takes the
+step itself: the interpreter reshuffles at the same point as the client, with
+whatever is in its discard pile by then, and the bridge only tells it which
+cards come out on top. `_local_shuffle_draws` reads those from the events
+(the draw after a Shuffle event still holds the old deck's last cards, which
+are not part of the shuffled order), `Game.rig_shuffles` installs them, and
+`Game.clear_shuffle_rig` reports whether the reshuffle happened and could
+supply them. Natively this is `ShuffleRig` / `install_shuffle_rig` in
+`core/interp`: the shuffle runs first, so the RNG stream is the same with or
+without a rig, then the prescribed cards are swapped to the top. A failed or
+unused prescription is a `BridgeError`, forgiven as before only when the next
+question rebuilds the shadow from the tracker. Tests:
+`test_card_discarded_from_hand_and_redrawn_over_a_shuffle_does_not_abort`,
+`test_local_shuffle_draws_separate_the_old_deck_from_the_shuffled_cards`,
+`test_shadow_reshuffle_that_cannot_supply_the_observed_draw_is_an_error`, and
+the native `v2 shuffle rig prescribes the top of the reshuffled deck`.
+`Game.return_discards_to_deck` stays bound but the arena no longer calls it.
+All 435 archived games were replayed through the old and the new loop: the
+only game whose outcome changed is 185844266, which no longer aborts, and
+the shadow's hand, deck count and discard count agree with the tracker at
+the same questions in both. Deployed at the next arena restart: the running
+process holds the old module, and `build/` is rebuilt only while it is down.
 
 ## Status by phase
 

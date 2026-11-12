@@ -1,6 +1,7 @@
 #include "v2/core/actions.h"
 #include "v2/core/defs.h"
 #include "v2/core/game.h"
+#include "v2/core/interp.h"
 #include "v2/core/moves.h"
 #include "v2/core/setup.h"
 #include "v2/core/state_builder.h"
@@ -457,6 +458,76 @@ TEST_CASE(
     CHECK(player.deck.cards[0] == gold);
     CHECK(player.deck.cards[player.deck.size - 1U] == top_before);
     validate_game(state);
+}
+
+TEST_CASE(
+    "v2 shuffle rig prescribes the top of the reshuffled deck",
+    "[v2][state-builder]") {
+    GameState state = Game::new_game(builder_setup(), 0xD3C0'0003ULL);
+    PlayerState& player = state.players[0];
+    draw_cards(state, 0U, player.deck.size);
+    REQUIRE(player.deck.size == 0U);
+    const Slot gold = slot_of(state, DEF_GOLD);
+    const Slot silver = slot_of(state, DEF_SILVER);
+    const Slot duchy = slot_of(state, DEF_DUCHY);
+    for (int i = 0; i < 4; ++i) {
+        REQUIRE(do_gain(state, 0U, gold, GainDestination::Discard));
+        REQUIRE(do_gain(state, 0U, duchy, GainDestination::Discard));
+    }
+    REQUIRE(do_gain(state, 0U, silver, GainDestination::Discard));
+    const GameState before = state;
+
+    GameState unrigged = before;
+    draw_cards(unrigged, 0U, 3U);
+
+    ShuffleRig rig{};
+    rig.player = 0U;
+    rig.count = 1U;
+    rig.sizes[0] = 3U;
+    rig.cards[0][0] = DEF_SILVER;
+    rig.cards[0][1] = DEF_DUCHY;
+    rig.cards[0][2] = DEF_SILVER;  // only one Silver was shuffled in
+    GameState impossible = before;
+    install_shuffle_rig(&rig);
+    draw_cards(impossible, 0U, 3U);
+    install_shuffle_rig(nullptr);
+    CHECK(rig.next == 1U);
+    CHECK(rig.failed == 1U);
+
+    rig = ShuffleRig{};
+    rig.player = 0U;
+    rig.count = 1U;
+    rig.sizes[0] = 3U;
+    rig.cards[0][0] = DEF_SILVER;
+    rig.cards[0][1] = DEF_DUCHY;
+    rig.cards[0][2] = DEF_DUCHY;
+    install_shuffle_rig(&rig);
+    draw_cards(state, 0U, 2U);
+    install_shuffle_rig(nullptr);
+
+    CHECK(rig.next == 1U);
+    CHECK(rig.failed == 0U);
+    CHECK(player.discard.size == 0U);
+    REQUIRE(player.deck.size == 7U);
+    CHECK(player.hand[silver] == before.players[0].hand[silver] + 1U);
+    CHECK(player.hand[duchy] == before.players[0].hand[duchy] + 1U);
+    CHECK(player.deck.cards[player.deck.size - 1U] == duchy);
+    // The rig reorders after the shuffle, so the RNG stream is untouched.
+    CHECK(std::memcmp(&state.rng, &unrigged.rng, sizeof(state.rng)) == 0);
+    validate_game(state);
+
+    // Another player's reshuffle, or one with no prescription left, is not rigged.
+    GameState plain = before;
+    rig = ShuffleRig{};
+    rig.player = 1U;
+    rig.count = 1U;
+    rig.sizes[0] = 1U;
+    rig.cards[0][0] = DEF_SILVER;
+    install_shuffle_rig(&rig);
+    draw_cards(plain, 0U, 3U);
+    install_shuffle_rig(nullptr);
+    CHECK(rig.next == 0U);
+    CHECK(std::memcmp(&plain, &unrigged, sizeof(GameState)) == 0);
 }
 
 TEST_CASE(

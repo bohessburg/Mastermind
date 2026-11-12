@@ -42,16 +42,18 @@ from src.v2.arena.fsm.game import (
 from src.v2.arena.protocol.events import (
     DecisionResolved,
     Discard,
+    Draw,
     GameEnd,
     GameStart,
     PendingDecision,
     Play,
     ResourceUpdate,
+    Shuffle,
     UnknownFrame,
 )
 from src.v2.arena.protocol.messages import ANSWER_QUESTION, encode_answer
 from src.v2.arena.protocol.recording import parse_recording
-from src.v2.arena.shadow.bridge import game_from_snapshot
+from src.v2.arena.shadow.bridge import BridgeError, game_from_snapshot
 from src.v2.arena.shadow.tracker import (
     PendingDecisionSnapshot,
     Tracker,
@@ -2312,21 +2314,122 @@ def test_cards_discarded_before_a_mid_turn_shuffle_return_to_the_shadow_deck() -
     assert int(shadow.current_decision()["source"]) == int(dz.def_id("Cellar"))
 
 
-def test_shuffle_rebuild_without_the_discard_return_reproduces_the_abort(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(
-        game_module,
-        "_return_shuffled_discards",
-        lambda game, seat, events: None,
-    )
-    provider, results = _replay_throned_cellar_game()
+def _shadow_hand_names(shadow: Any, snapshot: TrackerSnapshot) -> dict[str, int]:
+    seat = snapshot.seats[snapshot.our_seat]
+    names = {
+        int(dz.def_id(name)): name
+        for name, _ in (*seat.hand, *seat.deck, *seat.discard)
+    }
+    return {
+        names[int(def_id)]: int(count)
+        for def_id, count in shadow.hand(snapshot.our_seat).items()
+        if int(count)
+    }
 
-    assert [result.divergence_aborted for result in results] == [True]
-    assert ACTION_QUESTION_AFTER_THRONED_CELLAR not in provider.seen
-    report = results[0].divergence_report
-    assert report is not None
-    assert "deck counts differ before rigged step: 12 vs 15" in report.message
+
+RESHUFFLED_HAND_CARD_ARCHIVE = Path(
+    "exports/arena/20261111T231744.478115Z/frames.jsonl"
+)
+RESHUFFLED_HAND_CARD_GAME_ID = 185844266
+SECOND_CELLAR_AFTER_RESHUFFLE_QUESTION = 175
+
+
+def _replay_reshuffled_hand_card_game() -> tuple[
+    _RecordedReplayWithShadowLog,
+    tuple[Any, ...],
+]:
+    if not RESHUFFLED_HAND_CARD_ARCHIVE.is_file():
+        pytest.skip(f"missing live arena fixture: {RESHUFFLED_HAND_CARD_ARCHIVE}")
+    events = _events_of_game(
+        parse_recording(RESHUFFLED_HAND_CARD_ARCHIVE).events,
+        RESHUFFLED_HAND_CARD_GAME_ID,
+    )
+    provider = _RecordedReplayWithShadowLog(events)
+    results = asyncio.run(
+        run_game_loop(
+            events,
+            actuator=MockActuator(replay=True),
+            decision_provider=provider,
+        )
+    )
+    return provider, tuple(results)
+
+
+def test_card_discarded_from_hand_and_redrawn_over_a_shuffle_does_not_abort() -> None:
+    """Game 185844266: Throne Room on Cellar, the first Cellar redrew its discard.
+
+    The first Cellar discarded Chapel and Moat from hand with one Village left
+    in the deck.  Its draw took the Village, shuffled the discard pile (the
+    Moat among it) and drew that Moat back.  The shadow used to be rebuilt
+    from the last clean question with deck and discard merged, where the Moat
+    was still in hand, so the draw was "unavailable" and the game aborted with
+    "shuffle reconstruction observed unavailable 'Moat'".  The live shadow now
+    takes the step itself with its reshuffle told which cards come out on top.
+    """
+    provider, results = _replay_reshuffled_hand_card_game()
+
+    assert not any(result.divergence_aborted for result in results)
+    _, shadow, snapshot, decision = provider.seen[
+        SECOND_CELLAR_AFTER_RESHUFFLE_QUESTION
+    ]
+    seat = snapshot.seats[snapshot.our_seat]
+    assert decision.question_id == "CELLAR"
+    assert int(shadow.current_decision()["source"]) == int(dz.def_id("Cellar"))
+    assert _shadow_hand_names(shadow, snapshot) == dict(seat.hand)
+    assert dict(seat.hand)["Moat"] == 1
+    assert shadow.deck_count(snapshot.our_seat) == seat.deck_count == 3
+    assert shadow.discard_count(snapshot.our_seat) == seat.discard_count == 0
+
+
+def test_local_shuffle_draws_separate_the_old_deck_from_the_shuffled_cards() -> None:
+    """The draw after a Shuffle event still holds the old deck's last cards."""
+    if not RESHUFFLED_HAND_CARD_ARCHIVE.is_file():
+        pytest.skip(f"missing live arena fixture: {RESHUFFLED_HAND_CARD_ARCHIVE}")
+    provider, _ = _replay_reshuffled_hand_card_game()
+    _, _, snapshot, _ = provider.seen[SECOND_CELLAR_AFTER_RESHUFFLE_QUESTION - 1]
+    seat = snapshot.our_seat
+    assert dict(snapshot.seats[seat].deck) == {"Village": 1}
+
+    shuffle = Shuffle(seat=seat, included_discard=False)
+    draw = Draw(
+        seat=seat,
+        cards=("Moat", "Village"),
+        count=2,
+        from_zone="deck",
+        to_zone="hand",
+        from_zone_index=0,
+        to_zone_index=0,
+    )
+    assert game_module._local_shuffle_draws(snapshot, (shuffle, draw)) == ["Moat"]
+    with pytest.raises(BridgeError, match="undrawn"):
+        game_module._local_shuffle_draws(
+            snapshot,
+            (shuffle, replace(draw, cards=("Moat",), count=1)),
+        )
+    with pytest.raises(BridgeError, match="two local shuffles"):
+        game_module._local_shuffle_draws(snapshot, (shuffle, draw, shuffle))
+
+
+def test_shadow_reshuffle_that_cannot_supply_the_observed_draw_is_an_error() -> None:
+    with pytest.raises(BridgeError, match="could not supply"):
+        game_module._check_local_shuffle(
+            {"consumed": 1, "pending": 0, "failed": True},
+            1,
+        )
+    with pytest.raises(BridgeError, match="did not reshuffle"):
+        game_module._check_local_shuffle(
+            {"consumed": 0, "pending": 1, "failed": False},
+            1,
+        )
+    game_module._check_local_shuffle(
+        {"consumed": 1, "pending": 0, "failed": False},
+        1,
+    )
+    # An announced shuffle of an empty discard pile draws nothing new.
+    game_module._check_local_shuffle(
+        {"consumed": 0, "pending": 1, "failed": False},
+        0,
+    )
 
 
 THRONED_LIBRARY_ARCHIVE = Path("exports/arena/20261111T230432.642140Z/frames.jsonl")

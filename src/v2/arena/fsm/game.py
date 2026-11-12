@@ -162,8 +162,6 @@ class _ActiveGame:
     undo_resyncs: int = 0
     shadow: Any | None = None
     shadow_turn: tuple[int | None, int | None] | None = None
-    turn_start_snapshot: TrackerSnapshot | None = None
-    turn_history: list[_TurnStep] = field(default_factory=list)
     pending: IntendedAction | None = None
     pending_snapshot: TrackerSnapshot | None = None
     pending_plan: DecisionPlan | None = None
@@ -171,15 +169,6 @@ class _ActiveGame:
     timeout_offer: _PendingTimeoutOffer | None = None
     opponent_owes_attack_response: bool = False
     archive: GameArchive | None = None
-
-
-@dataclass(frozen=True, kw_only=True)
-class _TurnStep:
-    """A settled native plan retained for shuffle-time turn reconstruction."""
-
-    snapshot: TrackerSnapshot
-    actions: tuple[int, ...]
-    events: tuple[GameEvent, ...]
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -918,64 +907,64 @@ async def run_game_loop(
         if partial_autoplay:
             active.shadow = None
             active.shadow_turn = None
-            active.turn_start_snapshot = None
-            active.turn_history.clear()
         elif active.pending_plan.engine_actions:
-            current_step = _TurnStep(
-                snapshot=active.pending_snapshot,
-                actions=active.pending_plan.engine_actions,
-                events=tuple(active.pending_events),
-            )
             if crossed_turn_boundary:
                 # The next local decision is rebuilt authoritatively below;
                 # no stale end-of-turn interpreter state is carried forward.
                 active.shadow = None
                 active.shadow_turn = None
-                active.turn_start_snapshot = None
-                active.turn_history.clear()
-            elif _has_local_shuffle(
-                active.pending_snapshot,
-                active.pending_events,
-            ):
-                try:
-                    _rebuild_turn_after_shuffle(active, current_step)
-                except BridgeError:
-                    if not shadow_replaced:
-                        raise
-                    # The shuffle took in cards that left the hand this turn
-                    # (a Cellar discard, or the cleanup of a game that ends on
-                    # our turn), which the turn-start deck/discard pool cannot
-                    # supply.  The caller rebuilds the shadow from the tracker
-                    # next (a clean action/buy question) or never reads it
-                    # again (game end), so the replay is not needed.
-                    active.shadow = None
-                    active.shadow_turn = None
-                    active.turn_start_snapshot = None
-                    active.turn_history.clear()
-                else:
-                    active.rigged_steps += 1
             else:
-                if _rig_observed_draws(
-                    active.shadow,
+                local_shuffle = _has_local_shuffle(
                     active.pending_snapshot,
                     active.pending_events,
-                ):
-                    active.rigged_steps += 1
-                _step_actions(
-                    active.shadow,
-                    active.pending_plan.engine_actions,
-                    frame_index=frame_index,
-                    intended=active.pending,
-                    our_seat=(
-                        active.pending_snapshot.our_seat
-                        if active.pending_snapshot.turn_owner
-                        == active.pending_snapshot.our_seat
-                        else None
-                    ),
-                    events=tuple(active.pending_events),
                 )
-            if not crossed_turn_boundary:
-                active.turn_history.append(current_step)
+                try:
+                    rigged = _rig_observed_draws(
+                        active.shadow,
+                        active.pending_snapshot,
+                        active.pending_events,
+                    )
+                    prescribed = 0
+                    if local_shuffle:
+                        prescribed = _rig_local_shuffle(
+                            active.shadow,
+                            active.pending_snapshot,
+                            active.pending_events,
+                        )
+                        rigged = True
+                    try:
+                        _step_actions(
+                            active.shadow,
+                            active.pending_plan.engine_actions,
+                            frame_index=frame_index,
+                            intended=active.pending,
+                            our_seat=(
+                                active.pending_snapshot.our_seat
+                                if active.pending_snapshot.turn_owner
+                                == active.pending_snapshot.our_seat
+                                else None
+                            ),
+                            events=tuple(active.pending_events),
+                        )
+                    finally:
+                        if local_shuffle:
+                            shuffle_rig = active.shadow.clear_shuffle_rig()
+                    if local_shuffle:
+                        _check_local_shuffle(shuffle_rig, prescribed)
+                except BridgeError:
+                    if not (local_shuffle and shadow_replaced):
+                        raise
+                    # The shadow could not follow the shuffle (it happened
+                    # while the interpreter waited on the opponent, or at the
+                    # cleanup of a game that ends on our turn).  The caller
+                    # rebuilds the shadow from the tracker next (a clean
+                    # action/buy question or an opponent-turn question) or
+                    # never reads it again (game end).
+                    active.shadow = None
+                    active.shadow_turn = None
+                else:
+                    if rigged:
+                        active.rigged_steps += 1
         active.pending = None
         active.pending_snapshot = None
         active.pending_plan = None
@@ -1072,8 +1061,6 @@ async def run_game_loop(
                     )
                 active.shadow = None
                 active.shadow_turn = None
-                active.turn_start_snapshot = None
-                active.turn_history.clear()
                 active.pending = None
                 active.pending_snapshot = None
                 active.pending_plan = None
@@ -1239,8 +1226,6 @@ async def run_game_loop(
             if isinstance(event, Reconnect):
                 active.shadow = None
                 active.shadow_turn = None
-                active.turn_start_snapshot = None
-                active.turn_history.clear()
                 active.pending = None
                 active.pending_snapshot = None
                 active.pending_plan = None
@@ -1405,8 +1390,6 @@ async def run_game_loop(
             ):
                 active.shadow = game_from_snapshot(snapshot)
                 active.shadow_turn = turn_key if our_turn else None
-                active.turn_start_snapshot = snapshot if our_turn else None
-                active.turn_history.clear()
                 # The tracker state already includes everything observed.
                 events_since_answer = ()
             active.shadow.validate()
@@ -1421,13 +1404,6 @@ async def run_game_loop(
                 ),
             )
             if forced_actions:
-                active.turn_history.append(
-                    _TurnStep(
-                        snapshot=snapshot,
-                        actions=forced_actions,
-                        events=(),
-                    )
-                )
                 active.shadow.validate()
                 active.validations += 1
 
@@ -2055,182 +2031,96 @@ def _has_local_shuffle(
     )
 
 
-def _rebuild_turn_after_shuffle(
-    active: _ActiveGame,
-    current: _TurnStep,
-) -> None:
-    """Recover an exact mid-turn frame when a draw crossed a shuffle.
-
-    The binding can order the current deck but cannot order discard before the
-    interpreter shuffles it.  Rebuilding the turn with its initial deck and
-    discard pre-merged is equivalent once the first shuffle is observed, and
-    lets Python prescribe the complete observed deck-source sequence.
-    """
-    start = active.turn_start_snapshot
-    if start is None or start.our_seat is None:
-        raise BridgeError("shuffle reconstruction has no turn-start snapshot")
-    seat_index = start.our_seat
-    seat = start.seats[seat_index]
-    if seat.deck_anonymous or seat.discard_anonymous:
-        raise BridgeError("shuffle reconstruction requires exact local zones")
-
-    combined = Counter(dict(seat.deck))
-    combined.update(dict(seat.discard))
-    combined_cards = tuple(sorted(combined.items()))
-    hidden = Counter(dict(seat.hand_deck))
-    hidden.update(dict(seat.discard))
-    rebuilt_seat = replace(
-        seat,
-        deck=combined_cards,
-        deck_count=seat.deck_count + seat.discard_count,
-        deck_anonymous=0,
-        hand_deck=tuple(sorted(hidden.items())),
-        hand_deck_count=seat.hand_deck_count + seat.discard_count,
-        discard=(),
-        discard_count=0,
-        discard_anonymous=0,
-    )
-    seats = list(start.seats)
-    seats[seat_index] = rebuilt_seat
-    rebuilt_snapshot = replace(start, seats=tuple(seats))
-    game = game_from_snapshot(rebuilt_snapshot)
-
-    all_steps = (*active.turn_history, current)
-    observed = _deck_source_sequence(
-        seat_index,
-        (
-            event
-            for step in all_steps
-            for event in step.events
-        ),
-    )
-    remaining = Counter(combined)
-    for name in observed:
-        if remaining[name] <= 0:
-            raise BridgeError(
-                f"shuffle reconstruction observed unavailable {name!r}"
-            )
-        remaining[name] -= 1
-    order = [*observed, *sorted(remaining.elements())]
-    set_deck_order(game, seat_index, order)
-
-    for step in all_steps:
-        _step_actions(
-            game,
-            step.actions,
-            frame_index=current.snapshot.pending_decision.question_index
-            if current.snapshot.pending_decision is not None
-            else -1,
-            intended=None,
-            our_seat=seat_index,
-            events=step.events,
-        )
-    _return_shuffled_discards(
-        game,
-        seat_index,
-        (event for step in all_steps for event in step.events),
-    )
-    game.validate()
-    active.shadow = game
-
-
-def _return_shuffled_discards(
+def _rig_local_shuffle(
     game: Any,
-    seat: int,
+    snapshot: TrackerSnapshot,
     events: Iterable[GameEvent],
-) -> None:
-    """Put this turn's earlier discards under the deck, where the shuffle sent them.
+) -> int:
+    """Make the shadow's reshuffle deal the cards the client's one dealt.
 
-    The rebuilt turn starts with the turn-start discard pile already merged
-    into the deck.  Cards that reached the discard pile later in the turn but
-    before the shuffle (a Cellar discard, a Workshop gain) were shuffled in on
-    the client too, while the replayed shadow leaves them in its discard pile.
-    Everything in the shadow's pile that did not arrive after the shuffle
-    belongs in the deck.  Order does not matter: the cards go under the rigged
-    draws, and the next rig orders the deck from what is observed.
+    The interpreter reshuffles at the same point of the resolution as the
+    client, with whatever is in its discard pile at that moment, so cards
+    discarded earlier in the turn (a Cellar discard, a Poacher discard) are
+    available to the draw that follows.  Only the order needs prescribing.
+    Returns the number of cards prescribed.
     """
-    shuffled = False
-    arrived_after: Counter[str] = Counter()
-    for event in events:
-        if isinstance(event, Shuffle) and event.seat == seat:
-            shuffled = True
-            arrived_after.clear()
-            continue
-        if not shuffled or not isinstance(
-            event,
-            (Play, Gain, Trash, Discard, Draw, Reveal, Topdeck, ZoneTransfer),
-        ):
-            continue
-        if event.seat != seat:
-            continue
-        if event.to_zone == "discard":
-            arrived_after.update(event.cards)
-        elif event.from_zone == "discard":
-            for name in event.cards:
-                if arrived_after[name] > 0:
-                    arrived_after[name] -= 1
-    if not shuffled:
-        return
-    pile = Counter(int(card) for card in game.discard(seat))
-    stays = Counter(
-        {
-            int(dz.def_id(name)): count
-            for name, count in arrived_after.items()
-            if count > 0
-        }
-    )
-    returned = pile - stays
-    if returned:
-        game.return_discards_to_deck(seat, sorted(returned.elements()))
+    seat = snapshot.our_seat
+    if seat is None:
+        raise BridgeError("shuffle rigging has no local seat")
+    drawn = _local_shuffle_draws(snapshot, events)
+    game.rig_shuffles(seat, [[int(dz.def_id(name)) for name in drawn]])
+    return len(drawn)
 
 
-def _deck_source_sequence(
-    seat: int,
+def _local_shuffle_draws(
+    snapshot: TrackerSnapshot,
     events: Iterable[GameEvent],
 ) -> list[str]:
-    """Return actual cards originating in the turn-start deck/discard pool."""
-    observed: list[str] = []
+    """Return the cards the local reshuffle put on top of the new deck.
+
+    The client moves the discard pile under the deck before it draws, so the
+    draw that follows the Shuffle event still holds the old deck's last cards.
+    Those, and cards put back on the deck after the shuffle, are not part of
+    the shuffled order.
+    """
+    seat = snapshot.our_seat
+    if seat is None:
+        raise BridgeError("shuffle rigging has no local seat")
+    if snapshot.seats[seat].deck_anonymous:
+        raise BridgeError("cannot rig a local shuffle with anonymous cards")
+    old: Counter[str] = Counter(dict(snapshot.seats[seat].deck))
     injected: Counter[str] = Counter()
-    discarded_from_deck: Counter[str] = Counter()
+    shuffled = False
+    drawn: list[str] = []
     for event in events:
+        if isinstance(event, Shuffle) and event.seat == seat:
+            if shuffled:
+                raise BridgeError("cannot rig two local shuffles in one step")
+            shuffled = True
+            continue
         if (
             isinstance(event, Topdeck)
             and event.seat == seat
             and event.to_zone == "deck"
         ):
-            injected.update(event.cards)
+            (injected if shuffled else old).update(event.cards)
             continue
-        if (
-            isinstance(event, Play)
-            and event.seat == seat
-            and event.from_zone == "discard"
-        ):
-            for name in event.cards:
-                if discarded_from_deck[name]:
-                    discarded_from_deck[name] -= 1
-            continue
-        if (
-            isinstance(event, ZoneTransfer)
-            and event.seat == seat
-            and event.from_zone == "discard"
-            and event.to_zone == "deck"
-        ):
-            injected.update(discarded_from_deck)
-            discarded_from_deck.clear()
-            continue
-        if (
+        if not (
             isinstance(event, (Draw, Reveal, Discard, ZoneTransfer))
             and event.seat == seat
             and event.from_zone == "deck"
         ):
-            for name in event.cards:
-                if injected[name]:
-                    injected[name] -= 1
-                else:
-                    observed.append(name)
-                if isinstance(event, Discard):
-                    discarded_from_deck[name] += 1
-    return observed
+            continue
+        for name in event.cards:
+            if old[name] > 0:
+                old[name] -= 1
+            elif not shuffled:
+                raise BridgeError(
+                    f"observed draw {name!r} is absent from the shadow deck"
+                )
+            elif injected[name] > 0:
+                injected[name] -= 1
+            else:
+                drawn.append(name)
+    if not shuffled:
+        raise BridgeError("shuffle rigging found no local shuffle")
+    undrawn = sorted((+old).elements())
+    if undrawn:
+        raise BridgeError(
+            f"local shuffle left old deck cards undrawn: {tuple(undrawn)}"
+        )
+    return drawn
+
+
+def _check_local_shuffle(shuffle_rig: dict[str, Any], prescribed: int) -> None:
+    if shuffle_rig["failed"]:
+        raise BridgeError(
+            "shadow reshuffle could not supply the observed draws"
+        )
+    # The client announces a shuffle even when the discard pile is empty; the
+    # interpreter has nothing to shuffle then, and nothing was drawn from it.
+    if shuffle_rig["pending"] and prescribed:
+        raise BridgeError("shadow did not reshuffle where the client did")
 
 
 def _step_actions(
