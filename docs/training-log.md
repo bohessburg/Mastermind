@@ -2943,6 +2943,7 @@ The CUDA numbers match the local ones. The deep slice (32 in flight at 4096 sims
 | 47 | 0.737 | 7/2048 (0.3%) | 0.649 | 0.4738 vs gen 43 | 0.4509 | not played | rejected |
 | 48 | 0.743 | 7/2048 (0.3%) | 0.649 | 0.4638 vs gen 43 | 0.4422 | not played | rejected |
 | 49 | 0.736 | 7/2048 (0.3%) | 0.610 | 0.4925 vs gen 43 | 0.4718 | not played | rejected |
+| 50 | 0.738 | 3/2048 (0.1%) | 0.655 | 0.4825 vs gen 43 | 0.4610 | not played | rejected |
 
 - Box outage (2026-11-11): the vast container went down at about 16:38 UTC and came back at 17:33 UTC with `dominion-c29` stopped. Files through gen 30 were intact. Gen 31 self-play (1612/2048 games) was lost and restarted from `gen_0030.pt` at 17:36 UTC. The gen 30 engine3 eval was cut off at 75 of 100 games in each half: 53-22-0 and 54-20-1, 107-42-1 over 150 games, 71.7%. It was not rerun and has no `evals.csv` row. The campaign's small result files were copied to `checkpoints/remote/campaign29/box_files/`.
 
@@ -2985,6 +2986,7 @@ The CUDA numbers match the local ones. The deep slice (32 in flight at 4096 sims
 - Gen 40's per-generation evals: 78-22-0 and 67-33-0 (72.5%), nominally the highest of c29. Evals since gen 25: 71.1%, 71.7% (gen 30, partial), 70.2%, 72.5%. All four sit inside one standard error (3.2 points) of each other, so the reading is unchanged: flat at 70 to 72% since gen 25, about 5 points above gens 15 to 20.
 - Gen 45's per-generation evals: 64-36-0 and 71-27-2 (68.2% excluding ties). Gen 45 was a rejected candidate (0.4975 against gen 43), so this measures the trainer's current network, not the best checkpoint. Evals since gen 25: 71.1%, 71.7% (partial), 70.2%, 72.5%, 68.2%. The drop from gen 40 is 4.3 points against a standard error of about 3.3 per eval, so it is not a measured decline, and nothing since gen 25 shows a rise.
 - Gen 43 (current best) manual engine3 eval, same format (2 x 100 games, 400 sims, box engine at `264cdc6`), run 2026-11-12 01:12 UTC on request: 73-26-1 and 71-28-1 (72.7% excluding ties). Rows are in `evals_manual.csv` on the box, not `evals.csv`. Level with gen 40 (72.5%) and gen 25 (71.1%): the best network has not moved against engine3 since gen 25.
+- c29 stopped after gen 50 (2026-11-12 01:36 UTC, `supervisorctl stop dominion-c29`) on Jack's rule "if 50 is still flat or bad, kill the run": seven straight rejections (gens 44-50) and engine3 evals flat at 68-73% since gen 25. Final best: gen 43.
 
 ### c29 gen 6 vibe check (2026-11-11, local)
 
