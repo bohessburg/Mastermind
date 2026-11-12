@@ -3161,6 +3161,7 @@ Ladder against c29 gen 43 every fifth generation (`bench/c31_ladder`, 200 pairs 
 | 5 | 0.5025 | 0.4880 | rejected | 0.738 | 0.686 | 6 | 32.8 |
 | 6 | 0.5300 | 0.5156 | **accepted** | 0.743 | 0.680 | 3 | 35.1 |
 | 7 | 0.4944 | 0.4799 | rejected | 0.728 | 0.675 | 1 | 41.0 |
+| 8 | 0.5000 | 0.4847 | rejected | 0.733 | 0.671 | 5 | 42.8 |
 
 Gen 1 notes: 31.1 minutes, inside c30's 29 to 33 minute range. Self-play mix was 820 self games, 102 league games
 (25, 26 and 19 wins of 34 against c29 gen 10, 25 and 35) and 102 scripted
@@ -3204,3 +3205,8 @@ memory peaked at 114 GB against the 241 GiB limit, no OOM kill.
 Gen 6 engine3 eval (rerun on the new box): 74-26-0 and 73-25-2 = 74.2%
 excluding ties over 200. Level with c30 gen 4 (72.0%), c30 gen 5 (74.4%)
 and c29 gen 43 (73.4%); one standard error is about 3 points.
+
+Gen 8 (18:45 UTC) took 42.8 minutes with no eval running: self-play about
+23 minutes (2,664 games/hr), gate about 18 minutes for 800 games. The old
+box ran c31 generations in 31 to 35 minutes, so this box is roughly a
+quarter slower, most of it in the gate.
