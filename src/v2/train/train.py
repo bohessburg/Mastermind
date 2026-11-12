@@ -1276,6 +1276,7 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
         config.eval.eval_workers = requested.eval.eval_workers
         config.eval.eval_async = requested.eval.eval_async
         config.eval.eval_every_n_generations = requested.eval.eval_every_n_generations
+        config.eval.eval_on_accept = requested.eval.eval_on_accept
         config.imitation.anchor_value_weight = requested.imitation.anchor_value_weight
         # Slots per worker drive worker memory (trees are allocated per slot).
         config.selfplay.n_games = requested.selfplay.n_games
@@ -1721,6 +1722,7 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
                     losses["sampled_priority_max"] = float("nan")
 
             gate_row: dict[str, Any] = {}
+            accepted_this_generation = False
             gate_extra: dict[str, Any] = {}
             if use_gating:
                 progress.transition(
@@ -1825,6 +1827,7 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
                     else:
                         result = gate_result(gate_stats, config.gate_threshold)
                 if result in ("accepted", "warmup_accepted", "forced_accepted"):
+                    accepted_this_generation = True
                     archive_previous_best(config, best_path, best_generation)
                     best_model.load_state_dict(model.state_dict())
                     best_model.eval()
@@ -1859,14 +1862,11 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
                 self_paths = archive_self_checkpoint(config, path, generation)
                 configured_league_opponents.update(path.name for path in self_paths)
             eval_row: dict[str, Any] = {}
-            should_eval = (
-                not profile
-                and config.eval.eval_every_n_generations > 0
-                and (
-                    generation == 1
-                    or generation % config.eval.eval_every_n_generations == 0
-                )
+            on_cadence = config.eval.eval_every_n_generations > 0 and (
+                generation == 1 or generation % config.eval.eval_every_n_generations == 0
             )
+            on_accept = bool(config.eval.eval_on_accept) and accepted_this_generation
+            should_eval = not profile and (on_cadence or on_accept)
             if should_eval:
                 progress.transition(
                     generation,

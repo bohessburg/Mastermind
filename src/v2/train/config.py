@@ -217,6 +217,9 @@ class ReplayConfig:
 @dataclass
 class EvalConfig:
     eval_every_n_generations: int = 0
+    # Also evaluate every generation the gate accepts. With the cadence above
+    # at zero, accepted generations are the only ones evaluated.
+    eval_on_accept: bool = False
     eval_games: int = 200
     eval_sims: int = 400
     eval_opponent: str = "engine"

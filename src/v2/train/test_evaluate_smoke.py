@@ -340,3 +340,78 @@ def test_eval_cadence_follows_the_requested_config_on_resume(tmp_path: Path) -> 
     rows = read_metrics(Path(first.metrics_csv))
     assert [int(row["generation"]) for row in rows] == [1, 2, 3]
     assert [bool(row.get("eval_games")) for row in rows] == [True, False, True]
+
+
+def _record_background_evals(monkeypatch) -> list[int]:
+    from . import train as train_module
+
+    launched: list[int] = []
+    monkeypatch.setattr(
+        train_module,
+        "_launch_background_eval",
+        lambda _config, _path, generation, *_args, **_kwargs: launched.append(int(generation)),
+    )
+    return launched
+
+
+def test_eval_on_accept_evaluates_only_accepted_generations(monkeypatch, tmp_path: Path) -> None:
+    from . import train as train_module
+    from .gating import GateStats
+    from .test_gating import _small_gated_config
+
+    cfg = _small_gated_config(tmp_path, generations=4)
+    cfg.eval.eval_every_n_generations = 0
+    cfg.eval.eval_on_accept = True
+    cfg.eval.eval_async = True
+    outcomes = iter([GateStats(0, 2, 0), GateStats(2, 0, 0), GateStats(0, 2, 0), GateStats(2, 0, 0)])
+    monkeypatch.setattr(train_module, "run_gate_match", lambda *_args, **_kwargs: next(outcomes))
+    launched = _record_background_evals(monkeypatch)
+
+    result = run_training(cfg)
+
+    assert [row["gate_result"] for row in result["metrics"]] == ["rejected", "accepted", "rejected", "accepted"]
+    assert launched == [2, 4]
+
+
+def test_eval_on_accept_is_off_by_default_and_adds_to_the_cadence(monkeypatch, tmp_path: Path) -> None:
+    from . import train as train_module
+    from .gating import GateStats
+    from .test_gating import _small_gated_config
+
+    def run(root: Path, every: int, on_accept: bool) -> list[int]:
+        cfg = _small_gated_config(root, generations=4)
+        cfg.eval.eval_every_n_generations = every
+        cfg.eval.eval_on_accept = on_accept
+        cfg.eval.eval_async = True
+        outcomes = iter([GateStats(0, 2, 0), GateStats(2, 0, 0), GateStats(0, 2, 0), GateStats(0, 2, 0)])
+        monkeypatch.setattr(train_module, "run_gate_match", lambda *_args, **_kwargs: next(outcomes))
+        launched = _record_background_evals(monkeypatch)
+        run_training(cfg)
+        return launched
+
+    assert run(tmp_path / "off", 0, False) == []
+    assert run(tmp_path / "cadence", 3, False) == [1, 3]
+    assert run(tmp_path / "both", 3, True) == [1, 2, 3]
+
+
+def test_eval_on_accept_follows_the_requested_config_on_resume(monkeypatch, tmp_path: Path) -> None:
+    from . import train as train_module
+    from .gating import GateStats
+    from .test_gating import _small_gated_config
+
+    def config(generations: int, every: int, on_accept: bool):
+        cfg = _small_gated_config(tmp_path, generations=generations)
+        cfg.eval.eval_every_n_generations = every
+        cfg.eval.eval_on_accept = on_accept
+        cfg.eval.eval_async = True
+        return cfg
+
+    monkeypatch.setattr(train_module, "run_gate_match", lambda *_args, **_kwargs: GateStats(2, 0, 0))
+    launched = _record_background_evals(monkeypatch)
+
+    first = config(2, 5, False)
+    run_training(first)
+    assert launched == [1]
+    latest = Path(first.checkpoint_dir) / "gen_0002.pt"
+    run_training(config(4, 0, True), resume=str(latest))
+    assert launched == [1, 3, 4]
