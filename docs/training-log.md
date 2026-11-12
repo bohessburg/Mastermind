@@ -3078,3 +3078,24 @@ Replayed every recorded arena game through the engine with the arena's different
 
 - `scripts/box/ladder_watch.sh`: every 5th generation plays 200 board pairs against c29 gen 43 at 128 sims, results in `bench/c30_ladder/`. Reference: c29 gen 25 against gen 10 scored 55.0%.
 - Engine3 eval every 5 generations (2 x 100 games, scaled terminals).
+
+### Terminal scoring A/B on c29 gen 43 (2026-11-12 02:55 UTC, box)
+
+Same job as the earlier manual gen 43 eval (engine3, 400 sims, 2 x 100 games, same seeds), run once with each scoring while c30 gen 1 was in progress.
+
+| Terminal scoring | Games | W-L-T | Win % excl. ties |
+|---|---|---|---|
+| margin-graded (new default) | 200 | 146-53-1 | 73.4 |
+| win/loss (old) | 200 | 144-54-2 | 72.7 |
+
+The old-scoring rerun reproduced the earlier result exactly. The new scoring changed two games out of 200: no measurable effect on strength against engine3, and no harm.
+
+### Generations
+
+| Gen | Head to head vs best | Lower bound | Result | Entropy | Held-out r2 | Truncated |
+|---|---|---|---|---|---|---|
+| 1 | 0.5269 | 0.4969 | rejected | 0.745 | 0.665 | 3/2048 |
+
+- Gen 1 would have passed c29's gate (one SE below 0.527 is about 0.512); the two-SE bar rejected it by 0.003.
+- Memory fix confirmed at the first boundary: container peak 230 GB (c29: 339 GB), `oom_kill` still 94, same trainer pid into gen 2, no SIGKILL in the supervisor log.
+- Gen 1 took 38 minutes with four engine3 eval runs sharing the GPU (the A/B above); the gate alone was about 18 minutes.
