@@ -1230,6 +1230,14 @@ def _worker_main(
                     obs_size=obs_size,
                     route_audit=route_audit,
                 )
+                # Release the runner before this worker blocks on the next
+                # generation. Tree slabs are allocated eagerly, so leaving the
+                # name bound makes the next assignment build a second runner
+                # while the first is still alive: 64 workers going from about
+                # 3 GB to 5 GB each took the container from 213 GB to 339 GB
+                # against a 342 GiB limit, and the OOM killer ended the trainer
+                # at every c28 and c29 generation boundary.
+                del manifest_runner
                 league_games = sum(
                     1
                     for slot in slots

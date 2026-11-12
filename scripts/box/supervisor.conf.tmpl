@@ -3,7 +3,10 @@
 command=/bin/bash /root/Mastermind/scripts/box/resume.sh CONFIG INIT
 directory=/root/Mastermind
 autostart=true
-autorestart=true
+; Restart after a crash or kill, but not after a clean exit: the trainer exits
+; 0 when it finishes its generations or its stop rule fires.
+autorestart=unexpected
+exitcodes=0
 startsecs=30
 stopasgroup=true
 killasgroup=true

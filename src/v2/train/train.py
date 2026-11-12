@@ -1160,6 +1160,45 @@ def _print_selfplay_heartbeat(snapshot: dict[str, Any]) -> None:
     print(message, flush=True)
 
 
+STOP_MARKER_NAME = "STOPPED"
+
+
+def stop_marker_path(checkpoint_dir: str | Path) -> Path:
+    return Path(checkpoint_dir) / STOP_MARKER_NAME
+
+
+def stop_rule_reason(config: TrainConfig, generation: int, best_generation: int | None) -> str | None:
+    """Why the run must stop after ``generation``, or None to keep going.
+
+    The streak is derived from the two generation numbers rather than counted
+    in memory, so it is the same after a restart.
+    """
+    limit = int(config.stop_after_rejections)
+    if limit <= 0 or best_generation is None:
+        return None
+    streak = int(generation) - int(best_generation)
+    if streak < limit:
+        return None
+    return (
+        f"{streak} generations in a row failed to replace the best "
+        f"(best is generation {int(best_generation)}, limit {limit})"
+    )
+
+
+def write_stop_marker(config: TrainConfig, generation: int, best_generation: int | None, reason: str) -> Path:
+    path = stop_marker_path(config.checkpoint_dir)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "reason": reason,
+        "generation": int(generation),
+        "best_generation": None if best_generation is None else int(best_generation),
+        "stop_after_rejections": int(config.stop_after_rejections),
+        "stopped_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    }
+    path.write_text(json.dumps(payload, sort_keys=True) + "\n")
+    return path
+
+
 def run_training(config: TrainConfig, resume: str | None = None, profile: bool = False) -> dict[str, Any]:
     requested = config
     if not isinstance(config.init_weights, str):
@@ -1218,6 +1257,7 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
         config.gate_third_party_sims = requested.gate_third_party_sims
         config.gate_third_party_margin = requested.gate_third_party_margin
         config.gate_third_party_background = requested.gate_third_party_background
+        config.stop_after_rejections = requested.stop_after_rejections
         config.league_fraction = requested.league_fraction
         config.league_pool_size = requested.league_pool_size
         config.league_opponents_per_gen = requested.league_opponents_per_gen
@@ -1298,6 +1338,7 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
         raise ValueError("server_selfplay requires parallel_workers greater than one")
 
     metrics: list[dict[str, Any]] = []
+    stopped = False
     generations = 1 if profile else max(0, config.generations - start_generation)
     print(
         json.dumps(
@@ -1370,6 +1411,25 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
             source_path=resume_best,
             start_generation=start_generation,
         )
+    if not profile:
+        marker = stop_marker_path(config.checkpoint_dir)
+        if marker.exists():
+            print(
+                json.dumps(
+                    {"stopped": True, "marker": str(marker), "detail": marker.read_text().strip()},
+                    sort_keys=True,
+                ),
+                flush=True,
+            )
+            print(f"run is stopped; delete {marker} to continue it", flush=True)
+            progress.close()
+            return {"config": config.to_dict(), "metrics": metrics, "stopped": True}
+        startup_stop = stop_rule_reason(config, start_generation, best_generation) if use_gating else None
+        if startup_stop is not None:
+            marker = write_stop_marker(config, start_generation, best_generation, startup_stop)
+            print(f"stop rule: {startup_stop}; wrote {marker}", flush=True)
+            progress.close()
+            return {"config": config.to_dict(), "metrics": metrics, "stopped": True}
     try:
         progress.start(_print_selfplay_heartbeat)
         if config.parallel_workers > 1 and shared_server_selfplay:
@@ -1947,6 +2007,16 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
             append_metrics(config.metrics_csv, row)
             metrics.append(row)
             print(json.dumps(row, sort_keys=True))
+            stop_reason = (
+                stop_rule_reason(config, generation, best_generation)
+                if use_gating and not profile
+                else None
+            )
+            if stop_reason is not None:
+                marker = write_stop_marker(config, generation, best_generation, stop_reason)
+                print(f"stop rule: {stop_reason}; wrote {marker}", flush=True)
+                stopped = True
+                break
     finally:
         if pool is not None:
             pool.close()
@@ -1964,7 +2034,7 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
             f"inference_pct={row['inference_pct']:.2f} "
             f"plumbing_pct={row['plumbing_pct']:.2f}"
         )
-    return {"config": config.to_dict(), "metrics": metrics}
+    return {"config": config.to_dict(), "metrics": metrics, "stopped": stopped}
 
 
 def main(argv: list[str] | None = None) -> int:
