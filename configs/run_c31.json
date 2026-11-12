@@ -1,5 +1,5 @@
 {
-  "_comment": "Campaign 31 (2026-11-12, Jack: 'implement all 5 and start c31 now'). Starts from c30's best (gen 4) with an empty replay buffer. Launch: scripts/box/resume.sh configs/run_c31.json checkpoints/campaign30/gen_0004.pt. Five changes against c30, all at once, so a result cannot be attributed to any one of them: (1) honest self-play: selfplay.determinize off -> per_decision, the gate's and eval's information model (the runner turns tree reuse off under it). Determinized self-play was last run in c20-c23 (per_turn), before the November audit fixed the reshuffle leak and the turn-cap value targets, and c24 went back to clairvoyant on purpose; (2) looser gate: gate_ci_z 2.0 -> 1.0 (about 51.8% over 800 games instead of 53.1%); (3) deeper search on fewer games: sims_per_move 512 -> 1024 with the per-legal-move cap and floor doubled (64 -> 128) so the extra search reaches every decision, games_per_generation 2048 -> 1024; (4) human anchor decays: weight 0.5 at gen 1, linear to 0.1 at gen 20, then held; (5) opponent diversity: 10% of games against league checkpoints (seeds c29 gen 10/25/35 plus archived bests and every 10th candidate) and 5% each against the bigmoney and engine scripted bots. c29 gen 43 and engine3 are deliberately not training opponents: they stay clean as the ladder anchor and the eval benchmark. Unchanged: model, optimizer, 80 train steps, head-to-head-only gate (no engine3 veto), eval on accept, stop after 10 rejections.",
+  "_comment": "Campaign 31 (2026-11-12, Jack). Starts from c30's best (gen 4) with an empty replay buffer. Launch: scripts/box/resume.sh configs/run_c31.json checkpoints/campaign30/gen_0004.pt. Four changes against c30, all at once, so a result cannot be attributed to any one of them: (1) looser gate: gate_ci_z 2.0 -> 1.0 (about 51.8% over 800 games instead of 53.1%); (2) deeper search on fewer games: sims_per_move 512 -> 1024 with the per-legal-move cap and floor doubled (64 -> 128) so the extra search reaches every decision, games_per_generation 2048 -> 1024; (3) human anchor decays: weight 0.5 at gen 1, linear to 0.1 at gen 20, then held; (4) opponent diversity: 10% of games against league checkpoints (seeds c29 gen 10/25/35 plus archived bests and every 10th candidate) and 5% each against the bigmoney and engine scripted bots. c29 gen 43 and engine3 are deliberately not training opponents: they stay clean as the ladder anchor and the eval benchmark. Honest self-play (determinize per_decision) was the fifth planned change and Jack dropped it before launch: self-play stays clairvoyant (determinize off), as in c24-c30. Determinized self-play was last run in c20-c23, before the November audit fixes, and it turns tree reuse off. Unchanged: model, optimizer, 80 train steps, head-to-head-only gate (no engine3 veto), eval on accept, stop after 10 rejections.",
   "seed": 20261113,
   "generations": 60,
   "init_weights": "",
@@ -80,7 +80,7 @@
     "c_puct": 1.25,
     "dirichlet_alpha": 0.3,
     "dirichlet_frac": 0.25,
-    "determinize": "per_decision",
+    "determinize": "off",
     "tree_reuse": true,
     "forced_playouts": true,
     "forced_playouts_k": 2.0,
