@@ -3106,6 +3106,7 @@ The old-scoring rerun reproduced the earlier result exactly. The new scoring cha
 | 10 | 0.5206 | 0.4914 | rejected | 0.757 | 0.679 | 11/2048 |
 | 11 | 0.5188 | 0.4893 | rejected | 0.763 | 0.686 | 12/2048 |
 | 12 | 0.5138 | 0.4833 | rejected | 0.760 | 0.694 | 15/2048 |
+| 13 | 0.5263 | 0.4956 | rejected | 0.764 | 0.689 | 14/2048 |
 
 - Gen 1 would have passed c29's gate (one SE below 0.527 is about 0.512); the two-SE bar rejected it by 0.003.
 - Memory fix confirmed at the first boundary: container peak 230 GB (c29: 339 GB), `oom_kill` still 94, same trainer pid into gen 2, no SIGKILL in the supervisor log.
@@ -3125,3 +3126,31 @@ The old-scoring rerun reproduced the earlier result exactly. The new scoring cha
 - Gen 11 rejected at 0.519: seven generations since gen 4.
 - Gen 12 rejected at 0.514: eight generations since gen 4.
 - Engine3 veto removed at the gen 12 boundary (08:43 UTC, Jack's call): `gate_third_party_opponent` is empty from gen 13, so the gate is head-to-head only. Gen 8's veto was 0.660 against gen 4's 0.7225 over 200 games each, a 6-point gap that two 200-game matches produce by chance (about 1.4 standard errors). Gen 8 was not promoted after the fact; best stays gen 4 and the stop rule still counts from it.
+- Gen 13 rejected at 0.526 (first generation under the head-to-head-only gate): nine generations since gen 4.
+- c30 stopped by hand at 09:19 UTC during gen 14 (Jack: start c31 now). Final best gen 4. Candidates 8-13 averaged 0.523 against gen 4 over 4,800 games, a real edge of about two points that never cleared the 53% bar; the ladder against c29 gen 43 read 0.542 at gen 5 and 0.519 at gen 10. Policy loss sat about 0.01 above the entropy column from gen 1 to gen 13, held-out value r2 moved 0.665 to 0.694, anchor policy loss 0.656 to 0.523.
+
+## c31 on the box (started 2026-11-12 09:26 UTC)
+
+Config `configs/run_c31.json`, from c30 gen 4 with an empty replay buffer. Jack asked for the plateau levers all at once, so a result cannot be attributed to any one of them.
+
+### What changed from c30
+
+- Gate accepts at one standard error instead of two (`gate_ci_z` 1.0): about 51.8% over 800 games instead of 53.1%. Head to head only; the engine3 veto stays off.
+- Deeper search on fewer games: `sims_per_move` 512 to 1024, the per-legal-move cap and floor 64 to 128 (the cap is `max(floor, per_legal * legal moves)`, so the higher limit alone would only have reached decisions with more than eight options), `games_per_generation` 2048 to 1024.
+- Human anchor weight decays linearly from 0.5 at gen 1 to 0.1 at gen 20, then holds.
+- Opponent diversity: 10% of games against league checkpoints (seeds c29 gen 10, 25, 35, plus archived bests and every tenth candidate), 5% against the bigmoney bot, 5% against the engine bot. c29 gen 43 and engine3 are not training opponents, so the ladder and the engine3 eval stay clean.
+- Not changed: self-play stays clairvoyant. Honest self-play (`determinize per_decision`) was in the first draft and Jack dropped it before launch; it turns tree reuse off, and its only earlier runs (c20-c23) predate the November audit fixes. It is the candidate for a single-change c32.
+- Unchanged: model, optimizer, 80 train steps, eval on accept, stop after 10 rejections.
+
+### Before launch
+
+A one-generation smoke run of the first draft (128 games, 64 sims, 40-game gate, honest self-play) ran end to end on the box in 311 s: 13 league games, 12 scripted games (9 won), 10 deep games, gate and metrics row written. The launched config differs from it only in `determinize`.
+
+### Benchmarks running beside it
+
+Ladder against c29 gen 43 every fifth generation (`bench/c31_ladder`, 200 pairs at 128 sims; seed 20261113, so not the same boards as c30's ladder).
+
+### Generations
+
+| Gen | Head to head vs best | Lower bound | Result | Entropy | Held-out r2 | Truncated | Minutes |
+|---|---|---|---|---|---|---|---|
