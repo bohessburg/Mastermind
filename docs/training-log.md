@@ -3166,6 +3166,7 @@ Ladder against c29 gen 43 every fifth generation (`bench/c31_ladder`, 200 pairs 
 | 10 | 0.5094 | 0.4940 | rejected | 0.732 | 0.695 | 2 | 45.3 |
 | 11 | 0.5013 | 0.4865 | rejected | 0.738 | 0.665 | 2 | 40.5 |
 | 12 | 0.5275 | 0.5122 | **accepted** | 0.741 | 0.670 | 0 | 42.1 |
+| 13 | 0.4913 | 0.4763 | rejected | 0.738 | 0.651 | 1 | 44.0 |
 
 Gen 1 notes: 31.1 minutes, inside c30's 29 to 33 minute range. Self-play mix was 820 self games, 102 league games
 (25, 26 and 19 wins of 34 against c29 gen 10, 25 and 35) and 102 scripted
@@ -3227,3 +3228,9 @@ after five rejections. It is two promotions above c30 gen 4 at about 53% each.
 Checkpoint copied to `checkpoints/remote/campaign31/gen_0012.pt` (sha256
 `1299d5da…874ec0`, matches the box); `configs/arena_c29.json` points at it.
 The engine3 eval started on the box at the accept.
+
+Gen 12 engine3 eval: 79-21-0 and 72-27-1 = 75.9% excluding ties over 200
+(gen 6 74.2%, c30 gen 5 74.4%, c29 gen 43 73.4%; one standard error about 3
+points). Highest of these but inside the noise. Gen 13 (22:16 UTC) rejected
+at 0.4913 against gen 12; 44.0 minutes with the eval sharing the GPU, memory
+peak 133 GB.
