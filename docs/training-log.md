@@ -3160,6 +3160,7 @@ Ladder against c29 gen 43 every fifth generation (`bench/c31_ladder`, 200 pairs 
 | 4 | 0.5088 | 0.4935 | rejected | 0.731 | 0.682 | 4 | 31.2 |
 | 5 | 0.5025 | 0.4880 | rejected | 0.738 | 0.686 | 6 | 32.8 |
 | 6 | 0.5300 | 0.5156 | **accepted** | 0.743 | 0.680 | 3 | 35.1 |
+| 7 | 0.4944 | 0.4799 | rejected | 0.728 | 0.675 | 1 | 41.0 |
 
 Gen 1 notes: 31.1 minutes, inside c30's 29 to 33 minute range. Self-play mix was 820 self games, 102 league games
 (25, 26 and 19 wins of 34 against c29 gen 10, 25 and 35) and 102 scripted
@@ -3194,3 +3195,12 @@ hand with the trainer's own job parameters. The ladder watcher restarts
 with gen 10 as its next match. Early self-play reads 114k server evals/s;
 the two inference shards are the busy processes and the 64 workers sit at
 about 25% CPU each.
+
+Gen 7 (new box, 18:02 UTC) is the first generation after the restart and
+trained on one generation of data, like gen 1. 41.0 minutes with the gen 6
+eval sharing the GPU: self-play about 21 minutes, gate about 16. Container
+memory peaked at 114 GB against the 241 GiB limit, no OOM kill.
+
+Gen 6 engine3 eval (rerun on the new box): 74-26-0 and 73-25-2 = 74.2%
+excluding ties over 200. Level with c30 gen 4 (72.0%), c30 gen 5 (74.4%)
+and c29 gen 43 (73.4%); one standard error is about 3 points.
