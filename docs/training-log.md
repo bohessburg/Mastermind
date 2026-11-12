@@ -3101,6 +3101,7 @@ The old-scoring rerun reproduced the earlier result exactly. The new scoring cha
 | 5 | 0.4869 | 0.4575 | rejected | 0.748 | 0.684 | 8/2048 |
 | 6 | 0.4888 | 0.4600 | rejected | 0.758 | 0.676 | 9/2048 |
 | 7 | 0.4975 | 0.4672 | rejected | 0.757 | 0.685 | 9/2048 |
+| 8 | 0.5381 | 0.5074 | rejected (engine3 term) | 0.753 | 0.673 | 9/2048 |
 
 - Gen 1 would have passed c29's gate (one SE below 0.527 is about 0.512); the two-SE bar rejected it by 0.003.
 - Memory fix confirmed at the first boundary: container peak 230 GB (c29: 339 GB), `oom_kill` still 94, same trainer pid into gen 2, no SIGKILL in the supervisor log.
@@ -3114,3 +3115,4 @@ The old-scoring rerun reproduced the earlier result exactly. The new scoring cha
 - Eval-on-accept deployed at the gen 6 boundary (05:37 UTC, box at `2194574`); the trainer resumed from `gen_0006.pt`. A manual 2 x 100 engine3 eval of gen 4, the current best, was started at 05:40 UTC (`eval_job_0004.json`, rows in the campaign's `evals.csv`).
 - Gen 4 engine3 eval (manual, the current best): 70-30-0 and 74-26-0 = 72.0% over 200. Level with c29 gen 43 (73.4%), gen 1 (76.0%) and gen 5 (74.4%).
 - Gen 7 rejected at 0.4975: three in a row since gen 4. No eval ran for it, as intended under eval-on-accept.
+- Gen 8 passed the head-to-head bar against gen 4 (0.538, lower bound 0.507) and was rejected by the engine3 term: 0.660 on the gate boards against gen 4's 0.7225, more than the 0.05 allowed. First time that term has rejected a candidate in c29 or c30. On 200 games a 6-point gap is about 1.3 standard errors of the difference (unpaired), so this veto can fire on noise.
