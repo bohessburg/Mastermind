@@ -3180,3 +3180,17 @@ engine3 eval, the replay buffer, `metrics.csv` and the gen 5 ladder file
 exist only on the box. Local copy of the best checkpoint is gen 6. If the
 host does not come back, c31 restarts from gen 6 on a replacement box with
 an empty buffer.
+
+Restart on a replacement box (2026-11-12 17:21 UTC). Jack rented a new
+vast box (EPYC 7B13, 128 threads, 241 GiB memory limit, one RTX 5090,
+torch 2.14.1+cu132). Repo shipped as a bundle at `34628f2`, Release build,
+201 of 202 native tests pass; the MCTS-beats-RandomBot test takes 10.7 s
+against its 10 s limit on this CPU and passes when run directly.
+`dominion-c31` resumes `gen_0006.pt` with an empty replay buffer, so gen 7
+is played again from scratch. `best.pt` (gen 6) and the league's
+`best_0000.pt` (c30 gen 4) were rebuilt by hand from the local checkpoints;
+`metrics.csv` restarts at gen 7. Gen 6's engine3 eval was relaunched by
+hand with the trainer's own job parameters. The ladder watcher restarts
+with gen 10 as its next match. Early self-play reads 114k server evals/s;
+the two inference shards are the busy processes and the 64 workers sit at
+about 25% CPU each.
