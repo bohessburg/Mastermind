@@ -3096,6 +3096,7 @@ The old-scoring rerun reproduced the earlier result exactly. The new scoring cha
 |---|---|---|---|---|---|---|
 | 1 | 0.5269 | 0.4969 | rejected | 0.745 | 0.665 | 3/2048 |
 | 2 | 0.5144 | 0.4836 | rejected | 0.736 | 0.645 | 4/2048 |
+| 3 | 0.4906 | 0.4599 | rejected | 0.737 | 0.658 | 5/2048 |
 
 - Gen 1 would have passed c29's gate (one SE below 0.527 is about 0.512); the two-SE bar rejected it by 0.003.
 - Memory fix confirmed at the first boundary: container peak 230 GB (c29: 339 GB), `oom_kill` still 94, same trainer pid into gen 2, no SIGKILL in the supervisor log.
