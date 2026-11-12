@@ -3105,6 +3105,7 @@ The old-scoring rerun reproduced the earlier result exactly. The new scoring cha
 | 9 | 0.5188 | 0.4881 | rejected | 0.757 | 0.679 | 16/2048 |
 | 10 | 0.5206 | 0.4914 | rejected | 0.757 | 0.679 | 11/2048 |
 | 11 | 0.5188 | 0.4893 | rejected | 0.763 | 0.686 | 12/2048 |
+| 12 | 0.5138 | 0.4833 | rejected | 0.760 | 0.694 | 15/2048 |
 
 - Gen 1 would have passed c29's gate (one SE below 0.527 is about 0.512); the two-SE bar rejected it by 0.003.
 - Memory fix confirmed at the first boundary: container peak 230 GB (c29: 339 GB), `oom_kill` still 94, same trainer pid into gen 2, no SIGKILL in the supervisor log.
@@ -3122,3 +3123,5 @@ The old-scoring rerun reproduced the earlier result exactly. The new scoring cha
 - Gens 8, 9 and 10 all scored above 0.5 against gen 4 (0.538, 0.519, 0.521; 2,400 games averaging 0.526) without a promotion: gen 8 by the engine3 term, 9 and 10 by the two-SE bar. Six generations since gen 4; the stop rule fires after gen 14 if none passes.
 - Ladder, gen 10 against c29 gen 43: 201-186-13, score 0.519 +- 0.022, 95% interval 0.475-0.562, +13 Elo. Gen 5 scored 0.542, so the ladder is not climbing: both c30 points sit 2-4 points above gen 43 and within noise of each other.
 - Gen 11 rejected at 0.519: seven generations since gen 4.
+- Gen 12 rejected at 0.514: eight generations since gen 4.
+- Engine3 veto removed at the gen 12 boundary (08:43 UTC, Jack's call): `gate_third_party_opponent` is empty from gen 13, so the gate is head-to-head only. Gen 8's veto was 0.660 against gen 4's 0.7225 over 200 games each, a 6-point gap that two 200-game matches produce by chance (about 1.4 standard errors). Gen 8 was not promoted after the fact; best stays gen 4 and the stop rule still counts from it.
