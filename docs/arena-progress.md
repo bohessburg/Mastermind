@@ -409,6 +409,18 @@ Open: `lobby.rated` is read from the config but nothing applies it. The
 account's own automatch preference decides, and the saved lobby pages from
 July show it set to Rated, so every arena game so far has been rated.
 
+Abort, 2026-11-12 08:59 UTC: game 185844266 against paradhise (our seat 1,
+turn 12) stopped with `BridgeError: shuffle reconstruction observed
+unavailable 'Moat'` at frame 1717. The turn was Throne Room on Cellar: the
+first Cellar discarded Chapel and Moat, the draw that followed shuffled, and
+the feed showed Moat and Village drawn. The tracker did not count the Moat
+just discarded as part of that shuffle. The game has no ledger row and its
+outcome is unknown. Archive:
+`exports/arena/20261111T231744.478115Z/20261112T085916.005746Z-game-185844266`.
+Cause not investigated yet. That session ended 24-27-2 on c29 gen 43; the
+arena was restarted on c30 gen 4 (`checkpoints/remote/campaign30/gen_0004.pt`)
+with a rebuilt engine module.
+
 ## Status by phase
 
 - **P0 — Recording harness: complete (2026-07-24).**
