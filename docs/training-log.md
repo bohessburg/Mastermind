@@ -3164,6 +3164,7 @@ Ladder against c29 gen 43 every fifth generation (`bench/c31_ladder`, 200 pairs 
 | 8 | 0.5000 | 0.4847 | rejected | 0.733 | 0.671 | 5 | 42.8 |
 | 9 | 0.4969 | 0.4821 | rejected | 0.731 | 0.672 | 2 | 39.2 |
 | 10 | 0.5094 | 0.4940 | rejected | 0.732 | 0.695 | 2 | 45.3 |
+| 11 | 0.5013 | 0.4865 | rejected | 0.738 | 0.665 | 2 | 40.5 |
 
 Gen 1 notes: 31.1 minutes, inside c30's 29 to 33 minute range. Self-play mix was 820 self games, 102 league games
 (25, 26 and 19 wins of 34 against c29 gen 10, 25 and 35) and 102 scripted
@@ -3212,3 +3213,9 @@ Gen 8 (18:45 UTC) took 42.8 minutes with no eval running: self-play about
 23 minutes (2,664 games/hr), gate about 18 minutes for 800 games. The old
 box ran c31 generations in 31 to 35 minutes, so this box is roughly a
 quarter slower, most of it in the gate.
+
+Gen 10 ladder against c29 gen 43 (200 pairs, 128 sims): 201W-187L-12T, score
+0.517, 95% interval 0.475 to 0.560, about +12 Elo. Gen 5 read 0.489 in its
+match; both are level with the anchor inside the noise. Gens 7 to 11
+(0.494, 0.500, 0.497, 0.509, 0.501 against gen 6) are five rejections in a row since the
+restart; held-out r2 was 0.695 at gen 10 and 0.665 at gen 11.
