@@ -2987,6 +2987,8 @@ The CUDA numbers match the local ones. The deep slice (32 in flight at 4096 sims
 - Gen 45's per-generation evals: 64-36-0 and 71-27-2 (68.2% excluding ties). Gen 45 was a rejected candidate (0.4975 against gen 43), so this measures the trainer's current network, not the best checkpoint. Evals since gen 25: 71.1%, 71.7% (partial), 70.2%, 72.5%, 68.2%. The drop from gen 40 is 4.3 points against a standard error of about 3.3 per eval, so it is not a measured decline, and nothing since gen 25 shows a rise.
 - Gen 43 (current best) manual engine3 eval, same format (2 x 100 games, 400 sims, box engine at `264cdc6`), run 2026-11-12 01:12 UTC on request: 73-26-1 and 71-28-1 (72.7% excluding ties). Rows are in `evals_manual.csv` on the box, not `evals.csv`. Level with gen 40 (72.5%) and gen 25 (71.1%): the best network has not moved against engine3 since gen 25.
 - c29 stopped after gen 50 (2026-11-12 01:36 UTC, `supervisorctl stop dominion-c29`) on Jack's rule "if 50 is still flat or bad, kill the run": seven straight rejections (gens 44-50) and engine3 evals flat at 68-73% since gen 25. Final best: gen 43.
+- Gen 50's per-generation evals (rejected candidate, 0.4825 against gen 43): 74-26-0 and 73-26-1 (73.9% excluding ties), nominally the highest of c29 but within noise of gen 43 (72.7%) and gen 40 (72.5%).
+- Library engine fix (`ab6881f`) shipped to the box 2026-11-12 01:47 UTC, after the run was stopped and gen 50's eval had finished: fast-forward to `c590d34`, Release rebuild, 201/201 native tests. All c29 numbers above were produced by the pre-fix engine.
 
 ### c29 gen 6 vibe check (2026-11-11, local)
 
