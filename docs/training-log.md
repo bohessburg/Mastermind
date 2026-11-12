@@ -3097,9 +3097,11 @@ The old-scoring rerun reproduced the earlier result exactly. The new scoring cha
 | 1 | 0.5269 | 0.4969 | rejected | 0.745 | 0.665 | 3/2048 |
 | 2 | 0.5144 | 0.4836 | rejected | 0.736 | 0.645 | 4/2048 |
 | 3 | 0.4906 | 0.4599 | rejected | 0.737 | 0.658 | 5/2048 |
+| 4 | 0.5538 | 0.5221 | **accepted** | 0.739 | 0.670 | 5/2048 |
 
 - Gen 1 would have passed c29's gate (one SE below 0.527 is about 0.512); the two-SE bar rejected it by 0.003.
 - Memory fix confirmed at the first boundary: container peak 230 GB (c29: 339 GB), `oom_kill` still 94, same trainer pid into gen 2, no SIGKILL in the supervisor log.
 - Gen 1 took 38 minutes with four engine3 eval runs sharing the GPU (the A/B above); the gate alone was about 18 minutes.
 - Gen 1 engine3 eval: 74-22-4 and 75-25-0 = 76.0% excluding ties over 200 (c29 gen 43: 73.4% under the same scoring; one standard error is about 3 points).
 - Gen 2 rejected at 0.514; the generation took 30 minutes. Gen 43's engine3 gate-board score under the new scoring is 0.680.
+- Gen 4 accepted (04:32 UTC): first promotion under the two-SE bar. Engine3 on the gate boards 0.7225 against gen 43's 0.680. Local copy at `checkpoints/remote/campaign30/gen_0004.pt`; `configs/arena_c29.json` points at it and the arena picks it up at its next launch.
