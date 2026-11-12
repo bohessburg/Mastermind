@@ -3159,7 +3159,16 @@ Ladder against c29 gen 43 every fifth generation (`bench/c31_ladder`, 200 pairs 
 | 3 | 0.5038 | 0.4884 | rejected | 0.731 | 0.677 | 2 | 30.9 |
 | 4 | 0.5088 | 0.4935 | rejected | 0.731 | 0.682 | 4 | 31.2 |
 | 5 | 0.5025 | 0.4880 | rejected | 0.738 | 0.686 | 6 | 32.8 |
+| 6 | 0.5300 | 0.5156 | **accepted** | 0.743 | 0.680 | 3 | 35.1 |
 
 Gen 1 notes: 31.1 minutes, inside c30's 29 to 33 minute range. Self-play mix was 820 self games, 102 league games
 (25, 26 and 19 wins of 34 against c29 gen 10, 25 and 35) and 102 scripted
 games (48 of 51 against bigmoney, 49 of 51 against engine).
+
+Gen 5 ladder against c29 gen 43 (200 pairs, 128 sims): 190W-199L-11T, score
+0.489, 95% interval 0.447 to 0.530. Level with c29 gen 43.
+
+Gen 6 is c31's first promotion (12:35 UTC), after five rejections that
+averaged 0.4999. Its engine3 eval started on accept. Checkpoint copied to
+`checkpoints/remote/campaign31/gen_0006.pt` (sha256 `50bf76c2...35fa83`) and
+`configs/arena_c29.json` points at it from the next arena launch.

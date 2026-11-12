@@ -1,5 +1,5 @@
 {
-  "checkpoint_path": "checkpoints/remote/campaign30/gen_0004.pt",
+  "checkpoint_path": "checkpoints/remote/campaign31/gen_0006.pt",
   "stall_watchdog_seconds": 120,
   "idle_watchdog_seconds": 600,
   "actuation_mode": "protocol",
