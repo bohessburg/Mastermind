@@ -3099,6 +3099,7 @@ The old-scoring rerun reproduced the earlier result exactly. The new scoring cha
 | 3 | 0.4906 | 0.4599 | rejected | 0.737 | 0.658 | 5/2048 |
 | 4 | 0.5538 | 0.5221 | **accepted** | 0.739 | 0.670 | 5/2048 |
 | 5 | 0.4869 | 0.4575 | rejected | 0.748 | 0.684 | 8/2048 |
+| 6 | 0.4888 | 0.4600 | rejected | 0.758 | 0.676 | 9/2048 |
 
 - Gen 1 would have passed c29's gate (one SE below 0.527 is about 0.512); the two-SE bar rejected it by 0.003.
 - Memory fix confirmed at the first boundary: container peak 230 GB (c29: 339 GB), `oom_kill` still 94, same trainer pid into gen 2, no SIGKILL in the supervisor log.
@@ -3107,3 +3108,6 @@ The old-scoring rerun reproduced the earlier result exactly. The new scoring cha
 - Gen 2 rejected at 0.514; the generation took 30 minutes. Gen 43's engine3 gate-board score under the new scoring is 0.680.
 - Gen 4 accepted (04:32 UTC): first promotion under the two-SE bar. Engine3 on the gate boards 0.7225 against gen 43's 0.680. Local copy at `checkpoints/remote/campaign30/gen_0004.pt`; `configs/arena_c29.json` points at it and the arena picks it up at its next launch.
 - Gen 5 rejected against gen 4. Jack asked (2026-11-12) for the engine3 eval to run on every accepted generation instead of every 5th: `eval_on_accept: true`, `eval_every_n_generations: 0`, deployed at the gen 6 boundary. Gen 5's eval (old schedule) was already running.
+- Gen 5 engine3 eval: 75-25-0 and 73-26-1 = 74.4% excluding ties (gen 1: 76.0%, c29 gen 43: 73.4%).
+- Ladder, gen 5 against c29 gen 43 (200 board pairs, 128 sims): 210-176-14, score 0.542 +- 0.023, 95% interval 0.497-0.588, +30 Elo. Gen 5 is a rejected candidate (0.487 against gen 4).
+- Eval-on-accept deployed at the gen 6 boundary (05:37 UTC, box at `2194574`); the trainer resumed from `gen_0006.pt`. A manual 2 x 100 engine3 eval of gen 4, the current best, was started at 05:40 UTC (`eval_job_0004.json`, rows in the campaign's `evals.csv`).
