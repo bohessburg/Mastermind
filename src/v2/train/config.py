@@ -305,6 +305,11 @@ class TrainConfig:
     # batch is zero-padded to the smallest fitting bucket; larger batches run
     # at their exact size.
     server_batch_buckets: list[int] | None = None
+    # Compiled CUDA serving only: fixed number of supply-pile tokens in the
+    # compiled card_transformer graph (17 covers a two-player base-set game;
+    # None keeps all 48). A batch that uses more piles than this runs through
+    # the eager model instead, so the value only affects speed, never outputs.
+    server_trim_piles: int | None = None
     server_response_timeout_s: float = 30.0
     # Model-table installs legitimately take minutes on first generation
     # (torch.compile + per-bucket warmup for every resident model); liveness
@@ -821,6 +826,11 @@ def validate_server_shards(config: TrainConfig) -> None:
         raise ValueError(f"server_backend must be 'torch' or 'mlx', got {config.server_backend!r}")
     if backend == "mlx" and str(config.server_device).lower() != "mps":
         raise ValueError("server_backend='mlx' requires server_device='mps'")
+    trim_piles = getattr(config, "server_trim_piles", None)
+    if trim_piles is not None and (
+        not isinstance(trim_piles, int) or isinstance(trim_piles, bool) or not 1 <= trim_piles <= 48
+    ):
+        raise ValueError("server_trim_piles must be null or an integer in [1, 48]")
 
 
 GATE_MODES = ("legacy", "paired")

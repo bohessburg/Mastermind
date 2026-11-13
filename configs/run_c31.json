@@ -64,6 +64,7 @@
   },
   "server_compile": true,
   "server_autocast_bf16": true,
+  "server_trim_piles": 17,
   "server_batch_buckets": [
     128,
     256,

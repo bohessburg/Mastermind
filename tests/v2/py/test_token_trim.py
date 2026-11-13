@@ -401,3 +401,139 @@ def test_server_resident_model_serves_through_the_selected_backend(backend_name:
 
 def test_module_lists_both_backends() -> None:
     assert apple_backend.SERVER_BACKENDS == ("torch", "mlx")
+
+
+# ---------------------------------------------------------------------------
+# Static trimmed width for the compiled (CUDA) serving graph
+
+
+def _graph_token_widths(explanation: object, d_model: int) -> set[int]:
+    return {
+        int(node.meta["example_value"].shape[1])
+        for graph in explanation.graphs  # type: ignore[attr-defined]
+        for node in graph.graph.nodes
+        if node.op == "call_function"
+        and "cat" in str(node.target)
+        and getattr(node.meta.get("example_value"), "ndim", 0) == 3
+        and int(node.meta["example_value"].shape[2]) == d_model
+    }
+
+
+def test_full_graph_server_compile_at_a_static_trimmed_width() -> None:
+    """A constant pile count gives one static 18-token graph with unchanged outputs."""
+
+    from src.v2.train.inference_server import _ServerEvaluator
+
+    obs, masks = _observations(rows=16)
+    trimmed, full = _pair()
+    with torch.no_grad():
+        try:
+            compiled = torch.compile(
+                _ServerEvaluator(trimmed, BASE_SET_PILES).eval(), backend="eager", fullgraph=True
+            )
+            got_logits, got_values = compiled(obs, masks)
+            zero_logits, zero_values = compiled(torch.zeros_like(obs), torch.zeros_like(masks))
+            explanation = torch._dynamo.explain(_ServerEvaluator(trimmed, BASE_SET_PILES).eval())(obs, masks)
+        except RuntimeError as exc:  # pragma: no cover - platforms without dynamo
+            pytest.skip(f"torch.compile is unavailable: {exc}")
+        want_logits, want_values = full.evaluate(obs, masks)
+        want_zero_logits, want_zero_values = full.evaluate(torch.zeros_like(obs), torch.zeros_like(masks))
+    torch.testing.assert_close(got_logits, want_logits, rtol=0, atol=2e-5)
+    torch.testing.assert_close(got_values, want_values, rtol=0, atol=2e-5)
+    torch.testing.assert_close(zero_logits, want_zero_logits, rtol=0, atol=2e-5)
+    torch.testing.assert_close(zero_values, want_zero_values, rtol=0, atol=2e-5)
+    assert explanation.graph_count == 1 and explanation.graph_break_count == 0
+    assert _graph_token_widths(explanation, trimmed.d_model) == {1 + BASE_SET_PILES}
+
+
+def test_explicit_pile_count_overrides_the_batch_count() -> None:
+    obs, masks = _observations(rows=32)
+    trimmed, full = _pair()
+    with torch.no_grad():
+        want_logits, want_values = full.evaluate(obs, masks)
+        for n_piles in (BASE_SET_PILES, BASE_SET_PILES + 6, MAX_PILES):
+            got_logits, got_values = trimmed.evaluate(obs, masks, n_piles=n_piles)
+            torch.testing.assert_close(got_logits, want_logits, rtol=0, atol=2e-5)
+            torch.testing.assert_close(got_values, want_values, rtol=0, atol=2e-5)
+        with pytest.raises(ValueError):
+            trimmed.evaluate(obs, masks, n_piles=0)
+
+
+def test_server_trim_piles_selection() -> None:
+    from src.v2.train.inference_server import server_trim_piles
+
+    trimmed, full = _pair()
+    mlp = build_model({"arch": "mlp", "hidden_sizes": [16]}, dz.OBS_SIZE_V3, dz.ACTION_SPACE_SIZE)
+    assert server_trim_piles(trimmed, BASE_SET_PILES) == BASE_SET_PILES
+    assert server_trim_piles(trimmed, None) is None
+    assert server_trim_piles(trimmed, MAX_PILES) is None
+    assert server_trim_piles(full, BASE_SET_PILES) is None
+    assert server_trim_piles(mlp, BASE_SET_PILES) is None
+    with pytest.raises(ValueError):
+        server_trim_piles(trimmed, MAX_PILES + 1)
+
+    config = TrainConfig()
+    config.server_trim_piles = BASE_SET_PILES
+    validate_server_shards(config)
+    for bad in (0, 49, True, 17.0):
+        config.server_trim_piles = bad  # type: ignore[assignment]
+        with pytest.raises(ValueError):
+            validate_server_shards(config)
+
+
+class _CountingEvaluator(torch.nn.Module):
+    def __init__(self, model: CardTokenNet, n_piles: int):
+        super().__init__()
+        self.model = model
+        self.n_piles = n_piles
+        self.calls = 0
+
+    def forward(self, obs: torch.Tensor, legal_mask: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        self.calls += 1
+        return self.model.evaluate(obs, legal_mask, n_piles=self.n_piles)
+
+
+@pytest.mark.parametrize("buckets", [(), (64, 256)])
+def test_staging_uses_the_trimmed_evaluator_and_falls_back_when_piles_overflow(buckets: tuple[int, ...]) -> None:
+    from src.v2.train.inference_server import _PinnedStaging
+
+    obs, masks = _observations(rows=100)
+    model = _model(seed=5)
+    count = obs.shape[0]
+    want_logits, want_values = _reference(model, obs, masks)
+    legal = masks.numpy()
+
+    def serve(trim_piles: int) -> tuple[_PinnedStaging, _CountingEvaluator]:
+        staging = _PinnedStaging(torch.device("cpu"), 256, obs.shape[1])
+        staging.obs_np[:count] = obs.numpy()
+        staging.masks_np[:count] = masks.numpy().astype(np.uint8)
+        evaluator = _CountingEvaluator(model, trim_piles).eval()
+        staging.launch(
+            model, count, False, evaluator=evaluator, batch_buckets=buckets, trim_piles=trim_piles
+        ).finish()
+        np.testing.assert_allclose(staging.values_np[:count], want_values, rtol=0, atol=1e-4)
+        np.testing.assert_allclose(staging.policies_np[:count][legal], want_logits[legal], rtol=0, atol=3e-4)
+        return staging, evaluator
+
+    staging, evaluator = serve(BASE_SET_PILES)
+    assert evaluator.calls == 1 and staging.trim_overflow_batches == 0
+    # A graph narrower than the batch's supply must never be used: the staging
+    # serves the batch through the eager model instead.
+    staging, evaluator = serve(BASE_SET_PILES - 1)
+    assert evaluator.calls == 0 and staging.trim_overflow_batches == 1
+
+
+def test_resident_model_records_the_compiled_width_only_when_compiled() -> None:
+    from src.v2.train.inference_server import _build_resident_model
+    from src.v2.train.model import model_config_dict
+
+    config = TrainConfig()
+    for key, value in MODEL_CONFIG.items():
+        setattr(config.model, key, value)
+    config.selfplay.obs_version = 3
+    config.server_device = "cpu"
+    config.server_max_batch = 64
+    config.server_trim_piles = BASE_SET_PILES
+    # No compiled evaluator on CPU: the eager model sizes tokens per batch.
+    resident = _build_resident_model(model_config_dict(config.model), torch.device("cpu"), config, (), False)
+    assert resident.evaluator is None and resident.trim_piles is None

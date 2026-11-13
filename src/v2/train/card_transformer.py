@@ -606,8 +606,12 @@ class CardTokenNet(nn.Module):
             self.aux_margin_head(global_token),
         )
 
-    def forward(self, obs: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        return self.forward_tokenized(self.tokenize(obs, self._forward_pile_count(obs)))
+    def forward(self, obs: torch.Tensor, n_piles: int | None = None) -> tuple[torch.Tensor, torch.Tensor]:
+        """``n_piles`` fixes the token width (a compiled server graph passes a
+        constant); the caller guarantees it covers every active pile in ``obs``."""
+
+        width = self._forward_pile_count(obs) if n_piles is None else n_piles
+        return self.forward_tokenized(self.tokenize(obs, width))
 
     def forward_with_aux(self, obs: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Opt-in auxiliary output without changing ``forward``'s ABI."""
@@ -615,8 +619,13 @@ class CardTokenNet(nn.Module):
         return self.forward_tokenized_with_aux(self.tokenize(obs, self._forward_pile_count(obs)))
 
     @torch.no_grad()
-    def evaluate(self, obs: torch.Tensor, legal_mask: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        logits, values = self(obs)
+    def evaluate(
+        self,
+        obs: torch.Tensor,
+        legal_mask: torch.Tensor,
+        n_piles: int | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        logits, values = self(obs, n_piles)
         if logits.dtype == torch.float16:
             # The public fill does not fit in float16; mask in float32.
             logits = logits.float()

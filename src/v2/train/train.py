@@ -1240,6 +1240,7 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
         config.server_compile = requested.server_compile
         config.server_autocast_bf16 = requested.server_autocast_bf16
         config.server_batch_buckets = requested.server_batch_buckets
+        config.server_trim_piles = requested.server_trim_piles
         config.server_response_timeout_s = requested.server_response_timeout_s
         config.server_install_timeout_s = requested.server_install_timeout_s
         config.server_transport = requested.server_transport

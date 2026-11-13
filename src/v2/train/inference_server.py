@@ -36,7 +36,8 @@ except ImportError:  # pragma: no cover - supported CPython versions provide it
 
 import dominion_v2_py as dz
 
-from .apple_backend import SERVER_BACKENDS, build_host_backend
+from .apple_backend import SERVER_BACKENDS, active_pile_count_np, build_host_backend
+from .card_transformer import MAX_PILES, CardTokenNet
 from .config import TrainConfig, load_config
 from .inference_protocol import (
     InferenceServerEndpoints,
@@ -391,15 +392,34 @@ def _bucketed_batch_size(count: int, buckets: tuple[int, ...] | list[int] | None
 class _ServerEvaluator(torch.nn.Module):
     """Make each architecture's existing ``evaluate`` path compilable as one call."""
 
-    def __init__(self, model: torch.nn.Module):
+    def __init__(self, model: torch.nn.Module, n_piles: int | None = None):
         super().__init__()
         self.model = model
+        # A Python constant, so the compiled graph has a static token width.
+        self.n_piles = None if n_piles is None else int(n_piles)
 
     def forward(self, obs: torch.Tensor, legal_mask: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        return self.model.evaluate(obs, legal_mask)
+        if self.n_piles is None:
+            return self.model.evaluate(obs, legal_mask)
+        return self.model.evaluate(obs, legal_mask, n_piles=self.n_piles)
 
 
-def compile_server_evaluator(model: torch.nn.Module) -> torch.nn.Module:
+def server_trim_piles(model: torch.nn.Module, requested: int | None) -> int | None:
+    """Static pile-token width for a compiled evaluator of ``model``, or None.
+
+    Only a ``CardTokenNet`` with ``token_trim`` enabled can drop supply tokens;
+    every other model, and a width that drops nothing, keeps the full graph.
+    """
+
+    if requested is None or not isinstance(model, CardTokenNet) or not model.token_trim:
+        return None
+    requested = int(requested)
+    if not 1 <= requested <= MAX_PILES:
+        raise ValueError(f"server_trim_piles must be in [1, {MAX_PILES}], got {requested}")
+    return None if requested == MAX_PILES else requested
+
+
+def compile_server_evaluator(model: torch.nn.Module, n_piles: int | None = None) -> torch.nn.Module:
     """Compile the exact server evaluation path without changing weight ownership.
 
     ``fullgraph=True`` intentionally rejects graph breaks during startup warmup
@@ -411,7 +431,7 @@ def compile_server_evaluator(model: torch.nn.Module) -> torch.nn.Module:
     if not hasattr(torch, "compile"):
         raise RuntimeError("server_compile requires a PyTorch build with torch.compile")
     return torch.compile(
-        _ServerEvaluator(model).eval(),
+        _ServerEvaluator(model, n_piles).eval(),
         mode="reduce-overhead",
         fullgraph=True,
     )
@@ -421,6 +441,7 @@ def _maybe_compile_server_evaluator(
     model: torch.nn.Module,
     device: torch.device,
     enabled: bool,
+    n_piles: int | None = None,
 ) -> torch.nn.Module | None:
     if not enabled:
         return None
@@ -430,7 +451,7 @@ def _maybe_compile_server_evaluator(
             device.type,
         )
         return None
-    return compile_server_evaluator(model)
+    return compile_server_evaluator(model, n_piles)
 
 
 @dataclass
@@ -469,6 +490,7 @@ class _PinnedStaging:
         # compact uint8 legal mask directly into this persistent Bool tensor.
         self.masks_np = self.masks.numpy().view(np.uint8)
         self.masks_bool_np = self.masks.numpy()
+        self.trim_overflow_batches = 0
         self.values_np = self.values.numpy()
         self.policies_np = self.policies.numpy()
 
@@ -509,7 +531,24 @@ class _PinnedStaging:
         use_bf16: bool = False,
         batch_buckets: tuple[int, ...] | list[int] | None = None,
         host_backend: Any | None = None,
+        trim_piles: int | None = None,
     ) -> _InFlightForward:
+        if (
+            trim_piles is not None
+            and evaluator is not None
+            and active_pile_count_np(self.obs_np[:count]) > trim_piles
+        ):
+            # The compiled graph only carries ``trim_piles`` supply tokens.
+            # A batch that uses more runs through the eager model, which
+            # sizes its tokens from the batch, so outputs stay exact.
+            evaluator = None
+            self.trim_overflow_batches += 1
+            if self.trim_overflow_batches == 1:
+                logger.warning(
+                    "inference server batch uses more than server_trim_piles=%d supply piles; "
+                    "such batches run uncompiled",
+                    trim_piles,
+                )
         if host_backend is not None:
             # Apple-GPU serving (see apple_backend): synchronous, host NumPy
             # rows in and out, precision handled inside the backend.
@@ -588,6 +627,7 @@ class _PinnedStaging:
         use_bf16: bool = False,
         batch_buckets: tuple[int, ...] | list[int] | None = None,
         host_backend: Any | None = None,
+        trim_piles: int | None = None,
     ) -> float:
         """Synchronous compatibility wrapper used only during warmup."""
 
@@ -599,6 +639,7 @@ class _PinnedStaging:
             use_bf16=use_bf16,
             batch_buckets=batch_buckets,
             host_backend=host_backend,
+            trim_piles=trim_piles,
         ).finish()
 
     def zero_inputs_slice(self, start: int, end: int) -> None:
@@ -614,6 +655,7 @@ def _warm_server_evaluator(
     use_bf16: bool,
     batch_buckets: tuple[int, ...],
     server_max_batch: int,
+    trim_piles: int | None = None,
 ) -> None:
     """Compile/capture static serving shapes before the first worker request."""
 
@@ -630,6 +672,7 @@ def _warm_server_evaluator(
                 evaluator=evaluator,
                 use_bf16=use_bf16,
                 batch_buckets=batch_buckets,
+                trim_piles=trim_piles,
             )
         logger.info("inference server warmup bucket=%d elapsed_ms=%.3f", bucket, elapsed * 1000.0)
 
@@ -646,6 +689,8 @@ class _ResidentModel:
     staging: _PinnedStaging
     # Set for Apple-GPU serving; owns precision and (for MLX) converted weights.
     host_backend: Any | None = None
+    # Supply-pile tokens in the compiled evaluator's graph; None = all 48.
+    trim_piles: int | None = None
 
     def load_weights(self, state_dict: dict[str, torch.Tensor]) -> None:
         self.model.load_state_dict(state_dict)
@@ -717,7 +762,17 @@ def _build_resident_model(
         return _ResidentModel(
             normalized_config, obs_version, encoder_generation, model, None, staging, host_backend
         )
-    evaluator = _maybe_compile_server_evaluator(model, device, bool(config.server_compile))
+    trim_piles = server_trim_piles(model, getattr(config, "server_trim_piles", None))
+    evaluator = _maybe_compile_server_evaluator(model, device, bool(config.server_compile), trim_piles)
+    if evaluator is None:
+        trim_piles = None
+    else:
+        # Printed (not logged) so the trainer's own log records which graph serves.
+        print(
+            f"inference server: compiled evaluator, {MAX_PILES if trim_piles is None else trim_piles} "
+            f"of {MAX_PILES} supply tokens",
+            flush=True,
+        )
     _warm_server_evaluator(
         staging,
         model,
@@ -726,8 +781,17 @@ def _build_resident_model(
         use_bf16,
         batch_buckets,
         int(config.server_max_batch),
+        trim_piles,
     )
-    return _ResidentModel(normalized_config, obs_version, encoder_generation, model, evaluator, staging)
+    return _ResidentModel(
+        normalized_config,
+        obs_version,
+        encoder_generation,
+        model,
+        evaluator,
+        staging,
+        trim_piles=trim_piles,
+    )
 
 
 def _server_device(name: str) -> torch.device:
@@ -1172,6 +1236,7 @@ def _server_main(
                 use_bf16=use_bf16,
                 batch_buckets=batch_buckets,
                 host_backend=resident.host_backend,
+                trim_piles=resident.trim_piles,
             )
             inference_time = _drain_during_flight(
                 in_flight,
@@ -1824,6 +1889,7 @@ def bench_server(
     model_config_path: str | None = None,
     token_trim: bool = True,
     coalesce_rows: int | None = None,
+    trim_piles: int | None = None,
 ) -> list[dict[str, float | int | str]]:
     """Run standalone synthetic transport/server measurements for each worker count."""
     if duration_s <= 0.0 or max_batch <= 0:
@@ -1851,6 +1917,15 @@ def bench_server(
             cfg.model = source.model
             cfg.model.token_trim = bool(token_trim)
             cfg.selfplay.obs_version = int(source.selfplay.obs_version)
+            if device == "cuda":
+                # Measure the config's own compiled serving path.
+                cfg.server_compile = bool(source.server_compile)
+                cfg.server_autocast_bf16 = bool(source.server_autocast_bf16)
+                cfg.server_batch_buckets = source.server_batch_buckets
+                cfg.server_trim_piles = source.server_trim_piles
+        if trim_piles is not None:
+            # 0 (or 48) keeps every supply token in the compiled graph.
+            cfg.server_trim_piles = int(trim_piles) or None
         server = InferenceServer(cfg, worker_count)
         start_event = context.Event()
         stop_event = context.Event()
@@ -1879,7 +1954,7 @@ def bench_server(
                 ready_queue.get(timeout=15.0)
             # Workers treat a not-yet-ready server as a dead one, and building
             # a real model takes longer than starting the workers.
-            ready_deadline = time.monotonic() + 120.0
+            ready_deadline = time.monotonic() + (900.0 if cfg.server_compile else 120.0)
             while not server.alive_event.is_set():
                 server.ensure_alive()
                 if time.monotonic() >= ready_deadline:
@@ -1914,6 +1989,8 @@ def bench_server(
                     "fp16": fp16,
                     "arch": str(cfg.model.arch),
                     "token_trim": bool(cfg.model.token_trim),
+                    "compile": bool(cfg.server_compile),
+                    "trim_piles": cfg.server_trim_piles,
                     "transport": server.transport,
                     "poll": server.poll,
                     "workers": worker_count,
@@ -1949,6 +2026,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--no-token-trim", action="store_true")
     parser.add_argument("--coalesce-rows", type=int, default=None)
+    parser.add_argument(
+        "--trim-piles",
+        type=int,
+        default=None,
+        help="override server_trim_piles for the compiled CUDA graph (0 = all 48 supply tokens)",
+    )
     parser.add_argument("--workers", default="8,16,24")
     parser.add_argument("--duration", type=float, default=3.0)
     parser.add_argument("--max-batch", type=int, default=1024)
@@ -1970,6 +2053,7 @@ def main(argv: list[str] | None = None) -> int:
         model_config_path=args.model_config,
         token_trim=not args.no_token_trim,
         coalesce_rows=args.coalesce_rows,
+        trim_piles=args.trim_piles,
     ):
         print(json.dumps(row, sort_keys=True))
     return 0
