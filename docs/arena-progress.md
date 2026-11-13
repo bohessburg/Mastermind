@@ -512,6 +512,12 @@ Restart, 2026-11-13 01:40 UTC: c31 gen 15 was promoted at 01:32 UTC. The
 c31 gen 12 overall: 17-5-0 recorded over three sessions, plus two aborted
 games without ledger rows. Ledger at restart: 449 rows; first game 185875864.
 
+Restart, 2026-11-13 03:13 UTC: c31 gen 17 was promoted at 02:59 UTC. The
+gen 15 session went 3-4-0 over seven games (log `arena_c29_run24.log`); it
+was stopped between games and relaunched on
+`checkpoints/remote/campaign31/gen_0017.pt` (198 arena tests, dry run 3/3).
+Ledger at restart: 456 rows.
+
 ## Status by phase
 
 - **P0 — Recording harness: complete (2026-07-24).**
