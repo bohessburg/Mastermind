@@ -3181,6 +3181,7 @@ Ladder against c29 gen 43 every fifth generation (`bench/c31_ladder`, 200 pairs 
 | 25 | 0.5088 | 0.4939 | rejected | 0.713 | 0.672 | 0 | 36.4 |
 | 26 | 0.4919 | 0.4767 | rejected | 0.707 | 0.670 | 2 | 39.6 |
 | 27 | 0.5244 | 0.5095 | **accepted** | 0.706 | 0.653 | 2 | 38.0 |
+| 28 | 0.4963 | 0.4815 | rejected | 0.708 | 0.637 | 0 | 35.8 |
 
 Gen 1 notes: 31.1 minutes, inside c30's 29 to 33 minute range. Self-play mix was 820 self games, 102 league games
 (25, 26 and 19 wins of 34 against c29 gen 10, 25 and 35) and 102 scripted
@@ -3367,4 +3368,20 @@ vs gen 22; best is now gen 27, the seventh promotion (6, 12, 15, 17, 19,
 22, 27) and the first on the trimmed serving graph. Server 147.5k evals/s,
 self-play 2,829 games/hour, 38.0 minutes. Checkpoint copied to
 `checkpoints/remote/campaign31/gen_0027.pt` (sha256 `7a05d5f0...26c6be`,
-matches the box); engine3 eval running in the background.
+matches the box). Engine3 eval: main 70-30-0, sentinel0 74-25-1 (72.4%),
+level with gen 19 (72.4%) and gen 22 (72.0%).
+
+Anchor sampler note (found 10:15 UTC while answering whether to drop the
+human anchor): the anchor batch iterator is seeded from `config.seed` only,
+so every trainer restart replays the same permutation of the 922,695-row
+corpus from its start. At 80 steps x 512 rows a generation covers 4.4% of
+the corpus, and the longest uninterrupted stretch so far is ten generations,
+so under half of the corpus has reached the anchor loss in c31 and the first
+slice has been replayed after each of the restarts at gens 6, 14 and 23.
+The anchor policy loss shows it: 0.46 to 0.48 on the replayed slice right
+after each restart (gens 15-19, 24-27), 0.53 to 0.57 once the iterator
+reaches rows it has not replayed (gens 13-14, 21-23). Not fixed yet.
+
+Gen 28 (10:13 UTC): rejected, 0.4963 (385-391-24, lb 0.4815) against
+gen 27. Streak 1, best stays gen 27. 35.8 minutes, the fastest generation
+of the run; server 160.3k evals/s. Anchor policy loss 0.461, value 0.173.
