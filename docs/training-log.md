@@ -3179,6 +3179,7 @@ Ladder against c29 gen 43 every fifth generation (`bench/c31_ladder`, 200 pairs 
 | 23 | 0.4656 | 0.4510 | rejected | 0.721 | 0.698 | 1 | 40.5 |
 | 24 | 0.4756 | 0.4605 | rejected | 0.716 | 0.666 | 0 | 37.5 |
 | 25 | 0.5088 | 0.4939 | rejected | 0.713 | 0.672 | 0 | 36.4 |
+| 26 | 0.4919 | 0.4767 | rejected | 0.707 | 0.670 | 2 | 39.6 |
 
 Gen 1 notes: 31.1 minutes, inside c30's 29 to 33 minute range. Self-play mix was 820 self games, 102 league games
 (25, 26 and 19 wins of 34 against c29 gen 10, 25 and 35) and 102 scripted
@@ -3349,3 +3350,13 @@ Gen 25 (08:20 UTC): rejected, 0.5088 (393-379-28, lower bound 0.4939) vs
 gen 22; rejection streak 3. Back above even after the two low gates. Server
 139.0k evals/s, self-play 3,216 games/hour, 36.4 minutes. Ladder match
 gen 25 vs c29 gen 43 started 08:20 UTC.
+
+Ladder, gen 25 vs c29 gen 43 (08:47 UTC): 0.544 (214-179-7, 95% interval
+0.502-0.585). Earlier matches: gen 10 0.517, gen 15 0.534, gen 20 0.541.
+The first candidate trained after the trim deploy is no weaker against the
+fixed anchor than the ones before it, so the low gates of gens 23 and 24
+are not explained by the trim.
+
+Gen 26 (08:59 UTC): rejected, 0.4919 (381-394-25, lower bound 0.4767) vs
+gen 22; rejection streak 4. Server 136.0k evals/s, self-play 2,698
+games/hour, 39.6 minutes; the ladder match shared the box for most of it.
