@@ -550,6 +550,40 @@ First game on gen 27: 185886611. The first relaunch attempt exited 8
 launcher's own process-search pattern was matched by `arena_retry.sh`; the
 helper was stopped and the launcher rerun, one minute of downtime.
 
+Abort, 2026-11-13 13:07 UTC: game 185890558 against yoyone (our seat 1,
+turn 27, opponent's buy phase) stopped with `TrackerError: FullState
+zone-count mismatch`: tracked opponent hand 3 / in play 3, reported hand 4 /
+in play 2. The opponent played a Copper and two seconds later the server
+sent a fresh `GameStart` and `FullState` with the Copper back in hand. No
+undo request reached us (the two requests in this game, both at decision
+178, were denied about three minutes earlier). Game 181415316 on 2026-07-26
+aborted the same way with a Copper and a Silver. So the server takes back a
+player's own treasure plays without asking the other seat, and the
+deny-only policy never sees it. Session before the abort: 22-15-1 on c31
+gen 27 over 38 games (log `arena_c29_run29.log`). The relaunch at 13:09 UTC
+(198 arena tests, dry run 3/3) found the table still live, got no
+`FullState` in 30 s and exited 5, so the game was abandoned and has no
+ledger row. Ledger 539 rows.
+
+Fix for that abort (2026-11-13): the tracker accepts one more unrequested
+mid-game `FullState` as authoritative, and only this shape: opponent's
+turn, nothing asked of us, card table and supply unchanged, and the only
+zone difference is treasures moving from the turn player's play area back
+to their hand (`Tracker._is_treasure_play_rewind`). It reuses the undo
+resync path (shadow, turn history and pending actuation invalidated) and
+archives an `UndoResync` marker with decision index -1 and its own reason.
+Any other unrequested mismatch still raises. Tests in
+`tests/v2/arena/test_undo_safety.py` replay both aborted games, and cover
+the same shape on our own turn and a non-treasure rewind (both still
+raise). A replay of all 93 archived runs (1.26M events) gives exactly three
+resyncs: the granted undo of 2026-07-25 and these two games.
+
+Restart, 2026-11-13 13:17 UTC: relaunched by hand at Jack's request instead
+of waiting out the ten-minute retry (203 arena tests, dry run 3/3, run at
+13:12 on the fixed tracker). In on the first attempt, run directory
+`exports/arena/20261113T131737.996915Z`, first game 185891036, still c31
+gen 27 with no pause. The treasure-rewind fix is live from this session.
+
 ## Status by phase
 
 - **P0 — Recording harness: complete (2026-07-24).**
