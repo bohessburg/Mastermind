@@ -480,6 +480,13 @@ its outcome is unknown. That session stood at 9-5-0 on c31 gen 12 over 14
 recorded games; relaunched on gen 12 at 23:42 UTC, 198 arena tests, dry run
 3/3. Ledger at restart: 441 rows.
 
+The 23:42 and 23:49 UTC relaunches both exited 5: the abandoned game was
+still live on the site, the reconnect sent no FullState, and Leave Table was
+not actionable (logs `arena_c29_run20.log`, `arena_c29_run21.log`). No resign
+was sent. A ten-minute retry loop got in at 23:57 UTC, once the opponent had
+ended that game; first new game 185872600 at 23:59 UTC, run directory
+`exports/arena/20261112T235753.655460Z`.
+
 ## Status by phase
 
 - **P0 — Recording harness: complete (2026-07-24).**

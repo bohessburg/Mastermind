@@ -3235,3 +3235,15 @@ Gen 12 engine3 eval: 79-21-0 and 72-27-1 = 75.9% excluding ties over 200
 points). Highest of these but inside the noise. Gen 13 (22:16 UTC) rejected
 at 0.4913 against gen 12; 44.0 minutes with the eval sharing the GPU, memory
 peak 133 GB.
+
+Box outage, 2026-11-12 23:26 UTC to 2026-11-13 00:51 UTC: the container went
+down during gen 15's gate (400 of 800 games played) and ssh was refused for
+about 85 minutes. Jack restarted it. Supervisor brought the trainer back by
+itself and `resume.sh` picked up `gen_0014.pt`: best is still gen 12 (read
+from the checkpoint), the replay buffer came back from `replay_state.npz`
+(saved 22:57 UTC, no missing-state warning), and the stop rule's streak is
+computed from the generation numbers, so it stands at 2. Gen 15 is being
+redone from self-play; its first run is lost. No out-of-memory kill
+(`oom_kill 0`, 103 GB in use after the restart). The memory logger and the
+ladder watcher do not survive a container restart and were started again by
+hand at 00:52 and 00:54 UTC.
