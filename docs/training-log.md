@@ -3177,6 +3177,7 @@ Ladder against c29 gen 43 every fifth generation (`bench/c31_ladder`, 200 pairs 
 | 21 | 0.4775 | 0.4631 | rejected | 0.728 | 0.681 | 1 | 38.6 |
 | 22 | 0.5169 | 0.5016 | **accepted** | 0.726 | 0.660 | 0 | 38.3 |
 | 23 | 0.4656 | 0.4510 | rejected | 0.721 | 0.698 | 1 | 40.5 |
+| 24 | 0.4756 | 0.4605 | rejected | 0.716 | 0.666 | 0 | 37.5 |
 
 Gen 1 notes: 31.1 minutes, inside c30's 29 to 33 minute range. Self-play mix was 820 self games, 102 league games
 (25, 26 and 19 wins of 34 against c29 gen 10, 25 and 35) and 102 scripted
@@ -3332,3 +3333,13 @@ precision as the 49-token graph already was (0.050 vs 0.056). Forward only:
 self-play lines: server 147-148k evals/s against 105-110k at the same point
 of gens 21 and 22; GPU utilization fell from about 90% to about 60%, so the
 64 workers are now the limit.
+
+Gen 24 (07:44 UTC): rejected, 0.4756 (370-409-21, lower bound 0.4605) vs
+gen 22; rejection streak 2. Gens 23 and 24 are the lowest and second-lowest
+gates of the campaign. First full generation on the trimmed graph: server
+154.7k evals/s (gen 22: 104.6k), self-play 3,366 games/hour (2,880), but
+37.5 minutes per generation against 38.3. Self-play fell from about 21 to
+18 minutes, of which about four are the last twenty long games; the gate
+took 17 minutes as before, at about 23k evals/s, since each 200-game chunk
+waits for its slowest games. The generation is no longer limited by the
+network forward pass.
