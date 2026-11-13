@@ -3169,6 +3169,7 @@ Ladder against c29 gen 43 every fifth generation (`bench/c31_ladder`, 200 pairs 
 | 13 | 0.4913 | 0.4763 | rejected | 0.738 | 0.651 | 1 | 44.0 |
 | 14 | 0.5031 | 0.4886 | rejected | 0.734 | 0.680 | 1 | 40.7 |
 | 15 | 0.5294 | 0.5137 | **accepted** | 0.727 | 0.692 | 0 | 40.7 |
+| 16 | 0.5038 | 0.4892 | rejected | 0.729 | 0.660 | 3 | 45.9 |
 
 Gen 1 notes: 31.1 minutes, inside c30's 29 to 33 minute range. Self-play mix was 820 self games, 102 league games
 (25, 26 and 19 wins of 34 against c29 gen 10, 25 and 35) and 102 scripted
@@ -3256,3 +3257,12 @@ and 12. Best is gen 15 and the rejection streak is back to 0. Held-out r2
 `checkpoints/remote/campaign31/gen_0015.pt` (sha256 `6cad6df5...517582bc`,
 matches the box). Its engine3 eval and the ladder match against c29 gen 43
 started on the box at 01:32 UTC and share the GPU with gen 16.
+
+Gen 15 follow-ups (2026-11-13 02:05 UTC). engine3 eval: 69-31-0 and 73-27-0
+= 71.0% over 200 (gen 12 75.9%, gen 6 74.2%; one standard error about 3
+points, so lower but not separated). Ladder against c29 gen 43, 200 pairs at
+128 sims: 208-181-11, 0.534 [0.489, 0.578], +23 Elo. The ladder has gone
+0.489 (gen 5), 0.517 (gen 10), 0.534 (gen 15): each step inside the noise,
+the trend upward, and the interval still includes even. Gen 16 (02:18 UTC)
+rejected at 0.5038 against gen 15; 45.9 minutes with the eval and the ladder
+sharing the GPU.
