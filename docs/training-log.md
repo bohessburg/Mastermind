@@ -3180,6 +3180,7 @@ Ladder against c29 gen 43 every fifth generation (`bench/c31_ladder`, 200 pairs 
 | 24 | 0.4756 | 0.4605 | rejected | 0.716 | 0.666 | 0 | 37.5 |
 | 25 | 0.5088 | 0.4939 | rejected | 0.713 | 0.672 | 0 | 36.4 |
 | 26 | 0.4919 | 0.4767 | rejected | 0.707 | 0.670 | 2 | 39.6 |
+| 27 | 0.5244 | 0.5095 | **accepted** | 0.706 | 0.653 | 2 | 38.0 |
 
 Gen 1 notes: 31.1 minutes, inside c30's 29 to 33 minute range. Self-play mix was 820 self games, 102 league games
 (25, 26 and 19 wins of 34 against c29 gen 10, 25 and 35) and 102 scripted
@@ -3360,3 +3361,10 @@ are not explained by the trim.
 Gen 26 (08:59 UTC): rejected, 0.4919 (381-394-25, lower bound 0.4767) vs
 gen 22; rejection streak 4. Server 136.0k evals/s, self-play 2,698
 games/hour, 39.6 minutes; the ladder match shared the box for most of it.
+
+Gen 27 (09:37 UTC): **accepted**, 0.5244 (403-364-33, lower bound 0.5095)
+vs gen 22; best is now gen 27, the seventh promotion (6, 12, 15, 17, 19,
+22, 27) and the first on the trimmed serving graph. Server 147.5k evals/s,
+self-play 2,829 games/hour, 38.0 minutes. Checkpoint copied to
+`checkpoints/remote/campaign31/gen_0027.pt` (sha256 `7a05d5f0...26c6be`,
+matches the box); engine3 eval running in the background.
