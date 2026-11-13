@@ -530,6 +530,16 @@ was stopped between games and relaunched on
 `checkpoints/remote/campaign31/gen_0022.pt` (198 arena tests, dry run 3/3).
 Ledger at restart: 478 rows. First game on gen 22: 185883345.
 
+Restart, 2026-11-13 08:19 UTC: think-time pause removed at Jack's request
+(`think_time` 1.25-2.75 s -> 0 in `configs/arena_c29.json`). The pause was
+added after every decision on top of the search, so opponents waited about
+3 s per decision (median over four games) for a search that takes about
+0.65 s on this Mac (400 sims, CPU; 200 network calls of 2 positions each).
+The first gen 22 session went 5-4-0 over nine games (log
+`arena_c29_run27.log`); stopped between games, relaunched on the same
+checkpoint (198 arena tests, dry run 3/3). Ledger at restart: 487 rows.
+First game without the pause: 185885223.
+
 ## Status by phase
 
 - **P0 — Recording harness: complete (2026-07-24).**
