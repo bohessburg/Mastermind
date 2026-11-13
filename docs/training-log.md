@@ -3176,6 +3176,7 @@ Ladder against c29 gen 43 every fifth generation (`bench/c31_ladder`, 200 pairs 
 | 20 | 0.4888 | 0.4739 | rejected | 0.728 | 0.660 | 1 | 40.7 |
 | 21 | 0.4775 | 0.4631 | rejected | 0.728 | 0.681 | 1 | 38.6 |
 | 22 | 0.5169 | 0.5016 | **accepted** | 0.726 | 0.660 | 0 | 38.3 |
+| 23 | 0.4656 | 0.4510 | rejected | 0.721 | 0.698 | 1 | 40.5 |
 
 Gen 1 notes: 31.1 minutes, inside c30's 29 to 33 minute range. Self-play mix was 820 self games, 102 league games
 (25, 26 and 19 wins of 34 against c29 gen 10, 25 and 35) and 102 scripted
@@ -3310,3 +3311,24 @@ bound 0.5016: the sixth promotion (6, 12, 15, 17, 19, 22); best = gen 22,
 rejection streak reset. Checkpoint copied to
 `checkpoints/remote/campaign31/gen_0022.pt` (sha256 `ef4bec9f...43e3`,
 matches the box); the arena moved to it at 06:35 UTC.
+
+Gen 22 engine3 eval: 71-29-0 and 73-27-0 = 72.0% over 200 (gen 19 72.4%,
+gen 17 71.7%): flat. Gen 23 (07:05 UTC) rejected at 0.4656 against gen 22
+(361-416-23), lower bound 0.4510; best stays gen 22, rejection streak 1.
+Its 40.5 minutes include about four minutes of GPU checks for the change
+below, run beside the trainer.
+
+**Token trim on the box (07:05 UTC, commit `2da1205`).** The compiled
+serving graph needs a fixed token count, so it kept all 49 tokens after
+`9281e80`. `server_trim_piles: 17` (in `configs/run_c31.json`) now compiles
+it at 17 supply tokens plus the global one; a batch that uses more piles
+runs through the uncompiled model, so the setting cannot change outputs.
+Checked on the box's GPU beside the running trainer (gen 22 net, 4,096 real
+positions): full precision trimmed vs untrimmed max policy difference
+1.6e-6; in the bf16 serving mode the trimmed graph is as far from full
+precision as the 49-token graph already was (0.050 vs 0.056). Forward only:
+1.34x at batch 256, 1.98x at batch 1024. Deployed at the gen 23 boundary
+(stop, merge, start; two minutes from stop to self-play). First gen 24
+self-play lines: server 147-148k evals/s against 105-110k at the same point
+of gens 21 and 22; GPU utilization fell from about 90% to about 60%, so the
+64 workers are now the limit.

@@ -94,3 +94,22 @@ PYTHONPATH=build ./.venv/bin/python -m src.v2.train.inference_server --bench-ser
 
 Only self-play serving goes through these backends; the training step, gate
 and evaluation matches run PyTorch directly and get the trim only.
+
+### Compiled CUDA serving (RTX 5090 box, November 2026)
+
+The box serves through `torch.compile` with static batch buckets and bf16
+autocast; `server_trim_piles: 17` fixes the compiled token width at 18.
+Measured beside a running trainer (shared GPU), gen 22 net, evals/s:
+
+| Measurement | 49 tokens | 18 tokens |
+|---|---|---|
+| Forward only, bucket 256 | 78.9k | 106.0k |
+| Forward only, bucket 1024 | 94.5k | 186.7k |
+| Inference server, 16 synthetic workers | 60.5k | 77.1k |
+| c31 self-play, 64 workers (server rate) | 105-110k | 147-148k |
+
+Server benchmark: `python -m src.v2.train.inference_server --bench-server
+--device cuda --model-config configs/run_c31.json --workers 16 --max-batch
+4096 --coalesce-rows 512 --duration 10 --trim-piles 17` (`--trim-piles 0`
+for the full width).
+
