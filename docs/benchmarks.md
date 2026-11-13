@@ -95,6 +95,27 @@ PYTHONPATH=build ./.venv/bin/python -m src.v2.train.inference_server --bench-ser
 Only self-play serving goes through these backends; the training step, gate
 and evaluation matches run PyTorch directly and get the trim only.
 
+#### Full trainer on the M1 Max (2026-11-13, not completed)
+
+`configs/run_c31_mac.json` (c31's settings, MLX fp16 serving, 8 workers) was
+started twice from c31 gen 27 and stopped both times during generation 1's
+self-play, so there is no measured generation time.
+
+- Real self-play serves 44-47k evals/s (merged batches about 1,600 rows). The
+  GPU is the limit: the eight workers use 10-20% of a core each and the server
+  process about 80% of one.
+- A c31 generation is about 160M self-play evaluations (box: 1,024 games in
+  19 min at 139k evals/s), so self-play would take about an hour at that rate.
+- It does not fit in 64 GB. A worker runs all of its assigned games at once
+  (`selfplay.n_games` is ignored when a slot manifest is used), each game
+  holds about 85 MB of search tree, and 1,024 games come to about 88 GB
+  whatever the worker count (11 GB per worker with eight). The first attempt
+  also had 17 GB of MLX buffer cache, pushed the machine into memory
+  compression, and fell from 44k to 25k evals/s within 18 minutes.
+- `MLX_CACHE_LIMIT_BYTES` (2 GB) now caps that cache; the server held about
+  3 GB in the second attempt with no loss of throughput.
+- The gate and the training step were never reached on the Mac.
+
 ### Compiled CUDA serving (RTX 5090 box, November 2026)
 
 The box serves through `torch.compile` with static batch buckets and bf16

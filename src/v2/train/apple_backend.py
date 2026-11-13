@@ -110,6 +110,9 @@ class TorchHostBackend:
             return policies.float().cpu().numpy(), values.float().cpu().numpy()
 
 
+MLX_CACHE_LIMIT_BYTES = 2 << 30
+
+
 class MlxBackend:
     """MLX inference for a :class:`CardTokenNet` whose weights PyTorch owns."""
 
@@ -125,6 +128,10 @@ class MlxBackend:
                 "server_backend='mlx' requires the optional 'mlx' package (pip install mlx)"
             ) from exc
         self._mx = mx
+        # MLX keeps freed Metal buffers for reuse and its default ceiling
+        # scales with system memory: one c31 self-play server held 17 GB of
+        # them on a 64 GB Mac, memory the search trees need.
+        mx.set_cache_limit(MLX_CACHE_LIMIT_BYTES)
         self.model = model
         self.half = bool(half)
         self._dtype = mx.float16 if self.half else mx.float32
