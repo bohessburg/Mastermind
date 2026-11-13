@@ -1,0 +1,200 @@
+device=mps
+a=0.6 s=1 step 250/3000 loss=1.4541 (5.1 st/s)
+a=0.6 s=1 step 500/3000 loss=1.3177 (5.1 st/s)
+a=0.6 s=1 step 750/3000 loss=1.2373 (5.1 st/s)
+a=0.6 s=1 step 1000/3000 loss=1.1910 (5.2 st/s)
+a=0.6 s=1 step 1250/3000 loss=1.1501 (5.2 st/s)
+a=0.6 s=1 step 1500/3000 loss=1.1092 (5.2 st/s)
+a=0.6 s=1 step 1750/3000 loss=1.1462 (5.2 st/s)
+a=0.6 s=1 step 2000/3000 loss=1.1474 (5.2 st/s)
+a=0.6 s=1 step 2250/3000 loss=1.1416 (5.2 st/s)
+a=0.6 s=1 step 2500/3000 loss=1.1192 (5.3 st/s)
+a=0.6 s=1 step 2750/3000 loss=1.0874 (5.3 st/s)
+a=0.6 s=1 step 3000/3000 loss=1.0546 (5.3 st/s)
+FIT DONE a=0.6 s=1
+a=0.6 s=2 step 250/3000 loss=1.5479 (5.3 st/s)
+a=0.6 s=2 step 500/3000 loss=1.3703 (5.3 st/s)
+a=0.6 s=2 step 750/3000 loss=1.2189 (5.3 st/s)
+a=0.6 s=2 step 1000/3000 loss=1.1454 (5.3 st/s)
+a=0.6 s=2 step 1250/3000 loss=1.1526 (5.3 st/s)
+a=0.6 s=2 step 1500/3000 loss=1.0952 (5.3 st/s)
+a=0.6 s=2 step 1750/3000 loss=1.1109 (5.3 st/s)
+a=0.6 s=2 step 2000/3000 loss=1.1300 (5.3 st/s)
+a=0.6 s=2 step 2250/3000 loss=1.1298 (5.3 st/s)
+a=0.6 s=2 step 2500/3000 loss=1.0682 (5.3 st/s)
+a=0.6 s=2 step 2750/3000 loss=1.1226 (5.3 st/s)
+a=0.6 s=2 step 3000/3000 loss=1.0927 (5.3 st/s)
+FIT DONE a=0.6 s=2
+a=0.6 s=3 step 250/3000 loss=1.4830 (5.3 st/s)
+a=0.6 s=3 step 500/3000 loss=1.3980 (5.3 st/s)
+a=0.6 s=3 step 750/3000 loss=1.2438 (5.2 st/s)
+a=0.6 s=3 step 1000/3000 loss=1.1827 (5.2 st/s)
+a=0.6 s=3 step 1250/3000 loss=1.1607 (5.2 st/s)
+a=0.6 s=3 step 1500/3000 loss=1.1821 (5.2 st/s)
+a=0.6 s=3 step 1750/3000 loss=1.1982 (5.2 st/s)
+a=0.6 s=3 step 2000/3000 loss=1.1186 (5.3 st/s)
+a=0.6 s=3 step 2250/3000 loss=1.1363 (5.3 st/s)
+a=0.6 s=3 step 2500/3000 loss=1.0909 (5.3 st/s)
+a=0.6 s=3 step 2750/3000 loss=1.0811 (5.3 st/s)
+a=0.6 s=3 step 3000/3000 loss=1.0760 (5.3 st/s)
+FIT DONE a=0.6 s=3
+a=0.4 s=1 step 250/3000 loss=1.4123 (5.3 st/s)
+a=0.4 s=1 step 500/3000 loss=1.3073 (5.3 st/s)
+a=0.4 s=1 step 750/3000 loss=1.2664 (5.3 st/s)
+a=0.4 s=1 step 1000/3000 loss=1.1940 (5.3 st/s)
+a=0.4 s=1 step 1250/3000 loss=1.1639 (5.3 st/s)
+a=0.4 s=1 step 1500/3000 loss=1.1160 (5.3 st/s)
+a=0.4 s=1 step 1750/3000 loss=1.1558 (5.3 st/s)
+a=0.4 s=1 step 2000/3000 loss=1.1499 (5.3 st/s)
+a=0.4 s=1 step 2250/3000 loss=1.1363 (5.3 st/s)
+a=0.4 s=1 step 2500/3000 loss=1.1122 (5.3 st/s)
+a=0.4 s=1 step 2750/3000 loss=1.1087 (5.3 st/s)
+a=0.4 s=1 step 3000/3000 loss=1.0433 (5.3 st/s)
+FIT DONE a=0.4 s=1
+a=0.4 s=2 step 250/3000 loss=1.5172 (5.3 st/s)
+a=0.4 s=2 step 500/3000 loss=1.3570 (5.3 st/s)
+a=0.4 s=2 step 750/3000 loss=1.1982 (5.3 st/s)
+a=0.4 s=2 step 1000/3000 loss=1.1450 (5.3 st/s)
+a=0.4 s=2 step 1250/3000 loss=1.1792 (5.3 st/s)
+a=0.4 s=2 step 1500/3000 loss=1.1072 (5.3 st/s)
+a=0.4 s=2 step 1750/3000 loss=1.1247 (5.3 st/s)
+a=0.4 s=2 step 2000/3000 loss=1.1317 (5.3 st/s)
+a=0.4 s=2 step 2250/3000 loss=1.1177 (5.3 st/s)
+a=0.4 s=2 step 2500/3000 loss=1.1054 (5.3 st/s)
+a=0.4 s=2 step 2750/3000 loss=1.1367 (5.3 st/s)
+a=0.4 s=2 step 3000/3000 loss=1.0829 (5.3 st/s)
+FIT DONE a=0.4 s=2
+a=0.4 s=3 step 250/3000 loss=1.4462 (5.3 st/s)
+a=0.4 s=3 step 500/3000 loss=1.3495 (5.3 st/s)
+a=0.4 s=3 step 750/3000 loss=1.2501 (5.3 st/s)
+a=0.4 s=3 step 1000/3000 loss=1.1932 (5.3 st/s)
+a=0.4 s=3 step 1250/3000 loss=1.1774 (5.3 st/s)
+a=0.4 s=3 step 1500/3000 loss=1.1686 (5.3 st/s)
+a=0.4 s=3 step 1750/3000 loss=1.1875 (5.3 st/s)
+a=0.4 s=3 step 2000/3000 loss=1.0924 (5.3 st/s)
+a=0.4 s=3 step 2250/3000 loss=1.1304 (5.3 st/s)
+a=0.4 s=3 step 2500/3000 loss=1.1001 (5.3 st/s)
+a=0.4 s=3 step 2750/3000 loss=1.0651 (5.3 st/s)
+a=0.4 s=3 step 3000/3000 loss=1.0867 (5.3 st/s)
+PROBE FAIL value_probe.py /Users/paisho/Projects/Mastermind/bench/value_target_sweep/fit2_a0.4_s3.pt: or(
+src.v2.arena.bot.policy.NNCheckpointError: checkpoint /Users/paisho/Projects/Mastermind/bench/value_target_sweep/fit2_a0.4_s3.pt uses encoder generation 1, but this build uses encoder generation 2; pass legacy_shim=True to serve a generation-1 checkpoint with restored pre-sentinel-fix constants
+
+PROBE FAIL duchy_probe.py /Users/paisho/Projects/Mastermind/bench/value_target_sweep/fit2_a0.4_s3.pt: or(
+src.v2.arena.bot.policy.NNCheckpointError: checkpoint /Users/paisho/Projects/Mastermind/bench/value_target_sweep/fit2_a0.4_s3.pt uses encoder generation 1, but this build uses encoder generation 2; pass legacy_shim=True to serve a generation-1 checkpoint with restored pre-sentinel-fix constants
+
+FIT DONE a=0.4 s=3
+a=0.2 s=1 step 250/3000 loss=1.3727 (5.3 st/s)
+a=0.2 s=1 step 500/3000 loss=1.2622 (5.3 st/s)
+a=0.2 s=1 step 750/3000 loss=1.2264 (5.3 st/s)
+a=0.2 s=1 step 1000/3000 loss=1.1701 (5.3 st/s)
+a=0.2 s=1 step 1250/3000 loss=1.1423 (5.3 st/s)
+a=0.2 s=1 step 1500/3000 loss=1.1002 (5.3 st/s)
+a=0.2 s=1 step 1750/3000 loss=1.1469 (5.3 st/s)
+a=0.2 s=1 step 2000/3000 loss=1.1463 (5.3 st/s)
+a=0.2 s=1 step 2250/3000 loss=1.1249 (5.3 st/s)
+a=0.2 s=1 step 2500/3000 loss=1.1026 (5.3 st/s)
+a=0.2 s=1 step 2750/3000 loss=1.0865 (5.3 st/s)
+a=0.2 s=1 step 3000/3000 loss=1.0369 (5.3 st/s)
+PROBE FAIL value_probe.py /Users/paisho/Projects/Mastermind/bench/value_target_sweep/fit2_a0.2_s1.pt: or(
+src.v2.arena.bot.policy.NNCheckpointError: checkpoint /Users/paisho/Projects/Mastermind/bench/value_target_sweep/fit2_a0.2_s1.pt uses encoder generation 1, but this build uses encoder generation 2; pass legacy_shim=True to serve a generation-1 checkpoint with restored pre-sentinel-fix constants
+
+PROBE FAIL duchy_probe.py /Users/paisho/Projects/Mastermind/bench/value_target_sweep/fit2_a0.2_s1.pt: or(
+src.v2.arena.bot.policy.NNCheckpointError: checkpoint /Users/paisho/Projects/Mastermind/bench/value_target_sweep/fit2_a0.2_s1.pt uses encoder generation 1, but this build uses encoder generation 2; pass legacy_shim=True to serve a generation-1 checkpoint with restored pre-sentinel-fix constants
+
+FIT DONE a=0.2 s=1
+a=0.2 s=2 step 250/3000 loss=1.4749 (5.3 st/s)
+a=0.2 s=2 step 500/3000 loss=1.3455 (5.3 st/s)
+a=0.2 s=2 step 750/3000 loss=1.1958 (5.3 st/s)
+a=0.2 s=2 step 1000/3000 loss=1.1386 (5.3 st/s)
+a=0.2 s=2 step 1250/3000 loss=1.1559 (5.3 st/s)
+a=0.2 s=2 step 1500/3000 loss=1.1095 (5.3 st/s)
+a=0.2 s=2 step 1750/3000 loss=1.1282 (5.3 st/s)
+a=0.2 s=2 step 2000/3000 loss=1.1142 (5.3 st/s)
+a=0.2 s=2 step 2250/3000 loss=1.1271 (5.3 st/s)
+a=0.2 s=2 step 2500/3000 loss=1.0770 (5.3 st/s)
+a=0.2 s=2 step 2750/3000 loss=1.1193 (5.3 st/s)
+a=0.2 s=2 step 3000/3000 loss=1.0752 (5.3 st/s)
+PROBE FAIL value_probe.py /Users/paisho/Projects/Mastermind/bench/value_target_sweep/fit2_a0.2_s2.pt: or(
+src.v2.arena.bot.policy.NNCheckpointError: checkpoint /Users/paisho/Projects/Mastermind/bench/value_target_sweep/fit2_a0.2_s2.pt uses encoder generation 1, but this build uses encoder generation 2; pass legacy_shim=True to serve a generation-1 checkpoint with restored pre-sentinel-fix constants
+
+PROBE FAIL duchy_probe.py /Users/paisho/Projects/Mastermind/bench/value_target_sweep/fit2_a0.2_s2.pt: or(
+src.v2.arena.bot.policy.NNCheckpointError: checkpoint /Users/paisho/Projects/Mastermind/bench/value_target_sweep/fit2_a0.2_s2.pt uses encoder generation 1, but this build uses encoder generation 2; pass legacy_shim=True to serve a generation-1 checkpoint with restored pre-sentinel-fix constants
+
+FIT DONE a=0.2 s=2
+a=0.2 s=3 step 250/3000 loss=1.4167 (5.3 st/s)
+a=0.2 s=3 step 500/3000 loss=1.3412 (5.3 st/s)
+a=0.2 s=3 step 750/3000 loss=1.2345 (5.3 st/s)
+a=0.2 s=3 step 1000/3000 loss=1.1676 (5.3 st/s)
+a=0.2 s=3 step 1250/3000 loss=1.1583 (5.3 st/s)
+a=0.2 s=3 step 1500/3000 loss=1.1542 (5.3 st/s)
+a=0.2 s=3 step 1750/3000 loss=1.1901 (5.3 st/s)
+a=0.2 s=3 step 2000/3000 loss=1.1014 (5.3 st/s)
+a=0.2 s=3 step 2250/3000 loss=1.1342 (5.3 st/s)
+a=0.2 s=3 step 2500/3000 loss=1.0894 (5.3 st/s)
+a=0.2 s=3 step 2750/3000 loss=1.0753 (5.3 st/s)
+a=0.2 s=3 step 3000/3000 loss=1.0812 (5.3 st/s)
+PROBE FAIL value_probe.py /Users/paisho/Projects/Mastermind/bench/value_target_sweep/fit2_a0.2_s3.pt: or(
+src.v2.arena.bot.policy.NNCheckpointError: checkpoint /Users/paisho/Projects/Mastermind/bench/value_target_sweep/fit2_a0.2_s3.pt uses encoder generation 1, but this build uses encoder generation 2; pass legacy_shim=True to serve a generation-1 checkpoint with restored pre-sentinel-fix constants
+
+PROBE FAIL duchy_probe.py /Users/paisho/Projects/Mastermind/bench/value_target_sweep/fit2_a0.2_s3.pt: or(
+src.v2.arena.bot.policy.NNCheckpointError: checkpoint /Users/paisho/Projects/Mastermind/bench/value_target_sweep/fit2_a0.2_s3.pt uses encoder generation 1, but this build uses encoder generation 2; pass legacy_shim=True to serve a generation-1 checkpoint with restored pre-sentinel-fix constants
+
+FIT DONE a=0.2 s=3
+a=0.0 s=1 step 250/3000 loss=1.3662 (5.3 st/s)
+a=0.0 s=1 step 500/3000 loss=1.2584 (5.3 st/s)
+a=0.0 s=1 step 750/3000 loss=1.2328 (5.3 st/s)
+a=0.0 s=1 step 1000/3000 loss=1.1834 (5.3 st/s)
+a=0.0 s=1 step 1250/3000 loss=1.1493 (5.3 st/s)
+a=0.0 s=1 step 1500/3000 loss=1.0984 (5.3 st/s)
+a=0.0 s=1 step 1750/3000 loss=1.1488 (5.3 st/s)
+a=0.0 s=1 step 2000/3000 loss=1.1426 (5.3 st/s)
+a=0.0 s=1 step 2250/3000 loss=1.1355 (5.3 st/s)
+a=0.0 s=1 step 2500/3000 loss=1.1057 (5.3 st/s)
+a=0.0 s=1 step 2750/3000 loss=1.0933 (5.3 st/s)
+a=0.0 s=1 step 3000/3000 loss=1.0344 (5.3 st/s)
+PROBE FAIL value_probe.py /Users/paisho/Projects/Mastermind/bench/value_target_sweep/fit2_a0.0_s1.pt: or(
+src.v2.arena.bot.policy.NNCheckpointError: checkpoint /Users/paisho/Projects/Mastermind/bench/value_target_sweep/fit2_a0.0_s1.pt uses encoder generation 1, but this build uses encoder generation 2; pass legacy_shim=True to serve a generation-1 checkpoint with restored pre-sentinel-fix constants
+
+PROBE FAIL duchy_probe.py /Users/paisho/Projects/Mastermind/bench/value_target_sweep/fit2_a0.0_s1.pt: or(
+src.v2.arena.bot.policy.NNCheckpointError: checkpoint /Users/paisho/Projects/Mastermind/bench/value_target_sweep/fit2_a0.0_s1.pt uses encoder generation 1, but this build uses encoder generation 2; pass legacy_shim=True to serve a generation-1 checkpoint with restored pre-sentinel-fix constants
+
+FIT DONE a=0.0 s=1
+a=0.0 s=2 step 250/3000 loss=1.4693 (5.3 st/s)
+a=0.0 s=2 step 500/3000 loss=1.3242 (5.3 st/s)
+a=0.0 s=2 step 750/3000 loss=1.1873 (5.3 st/s)
+a=0.0 s=2 step 1000/3000 loss=1.1433 (5.3 st/s)
+a=0.0 s=2 step 1250/3000 loss=1.1457 (5.3 st/s)
+a=0.0 s=2 step 1500/3000 loss=1.1085 (5.3 st/s)
+a=0.0 s=2 step 1750/3000 loss=1.1196 (5.3 st/s)
+a=0.0 s=2 step 2000/3000 loss=1.1284 (5.3 st/s)
+a=0.0 s=2 step 2250/3000 loss=1.1071 (5.3 st/s)
+a=0.0 s=2 step 2500/3000 loss=1.0636 (5.3 st/s)
+a=0.0 s=2 step 2750/3000 loss=1.1168 (5.3 st/s)
+a=0.0 s=2 step 3000/3000 loss=1.0755 (5.3 st/s)
+PROBE FAIL value_probe.py /Users/paisho/Projects/Mastermind/bench/value_target_sweep/fit2_a0.0_s2.pt: or(
+src.v2.arena.bot.policy.NNCheckpointError: checkpoint /Users/paisho/Projects/Mastermind/bench/value_target_sweep/fit2_a0.0_s2.pt uses encoder generation 1, but this build uses encoder generation 2; pass legacy_shim=True to serve a generation-1 checkpoint with restored pre-sentinel-fix constants
+
+PROBE FAIL duchy_probe.py /Users/paisho/Projects/Mastermind/bench/value_target_sweep/fit2_a0.0_s2.pt: or(
+src.v2.arena.bot.policy.NNCheckpointError: checkpoint /Users/paisho/Projects/Mastermind/bench/value_target_sweep/fit2_a0.0_s2.pt uses encoder generation 1, but this build uses encoder generation 2; pass legacy_shim=True to serve a generation-1 checkpoint with restored pre-sentinel-fix constants
+
+FIT DONE a=0.0 s=2
+a=0.0 s=3 step 250/3000 loss=1.4070 (5.3 st/s)
+a=0.0 s=3 step 500/3000 loss=1.3422 (5.3 st/s)
+a=0.0 s=3 step 750/3000 loss=1.2443 (5.3 st/s)
+a=0.0 s=3 step 1000/3000 loss=1.2178 (5.3 st/s)
+a=0.0 s=3 step 1250/3000 loss=1.1630 (5.3 st/s)
+a=0.0 s=3 step 1500/3000 loss=1.1696 (5.3 st/s)
+a=0.0 s=3 step 1750/3000 loss=1.1862 (5.3 st/s)
+a=0.0 s=3 step 2000/3000 loss=1.0857 (5.3 st/s)
+a=0.0 s=3 step 2250/3000 loss=1.1345 (5.3 st/s)
+a=0.0 s=3 step 2500/3000 loss=1.0942 (5.3 st/s)
+a=0.0 s=3 step 2750/3000 loss=1.0678 (5.3 st/s)
+a=0.0 s=3 step 3000/3000 loss=1.0749 (5.3 st/s)
+PROBE FAIL value_probe.py /Users/paisho/Projects/Mastermind/bench/value_target_sweep/fit2_a0.0_s3.pt: or(
+src.v2.arena.bot.policy.NNCheckpointError: checkpoint /Users/paisho/Projects/Mastermind/bench/value_target_sweep/fit2_a0.0_s3.pt uses encoder generation 1, but this build uses encoder generation 2; pass legacy_shim=True to serve a generation-1 checkpoint with restored pre-sentinel-fix constants
+
+PROBE FAIL duchy_probe.py /Users/paisho/Projects/Mastermind/bench/value_target_sweep/fit2_a0.0_s3.pt: or(
+src.v2.arena.bot.policy.NNCheckpointError: checkpoint /Users/paisho/Projects/Mastermind/bench/value_target_sweep/fit2_a0.0_s3.pt uses encoder generation 1, but this build uses encoder generation 2; pass legacy_shim=True to serve a generation-1 checkpoint with restored pre-sentinel-fix constants
+
+FIT DONE a=0.0 s=3
+SWEEP2 COMPLETE

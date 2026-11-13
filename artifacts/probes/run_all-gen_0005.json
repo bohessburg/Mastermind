@@ -1,0 +1,5961 @@
+{
+  "checkpoint": "checkpoints/campaign23/gen_0005.pt",
+  "probe": "run_all",
+  "probes": {
+    "chapel": {
+      "checkpoint": "checkpoints/campaign23/gen_0005.pt",
+      "groups": {
+        "attack_present": {
+          "nodes": 120,
+          "states": [
+            {
+              "index": 0,
+              "kingdom": [
+                "Chapel",
+                "Council Room",
+                "Laboratory",
+                "Vassal",
+                "Festival",
+                "Library",
+                "Poacher",
+                "Remodel",
+                "Bandit",
+                "Militia"
+              ],
+              "kingdom_index": 0,
+              "p_buy_chapel": 0.0551426000893116,
+              "seed": 1000,
+              "state_hash": "0x76605efd0710ad37",
+              "turn_counter": 0
+            },
+            {
+              "index": 1,
+              "kingdom": [
+                "Chapel",
+                "Council Room",
+                "Laboratory",
+                "Vassal",
+                "Festival",
+                "Library",
+                "Poacher",
+                "Remodel",
+                "Bandit",
+                "Militia"
+              ],
+              "kingdom_index": 0,
+              "p_buy_chapel": 0.19293846189975739,
+              "seed": 1000,
+              "state_hash": "0xcc333f24839d5768",
+              "turn_counter": 0
+            },
+            {
+              "index": 2,
+              "kingdom": [
+                "Chapel",
+                "Council Room",
+                "Laboratory",
+                "Vassal",
+                "Festival",
+                "Library",
+                "Poacher",
+                "Remodel",
+                "Bandit",
+                "Militia"
+              ],
+              "kingdom_index": 0,
+              "p_buy_chapel": 0.004704073537141085,
+              "seed": 1000,
+              "state_hash": "0xb4b3de9a7eb6a0c5",
+              "turn_counter": 1
+            },
+            {
+              "index": 3,
+              "kingdom": [
+                "Chapel",
+                "Council Room",
+                "Laboratory",
+                "Vassal",
+                "Festival",
+                "Library",
+                "Poacher",
+                "Remodel",
+                "Bandit",
+                "Militia"
+              ],
+              "kingdom_index": 0,
+              "p_buy_chapel": 0.1857529580593109,
+              "seed": 1000,
+              "state_hash": "0x7ba7f7fbe650ec4e",
+              "turn_counter": 1
+            },
+            {
+              "index": 4,
+              "kingdom": [
+                "Chapel",
+                "Council Room",
+                "Laboratory",
+                "Vassal",
+                "Festival",
+                "Library",
+                "Poacher",
+                "Remodel",
+                "Bandit",
+                "Militia"
+              ],
+              "kingdom_index": 0,
+              "p_buy_chapel": 0.04237072914838791,
+              "seed": 1001,
+              "state_hash": "0x4668f4f3d7515a1e",
+              "turn_counter": 0
+            },
+            {
+              "index": 5,
+              "kingdom": [
+                "Chapel",
+                "Council Room",
+                "Laboratory",
+                "Vassal",
+                "Festival",
+                "Library",
+                "Poacher",
+                "Remodel",
+                "Bandit",
+                "Militia"
+              ],
+              "kingdom_index": 0,
+              "p_buy_chapel": 0.031857654452323914,
+              "seed": 1001,
+              "state_hash": "0x3318f9c46b283a65",
+              "turn_counter": 0
+            },
+            {
+              "index": 6,
+              "kingdom": [
+                "Chapel",
+                "Council Room",
+                "Laboratory",
+                "Vassal",
+                "Festival",
+                "Library",
+                "Poacher",
+                "Remodel",
+                "Bandit",
+                "Militia"
+              ],
+              "kingdom_index": 0,
+              "p_buy_chapel": 0.029092324897646904,
+              "seed": 1001,
+              "state_hash": "0x44207f6fb4ba09fc",
+              "turn_counter": 0
+            },
+            {
+              "index": 7,
+              "kingdom": [
+                "Chapel",
+                "Council Room",
+                "Laboratory",
+                "Vassal",
+                "Festival",
+                "Library",
+                "Poacher",
+                "Remodel",
+                "Bandit",
+                "Militia"
+              ],
+              "kingdom_index": 0,
+              "p_buy_chapel": 0.010893560014665127,
+              "seed": 1001,
+              "state_hash": "0x18fd910b7328c2db",
+              "turn_counter": 0
+            },
+            {
+              "index": 8,
+              "kingdom": [
+                "Chapel",
+                "Council Room",
+                "Laboratory",
+                "Vassal",
+                "Festival",
+                "Library",
+                "Poacher",
+                "Remodel",
+                "Bandit",
+                "Militia"
+              ],
+              "kingdom_index": 0,
+              "p_buy_chapel": 0.04497404396533966,
+              "seed": 1002,
+              "state_hash": "0x7705a191ea46dde4",
+              "turn_counter": 0
+            },
+            {
+              "index": 9,
+              "kingdom": [
+                "Chapel",
+                "Council Room",
+                "Laboratory",
+                "Vassal",
+                "Festival",
+                "Library",
+                "Poacher",
+                "Remodel",
+                "Bandit",
+                "Militia"
+              ],
+              "kingdom_index": 0,
+              "p_buy_chapel": 0.03681795299053192,
+              "seed": 1002,
+              "state_hash": "0xf5408b220b26fc25",
+              "turn_counter": 0
+            },
+            {
+              "index": 10,
+              "kingdom": [
+                "Chapel",
+                "Council Room",
+                "Laboratory",
+                "Vassal",
+                "Festival",
+                "Library",
+                "Poacher",
+                "Remodel",
+                "Bandit",
+                "Militia"
+              ],
+              "kingdom_index": 0,
+              "p_buy_chapel": 0.07583040744066238,
+              "seed": 1002,
+              "state_hash": "0xe6e5994a53c554f6",
+              "turn_counter": 0
+            },
+            {
+              "index": 11,
+              "kingdom": [
+                "Chapel",
+                "Council Room",
+                "Laboratory",
+                "Vassal",
+                "Festival",
+                "Library",
+                "Poacher",
+                "Remodel",
+                "Bandit",
+                "Militia"
+              ],
+              "kingdom_index": 0,
+              "p_buy_chapel": 0.002819082932546735,
+              "seed": 1002,
+              "state_hash": "0xc6fb937609a36ba5",
+              "turn_counter": 1
+            },
+            {
+              "index": 12,
+              "kingdom": [
+                "Chapel",
+                "Moat",
+                "Council Room",
+                "Gardens",
+                "Bureaucrat",
+                "Harbinger",
+                "Sentry",
+                "Smithy",
+                "Workshop",
+                "Militia"
+              ],
+              "kingdom_index": 1,
+              "p_buy_chapel": 0.5998162031173706,
+              "seed": 1000,
+              "state_hash": "0x41c4f37e4c66b209",
+              "turn_counter": 0
+            },
+            {
+              "index": 13,
+              "kingdom": [
+                "Chapel",
+                "Moat",
+                "Council Room",
+                "Gardens",
+                "Bureaucrat",
+                "Harbinger",
+                "Sentry",
+                "Smithy",
+                "Workshop",
+                "Militia"
+              ],
+              "kingdom_index": 1,
+              "p_buy_chapel": 0.3222745954990387,
+              "seed": 1000,
+              "state_hash": "0xacc38700745bc0e2",
+              "turn_counter": 0
+            },
+            {
+              "index": 14,
+              "kingdom": [
+                "Chapel",
+                "Moat",
+                "Council Room",
+                "Gardens",
+                "Bureaucrat",
+                "Harbinger",
+                "Sentry",
+                "Smithy",
+                "Workshop",
+                "Militia"
+              ],
+              "kingdom_index": 1,
+              "p_buy_chapel": 0.05613207817077637,
+              "seed": 1000,
+              "state_hash": "0xd38374ebc56f1c27",
+              "turn_counter": 1
+            },
+            {
+              "index": 15,
+              "kingdom": [
+                "Chapel",
+                "Moat",
+                "Council Room",
+                "Gardens",
+                "Bureaucrat",
+                "Harbinger",
+                "Sentry",
+                "Smithy",
+                "Workshop",
+                "Militia"
+              ],
+              "kingdom_index": 1,
+              "p_buy_chapel": 0.27157530188560486,
+              "seed": 1000,
+              "state_hash": "0xf133cd572f93a718",
+              "turn_counter": 1
+            },
+            {
+              "index": 16,
+              "kingdom": [
+                "Chapel",
+                "Moat",
+                "Council Room",
+                "Gardens",
+                "Bureaucrat",
+                "Harbinger",
+                "Sentry",
+                "Smithy",
+                "Workshop",
+                "Militia"
+              ],
+              "kingdom_index": 1,
+              "p_buy_chapel": 0.5303553938865662,
+              "seed": 1001,
+              "state_hash": "0x2614b274ec1ab32c",
+              "turn_counter": 0
+            },
+            {
+              "index": 17,
+              "kingdom": [
+                "Chapel",
+                "Moat",
+                "Council Room",
+                "Gardens",
+                "Bureaucrat",
+                "Harbinger",
+                "Sentry",
+                "Smithy",
+                "Workshop",
+                "Militia"
+              ],
+              "kingdom_index": 1,
+              "p_buy_chapel": 0.2585891783237457,
+              "seed": 1001,
+              "state_hash": "0x5cbb2a13d2085ecb",
+              "turn_counter": 0
+            },
+            {
+              "index": 18,
+              "kingdom": [
+                "Chapel",
+                "Moat",
+                "Council Room",
+                "Gardens",
+                "Bureaucrat",
+                "Harbinger",
+                "Sentry",
+                "Smithy",
+                "Workshop",
+                "Militia"
+              ],
+              "kingdom_index": 1,
+              "p_buy_chapel": 0.06487806141376495,
+              "seed": 1001,
+              "state_hash": "0xd25a0c325e82624e",
+              "turn_counter": 0
+            },
+            {
+              "index": 19,
+              "kingdom": [
+                "Chapel",
+                "Moat",
+                "Council Room",
+                "Gardens",
+                "Bureaucrat",
+                "Harbinger",
+                "Sentry",
+                "Smithy",
+                "Workshop",
+                "Militia"
+              ],
+              "kingdom_index": 1,
+              "p_buy_chapel": 0.010037743486464024,
+              "seed": 1001,
+              "state_hash": "0x2d775c9ad976ae95",
+              "turn_counter": 0
+            },
+            {
+              "index": 20,
+              "kingdom": [
+                "Chapel",
+                "Moat",
+                "Council Room",
+                "Gardens",
+                "Bureaucrat",
+                "Harbinger",
+                "Sentry",
+                "Smithy",
+                "Workshop",
+                "Militia"
+              ],
+              "kingdom_index": 1,
+              "p_buy_chapel": 0.5388563275337219,
+              "seed": 1002,
+              "state_hash": "0x6565eaa55ba650ea",
+              "turn_counter": 0
+            },
+            {
+              "index": 21,
+              "kingdom": [
+                "Chapel",
+                "Moat",
+                "Council Room",
+                "Gardens",
+                "Bureaucrat",
+                "Harbinger",
+                "Sentry",
+                "Smithy",
+                "Workshop",
+                "Militia"
+              ],
+              "kingdom_index": 1,
+              "p_buy_chapel": 0.2698722183704376,
+              "seed": 1002,
+              "state_hash": "0xd1e4de75261b8a77",
+              "turn_counter": 0
+            },
+            {
+              "index": 22,
+              "kingdom": [
+                "Chapel",
+                "Moat",
+                "Council Room",
+                "Gardens",
+                "Bureaucrat",
+                "Harbinger",
+                "Sentry",
+                "Smithy",
+                "Workshop",
+                "Militia"
+              ],
+              "kingdom_index": 1,
+              "p_buy_chapel": 0.06659409403800964,
+              "seed": 1002,
+              "state_hash": "0x3b4ab1482a988700",
+              "turn_counter": 0
+            },
+            {
+              "index": 23,
+              "kingdom": [
+                "Chapel",
+                "Moat",
+                "Council Room",
+                "Gardens",
+                "Bureaucrat",
+                "Harbinger",
+                "Sentry",
+                "Smithy",
+                "Workshop",
+                "Militia"
+              ],
+              "kingdom_index": 1,
+              "p_buy_chapel": 0.033396195620298386,
+              "seed": 1002,
+              "state_hash": "0x7d0c8315671b13bf",
+              "turn_counter": 1
+            },
+            {
+              "index": 24,
+              "kingdom": [
+                "Chapel",
+                "Throne Room",
+                "Library",
+                "Mine",
+                "Sentry",
+                "Bureaucrat",
+                "Smithy",
+                "Council Room",
+                "Bandit",
+                "Witch"
+              ],
+              "kingdom_index": 2,
+              "p_buy_chapel": 0.6273579001426697,
+              "seed": 1000,
+              "state_hash": "0xb07a28d637df2a3c",
+              "turn_counter": 0
+            },
+            {
+              "index": 25,
+              "kingdom": [
+                "Chapel",
+                "Throne Room",
+                "Library",
+                "Mine",
+                "Sentry",
+                "Bureaucrat",
+                "Smithy",
+                "Council Room",
+                "Bandit",
+                "Witch"
+              ],
+              "kingdom_index": 2,
+              "p_buy_chapel": 0.34936821460723877,
+              "seed": 1000,
+              "state_hash": "0x3b75de2d1ec3df93",
+              "turn_counter": 0
+            },
+            {
+              "index": 26,
+              "kingdom": [
+                "Chapel",
+                "Throne Room",
+                "Library",
+                "Mine",
+                "Sentry",
+                "Bureaucrat",
+                "Smithy",
+                "Council Room",
+                "Bandit",
+                "Witch"
+              ],
+              "kingdom_index": 2,
+              "p_buy_chapel": 0.022927850484848022,
+              "seed": 1000,
+              "state_hash": "0x60c9bfaee1bf0192",
+              "turn_counter": 1
+            },
+            {
+              "index": 27,
+              "kingdom": [
+                "Chapel",
+                "Throne Room",
+                "Library",
+                "Mine",
+                "Sentry",
+                "Bureaucrat",
+                "Smithy",
+                "Council Room",
+                "Bandit",
+                "Witch"
+              ],
+              "kingdom_index": 2,
+              "p_buy_chapel": 0.2459915280342102,
+              "seed": 1000,
+              "state_hash": "0xf551d4288573edc1",
+              "turn_counter": 1
+            },
+            {
+              "index": 28,
+              "kingdom": [
+                "Chapel",
+                "Throne Room",
+                "Library",
+                "Mine",
+                "Sentry",
+                "Bureaucrat",
+                "Smithy",
+                "Council Room",
+                "Bandit",
+                "Witch"
+              ],
+              "kingdom_index": 2,
+              "p_buy_chapel": 0.43793216347694397,
+              "seed": 1001,
+              "state_hash": "0xdc07d34fc72be301",
+              "turn_counter": 0
+            },
+            {
+              "index": 29,
+              "kingdom": [
+                "Chapel",
+                "Throne Room",
+                "Library",
+                "Mine",
+                "Sentry",
+                "Bureaucrat",
+                "Smithy",
+                "Council Room",
+                "Bandit",
+                "Witch"
+              ],
+              "kingdom_index": 2,
+              "p_buy_chapel": 0.272980660200119,
+              "seed": 1001,
+              "state_hash": "0xc61f14335f4141f2",
+              "turn_counter": 0
+            },
+            {
+              "index": 30,
+              "kingdom": [
+                "Chapel",
+                "Throne Room",
+                "Library",
+                "Mine",
+                "Sentry",
+                "Bureaucrat",
+                "Smithy",
+                "Council Room",
+                "Bandit",
+                "Witch"
+              ],
+              "kingdom_index": 2,
+              "p_buy_chapel": 0.2036004364490509,
+              "seed": 1001,
+              "state_hash": "0xd8a975963ed8a777",
+              "turn_counter": 0
+            },
+            {
+              "index": 31,
+              "kingdom": [
+                "Chapel",
+                "Throne Room",
+                "Library",
+                "Mine",
+                "Sentry",
+                "Bureaucrat",
+                "Smithy",
+                "Council Room",
+                "Bandit",
+                "Witch"
+              ],
+              "kingdom_index": 2,
+              "p_buy_chapel": 0.003475324949249625,
+              "seed": 1001,
+              "state_hash": "0x881be66a8d202710",
+              "turn_counter": 0
+            },
+            {
+              "index": 32,
+              "kingdom": [
+                "Chapel",
+                "Throne Room",
+                "Library",
+                "Mine",
+                "Sentry",
+                "Bureaucrat",
+                "Smithy",
+                "Council Room",
+                "Bandit",
+                "Witch"
+              ],
+              "kingdom_index": 2,
+              "p_buy_chapel": 0.5181241631507874,
+              "seed": 1002,
+              "state_hash": "0x704ebceea46acdeb",
+              "turn_counter": 0
+            },
+            {
+              "index": 33,
+              "kingdom": [
+                "Chapel",
+                "Throne Room",
+                "Library",
+                "Mine",
+                "Sentry",
+                "Bureaucrat",
+                "Smithy",
+                "Council Room",
+                "Bandit",
+                "Witch"
+              ],
+              "kingdom_index": 2,
+              "p_buy_chapel": 0.3084680140018463,
+              "seed": 1002,
+              "state_hash": "0x4672e1df56d9bb6a",
+              "turn_counter": 0
+            },
+            {
+              "index": 34,
+              "kingdom": [
+                "Chapel",
+                "Throne Room",
+                "Library",
+                "Mine",
+                "Sentry",
+                "Bureaucrat",
+                "Smithy",
+                "Council Room",
+                "Bandit",
+                "Witch"
+              ],
+              "kingdom_index": 2,
+              "p_buy_chapel": 0.21960139274597168,
+              "seed": 1002,
+              "state_hash": "0x3c0578c5cc873345",
+              "turn_counter": 0
+            },
+            {
+              "index": 35,
+              "kingdom": [
+                "Chapel",
+                "Throne Room",
+                "Library",
+                "Mine",
+                "Sentry",
+                "Bureaucrat",
+                "Smithy",
+                "Council Room",
+                "Bandit",
+                "Witch"
+              ],
+              "kingdom_index": 2,
+              "p_buy_chapel": 0.014330636709928513,
+              "seed": 1002,
+              "state_hash": "0x2c5a6281e70328f6",
+              "turn_counter": 1
+            },
+            {
+              "index": 36,
+              "kingdom": [
+                "Chapel",
+                "Mine",
+                "Workshop",
+                "Moneylender",
+                "Cellar",
+                "Market",
+                "Harbinger",
+                "Library",
+                "Festival",
+                "Witch"
+              ],
+              "kingdom_index": 3,
+              "p_buy_chapel": 0.8723675608634949,
+              "seed": 1000,
+              "state_hash": "0x6777f12b68c86f1d",
+              "turn_counter": 0
+            },
+            {
+              "index": 37,
+              "kingdom": [
+                "Chapel",
+                "Mine",
+                "Workshop",
+                "Moneylender",
+                "Cellar",
+                "Market",
+                "Harbinger",
+                "Library",
+                "Festival",
+                "Witch"
+              ],
+              "kingdom_index": 3,
+              "p_buy_chapel": 0.3987005650997162,
+              "seed": 1000,
+              "state_hash": "0x07c060ae908fc176",
+              "turn_counter": 0
+            },
+            {
+              "index": 38,
+              "kingdom": [
+                "Chapel",
+                "Mine",
+                "Workshop",
+                "Moneylender",
+                "Cellar",
+                "Market",
+                "Harbinger",
+                "Library",
+                "Festival",
+                "Witch"
+              ],
+              "kingdom_index": 3,
+              "p_buy_chapel": 0.16665974259376526,
+              "seed": 1000,
+              "state_hash": "0x6abddad5be7bfc93",
+              "turn_counter": 1
+            },
+            {
+              "index": 39,
+              "kingdom": [
+                "Chapel",
+                "Mine",
+                "Workshop",
+                "Moneylender",
+                "Cellar",
+                "Market",
+                "Harbinger",
+                "Library",
+                "Festival",
+                "Witch"
+              ],
+              "kingdom_index": 3,
+              "p_buy_chapel": 0.31133368611335754,
+              "seed": 1000,
+              "state_hash": "0x4dacfd5dcc37e444",
+              "turn_counter": 1
+            },
+            {
+              "index": 40,
+              "kingdom": [
+                "Chapel",
+                "Mine",
+                "Workshop",
+                "Moneylender",
+                "Cellar",
+                "Market",
+                "Harbinger",
+                "Library",
+                "Festival",
+                "Witch"
+              ],
+              "kingdom_index": 3,
+              "p_buy_chapel": 0.8709660768508911,
+              "seed": 1001,
+              "state_hash": "0x9fc1bfc8ccd61820",
+              "turn_counter": 0
+            },
+            {
+              "index": 41,
+              "kingdom": [
+                "Chapel",
+                "Mine",
+                "Workshop",
+                "Moneylender",
+                "Cellar",
+                "Market",
+                "Harbinger",
+                "Library",
+                "Festival",
+                "Witch"
+              ],
+              "kingdom_index": 3,
+              "p_buy_chapel": 0.4165390133857727,
+              "seed": 1001,
+              "state_hash": "0xb191f082ead3953f",
+              "turn_counter": 0
+            },
+            {
+              "index": 42,
+              "kingdom": [
+                "Chapel",
+                "Mine",
+                "Workshop",
+                "Moneylender",
+                "Cellar",
+                "Market",
+                "Harbinger",
+                "Library",
+                "Festival",
+                "Witch"
+              ],
+              "kingdom_index": 3,
+              "p_buy_chapel": 0.3278175890445709,
+              "seed": 1001,
+              "state_hash": "0x7e76d96d46026152",
+              "turn_counter": 0
+            },
+            {
+              "index": 43,
+              "kingdom": [
+                "Chapel",
+                "Mine",
+                "Workshop",
+                "Moneylender",
+                "Cellar",
+                "Market",
+                "Harbinger",
+                "Library",
+                "Festival",
+                "Witch"
+              ],
+              "kingdom_index": 3,
+              "p_buy_chapel": 0.023155907168984413,
+              "seed": 1001,
+              "state_hash": "0x206ff4d3ae3f9429",
+              "turn_counter": 0
+            },
+            {
+              "index": 44,
+              "kingdom": [
+                "Chapel",
+                "Mine",
+                "Workshop",
+                "Moneylender",
+                "Cellar",
+                "Market",
+                "Harbinger",
+                "Library",
+                "Festival",
+                "Witch"
+              ],
+              "kingdom_index": 3,
+              "p_buy_chapel": 0.8717514872550964,
+              "seed": 1002,
+              "state_hash": "0x41e239d9d90ae116",
+              "turn_counter": 0
+            },
+            {
+              "index": 45,
+              "kingdom": [
+                "Chapel",
+                "Mine",
+                "Workshop",
+                "Moneylender",
+                "Cellar",
+                "Market",
+                "Harbinger",
+                "Library",
+                "Festival",
+                "Witch"
+              ],
+              "kingdom_index": 3,
+              "p_buy_chapel": 0.41927796602249146,
+              "seed": 1002,
+              "state_hash": "0xd0742e8b24ddeb43",
+              "turn_counter": 0
+            },
+            {
+              "index": 46,
+              "kingdom": [
+                "Chapel",
+                "Mine",
+                "Workshop",
+                "Moneylender",
+                "Cellar",
+                "Market",
+                "Harbinger",
+                "Library",
+                "Festival",
+                "Witch"
+              ],
+              "kingdom_index": 3,
+              "p_buy_chapel": 0.31934791803359985,
+              "seed": 1002,
+              "state_hash": "0x80f3fa0ce5145fac",
+              "turn_counter": 0
+            },
+            {
+              "index": 47,
+              "kingdom": [
+                "Chapel",
+                "Mine",
+                "Workshop",
+                "Moneylender",
+                "Cellar",
+                "Market",
+                "Harbinger",
+                "Library",
+                "Festival",
+                "Witch"
+              ],
+              "kingdom_index": 3,
+              "p_buy_chapel": 0.10051340609788895,
+              "seed": 1002,
+              "state_hash": "0x6188e533f0e7821b",
+              "turn_counter": 1
+            },
+            {
+              "index": 48,
+              "kingdom": [
+                "Chapel",
+                "Library",
+                "Cellar",
+                "Merchant",
+                "Vassal",
+                "Bandit",
+                "Mine",
+                "Moat",
+                "Throne Room",
+                "Witch"
+              ],
+              "kingdom_index": 4,
+              "p_buy_chapel": 0.502119779586792,
+              "seed": 1000,
+              "state_hash": "0x8981af46fc7b8df4",
+              "turn_counter": 0
+            },
+            {
+              "index": 49,
+              "kingdom": [
+                "Chapel",
+                "Library",
+                "Cellar",
+                "Merchant",
+                "Vassal",
+                "Bandit",
+                "Mine",
+                "Moat",
+                "Throne Room",
+                "Witch"
+              ],
+              "kingdom_index": 4,
+              "p_buy_chapel": 0.15652301907539368,
+              "seed": 1000,
+              "state_hash": "0xfb518c1571b81feb",
+              "turn_counter": 0
+            },
+            {
+              "index": 50,
+              "kingdom": [
+                "Chapel",
+                "Library",
+                "Cellar",
+                "Merchant",
+                "Vassal",
+                "Bandit",
+                "Mine",
+                "Moat",
+                "Throne Room",
+                "Witch"
+              ],
+              "kingdom_index": 4,
+              "p_buy_chapel": 0.056014157831668854,
+              "seed": 1000,
+              "state_hash": "0x223668198b3f127a",
+              "turn_counter": 1
+            },
+            {
+              "index": 51,
+              "kingdom": [
+                "Chapel",
+                "Library",
+                "Cellar",
+                "Merchant",
+                "Vassal",
+                "Bandit",
+                "Mine",
+                "Moat",
+                "Throne Room",
+                "Witch"
+              ],
+              "kingdom_index": 4,
+              "p_buy_chapel": 0.13961736857891083,
+              "seed": 1000,
+              "state_hash": "0x82196e21f1342b69",
+              "turn_counter": 1
+            },
+            {
+              "index": 52,
+              "kingdom": [
+                "Chapel",
+                "Library",
+                "Cellar",
+                "Merchant",
+                "Vassal",
+                "Bandit",
+                "Mine",
+                "Moat",
+                "Throne Room",
+                "Witch"
+              ],
+              "kingdom_index": 4,
+              "p_buy_chapel": 0.34276282787323,
+              "seed": 1001,
+              "state_hash": "0x0495c69452ea6de9",
+              "turn_counter": 0
+            },
+            {
+              "index": 53,
+              "kingdom": [
+                "Chapel",
+                "Library",
+                "Cellar",
+                "Merchant",
+                "Vassal",
+                "Bandit",
+                "Mine",
+                "Moat",
+                "Throne Room",
+                "Witch"
+              ],
+              "kingdom_index": 4,
+              "p_buy_chapel": 0.1418314129114151,
+              "seed": 1001,
+              "state_hash": "0xacb07f3b9dbbf81a",
+              "turn_counter": 0
+            },
+            {
+              "index": 54,
+              "kingdom": [
+                "Chapel",
+                "Library",
+                "Cellar",
+                "Merchant",
+                "Vassal",
+                "Bandit",
+                "Mine",
+                "Moat",
+                "Throne Room",
+                "Witch"
+              ],
+              "kingdom_index": 4,
+              "p_buy_chapel": 0.10604696720838547,
+              "seed": 1001,
+              "state_hash": "0xc28c8f8ab99aa63f",
+              "turn_counter": 0
+            },
+            {
+              "index": 55,
+              "kingdom": [
+                "Chapel",
+                "Library",
+                "Cellar",
+                "Merchant",
+                "Vassal",
+                "Bandit",
+                "Mine",
+                "Moat",
+                "Throne Room",
+                "Witch"
+              ],
+              "kingdom_index": 4,
+              "p_buy_chapel": 0.015923498198390007,
+              "seed": 1001,
+              "state_hash": "0x847a5d50ff06c478",
+              "turn_counter": 0
+            },
+            {
+              "index": 56,
+              "kingdom": [
+                "Chapel",
+                "Library",
+                "Cellar",
+                "Merchant",
+                "Vassal",
+                "Bandit",
+                "Mine",
+                "Moat",
+                "Throne Room",
+                "Witch"
+              ],
+              "kingdom_index": 4,
+              "p_buy_chapel": 0.4100722074508667,
+              "seed": 1002,
+              "state_hash": "0x13729138c7442233",
+              "turn_counter": 0
+            },
+            {
+              "index": 57,
+              "kingdom": [
+                "Chapel",
+                "Library",
+                "Cellar",
+                "Merchant",
+                "Vassal",
+                "Bandit",
+                "Mine",
+                "Moat",
+                "Throne Room",
+                "Witch"
+              ],
+              "kingdom_index": 4,
+              "p_buy_chapel": 0.15228697657585144,
+              "seed": 1002,
+              "state_hash": "0xe569ad7b0bc0f5d2",
+              "turn_counter": 0
+            },
+            {
+              "index": 58,
+              "kingdom": [
+                "Chapel",
+                "Library",
+                "Cellar",
+                "Merchant",
+                "Vassal",
+                "Bandit",
+                "Mine",
+                "Moat",
+                "Throne Room",
+                "Witch"
+              ],
+              "kingdom_index": 4,
+              "p_buy_chapel": 0.10802596062421799,
+              "seed": 1002,
+              "state_hash": "0x59c1fc4a90bbac4d",
+              "turn_counter": 0
+            },
+            {
+              "index": 59,
+              "kingdom": [
+                "Chapel",
+                "Library",
+                "Cellar",
+                "Merchant",
+                "Vassal",
+                "Bandit",
+                "Mine",
+                "Moat",
+                "Throne Room",
+                "Witch"
+              ],
+              "kingdom_index": 4,
+              "p_buy_chapel": 0.03384794294834137,
+              "seed": 1002,
+              "state_hash": "0x93cb3707947ae8ee",
+              "turn_counter": 1
+            },
+            {
+              "index": 60,
+              "kingdom": [
+                "Chapel",
+                "Market",
+                "Festival",
+                "Library",
+                "Vassal",
+                "Council Room",
+                "Gardens",
+                "Merchant",
+                "Poacher",
+                "Militia"
+              ],
+              "kingdom_index": 5,
+              "p_buy_chapel": 0.08352458477020264,
+              "seed": 1000,
+              "state_hash": "0xd230d1a9b7997b53",
+              "turn_counter": 0
+            },
+            {
+              "index": 61,
+              "kingdom": [
+                "Chapel",
+                "Market",
+                "Festival",
+                "Library",
+                "Vassal",
+                "Council Room",
+                "Gardens",
+                "Merchant",
+                "Poacher",
+                "Militia"
+              ],
+              "kingdom_index": 5,
+              "p_buy_chapel": 0.23396645486354828,
+              "seed": 1000,
+              "state_hash": "0xa85ffe2e6dc19344",
+              "turn_counter": 0
+            },
+            {
+              "index": 62,
+              "kingdom": [
+                "Chapel",
+                "Market",
+                "Festival",
+                "Library",
+                "Vassal",
+                "Council Room",
+                "Gardens",
+                "Merchant",
+                "Poacher",
+                "Militia"
+              ],
+              "kingdom_index": 5,
+              "p_buy_chapel": 0.015200018882751465,
+              "seed": 1000,
+              "state_hash": "0xbc6c4124ff3069f1",
+              "turn_counter": 1
+            },
+            {
+              "index": 63,
+              "kingdom": [
+                "Chapel",
+                "Market",
+                "Festival",
+                "Library",
+                "Vassal",
+                "Council Room",
+                "Gardens",
+                "Merchant",
+                "Poacher",
+                "Militia"
+              ],
+              "kingdom_index": 5,
+              "p_buy_chapel": 0.21648944914340973,
+              "seed": 1000,
+              "state_hash": "0x48c0e128191a394a",
+              "turn_counter": 1
+            },
+            {
+              "index": 64,
+              "kingdom": [
+                "Chapel",
+                "Market",
+                "Festival",
+                "Library",
+                "Vassal",
+                "Council Room",
+                "Gardens",
+                "Merchant",
+                "Poacher",
+                "Militia"
+              ],
+              "kingdom_index": 5,
+              "p_buy_chapel": 0.0614641048014164,
+              "seed": 1001,
+              "state_hash": "0x261e83a8f728840a",
+              "turn_counter": 0
+            },
+            {
+              "index": 65,
+              "kingdom": [
+                "Chapel",
+                "Market",
+                "Festival",
+                "Library",
+                "Vassal",
+                "Council Room",
+                "Gardens",
+                "Merchant",
+                "Poacher",
+                "Militia"
+              ],
+              "kingdom_index": 5,
+              "p_buy_chapel": 0.04792828485369682,
+              "seed": 1001,
+              "state_hash": "0x6d40da44992364c1",
+              "turn_counter": 0
+            },
+            {
+              "index": 66,
+              "kingdom": [
+                "Chapel",
+                "Market",
+                "Festival",
+                "Library",
+                "Vassal",
+                "Council Room",
+                "Gardens",
+                "Merchant",
+                "Poacher",
+                "Militia"
+              ],
+              "kingdom_index": 5,
+              "p_buy_chapel": 0.04140397906303406,
+              "seed": 1001,
+              "state_hash": "0x06a18ed0ec136998",
+              "turn_counter": 0
+            },
+            {
+              "index": 67,
+              "kingdom": [
+                "Chapel",
+                "Market",
+                "Festival",
+                "Library",
+                "Vassal",
+                "Council Room",
+                "Gardens",
+                "Merchant",
+                "Poacher",
+                "Militia"
+              ],
+              "kingdom_index": 5,
+              "p_buy_chapel": 0.02190295234322548,
+              "seed": 1001,
+              "state_hash": "0x5c5e9859af9b4bb7",
+              "turn_counter": 0
+            },
+            {
+              "index": 68,
+              "kingdom": [
+                "Chapel",
+                "Market",
+                "Festival",
+                "Library",
+                "Vassal",
+                "Council Room",
+                "Gardens",
+                "Merchant",
+                "Poacher",
+                "Militia"
+              ],
+              "kingdom_index": 5,
+              "p_buy_chapel": 0.06918423622846603,
+              "seed": 1002,
+              "state_hash": "0xac7c6cf66122f938",
+              "turn_counter": 0
+            },
+            {
+              "index": 69,
+              "kingdom": [
+                "Chapel",
+                "Market",
+                "Festival",
+                "Library",
+                "Vassal",
+                "Council Room",
+                "Gardens",
+                "Merchant",
+                "Poacher",
+                "Militia"
+              ],
+              "kingdom_index": 5,
+              "p_buy_chapel": 0.05753541737794876,
+              "seed": 1002,
+              "state_hash": "0x9aca053ef3ed2429",
+              "turn_counter": 0
+            },
+            {
+              "index": 70,
+              "kingdom": [
+                "Chapel",
+                "Market",
+                "Festival",
+                "Library",
+                "Vassal",
+                "Council Room",
+                "Gardens",
+                "Merchant",
+                "Poacher",
+                "Militia"
+              ],
+              "kingdom_index": 5,
+              "p_buy_chapel": 0.10079395025968552,
+              "seed": 1002,
+              "state_hash": "0xf877235e430c397a",
+              "turn_counter": 0
+            },
+            {
+              "index": 71,
+              "kingdom": [
+                "Chapel",
+                "Market",
+                "Festival",
+                "Library",
+                "Vassal",
+                "Council Room",
+                "Gardens",
+                "Merchant",
+                "Poacher",
+                "Militia"
+              ],
+              "kingdom_index": 5,
+              "p_buy_chapel": 0.008887303993105888,
+              "seed": 1002,
+              "state_hash": "0x9d4f51668b6eb4c1",
+              "turn_counter": 1
+            },
+            {
+              "index": 72,
+              "kingdom": [
+                "Chapel",
+                "Throne Room",
+                "Bureaucrat",
+                "Mine",
+                "Festival",
+                "Gardens",
+                "Council Room",
+                "Sentry",
+                "Poacher",
+                "Witch"
+              ],
+              "kingdom_index": 6,
+              "p_buy_chapel": 0.1566074788570404,
+              "seed": 1000,
+              "state_hash": "0xe492073405a06f10",
+              "turn_counter": 0
+            },
+            {
+              "index": 73,
+              "kingdom": [
+                "Chapel",
+                "Throne Room",
+                "Bureaucrat",
+                "Mine",
+                "Festival",
+                "Gardens",
+                "Council Room",
+                "Sentry",
+                "Poacher",
+                "Witch"
+              ],
+              "kingdom_index": 6,
+              "p_buy_chapel": 0.4600212275981903,
+              "seed": 1000,
+              "state_hash": "0x0dce23e5c0855ca7",
+              "turn_counter": 0
+            },
+            {
+              "index": 74,
+              "kingdom": [
+                "Chapel",
+                "Throne Room",
+                "Bureaucrat",
+                "Mine",
+                "Festival",
+                "Gardens",
+                "Council Room",
+                "Sentry",
+                "Poacher",
+                "Witch"
+              ],
+              "kingdom_index": 6,
+              "p_buy_chapel": 0.017993979156017303,
+              "seed": 1000,
+              "state_hash": "0xa4a67bb72d0cd5be",
+              "turn_counter": 1
+            },
+            {
+              "index": 75,
+              "kingdom": [
+                "Chapel",
+                "Throne Room",
+                "Bureaucrat",
+                "Mine",
+                "Festival",
+                "Gardens",
+                "Council Room",
+                "Sentry",
+                "Poacher",
+                "Witch"
+              ],
+              "kingdom_index": 6,
+              "p_buy_chapel": 0.394400030374527,
+              "seed": 1000,
+              "state_hash": "0x083039a5905b4a5d",
+              "turn_counter": 1
+            },
+            {
+              "index": 76,
+              "kingdom": [
+                "Chapel",
+                "Throne Room",
+                "Bureaucrat",
+                "Mine",
+                "Festival",
+                "Gardens",
+                "Council Room",
+                "Sentry",
+                "Poacher",
+                "Witch"
+              ],
+              "kingdom_index": 6,
+              "p_buy_chapel": 0.11439932882785797,
+              "seed": 1001,
+              "state_hash": "0x1899422e19aa0685",
+              "turn_counter": 0
+            },
+            {
+              "index": 77,
+              "kingdom": [
+                "Chapel",
+                "Throne Room",
+                "Bureaucrat",
+                "Mine",
+                "Festival",
+                "Gardens",
+                "Council Room",
+                "Sentry",
+                "Poacher",
+                "Witch"
+              ],
+              "kingdom_index": 6,
+              "p_buy_chapel": 0.09535831958055496,
+              "seed": 1001,
+              "state_hash": "0x3b7ff4f1b7f7dee6",
+              "turn_counter": 0
+            },
+            {
+              "index": 78,
+              "kingdom": [
+                "Chapel",
+                "Throne Room",
+                "Bureaucrat",
+                "Mine",
+                "Festival",
+                "Gardens",
+                "Council Room",
+                "Sentry",
+                "Poacher",
+                "Witch"
+              ],
+              "kingdom_index": 6,
+              "p_buy_chapel": 0.08293091505765915,
+              "seed": 1001,
+              "state_hash": "0x0df2cc712e4f719b",
+              "turn_counter": 0
+            },
+            {
+              "index": 79,
+              "kingdom": [
+                "Chapel",
+                "Throne Room",
+                "Bureaucrat",
+                "Mine",
+                "Festival",
+                "Gardens",
+                "Council Room",
+                "Sentry",
+                "Poacher",
+                "Witch"
+              ],
+              "kingdom_index": 6,
+              "p_buy_chapel": 0.003278730669990182,
+              "seed": 1001,
+              "state_hash": "0xcfea24a0d6eed184",
+              "turn_counter": 0
+            },
+            {
+              "index": 80,
+              "kingdom": [
+                "Chapel",
+                "Throne Room",
+                "Bureaucrat",
+                "Mine",
+                "Festival",
+                "Gardens",
+                "Council Room",
+                "Sentry",
+                "Poacher",
+                "Witch"
+              ],
+              "kingdom_index": 6,
+              "p_buy_chapel": 0.13416053354740143,
+              "seed": 1002,
+              "state_hash": "0x8968c54ff764bd17",
+              "turn_counter": 0
+            },
+            {
+              "index": 81,
+              "kingdom": [
+                "Chapel",
+                "Throne Room",
+                "Bureaucrat",
+                "Mine",
+                "Festival",
+                "Gardens",
+                "Council Room",
+                "Sentry",
+                "Poacher",
+                "Witch"
+              ],
+              "kingdom_index": 6,
+              "p_buy_chapel": 0.11506274342536926,
+              "seed": 1002,
+              "state_hash": "0x22bdc6336bb8e016",
+              "turn_counter": 0
+            },
+            {
+              "index": 82,
+              "kingdom": [
+                "Chapel",
+                "Throne Room",
+                "Bureaucrat",
+                "Mine",
+                "Festival",
+                "Gardens",
+                "Council Room",
+                "Sentry",
+                "Poacher",
+                "Witch"
+              ],
+              "kingdom_index": 6,
+              "p_buy_chapel": 0.23383796215057373,
+              "seed": 1002,
+              "state_hash": "0x27f3014ca8bd95b1",
+              "turn_counter": 0
+            },
+            {
+              "index": 83,
+              "kingdom": [
+                "Chapel",
+                "Throne Room",
+                "Bureaucrat",
+                "Mine",
+                "Festival",
+                "Gardens",
+                "Council Room",
+                "Sentry",
+                "Poacher",
+                "Witch"
+              ],
+              "kingdom_index": 6,
+              "p_buy_chapel": 0.011366184800863266,
+              "seed": 1002,
+              "state_hash": "0x6ac15119a1efce52",
+              "turn_counter": 1
+            },
+            {
+              "index": 84,
+              "kingdom": [
+                "Chapel",
+                "Village",
+                "Throne Room",
+                "Gardens",
+                "Market",
+                "Smithy",
+                "Workshop",
+                "Poacher",
+                "Laboratory",
+                "Witch"
+              ],
+              "kingdom_index": 7,
+              "p_buy_chapel": 0.4866550862789154,
+              "seed": 1000,
+              "state_hash": "0x49e2875191d434a2",
+              "turn_counter": 0
+            },
+            {
+              "index": 85,
+              "kingdom": [
+                "Chapel",
+                "Village",
+                "Throne Room",
+                "Gardens",
+                "Market",
+                "Smithy",
+                "Workshop",
+                "Poacher",
+                "Laboratory",
+                "Witch"
+              ],
+              "kingdom_index": 7,
+              "p_buy_chapel": 0.2831287086009979,
+              "seed": 1000,
+              "state_hash": "0x4aa5dfa161656af1",
+              "turn_counter": 0
+            },
+            {
+              "index": 86,
+              "kingdom": [
+                "Chapel",
+                "Village",
+                "Throne Room",
+                "Gardens",
+                "Market",
+                "Smithy",
+                "Workshop",
+                "Poacher",
+                "Laboratory",
+                "Witch"
+              ],
+              "kingdom_index": 7,
+              "p_buy_chapel": 0.059543464332818985,
+              "seed": 1000,
+              "state_hash": "0xeb602b1fa35f6448",
+              "turn_counter": 1
+            },
+            {
+              "index": 87,
+              "kingdom": [
+                "Chapel",
+                "Village",
+                "Throne Room",
+                "Gardens",
+                "Market",
+                "Smithy",
+                "Workshop",
+                "Poacher",
+                "Laboratory",
+                "Witch"
+              ],
+              "kingdom_index": 7,
+              "p_buy_chapel": 0.21800881624221802,
+              "seed": 1000,
+              "state_hash": "0x8dac3eb66202f67f",
+              "turn_counter": 1
+            },
+            {
+              "index": 88,
+              "kingdom": [
+                "Chapel",
+                "Village",
+                "Throne Room",
+                "Gardens",
+                "Market",
+                "Smithy",
+                "Workshop",
+                "Poacher",
+                "Laboratory",
+                "Witch"
+              ],
+              "kingdom_index": 7,
+              "p_buy_chapel": 0.4948993921279907,
+              "seed": 1001,
+              "state_hash": "0x55c8345e9fb3663b",
+              "turn_counter": 0
+            },
+            {
+              "index": 89,
+              "kingdom": [
+                "Chapel",
+                "Village",
+                "Throne Room",
+                "Gardens",
+                "Market",
+                "Smithy",
+                "Workshop",
+                "Poacher",
+                "Laboratory",
+                "Witch"
+              ],
+              "kingdom_index": 7,
+              "p_buy_chapel": 0.23457394540309906,
+              "seed": 1001,
+              "state_hash": "0x6009344f7d926984",
+              "turn_counter": 0
+            },
+            {
+              "index": 90,
+              "kingdom": [
+                "Chapel",
+                "Village",
+                "Throne Room",
+                "Gardens",
+                "Market",
+                "Smithy",
+                "Workshop",
+                "Poacher",
+                "Laboratory",
+                "Witch"
+              ],
+              "kingdom_index": 7,
+              "p_buy_chapel": 0.0838620588183403,
+              "seed": 1001,
+              "state_hash": "0x2a465842ead5423d",
+              "turn_counter": 0
+            },
+            {
+              "index": 91,
+              "kingdom": [
+                "Chapel",
+                "Village",
+                "Throne Room",
+                "Gardens",
+                "Market",
+                "Smithy",
+                "Workshop",
+                "Poacher",
+                "Laboratory",
+                "Witch"
+              ],
+              "kingdom_index": 7,
+              "p_buy_chapel": 0.01750989630818367,
+              "seed": 1001,
+              "state_hash": "0xab46f5502906ba9e",
+              "turn_counter": 0
+            },
+            {
+              "index": 92,
+              "kingdom": [
+                "Chapel",
+                "Village",
+                "Throne Room",
+                "Gardens",
+                "Market",
+                "Smithy",
+                "Workshop",
+                "Poacher",
+                "Laboratory",
+                "Witch"
+              ],
+              "kingdom_index": 7,
+              "p_buy_chapel": 0.44698479771614075,
+              "seed": 1002,
+              "state_hash": "0x365df734cf1a3f3d",
+              "turn_counter": 0
+            },
+            {
+              "index": 93,
+              "kingdom": [
+                "Chapel",
+                "Village",
+                "Throne Room",
+                "Gardens",
+                "Market",
+                "Smithy",
+                "Workshop",
+                "Poacher",
+                "Laboratory",
+                "Witch"
+              ],
+              "kingdom_index": 7,
+              "p_buy_chapel": 0.2187274843454361,
+              "seed": 1002,
+              "state_hash": "0xc3c38d51930ed780",
+              "turn_counter": 0
+            },
+            {
+              "index": 94,
+              "kingdom": [
+                "Chapel",
+                "Village",
+                "Throne Room",
+                "Gardens",
+                "Market",
+                "Smithy",
+                "Workshop",
+                "Poacher",
+                "Laboratory",
+                "Witch"
+              ],
+              "kingdom_index": 7,
+              "p_buy_chapel": 0.08235270529985428,
+              "seed": 1002,
+              "state_hash": "0xeced5170acd05023",
+              "turn_counter": 0
+            },
+            {
+              "index": 95,
+              "kingdom": [
+                "Chapel",
+                "Village",
+                "Throne Room",
+                "Gardens",
+                "Market",
+                "Smithy",
+                "Workshop",
+                "Poacher",
+                "Laboratory",
+                "Witch"
+              ],
+              "kingdom_index": 7,
+              "p_buy_chapel": 0.037282295525074005,
+              "seed": 1002,
+              "state_hash": "0x0f4a5bcc1d93ce04",
+              "turn_counter": 1
+            },
+            {
+              "index": 96,
+              "kingdom": [
+                "Chapel",
+                "Cellar",
+                "Harbinger",
+                "Workshop",
+                "Gardens",
+                "Bureaucrat",
+                "Market",
+                "Laboratory",
+                "Vassal",
+                "Witch"
+              ],
+              "kingdom_index": 8,
+              "p_buy_chapel": 0.2791956961154938,
+              "seed": 1000,
+              "state_hash": "0xa310b1aafa6461b2",
+              "turn_counter": 0
+            },
+            {
+              "index": 97,
+              "kingdom": [
+                "Chapel",
+                "Cellar",
+                "Harbinger",
+                "Workshop",
+                "Gardens",
+                "Bureaucrat",
+                "Market",
+                "Laboratory",
+                "Vassal",
+                "Witch"
+              ],
+              "kingdom_index": 8,
+              "p_buy_chapel": 0.13030162453651428,
+              "seed": 1000,
+              "state_hash": "0x910bab9bb5dcfe41",
+              "turn_counter": 0
+            },
+            {
+              "index": 98,
+              "kingdom": [
+                "Chapel",
+                "Cellar",
+                "Harbinger",
+                "Workshop",
+                "Gardens",
+                "Bureaucrat",
+                "Market",
+                "Laboratory",
+                "Vassal",
+                "Witch"
+              ],
+              "kingdom_index": 8,
+              "p_buy_chapel": 0.0030003758147358894,
+              "seed": 1000,
+              "state_hash": "0x1930ecfdb46cf700",
+              "turn_counter": 1
+            },
+            {
+              "index": 99,
+              "kingdom": [
+                "Chapel",
+                "Cellar",
+                "Harbinger",
+                "Workshop",
+                "Gardens",
+                "Bureaucrat",
+                "Market",
+                "Laboratory",
+                "Vassal",
+                "Witch"
+              ],
+              "kingdom_index": 8,
+              "p_buy_chapel": 0.08487805724143982,
+              "seed": 1000,
+              "state_hash": "0xcf525c68d25021b7",
+              "turn_counter": 1
+            },
+            {
+              "index": 100,
+              "kingdom": [
+                "Chapel",
+                "Cellar",
+                "Harbinger",
+                "Workshop",
+                "Gardens",
+                "Bureaucrat",
+                "Market",
+                "Laboratory",
+                "Vassal",
+                "Witch"
+              ],
+              "kingdom_index": 8,
+              "p_buy_chapel": 0.15913188457489014,
+              "seed": 1001,
+              "state_hash": "0xffca1f6f1ce76e4b",
+              "turn_counter": 0
+            },
+            {
+              "index": 101,
+              "kingdom": [
+                "Chapel",
+                "Cellar",
+                "Harbinger",
+                "Workshop",
+                "Gardens",
+                "Bureaucrat",
+                "Market",
+                "Laboratory",
+                "Vassal",
+                "Witch"
+              ],
+              "kingdom_index": 8,
+              "p_buy_chapel": 0.08979504555463791,
+              "seed": 1001,
+              "state_hash": "0x5769c179307f0a54",
+              "turn_counter": 0
+            },
+            {
+              "index": 102,
+              "kingdom": [
+                "Chapel",
+                "Cellar",
+                "Harbinger",
+                "Workshop",
+                "Gardens",
+                "Bureaucrat",
+                "Market",
+                "Laboratory",
+                "Vassal",
+                "Witch"
+              ],
+              "kingdom_index": 8,
+              "p_buy_chapel": 0.09238988161087036,
+              "seed": 1001,
+              "state_hash": "0x6e53d053daf13e0d",
+              "turn_counter": 0
+            },
+            {
+              "index": 103,
+              "kingdom": [
+                "Chapel",
+                "Cellar",
+                "Harbinger",
+                "Workshop",
+                "Gardens",
+                "Bureaucrat",
+                "Market",
+                "Laboratory",
+                "Vassal",
+                "Witch"
+              ],
+              "kingdom_index": 8,
+              "p_buy_chapel": 0.011513637378811836,
+              "seed": 1001,
+              "state_hash": "0xe67121cae0a857ee",
+              "turn_counter": 0
+            },
+            {
+              "index": 104,
+              "kingdom": [
+                "Chapel",
+                "Cellar",
+                "Harbinger",
+                "Workshop",
+                "Gardens",
+                "Bureaucrat",
+                "Market",
+                "Laboratory",
+                "Vassal",
+                "Witch"
+              ],
+              "kingdom_index": 8,
+              "p_buy_chapel": 0.2122165858745575,
+              "seed": 1002,
+              "state_hash": "0x17620d0cc010546d",
+              "turn_counter": 0
+            },
+            {
+              "index": 105,
+              "kingdom": [
+                "Chapel",
+                "Cellar",
+                "Harbinger",
+                "Workshop",
+                "Gardens",
+                "Bureaucrat",
+                "Market",
+                "Laboratory",
+                "Vassal",
+                "Witch"
+              ],
+              "kingdom_index": 8,
+              "p_buy_chapel": 0.10686765611171722,
+              "seed": 1002,
+              "state_hash": "0xf70d996d63db54f0",
+              "turn_counter": 0
+            },
+            {
+              "index": 106,
+              "kingdom": [
+                "Chapel",
+                "Cellar",
+                "Harbinger",
+                "Workshop",
+                "Gardens",
+                "Bureaucrat",
+                "Market",
+                "Laboratory",
+                "Vassal",
+                "Witch"
+              ],
+              "kingdom_index": 8,
+              "p_buy_chapel": 0.12031446397304535,
+              "seed": 1002,
+              "state_hash": "0x93fca4e324943953",
+              "turn_counter": 0
+            },
+            {
+              "index": 107,
+              "kingdom": [
+                "Chapel",
+                "Cellar",
+                "Harbinger",
+                "Workshop",
+                "Gardens",
+                "Bureaucrat",
+                "Market",
+                "Laboratory",
+                "Vassal",
+                "Witch"
+              ],
+              "kingdom_index": 8,
+              "p_buy_chapel": 0.0017505589639768004,
+              "seed": 1002,
+              "state_hash": "0x39b47b3100d4392c",
+              "turn_counter": 1
+            },
+            {
+              "index": 108,
+              "kingdom": [
+                "Chapel",
+                "Moat",
+                "Bureaucrat",
+                "Throne Room",
+                "Harbinger",
+                "Poacher",
+                "Library",
+                "Laboratory",
+                "Remodel",
+                "Witch"
+              ],
+              "kingdom_index": 9,
+              "p_buy_chapel": 0.08308945596218109,
+              "seed": 1000,
+              "state_hash": "0x7901163e34bf5171",
+              "turn_counter": 0
+            },
+            {
+              "index": 109,
+              "kingdom": [
+                "Chapel",
+                "Moat",
+                "Bureaucrat",
+                "Throne Room",
+                "Harbinger",
+                "Poacher",
+                "Library",
+                "Laboratory",
+                "Remodel",
+                "Witch"
+              ],
+              "kingdom_index": 9,
+              "p_buy_chapel": 0.47820210456848145,
+              "seed": 1000,
+              "state_hash": "0xa21be15bde1871ca",
+              "turn_counter": 0
+            },
+            {
+              "index": 110,
+              "kingdom": [
+                "Chapel",
+                "Moat",
+                "Bureaucrat",
+                "Throne Room",
+                "Harbinger",
+                "Poacher",
+                "Library",
+                "Laboratory",
+                "Remodel",
+                "Witch"
+              ],
+              "kingdom_index": 9,
+              "p_buy_chapel": 0.003872363129630685,
+              "seed": 1000,
+              "state_hash": "0x0ff7022d53a7a447",
+              "turn_counter": 1
+            },
+            {
+              "index": 111,
+              "kingdom": [
+                "Chapel",
+                "Moat",
+                "Bureaucrat",
+                "Throne Room",
+                "Harbinger",
+                "Poacher",
+                "Library",
+                "Laboratory",
+                "Remodel",
+                "Witch"
+              ],
+              "kingdom_index": 9,
+              "p_buy_chapel": 0.3469725549221039,
+              "seed": 1000,
+              "state_hash": "0xa1c668024ebdbc38",
+              "turn_counter": 1
+            },
+            {
+              "index": 112,
+              "kingdom": [
+                "Chapel",
+                "Moat",
+                "Bureaucrat",
+                "Throne Room",
+                "Harbinger",
+                "Poacher",
+                "Library",
+                "Laboratory",
+                "Remodel",
+                "Witch"
+              ],
+              "kingdom_index": 9,
+              "p_buy_chapel": 0.0631491094827652,
+              "seed": 1001,
+              "state_hash": "0x52a00af1b001f704",
+              "turn_counter": 0
+            },
+            {
+              "index": 113,
+              "kingdom": [
+                "Chapel",
+                "Moat",
+                "Bureaucrat",
+                "Throne Room",
+                "Harbinger",
+                "Poacher",
+                "Library",
+                "Laboratory",
+                "Remodel",
+                "Witch"
+              ],
+              "kingdom_index": 9,
+              "p_buy_chapel": 0.04927285388112068,
+              "seed": 1001,
+              "state_hash": "0x28e11e84aaefde23",
+              "turn_counter": 0
+            },
+            {
+              "index": 114,
+              "kingdom": [
+                "Chapel",
+                "Moat",
+                "Bureaucrat",
+                "Throne Room",
+                "Harbinger",
+                "Poacher",
+                "Library",
+                "Laboratory",
+                "Remodel",
+                "Witch"
+              ],
+              "kingdom_index": 9,
+              "p_buy_chapel": 0.040010005235672,
+              "seed": 1001,
+              "state_hash": "0x706d5d2c3fc125c6",
+              "turn_counter": 0
+            },
+            {
+              "index": 115,
+              "kingdom": [
+                "Chapel",
+                "Moat",
+                "Bureaucrat",
+                "Throne Room",
+                "Harbinger",
+                "Poacher",
+                "Library",
+                "Laboratory",
+                "Remodel",
+                "Witch"
+              ],
+              "kingdom_index": 9,
+              "p_buy_chapel": 0.0401642881333828,
+              "seed": 1001,
+              "state_hash": "0x95e3f1feeed7252d",
+              "turn_counter": 0
+            },
+            {
+              "index": 116,
+              "kingdom": [
+                "Chapel",
+                "Moat",
+                "Bureaucrat",
+                "Throne Room",
+                "Harbinger",
+                "Poacher",
+                "Library",
+                "Laboratory",
+                "Remodel",
+                "Witch"
+              ],
+              "kingdom_index": 9,
+              "p_buy_chapel": 0.07005978375673294,
+              "seed": 1002,
+              "state_hash": "0xdfb762d262f27382",
+              "turn_counter": 0
+            },
+            {
+              "index": 117,
+              "kingdom": [
+                "Chapel",
+                "Moat",
+                "Bureaucrat",
+                "Throne Room",
+                "Harbinger",
+                "Poacher",
+                "Library",
+                "Laboratory",
+                "Remodel",
+                "Witch"
+              ],
+              "kingdom_index": 9,
+              "p_buy_chapel": 0.060646697878837585,
+              "seed": 1002,
+              "state_hash": "0xe45d913c01c5caaf",
+              "turn_counter": 0
+            },
+            {
+              "index": 118,
+              "kingdom": [
+                "Chapel",
+                "Moat",
+                "Bureaucrat",
+                "Throne Room",
+                "Harbinger",
+                "Poacher",
+                "Library",
+                "Laboratory",
+                "Remodel",
+                "Witch"
+              ],
+              "kingdom_index": 9,
+              "p_buy_chapel": 0.14923369884490967,
+              "seed": 1002,
+              "state_hash": "0xb3ea02fd98d7e7d8",
+              "turn_counter": 0
+            },
+            {
+              "index": 119,
+              "kingdom": [
+                "Chapel",
+                "Moat",
+                "Bureaucrat",
+                "Throne Room",
+                "Harbinger",
+                "Poacher",
+                "Library",
+                "Laboratory",
+                "Remodel",
+                "Witch"
+              ],
+              "kingdom_index": 9,
+              "p_buy_chapel": 0.0024155210703611374,
+              "seed": 1002,
+              "state_hash": "0x60f20bef104a605f",
+              "turn_counter": 1
+            }
+          ]
+        },
+        "no_attack": {
+          "nodes": 120,
+          "states": [
+            {
+              "index": 0,
+              "kingdom": [
+                "Chapel",
+                "Poacher",
+                "Cellar",
+                "Harbinger",
+                "Bureaucrat",
+                "Smithy",
+                "Council Room",
+                "Vassal",
+                "Gardens",
+                "Merchant"
+              ],
+              "kingdom_index": 0,
+              "p_buy_chapel": 0.35326892137527466,
+              "seed": 2000,
+              "state_hash": "0xc4ffe7fdce4c85d6",
+              "turn_counter": 0
+            },
+            {
+              "index": 1,
+              "kingdom": [
+                "Chapel",
+                "Poacher",
+                "Cellar",
+                "Harbinger",
+                "Bureaucrat",
+                "Smithy",
+                "Council Room",
+                "Vassal",
+                "Gardens",
+                "Merchant"
+              ],
+              "kingdom_index": 0,
+              "p_buy_chapel": 0.1613406091928482,
+              "seed": 2000,
+              "state_hash": "0x37ea186900eebc0b",
+              "turn_counter": 0
+            },
+            {
+              "index": 2,
+              "kingdom": [
+                "Chapel",
+                "Poacher",
+                "Cellar",
+                "Harbinger",
+                "Bureaucrat",
+                "Smithy",
+                "Council Room",
+                "Vassal",
+                "Gardens",
+                "Merchant"
+              ],
+              "kingdom_index": 0,
+              "p_buy_chapel": 0.0996360182762146,
+              "seed": 2000,
+              "state_hash": "0xd5574797e4dc1c88",
+              "turn_counter": 0
+            },
+            {
+              "index": 3,
+              "kingdom": [
+                "Chapel",
+                "Poacher",
+                "Cellar",
+                "Harbinger",
+                "Bureaucrat",
+                "Smithy",
+                "Council Room",
+                "Vassal",
+                "Gardens",
+                "Merchant"
+              ],
+              "kingdom_index": 0,
+              "p_buy_chapel": 0.0018344488926231861,
+              "seed": 2000,
+              "state_hash": "0x025a7a06caf1473f",
+              "turn_counter": 1
+            },
+            {
+              "index": 4,
+              "kingdom": [
+                "Chapel",
+                "Poacher",
+                "Cellar",
+                "Harbinger",
+                "Bureaucrat",
+                "Smithy",
+                "Council Room",
+                "Vassal",
+                "Gardens",
+                "Merchant"
+              ],
+              "kingdom_index": 0,
+              "p_buy_chapel": 0.39659538865089417,
+              "seed": 2001,
+              "state_hash": "0x4c8d5e247d176cb7",
+              "turn_counter": 0
+            },
+            {
+              "index": 5,
+              "kingdom": [
+                "Chapel",
+                "Poacher",
+                "Cellar",
+                "Harbinger",
+                "Bureaucrat",
+                "Smithy",
+                "Council Room",
+                "Vassal",
+                "Gardens",
+                "Merchant"
+              ],
+              "kingdom_index": 0,
+              "p_buy_chapel": 0.2103142887353897,
+              "seed": 2001,
+              "state_hash": "0xb9938c21dca11208",
+              "turn_counter": 0
+            },
+            {
+              "index": 6,
+              "kingdom": [
+                "Chapel",
+                "Poacher",
+                "Cellar",
+                "Harbinger",
+                "Bureaucrat",
+                "Smithy",
+                "Council Room",
+                "Vassal",
+                "Gardens",
+                "Merchant"
+              ],
+              "kingdom_index": 0,
+              "p_buy_chapel": 0.0032919710502028465,
+              "seed": 2001,
+              "state_hash": "0xfd8785cb9ccd5df1",
+              "turn_counter": 1
+            },
+            {
+              "index": 7,
+              "kingdom": [
+                "Chapel",
+                "Poacher",
+                "Cellar",
+                "Harbinger",
+                "Bureaucrat",
+                "Smithy",
+                "Council Room",
+                "Vassal",
+                "Gardens",
+                "Merchant"
+              ],
+              "kingdom_index": 0,
+              "p_buy_chapel": 0.12032300978899002,
+              "seed": 2001,
+              "state_hash": "0x6c973dc1ce39bbea",
+              "turn_counter": 1
+            },
+            {
+              "index": 8,
+              "kingdom": [
+                "Chapel",
+                "Poacher",
+                "Cellar",
+                "Harbinger",
+                "Bureaucrat",
+                "Smithy",
+                "Council Room",
+                "Vassal",
+                "Gardens",
+                "Merchant"
+              ],
+              "kingdom_index": 0,
+              "p_buy_chapel": 0.35326892137527466,
+              "seed": 2002,
+              "state_hash": "0x434ac7633e42421e",
+              "turn_counter": 0
+            },
+            {
+              "index": 9,
+              "kingdom": [
+                "Chapel",
+                "Poacher",
+                "Cellar",
+                "Harbinger",
+                "Bureaucrat",
+                "Smithy",
+                "Council Room",
+                "Vassal",
+                "Gardens",
+                "Merchant"
+              ],
+              "kingdom_index": 0,
+              "p_buy_chapel": 0.1613406091928482,
+              "seed": 2002,
+              "state_hash": "0x533fbc21841f8e73",
+              "turn_counter": 0
+            },
+            {
+              "index": 10,
+              "kingdom": [
+                "Chapel",
+                "Poacher",
+                "Cellar",
+                "Harbinger",
+                "Bureaucrat",
+                "Smithy",
+                "Council Room",
+                "Vassal",
+                "Gardens",
+                "Merchant"
+              ],
+              "kingdom_index": 0,
+              "p_buy_chapel": 0.0996360182762146,
+              "seed": 2002,
+              "state_hash": "0x347be4d58d687560",
+              "turn_counter": 0
+            },
+            {
+              "index": 11,
+              "kingdom": [
+                "Chapel",
+                "Poacher",
+                "Cellar",
+                "Harbinger",
+                "Bureaucrat",
+                "Smithy",
+                "Council Room",
+                "Vassal",
+                "Gardens",
+                "Merchant"
+              ],
+              "kingdom_index": 0,
+              "p_buy_chapel": 0.0021080600563436747,
+              "seed": 2002,
+              "state_hash": "0x8bf99c3b336b6ccb",
+              "turn_counter": 1
+            },
+            {
+              "index": 12,
+              "kingdom": [
+                "Chapel",
+                "Library",
+                "Remodel",
+                "Village",
+                "Poacher",
+                "Council Room",
+                "Merchant",
+                "Smithy",
+                "Cellar",
+                "Laboratory"
+              ],
+              "kingdom_index": 1,
+              "p_buy_chapel": 0.27062198519706726,
+              "seed": 2000,
+              "state_hash": "0xbf7250a165edbf1b",
+              "turn_counter": 0
+            },
+            {
+              "index": 13,
+              "kingdom": [
+                "Chapel",
+                "Library",
+                "Remodel",
+                "Village",
+                "Poacher",
+                "Council Room",
+                "Merchant",
+                "Smithy",
+                "Cellar",
+                "Laboratory"
+              ],
+              "kingdom_index": 1,
+              "p_buy_chapel": 0.19257095456123352,
+              "seed": 2000,
+              "state_hash": "0x9eb3d05b6facf492",
+              "turn_counter": 0
+            },
+            {
+              "index": 14,
+              "kingdom": [
+                "Chapel",
+                "Library",
+                "Remodel",
+                "Village",
+                "Poacher",
+                "Council Room",
+                "Merchant",
+                "Smithy",
+                "Cellar",
+                "Laboratory"
+              ],
+              "kingdom_index": 1,
+              "p_buy_chapel": 0.13276787102222443,
+              "seed": 2000,
+              "state_hash": "0x58dae10b35fa5b09",
+              "turn_counter": 0
+            },
+            {
+              "index": 15,
+              "kingdom": [
+                "Chapel",
+                "Library",
+                "Remodel",
+                "Village",
+                "Poacher",
+                "Council Room",
+                "Merchant",
+                "Smithy",
+                "Cellar",
+                "Laboratory"
+              ],
+              "kingdom_index": 1,
+              "p_buy_chapel": 0.00841815210878849,
+              "seed": 2000,
+              "state_hash": "0xf811d23ea467ae92",
+              "turn_counter": 1
+            },
+            {
+              "index": 16,
+              "kingdom": [
+                "Chapel",
+                "Library",
+                "Remodel",
+                "Village",
+                "Poacher",
+                "Council Room",
+                "Merchant",
+                "Smithy",
+                "Cellar",
+                "Laboratory"
+              ],
+              "kingdom_index": 1,
+              "p_buy_chapel": 0.3123004734516144,
+              "seed": 2001,
+              "state_hash": "0x53e7613058d0f486",
+              "turn_counter": 0
+            },
+            {
+              "index": 17,
+              "kingdom": [
+                "Chapel",
+                "Library",
+                "Remodel",
+                "Village",
+                "Poacher",
+                "Council Room",
+                "Merchant",
+                "Smithy",
+                "Cellar",
+                "Laboratory"
+              ],
+              "kingdom_index": 1,
+              "p_buy_chapel": 0.32433271408081055,
+              "seed": 2001,
+              "state_hash": "0x92b9fe0572475035",
+              "turn_counter": 0
+            },
+            {
+              "index": 18,
+              "kingdom": [
+                "Chapel",
+                "Library",
+                "Remodel",
+                "Village",
+                "Poacher",
+                "Council Room",
+                "Merchant",
+                "Smithy",
+                "Cellar",
+                "Laboratory"
+              ],
+              "kingdom_index": 1,
+              "p_buy_chapel": 0.015580135397613049,
+              "seed": 2001,
+              "state_hash": "0xbd9710539c8f3870",
+              "turn_counter": 1
+            },
+            {
+              "index": 19,
+              "kingdom": [
+                "Chapel",
+                "Library",
+                "Remodel",
+                "Village",
+                "Poacher",
+                "Council Room",
+                "Merchant",
+                "Smithy",
+                "Cellar",
+                "Laboratory"
+              ],
+              "kingdom_index": 1,
+              "p_buy_chapel": 0.21783757209777832,
+              "seed": 2001,
+              "state_hash": "0x03323be0131f04e7",
+              "turn_counter": 1
+            },
+            {
+              "index": 20,
+              "kingdom": [
+                "Chapel",
+                "Library",
+                "Remodel",
+                "Village",
+                "Poacher",
+                "Council Room",
+                "Merchant",
+                "Smithy",
+                "Cellar",
+                "Laboratory"
+              ],
+              "kingdom_index": 1,
+              "p_buy_chapel": 0.27062198519706726,
+              "seed": 2002,
+              "state_hash": "0xbe5ee658df91c93f",
+              "turn_counter": 0
+            },
+            {
+              "index": 21,
+              "kingdom": [
+                "Chapel",
+                "Library",
+                "Remodel",
+                "Village",
+                "Poacher",
+                "Council Room",
+                "Merchant",
+                "Smithy",
+                "Cellar",
+                "Laboratory"
+              ],
+              "kingdom_index": 1,
+              "p_buy_chapel": 0.19257095456123352,
+              "seed": 2002,
+              "state_hash": "0x3db8c9495c92354e",
+              "turn_counter": 0
+            },
+            {
+              "index": 22,
+              "kingdom": [
+                "Chapel",
+                "Library",
+                "Remodel",
+                "Village",
+                "Poacher",
+                "Council Room",
+                "Merchant",
+                "Smithy",
+                "Cellar",
+                "Laboratory"
+              ],
+              "kingdom_index": 1,
+              "p_buy_chapel": 0.13276787102222443,
+              "seed": 2002,
+              "state_hash": "0x16ae70080b35a8b5",
+              "turn_counter": 0
+            },
+            {
+              "index": 23,
+              "kingdom": [
+                "Chapel",
+                "Library",
+                "Remodel",
+                "Village",
+                "Poacher",
+                "Council Room",
+                "Merchant",
+                "Smithy",
+                "Cellar",
+                "Laboratory"
+              ],
+              "kingdom_index": 1,
+              "p_buy_chapel": 0.009883824735879898,
+              "seed": 2002,
+              "state_hash": "0x13037daffc4c7e22",
+              "turn_counter": 1
+            },
+            {
+              "index": 24,
+              "kingdom": [
+                "Chapel",
+                "Mine",
+                "Cellar",
+                "Festival",
+                "Village",
+                "Gardens",
+                "Poacher",
+                "Smithy",
+                "Sentry",
+                "Harbinger"
+              ],
+              "kingdom_index": 2,
+              "p_buy_chapel": 0.3012101352214813,
+              "seed": 2000,
+              "state_hash": "0x63535f55a911c83b",
+              "turn_counter": 0
+            },
+            {
+              "index": 25,
+              "kingdom": [
+                "Chapel",
+                "Mine",
+                "Cellar",
+                "Festival",
+                "Village",
+                "Gardens",
+                "Poacher",
+                "Smithy",
+                "Sentry",
+                "Harbinger"
+              ],
+              "kingdom_index": 2,
+              "p_buy_chapel": 0.1637064665555954,
+              "seed": 2000,
+              "state_hash": "0x0fdb205a825ca2b2",
+              "turn_counter": 0
+            },
+            {
+              "index": 26,
+              "kingdom": [
+                "Chapel",
+                "Mine",
+                "Cellar",
+                "Festival",
+                "Village",
+                "Gardens",
+                "Poacher",
+                "Smithy",
+                "Sentry",
+                "Harbinger"
+              ],
+              "kingdom_index": 2,
+              "p_buy_chapel": 0.12578338384628296,
+              "seed": 2000,
+              "state_hash": "0x8bd6c2f51ad2b9a9",
+              "turn_counter": 0
+            },
+            {
+              "index": 27,
+              "kingdom": [
+                "Chapel",
+                "Mine",
+                "Cellar",
+                "Festival",
+                "Village",
+                "Gardens",
+                "Poacher",
+                "Smithy",
+                "Sentry",
+                "Harbinger"
+              ],
+              "kingdom_index": 2,
+              "p_buy_chapel": 0.020822616294026375,
+              "seed": 2000,
+              "state_hash": "0x0c62a5bd30a8a30a",
+              "turn_counter": 1
+            },
+            {
+              "index": 28,
+              "kingdom": [
+                "Chapel",
+                "Mine",
+                "Cellar",
+                "Festival",
+                "Village",
+                "Gardens",
+                "Poacher",
+                "Smithy",
+                "Sentry",
+                "Harbinger"
+              ],
+              "kingdom_index": 2,
+              "p_buy_chapel": 0.3131478726863861,
+              "seed": 2001,
+              "state_hash": "0xe2ac05ed3cb7d2a6",
+              "turn_counter": 0
+            },
+            {
+              "index": 29,
+              "kingdom": [
+                "Chapel",
+                "Mine",
+                "Cellar",
+                "Festival",
+                "Village",
+                "Gardens",
+                "Poacher",
+                "Smithy",
+                "Sentry",
+                "Harbinger"
+              ],
+              "kingdom_index": 2,
+              "p_buy_chapel": 0.228520929813385,
+              "seed": 2001,
+              "state_hash": "0x2493d63479be8855",
+              "turn_counter": 0
+            },
+            {
+              "index": 30,
+              "kingdom": [
+                "Chapel",
+                "Mine",
+                "Cellar",
+                "Festival",
+                "Village",
+                "Gardens",
+                "Poacher",
+                "Smithy",
+                "Sentry",
+                "Harbinger"
+              ],
+              "kingdom_index": 2,
+              "p_buy_chapel": 0.0313878059387207,
+              "seed": 2001,
+              "state_hash": "0x94bfc6b23cc8a2e8",
+              "turn_counter": 1
+            },
+            {
+              "index": 31,
+              "kingdom": [
+                "Chapel",
+                "Mine",
+                "Cellar",
+                "Festival",
+                "Village",
+                "Gardens",
+                "Poacher",
+                "Smithy",
+                "Sentry",
+                "Harbinger"
+              ],
+              "kingdom_index": 2,
+              "p_buy_chapel": 0.17565463483333588,
+              "seed": 2001,
+              "state_hash": "0x60a7d190ec19901f",
+              "turn_counter": 1
+            },
+            {
+              "index": 32,
+              "kingdom": [
+                "Chapel",
+                "Mine",
+                "Cellar",
+                "Festival",
+                "Village",
+                "Gardens",
+                "Poacher",
+                "Smithy",
+                "Sentry",
+                "Harbinger"
+              ],
+              "kingdom_index": 2,
+              "p_buy_chapel": 0.3012101352214813,
+              "seed": 2002,
+              "state_hash": "0x4b4406d577755e5f",
+              "turn_counter": 0
+            },
+            {
+              "index": 33,
+              "kingdom": [
+                "Chapel",
+                "Mine",
+                "Cellar",
+                "Festival",
+                "Village",
+                "Gardens",
+                "Poacher",
+                "Smithy",
+                "Sentry",
+                "Harbinger"
+              ],
+              "kingdom_index": 2,
+              "p_buy_chapel": 0.1637064665555954,
+              "seed": 2002,
+              "state_hash": "0xc6a50fb547c528ee",
+              "turn_counter": 0
+            },
+            {
+              "index": 34,
+              "kingdom": [
+                "Chapel",
+                "Mine",
+                "Cellar",
+                "Festival",
+                "Village",
+                "Gardens",
+                "Poacher",
+                "Smithy",
+                "Sentry",
+                "Harbinger"
+              ],
+              "kingdom_index": 2,
+              "p_buy_chapel": 0.12578338384628296,
+              "seed": 2002,
+              "state_hash": "0xe53221ef922977d5",
+              "turn_counter": 0
+            },
+            {
+              "index": 35,
+              "kingdom": [
+                "Chapel",
+                "Mine",
+                "Cellar",
+                "Festival",
+                "Village",
+                "Gardens",
+                "Poacher",
+                "Smithy",
+                "Sentry",
+                "Harbinger"
+              ],
+              "kingdom_index": 2,
+              "p_buy_chapel": 0.020807428285479546,
+              "seed": 2002,
+              "state_hash": "0x80c3a3504f10d90a",
+              "turn_counter": 1
+            },
+            {
+              "index": 36,
+              "kingdom": [
+                "Chapel",
+                "Festival",
+                "Moneylender",
+                "Cellar",
+                "Vassal",
+                "Remodel",
+                "Mine",
+                "Library",
+                "Bureaucrat",
+                "Smithy"
+              ],
+              "kingdom_index": 3,
+              "p_buy_chapel": 0.19275622069835663,
+              "seed": 2000,
+              "state_hash": "0x49e16c2b7c23edb4",
+              "turn_counter": 0
+            },
+            {
+              "index": 37,
+              "kingdom": [
+                "Chapel",
+                "Festival",
+                "Moneylender",
+                "Cellar",
+                "Vassal",
+                "Remodel",
+                "Mine",
+                "Library",
+                "Bureaucrat",
+                "Smithy"
+              ],
+              "kingdom_index": 3,
+              "p_buy_chapel": 0.1445257067680359,
+              "seed": 2000,
+              "state_hash": "0xdf1c7d39714c0ecd",
+              "turn_counter": 0
+            },
+            {
+              "index": 38,
+              "kingdom": [
+                "Chapel",
+                "Festival",
+                "Moneylender",
+                "Cellar",
+                "Vassal",
+                "Remodel",
+                "Mine",
+                "Library",
+                "Bureaucrat",
+                "Smithy"
+              ],
+              "kingdom_index": 3,
+              "p_buy_chapel": 0.1745414286851883,
+              "seed": 2000,
+              "state_hash": "0xa1f6eea8ae501732",
+              "turn_counter": 0
+            },
+            {
+              "index": 39,
+              "kingdom": [
+                "Chapel",
+                "Festival",
+                "Moneylender",
+                "Cellar",
+                "Vassal",
+                "Remodel",
+                "Mine",
+                "Library",
+                "Bureaucrat",
+                "Smithy"
+              ],
+              "kingdom_index": 3,
+              "p_buy_chapel": 0.010634306818246841,
+              "seed": 2000,
+              "state_hash": "0xca6bcd0f97f65e11",
+              "turn_counter": 1
+            },
+            {
+              "index": 40,
+              "kingdom": [
+                "Chapel",
+                "Festival",
+                "Moneylender",
+                "Cellar",
+                "Vassal",
+                "Remodel",
+                "Mine",
+                "Library",
+                "Bureaucrat",
+                "Smithy"
+              ],
+              "kingdom_index": 3,
+              "p_buy_chapel": 0.20257723331451416,
+              "seed": 2001,
+              "state_hash": "0x60ea89338a89c785",
+              "turn_counter": 0
+            },
+            {
+              "index": 41,
+              "kingdom": [
+                "Chapel",
+                "Festival",
+                "Moneylender",
+                "Cellar",
+                "Vassal",
+                "Remodel",
+                "Mine",
+                "Library",
+                "Bureaucrat",
+                "Smithy"
+              ],
+              "kingdom_index": 3,
+              "p_buy_chapel": 0.32481080293655396,
+              "seed": 2001,
+              "state_hash": "0xe33bdab45dbc9516",
+              "turn_counter": 0
+            },
+            {
+              "index": 42,
+              "kingdom": [
+                "Chapel",
+                "Festival",
+                "Moneylender",
+                "Cellar",
+                "Vassal",
+                "Remodel",
+                "Mine",
+                "Library",
+                "Bureaucrat",
+                "Smithy"
+              ],
+              "kingdom_index": 3,
+              "p_buy_chapel": 0.023167673498392105,
+              "seed": 2001,
+              "state_hash": "0x777c392527f312ff",
+              "turn_counter": 1
+            },
+            {
+              "index": 43,
+              "kingdom": [
+                "Chapel",
+                "Festival",
+                "Moneylender",
+                "Cellar",
+                "Vassal",
+                "Remodel",
+                "Mine",
+                "Library",
+                "Bureaucrat",
+                "Smithy"
+              ],
+              "kingdom_index": 3,
+              "p_buy_chapel": 0.20800906419754028,
+              "seed": 2001,
+              "state_hash": "0x751d7a71a37798c0",
+              "turn_counter": 1
+            },
+            {
+              "index": 44,
+              "kingdom": [
+                "Chapel",
+                "Festival",
+                "Moneylender",
+                "Cellar",
+                "Vassal",
+                "Remodel",
+                "Mine",
+                "Library",
+                "Bureaucrat",
+                "Smithy"
+              ],
+              "kingdom_index": 3,
+              "p_buy_chapel": 0.19275622069835663,
+              "seed": 2002,
+              "state_hash": "0x4aa6b385029e4584",
+              "turn_counter": 0
+            },
+            {
+              "index": 45,
+              "kingdom": [
+                "Chapel",
+                "Festival",
+                "Moneylender",
+                "Cellar",
+                "Vassal",
+                "Remodel",
+                "Mine",
+                "Library",
+                "Bureaucrat",
+                "Smithy"
+              ],
+              "kingdom_index": 3,
+              "p_buy_chapel": 0.1445257067680359,
+              "seed": 2002,
+              "state_hash": "0x8f0920b3657157cd",
+              "turn_counter": 0
+            },
+            {
+              "index": 46,
+              "kingdom": [
+                "Chapel",
+                "Festival",
+                "Moneylender",
+                "Cellar",
+                "Vassal",
+                "Remodel",
+                "Mine",
+                "Library",
+                "Bureaucrat",
+                "Smithy"
+              ],
+              "kingdom_index": 3,
+              "p_buy_chapel": 0.1745414286851883,
+              "seed": 2002,
+              "state_hash": "0x043e57e39f6b9af2",
+              "turn_counter": 0
+            },
+            {
+              "index": 47,
+              "kingdom": [
+                "Chapel",
+                "Festival",
+                "Moneylender",
+                "Cellar",
+                "Vassal",
+                "Remodel",
+                "Mine",
+                "Library",
+                "Bureaucrat",
+                "Smithy"
+              ],
+              "kingdom_index": 3,
+              "p_buy_chapel": 0.012837112881243229,
+              "seed": 2002,
+              "state_hash": "0x8816244780f2f1fd",
+              "turn_counter": 1
+            },
+            {
+              "index": 48,
+              "kingdom": [
+                "Chapel",
+                "Moneylender",
+                "Throne Room",
+                "Cellar",
+                "Library",
+                "Vassal",
+                "Harbinger",
+                "Council Room",
+                "Market",
+                "Smithy"
+              ],
+              "kingdom_index": 4,
+              "p_buy_chapel": 0.3159934878349304,
+              "seed": 2000,
+              "state_hash": "0x90daf2469e0c9946",
+              "turn_counter": 0
+            },
+            {
+              "index": 49,
+              "kingdom": [
+                "Chapel",
+                "Moneylender",
+                "Throne Room",
+                "Cellar",
+                "Library",
+                "Vassal",
+                "Harbinger",
+                "Council Room",
+                "Market",
+                "Smithy"
+              ],
+              "kingdom_index": 4,
+              "p_buy_chapel": 0.17463716864585876,
+              "seed": 2000,
+              "state_hash": "0xc19dfae3678f03bb",
+              "turn_counter": 0
+            },
+            {
+              "index": 50,
+              "kingdom": [
+                "Chapel",
+                "Moneylender",
+                "Throne Room",
+                "Cellar",
+                "Library",
+                "Vassal",
+                "Harbinger",
+                "Council Room",
+                "Market",
+                "Smithy"
+              ],
+              "kingdom_index": 4,
+              "p_buy_chapel": 0.1301349550485611,
+              "seed": 2000,
+              "state_hash": "0x312cb2d0c023fe38",
+              "turn_counter": 0
+            },
+            {
+              "index": 51,
+              "kingdom": [
+                "Chapel",
+                "Moneylender",
+                "Throne Room",
+                "Cellar",
+                "Library",
+                "Vassal",
+                "Harbinger",
+                "Council Room",
+                "Market",
+                "Smithy"
+              ],
+              "kingdom_index": 4,
+              "p_buy_chapel": 0.0019839892629534006,
+              "seed": 2000,
+              "state_hash": "0x00b9e504861d692f",
+              "turn_counter": 1
+            },
+            {
+              "index": 52,
+              "kingdom": [
+                "Chapel",
+                "Moneylender",
+                "Throne Room",
+                "Cellar",
+                "Library",
+                "Vassal",
+                "Harbinger",
+                "Council Room",
+                "Market",
+                "Smithy"
+              ],
+              "kingdom_index": 4,
+              "p_buy_chapel": 0.35138842463493347,
+              "seed": 2001,
+              "state_hash": "0x72259a1932b7d487",
+              "turn_counter": 0
+            },
+            {
+              "index": 53,
+              "kingdom": [
+                "Chapel",
+                "Moneylender",
+                "Throne Room",
+                "Cellar",
+                "Library",
+                "Vassal",
+                "Harbinger",
+                "Council Room",
+                "Market",
+                "Smithy"
+              ],
+              "kingdom_index": 4,
+              "p_buy_chapel": 0.23066769540309906,
+              "seed": 2001,
+              "state_hash": "0x736cce007d168e58",
+              "turn_counter": 0
+            },
+            {
+              "index": 54,
+              "kingdom": [
+                "Chapel",
+                "Moneylender",
+                "Throne Room",
+                "Cellar",
+                "Library",
+                "Vassal",
+                "Harbinger",
+                "Council Room",
+                "Market",
+                "Smithy"
+              ],
+              "kingdom_index": 4,
+              "p_buy_chapel": 0.002926667919382453,
+              "seed": 2001,
+              "state_hash": "0xec0a2dd4a03e9f41",
+              "turn_counter": 1
+            },
+            {
+              "index": 55,
+              "kingdom": [
+                "Chapel",
+                "Moneylender",
+                "Throne Room",
+                "Cellar",
+                "Library",
+                "Vassal",
+                "Harbinger",
+                "Council Room",
+                "Market",
+                "Smithy"
+              ],
+              "kingdom_index": 4,
+              "p_buy_chapel": 0.14936110377311707,
+              "seed": 2001,
+              "state_hash": "0x84d2e3d06bab7d3a",
+              "turn_counter": 1
+            },
+            {
+              "index": 56,
+              "kingdom": [
+                "Chapel",
+                "Moneylender",
+                "Throne Room",
+                "Cellar",
+                "Library",
+                "Vassal",
+                "Harbinger",
+                "Council Room",
+                "Market",
+                "Smithy"
+              ],
+              "kingdom_index": 4,
+              "p_buy_chapel": 0.3159934878349304,
+              "seed": 2002,
+              "state_hash": "0x77fce042020ca32e",
+              "turn_counter": 0
+            },
+            {
+              "index": 57,
+              "kingdom": [
+                "Chapel",
+                "Moneylender",
+                "Throne Room",
+                "Cellar",
+                "Library",
+                "Vassal",
+                "Harbinger",
+                "Council Room",
+                "Market",
+                "Smithy"
+              ],
+              "kingdom_index": 4,
+              "p_buy_chapel": 0.17463716864585876,
+              "seed": 2002,
+              "state_hash": "0x0ea40da900211183",
+              "turn_counter": 0
+            },
+            {
+              "index": 58,
+              "kingdom": [
+                "Chapel",
+                "Moneylender",
+                "Throne Room",
+                "Cellar",
+                "Library",
+                "Vassal",
+                "Harbinger",
+                "Council Room",
+                "Market",
+                "Smithy"
+              ],
+              "kingdom_index": 4,
+              "p_buy_chapel": 0.1301349550485611,
+              "seed": 2002,
+              "state_hash": "0x2560b57ba7768370",
+              "turn_counter": 0
+            },
+            {
+              "index": 59,
+              "kingdom": [
+                "Chapel",
+                "Moneylender",
+                "Throne Room",
+                "Cellar",
+                "Library",
+                "Vassal",
+                "Harbinger",
+                "Council Room",
+                "Market",
+                "Smithy"
+              ],
+              "kingdom_index": 4,
+              "p_buy_chapel": 0.001973103266209364,
+              "seed": 2002,
+              "state_hash": "0xc2792e1d749ea95b",
+              "turn_counter": 1
+            },
+            {
+              "index": 60,
+              "kingdom": [
+                "Chapel",
+                "Mine",
+                "Moat",
+                "Market",
+                "Throne Room",
+                "Vassal",
+                "Bandit",
+                "Remodel",
+                "Gardens",
+                "Sentry"
+              ],
+              "kingdom_index": 5,
+              "p_buy_chapel": 0.4546422064304352,
+              "seed": 2000,
+              "state_hash": "0xd4d2edb5fde45254",
+              "turn_counter": 0
+            },
+            {
+              "index": 61,
+              "kingdom": [
+                "Chapel",
+                "Mine",
+                "Moat",
+                "Market",
+                "Throne Room",
+                "Vassal",
+                "Bandit",
+                "Remodel",
+                "Gardens",
+                "Sentry"
+              ],
+              "kingdom_index": 5,
+              "p_buy_chapel": 0.09255537390708923,
+              "seed": 2000,
+              "state_hash": "0x5e0147a23d25da6d",
+              "turn_counter": 0
+            },
+            {
+              "index": 62,
+              "kingdom": [
+                "Chapel",
+                "Mine",
+                "Moat",
+                "Market",
+                "Throne Room",
+                "Vassal",
+                "Bandit",
+                "Remodel",
+                "Gardens",
+                "Sentry"
+              ],
+              "kingdom_index": 5,
+              "p_buy_chapel": 0.05987819284200668,
+              "seed": 2000,
+              "state_hash": "0xaa3a5de26db14ad2",
+              "turn_counter": 0
+            },
+            {
+              "index": 63,
+              "kingdom": [
+                "Chapel",
+                "Mine",
+                "Moat",
+                "Market",
+                "Throne Room",
+                "Vassal",
+                "Bandit",
+                "Remodel",
+                "Gardens",
+                "Sentry"
+              ],
+              "kingdom_index": 5,
+              "p_buy_chapel": 0.31547442078590393,
+              "seed": 2000,
+              "state_hash": "0x26141382b8fc6b71",
+              "turn_counter": 1
+            },
+            {
+              "index": 64,
+              "kingdom": [
+                "Chapel",
+                "Mine",
+                "Moat",
+                "Market",
+                "Throne Room",
+                "Vassal",
+                "Bandit",
+                "Remodel",
+                "Gardens",
+                "Sentry"
+              ],
+              "kingdom_index": 5,
+              "p_buy_chapel": 0.4775135815143585,
+              "seed": 2001,
+              "state_hash": "0xbb3e2a78f55ad2a5",
+              "turn_counter": 0
+            },
+            {
+              "index": 65,
+              "kingdom": [
+                "Chapel",
+                "Mine",
+                "Moat",
+                "Market",
+                "Throne Room",
+                "Vassal",
+                "Bandit",
+                "Remodel",
+                "Gardens",
+                "Sentry"
+              ],
+              "kingdom_index": 5,
+              "p_buy_chapel": 0.0789366364479065,
+              "seed": 2001,
+              "state_hash": "0x77aa66e4afc3cab6",
+              "turn_counter": 0
+            },
+            {
+              "index": 66,
+              "kingdom": [
+                "Chapel",
+                "Mine",
+                "Moat",
+                "Market",
+                "Throne Room",
+                "Vassal",
+                "Bandit",
+                "Remodel",
+                "Gardens",
+                "Sentry"
+              ],
+              "kingdom_index": 5,
+              "p_buy_chapel": 0.4653366506099701,
+              "seed": 2001,
+              "state_hash": "0x926956c18c0cc75f",
+              "turn_counter": 1
+            },
+            {
+              "index": 67,
+              "kingdom": [
+                "Chapel",
+                "Mine",
+                "Moat",
+                "Market",
+                "Throne Room",
+                "Vassal",
+                "Bandit",
+                "Remodel",
+                "Gardens",
+                "Sentry"
+              ],
+              "kingdom_index": 5,
+              "p_buy_chapel": 0.13258734345436096,
+              "seed": 2001,
+              "state_hash": "0xf20dbd3f9e167a20",
+              "turn_counter": 1
+            },
+            {
+              "index": 68,
+              "kingdom": [
+                "Chapel",
+                "Mine",
+                "Moat",
+                "Market",
+                "Throne Room",
+                "Vassal",
+                "Bandit",
+                "Remodel",
+                "Gardens",
+                "Sentry"
+              ],
+              "kingdom_index": 5,
+              "p_buy_chapel": 0.4546422064304352,
+              "seed": 2002,
+              "state_hash": "0xca6e52b0482ef724",
+              "turn_counter": 0
+            },
+            {
+              "index": 69,
+              "kingdom": [
+                "Chapel",
+                "Mine",
+                "Moat",
+                "Market",
+                "Throne Room",
+                "Vassal",
+                "Bandit",
+                "Remodel",
+                "Gardens",
+                "Sentry"
+              ],
+              "kingdom_index": 5,
+              "p_buy_chapel": 0.09255537390708923,
+              "seed": 2002,
+              "state_hash": "0x2195571b6147166d",
+              "turn_counter": 0
+            },
+            {
+              "index": 70,
+              "kingdom": [
+                "Chapel",
+                "Mine",
+                "Moat",
+                "Market",
+                "Throne Room",
+                "Vassal",
+                "Bandit",
+                "Remodel",
+                "Gardens",
+                "Sentry"
+              ],
+              "kingdom_index": 5,
+              "p_buy_chapel": 0.05987819284200668,
+              "seed": 2002,
+              "state_hash": "0x266b1e763e769292",
+              "turn_counter": 0
+            },
+            {
+              "index": 71,
+              "kingdom": [
+                "Chapel",
+                "Mine",
+                "Moat",
+                "Market",
+                "Throne Room",
+                "Vassal",
+                "Bandit",
+                "Remodel",
+                "Gardens",
+                "Sentry"
+              ],
+              "kingdom_index": 5,
+              "p_buy_chapel": 0.37081408500671387,
+              "seed": 2002,
+              "state_hash": "0xfe11309e828fbadd",
+              "turn_counter": 1
+            },
+            {
+              "index": 72,
+              "kingdom": [
+                "Chapel",
+                "Library",
+                "Vassal",
+                "Market",
+                "Village",
+                "Council Room",
+                "Smithy",
+                "Moat",
+                "Gardens",
+                "Harbinger"
+              ],
+              "kingdom_index": 6,
+              "p_buy_chapel": 0.15857991576194763,
+              "seed": 2000,
+              "state_hash": "0x278d2cb4a3a32fe6",
+              "turn_counter": 0
+            },
+            {
+              "index": 73,
+              "kingdom": [
+                "Chapel",
+                "Library",
+                "Vassal",
+                "Market",
+                "Village",
+                "Council Room",
+                "Smithy",
+                "Moat",
+                "Gardens",
+                "Harbinger"
+              ],
+              "kingdom_index": 6,
+              "p_buy_chapel": 0.09428776055574417,
+              "seed": 2000,
+              "state_hash": "0x86a71db4248ae65b",
+              "turn_counter": 0
+            },
+            {
+              "index": 74,
+              "kingdom": [
+                "Chapel",
+                "Library",
+                "Vassal",
+                "Market",
+                "Village",
+                "Council Room",
+                "Smithy",
+                "Moat",
+                "Gardens",
+                "Harbinger"
+              ],
+              "kingdom_index": 6,
+              "p_buy_chapel": 0.19097967445850372,
+              "seed": 2000,
+              "state_hash": "0x26c42805cb140ad8",
+              "turn_counter": 0
+            },
+            {
+              "index": 75,
+              "kingdom": [
+                "Chapel",
+                "Library",
+                "Vassal",
+                "Market",
+                "Village",
+                "Council Room",
+                "Smithy",
+                "Moat",
+                "Gardens",
+                "Harbinger"
+              ],
+              "kingdom_index": 6,
+              "p_buy_chapel": 0.0010046937968581915,
+              "seed": 2000,
+              "state_hash": "0xe850d5b3a1a15b4f",
+              "turn_counter": 1
+            },
+            {
+              "index": 76,
+              "kingdom": [
+                "Chapel",
+                "Library",
+                "Vassal",
+                "Market",
+                "Village",
+                "Council Room",
+                "Smithy",
+                "Moat",
+                "Gardens",
+                "Harbinger"
+              ],
+              "kingdom_index": 6,
+              "p_buy_chapel": 0.18058942258358002,
+              "seed": 2001,
+              "state_hash": "0x60ea5c4476466527",
+              "turn_counter": 0
+            },
+            {
+              "index": 77,
+              "kingdom": [
+                "Chapel",
+                "Library",
+                "Vassal",
+                "Market",
+                "Village",
+                "Council Room",
+                "Smithy",
+                "Moat",
+                "Gardens",
+                "Harbinger"
+              ],
+              "kingdom_index": 6,
+              "p_buy_chapel": 0.20329542458057404,
+              "seed": 2001,
+              "state_hash": "0x63d0bd64f3962cf8",
+              "turn_counter": 0
+            },
+            {
+              "index": 78,
+              "kingdom": [
+                "Chapel",
+                "Library",
+                "Vassal",
+                "Market",
+                "Village",
+                "Council Room",
+                "Smithy",
+                "Moat",
+                "Gardens",
+                "Harbinger"
+              ],
+              "kingdom_index": 6,
+              "p_buy_chapel": 0.0016915836604312062,
+              "seed": 2001,
+              "state_hash": "0x55085bd3fa360861",
+              "turn_counter": 1
+            },
+            {
+              "index": 79,
+              "kingdom": [
+                "Chapel",
+                "Library",
+                "Vassal",
+                "Market",
+                "Village",
+                "Council Room",
+                "Smithy",
+                "Moat",
+                "Gardens",
+                "Harbinger"
+              ],
+              "kingdom_index": 6,
+              "p_buy_chapel": 0.24285230040550232,
+              "seed": 2001,
+              "state_hash": "0x2a1a88d51c5ff5da",
+              "turn_counter": 1
+            },
+            {
+              "index": 80,
+              "kingdom": [
+                "Chapel",
+                "Library",
+                "Vassal",
+                "Market",
+                "Village",
+                "Council Room",
+                "Smithy",
+                "Moat",
+                "Gardens",
+                "Harbinger"
+              ],
+              "kingdom_index": 6,
+              "p_buy_chapel": 0.15857991576194763,
+              "seed": 2002,
+              "state_hash": "0x6aa15d393e84ac4e",
+              "turn_counter": 0
+            },
+            {
+              "index": 81,
+              "kingdom": [
+                "Chapel",
+                "Library",
+                "Vassal",
+                "Market",
+                "Village",
+                "Council Room",
+                "Smithy",
+                "Moat",
+                "Gardens",
+                "Harbinger"
+              ],
+              "kingdom_index": 6,
+              "p_buy_chapel": 0.09428776055574417,
+              "seed": 2002,
+              "state_hash": "0x46a84853e2f89a23",
+              "turn_counter": 0
+            },
+            {
+              "index": 82,
+              "kingdom": [
+                "Chapel",
+                "Library",
+                "Vassal",
+                "Market",
+                "Village",
+                "Council Room",
+                "Smithy",
+                "Moat",
+                "Gardens",
+                "Harbinger"
+              ],
+              "kingdom_index": 6,
+              "p_buy_chapel": 0.19097967445850372,
+              "seed": 2002,
+              "state_hash": "0xc65d8d4b100a1690",
+              "turn_counter": 0
+            },
+            {
+              "index": 83,
+              "kingdom": [
+                "Chapel",
+                "Library",
+                "Vassal",
+                "Market",
+                "Village",
+                "Council Room",
+                "Smithy",
+                "Moat",
+                "Gardens",
+                "Harbinger"
+              ],
+              "kingdom_index": 6,
+              "p_buy_chapel": 0.0011323373764753342,
+              "seed": 2002,
+              "state_hash": "0xb4debb685f06397b",
+              "turn_counter": 1
+            },
+            {
+              "index": 84,
+              "kingdom": [
+                "Chapel",
+                "Remodel",
+                "Council Room",
+                "Market",
+                "Poacher",
+                "Smithy",
+                "Gardens",
+                "Library",
+                "Sentry",
+                "Moneylender"
+              ],
+              "kingdom_index": 7,
+              "p_buy_chapel": 0.10031019896268845,
+              "seed": 2000,
+              "state_hash": "0xaad13ad4f225bf87",
+              "turn_counter": 0
+            },
+            {
+              "index": 85,
+              "kingdom": [
+                "Chapel",
+                "Remodel",
+                "Council Room",
+                "Market",
+                "Poacher",
+                "Smithy",
+                "Gardens",
+                "Library",
+                "Sentry",
+                "Moneylender"
+              ],
+              "kingdom_index": 7,
+              "p_buy_chapel": 0.07805275171995163,
+              "seed": 2000,
+              "state_hash": "0x0e6dac37676eb3fe",
+              "turn_counter": 0
+            },
+            {
+              "index": 86,
+              "kingdom": [
+                "Chapel",
+                "Remodel",
+                "Council Room",
+                "Market",
+                "Poacher",
+                "Smithy",
+                "Gardens",
+                "Library",
+                "Sentry",
+                "Moneylender"
+              ],
+              "kingdom_index": 7,
+              "p_buy_chapel": 0.07288230955600739,
+              "seed": 2000,
+              "state_hash": "0xcfe0b782743d16d5",
+              "turn_counter": 0
+            },
+            {
+              "index": 87,
+              "kingdom": [
+                "Chapel",
+                "Remodel",
+                "Council Room",
+                "Market",
+                "Poacher",
+                "Smithy",
+                "Gardens",
+                "Library",
+                "Sentry",
+                "Moneylender"
+              ],
+              "kingdom_index": 7,
+              "p_buy_chapel": 0.008524169214069843,
+              "seed": 2000,
+              "state_hash": "0x99b59e3f2c936b7e",
+              "turn_counter": 1
+            },
+            {
+              "index": 88,
+              "kingdom": [
+                "Chapel",
+                "Remodel",
+                "Council Room",
+                "Market",
+                "Poacher",
+                "Smithy",
+                "Gardens",
+                "Library",
+                "Sentry",
+                "Moneylender"
+              ],
+              "kingdom_index": 7,
+              "p_buy_chapel": 0.10796162486076355,
+              "seed": 2001,
+              "state_hash": "0x07fa7dc15ddc82ba",
+              "turn_counter": 0
+            },
+            {
+              "index": 89,
+              "kingdom": [
+                "Chapel",
+                "Remodel",
+                "Council Room",
+                "Market",
+                "Poacher",
+                "Smithy",
+                "Gardens",
+                "Library",
+                "Sentry",
+                "Moneylender"
+              ],
+              "kingdom_index": 7,
+              "p_buy_chapel": 0.2648729383945465,
+              "seed": 2001,
+              "state_hash": "0x0c629428adcdb029",
+              "turn_counter": 0
+            },
+            {
+              "index": 90,
+              "kingdom": [
+                "Chapel",
+                "Remodel",
+                "Council Room",
+                "Market",
+                "Poacher",
+                "Smithy",
+                "Gardens",
+                "Library",
+                "Sentry",
+                "Moneylender"
+              ],
+              "kingdom_index": 7,
+              "p_buy_chapel": 0.014959095977246761,
+              "seed": 2001,
+              "state_hash": "0xf8c1be0b6e077704",
+              "turn_counter": 1
+            },
+            {
+              "index": 91,
+              "kingdom": [
+                "Chapel",
+                "Remodel",
+                "Council Room",
+                "Market",
+                "Poacher",
+                "Smithy",
+                "Gardens",
+                "Library",
+                "Sentry",
+                "Moneylender"
+              ],
+              "kingdom_index": 7,
+              "p_buy_chapel": 0.14877057075500488,
+              "seed": 2001,
+              "state_hash": "0x84d1e92b3bdccddb",
+              "turn_counter": 1
+            },
+            {
+              "index": 92,
+              "kingdom": [
+                "Chapel",
+                "Remodel",
+                "Council Room",
+                "Market",
+                "Poacher",
+                "Smithy",
+                "Gardens",
+                "Library",
+                "Sentry",
+                "Moneylender"
+              ],
+              "kingdom_index": 7,
+              "p_buy_chapel": 0.10031019896268845,
+              "seed": 2002,
+              "state_hash": "0xe8b389e3e2bfd1d3",
+              "turn_counter": 0
+            },
+            {
+              "index": 93,
+              "kingdom": [
+                "Chapel",
+                "Remodel",
+                "Council Room",
+                "Market",
+                "Poacher",
+                "Smithy",
+                "Gardens",
+                "Library",
+                "Sentry",
+                "Moneylender"
+              ],
+              "kingdom_index": 7,
+              "p_buy_chapel": 0.07805275171995163,
+              "seed": 2002,
+              "state_hash": "0x391c88fcabbba612",
+              "turn_counter": 0
+            },
+            {
+              "index": 94,
+              "kingdom": [
+                "Chapel",
+                "Remodel",
+                "Council Room",
+                "Market",
+                "Poacher",
+                "Smithy",
+                "Gardens",
+                "Library",
+                "Sentry",
+                "Moneylender"
+              ],
+              "kingdom_index": 7,
+              "p_buy_chapel": 0.07288230955600739,
+              "seed": 2002,
+              "state_hash": "0x1dce142ef3fdd8c9",
+              "turn_counter": 0
+            },
+            {
+              "index": 95,
+              "kingdom": [
+                "Chapel",
+                "Remodel",
+                "Council Room",
+                "Market",
+                "Poacher",
+                "Smithy",
+                "Gardens",
+                "Library",
+                "Sentry",
+                "Moneylender"
+              ],
+              "kingdom_index": 7,
+              "p_buy_chapel": 0.009355876594781876,
+              "seed": 2002,
+              "state_hash": "0xf50bb4271de8e69e",
+              "turn_counter": 1
+            },
+            {
+              "index": 96,
+              "kingdom": [
+                "Chapel",
+                "Bureaucrat",
+                "Bandit",
+                "Mine",
+                "Throne Room",
+                "Festival",
+                "Harbinger",
+                "Vassal",
+                "Gardens",
+                "Council Room"
+              ],
+              "kingdom_index": 8,
+              "p_buy_chapel": 0.4952487051486969,
+              "seed": 2000,
+              "state_hash": "0xa0ec782c9555a09f",
+              "turn_counter": 0
+            },
+            {
+              "index": 97,
+              "kingdom": [
+                "Chapel",
+                "Bureaucrat",
+                "Bandit",
+                "Mine",
+                "Throne Room",
+                "Festival",
+                "Harbinger",
+                "Vassal",
+                "Gardens",
+                "Council Room"
+              ],
+              "kingdom_index": 8,
+              "p_buy_chapel": 0.2028963565826416,
+              "seed": 2000,
+              "state_hash": "0xd6cd3ecb06757f76",
+              "turn_counter": 0
+            },
+            {
+              "index": 98,
+              "kingdom": [
+                "Chapel",
+                "Bureaucrat",
+                "Bandit",
+                "Mine",
+                "Throne Room",
+                "Festival",
+                "Harbinger",
+                "Vassal",
+                "Gardens",
+                "Council Room"
+              ],
+              "kingdom_index": 8,
+              "p_buy_chapel": 0.16681456565856934,
+              "seed": 2000,
+              "state_hash": "0xe7b5ee0602a48c2d",
+              "turn_counter": 0
+            },
+            {
+              "index": 99,
+              "kingdom": [
+                "Chapel",
+                "Bureaucrat",
+                "Bandit",
+                "Mine",
+                "Throne Room",
+                "Festival",
+                "Harbinger",
+                "Vassal",
+                "Gardens",
+                "Council Room"
+              ],
+              "kingdom_index": 8,
+              "p_buy_chapel": 0.009729359298944473,
+              "seed": 2000,
+              "state_hash": "0x999fee076df90606",
+              "turn_counter": 1
+            },
+            {
+              "index": 100,
+              "kingdom": [
+                "Chapel",
+                "Bureaucrat",
+                "Bandit",
+                "Mine",
+                "Throne Room",
+                "Festival",
+                "Harbinger",
+                "Vassal",
+                "Gardens",
+                "Council Room"
+              ],
+              "kingdom_index": 8,
+              "p_buy_chapel": 0.5314739346504211,
+              "seed": 2001,
+              "state_hash": "0x908cdd1ed746ebb2",
+              "turn_counter": 0
+            },
+            {
+              "index": 101,
+              "kingdom": [
+                "Chapel",
+                "Bureaucrat",
+                "Bandit",
+                "Mine",
+                "Throne Room",
+                "Festival",
+                "Harbinger",
+                "Vassal",
+                "Gardens",
+                "Council Room"
+              ],
+              "kingdom_index": 8,
+              "p_buy_chapel": 0.21783968806266785,
+              "seed": 2001,
+              "state_hash": "0x12d2fe71b84bcf81",
+              "turn_counter": 0
+            },
+            {
+              "index": 102,
+              "kingdom": [
+                "Chapel",
+                "Bureaucrat",
+                "Bandit",
+                "Mine",
+                "Throne Room",
+                "Festival",
+                "Harbinger",
+                "Vassal",
+                "Gardens",
+                "Council Room"
+              ],
+              "kingdom_index": 8,
+              "p_buy_chapel": 0.019349826499819756,
+              "seed": 2001,
+              "state_hash": "0xddf48da09ef0c96c",
+              "turn_counter": 1
+            },
+            {
+              "index": 103,
+              "kingdom": [
+                "Chapel",
+                "Bureaucrat",
+                "Bandit",
+                "Mine",
+                "Throne Room",
+                "Festival",
+                "Harbinger",
+                "Vassal",
+                "Gardens",
+                "Council Room"
+              ],
+              "kingdom_index": 8,
+              "p_buy_chapel": 0.1755266785621643,
+              "seed": 2001,
+              "state_hash": "0x278bb511fb82ab83",
+              "turn_counter": 1
+            },
+            {
+              "index": 104,
+              "kingdom": [
+                "Chapel",
+                "Bureaucrat",
+                "Bandit",
+                "Mine",
+                "Throne Room",
+                "Festival",
+                "Harbinger",
+                "Vassal",
+                "Gardens",
+                "Council Room"
+              ],
+              "kingdom_index": 8,
+              "p_buy_chapel": 0.4952487051486969,
+              "seed": 2002,
+              "state_hash": "0xdc15b2370870f8fb",
+              "turn_counter": 0
+            },
+            {
+              "index": 105,
+              "kingdom": [
+                "Chapel",
+                "Bureaucrat",
+                "Bandit",
+                "Mine",
+                "Throne Room",
+                "Festival",
+                "Harbinger",
+                "Vassal",
+                "Gardens",
+                "Council Room"
+              ],
+              "kingdom_index": 8,
+              "p_buy_chapel": 0.2028963565826416,
+              "seed": 2002,
+              "state_hash": "0x5652591c25d7415a",
+              "turn_counter": 0
+            },
+            {
+              "index": 106,
+              "kingdom": [
+                "Chapel",
+                "Bureaucrat",
+                "Bandit",
+                "Mine",
+                "Throne Room",
+                "Festival",
+                "Harbinger",
+                "Vassal",
+                "Gardens",
+                "Council Room"
+              ],
+              "kingdom_index": 8,
+              "p_buy_chapel": 0.16681456565856934,
+              "seed": 2002,
+              "state_hash": "0xfd39ad17a84e42b1",
+              "turn_counter": 0
+            },
+            {
+              "index": 107,
+              "kingdom": [
+                "Chapel",
+                "Bureaucrat",
+                "Bandit",
+                "Mine",
+                "Throne Room",
+                "Festival",
+                "Harbinger",
+                "Vassal",
+                "Gardens",
+                "Council Room"
+              ],
+              "kingdom_index": 8,
+              "p_buy_chapel": 0.012220838107168674,
+              "seed": 2002,
+              "state_hash": "0x65f8fe4a8b1e2e56",
+              "turn_counter": 1
+            },
+            {
+              "index": 108,
+              "kingdom": [
+                "Chapel",
+                "Smithy",
+                "Moneylender",
+                "Merchant",
+                "Vassal",
+                "Sentry",
+                "Moat",
+                "Library",
+                "Mine",
+                "Workshop"
+              ],
+              "kingdom_index": 9,
+              "p_buy_chapel": 0.1652483195066452,
+              "seed": 2000,
+              "state_hash": "0x3167092db88435fd",
+              "turn_counter": 0
+            },
+            {
+              "index": 109,
+              "kingdom": [
+                "Chapel",
+                "Smithy",
+                "Moneylender",
+                "Merchant",
+                "Vassal",
+                "Sentry",
+                "Moat",
+                "Library",
+                "Mine",
+                "Workshop"
+              ],
+              "kingdom_index": 9,
+              "p_buy_chapel": 0.10960804671049118,
+              "seed": 2000,
+              "state_hash": "0x49c7da5b823fac68",
+              "turn_counter": 0
+            },
+            {
+              "index": 110,
+              "kingdom": [
+                "Chapel",
+                "Smithy",
+                "Moneylender",
+                "Merchant",
+                "Vassal",
+                "Sentry",
+                "Moat",
+                "Library",
+                "Mine",
+                "Workshop"
+              ],
+              "kingdom_index": 9,
+              "p_buy_chapel": 0.15895120799541473,
+              "seed": 2000,
+              "state_hash": "0xf0a0d103ab85a607",
+              "turn_counter": 0
+            },
+            {
+              "index": 111,
+              "kingdom": [
+                "Chapel",
+                "Smithy",
+                "Moneylender",
+                "Merchant",
+                "Vassal",
+                "Sentry",
+                "Moat",
+                "Library",
+                "Mine",
+                "Workshop"
+              ],
+              "kingdom_index": 9,
+              "p_buy_chapel": 0.09255637973546982,
+              "seed": 2000,
+              "state_hash": "0xa48731420842d388",
+              "turn_counter": 1
+            },
+            {
+              "index": 112,
+              "kingdom": [
+                "Chapel",
+                "Smithy",
+                "Moneylender",
+                "Merchant",
+                "Vassal",
+                "Sentry",
+                "Moat",
+                "Library",
+                "Mine",
+                "Workshop"
+              ],
+              "kingdom_index": 9,
+              "p_buy_chapel": 0.2045096904039383,
+              "seed": 2001,
+              "state_hash": "0x31c2920e8eaccaa0",
+              "turn_counter": 0
+            },
+            {
+              "index": 113,
+              "kingdom": [
+                "Chapel",
+                "Smithy",
+                "Moneylender",
+                "Merchant",
+                "Vassal",
+                "Sentry",
+                "Moat",
+                "Library",
+                "Mine",
+                "Workshop"
+              ],
+              "kingdom_index": 9,
+              "p_buy_chapel": 0.18512985110282898,
+              "seed": 2001,
+              "state_hash": "0xacb9f5ee2ff4baff",
+              "turn_counter": 0
+            },
+            {
+              "index": 114,
+              "kingdom": [
+                "Chapel",
+                "Smithy",
+                "Moneylender",
+                "Merchant",
+                "Vassal",
+                "Sentry",
+                "Moat",
+                "Library",
+                "Mine",
+                "Workshop"
+              ],
+              "kingdom_index": 9,
+              "p_buy_chapel": 0.2252141684293747,
+              "seed": 2001,
+              "state_hash": "0x75c548a5ab47809a",
+              "turn_counter": 1
+            },
+            {
+              "index": 115,
+              "kingdom": [
+                "Chapel",
+                "Smithy",
+                "Moneylender",
+                "Merchant",
+                "Vassal",
+                "Sentry",
+                "Moat",
+                "Library",
+                "Mine",
+                "Workshop"
+              ],
+              "kingdom_index": 9,
+              "p_buy_chapel": 0.1116914227604866,
+              "seed": 2001,
+              "state_hash": "0x20913154735e1099",
+              "turn_counter": 1
+            },
+            {
+              "index": 116,
+              "kingdom": [
+                "Chapel",
+                "Smithy",
+                "Moneylender",
+                "Merchant",
+                "Vassal",
+                "Sentry",
+                "Moat",
+                "Library",
+                "Mine",
+                "Workshop"
+              ],
+              "kingdom_index": 9,
+              "p_buy_chapel": 0.1652483195066452,
+              "seed": 2002,
+              "state_hash": "0xc3573598a495a371",
+              "turn_counter": 0
+            },
+            {
+              "index": 117,
+              "kingdom": [
+                "Chapel",
+                "Smithy",
+                "Moneylender",
+                "Merchant",
+                "Vassal",
+                "Sentry",
+                "Moat",
+                "Library",
+                "Mine",
+                "Workshop"
+              ],
+              "kingdom_index": 9,
+              "p_buy_chapel": 0.10960804671049118,
+              "seed": 2002,
+              "state_hash": "0x3d247d4a79e8a8d4",
+              "turn_counter": 0
+            },
+            {
+              "index": 118,
+              "kingdom": [
+                "Chapel",
+                "Smithy",
+                "Moneylender",
+                "Merchant",
+                "Vassal",
+                "Sentry",
+                "Moat",
+                "Library",
+                "Mine",
+                "Workshop"
+              ],
+              "kingdom_index": 9,
+              "p_buy_chapel": 0.15895120799541473,
+              "seed": 2002,
+              "state_hash": "0xb596e2a8f2cd9e63",
+              "turn_counter": 0
+            },
+            {
+              "index": 119,
+              "kingdom": [
+                "Chapel",
+                "Smithy",
+                "Moneylender",
+                "Merchant",
+                "Vassal",
+                "Sentry",
+                "Moat",
+                "Library",
+                "Mine",
+                "Workshop"
+              ],
+              "kingdom_index": 9,
+              "p_buy_chapel": 0.15257136523723602,
+              "seed": 2002,
+              "state_hash": "0x30863b1b33f9f1f8",
+              "turn_counter": 1
+            }
+          ]
+        }
+      },
+      "means": {
+        "attack_present": 0.18619086074468214,
+        "no_attack": 0.1663820521760499
+      },
+      "obs_version": 3,
+      "probe": "chapel_probe",
+      "protocol": {
+        "attack_nodes": 120,
+        "mode": "raw unforced policy only",
+        "no_attack_nodes": 120,
+        "nodes": 240,
+        "reference_note": "c18 logged no-attack 0.070 and attack 0.056; c15 champion was flat around 0.036. These are scorecard comparisons, not gates.",
+        "turns": "turn counters 0..4 (logged turn-1..4 opening window)"
+      },
+      "reference": null,
+      "seed": 7
+    },
+    "duchy": {
+      "checkpoint": "checkpoints/campaign23/gen_0005.pt",
+      "means": {
+        "p_buy_duchy_delta": 0.009893671781312497,
+        "p_buy_duchy_delta_points": 0.9893671781312497,
+        "value_delta": -0.03882919549609402
+      },
+      "obs_version": 3,
+      "probe": "duchy_probe",
+      "protocol": {
+        "counterfactual": "opponent collection Duchy count +2 (+6 VP)",
+        "minimum_player_turn": 10,
+        "mode": "raw policy/value heads only",
+        "states": 42
+      },
+      "reference": null,
+      "seed": 53444,
+      "states": [
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.006420075427740812,
+          "duchy_legal": false,
+          "index": 0,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": 0.09329142421483994,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 10,
+          "state_hash": "0x43286c596eed8e1b",
+          "turn_counter": 18,
+          "value_delta": 0.09971149964258075
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.004811736289411783,
+          "base_value": -0.07273479551076889,
+          "duchy_legal": true,
+          "index": 1,
+          "injected_p_buy_duchy": 0.03366341069340706,
+          "injected_value": 0.030534805729985237,
+          "p_buy_duchy_delta": 0.028851674403995275,
+          "player_turn": 10,
+          "state_hash": "0x1b6fe8cc21f9dc80",
+          "turn_counter": 19,
+          "value_delta": 0.10326960124075413
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.014138437807559967,
+          "base_value": 0.11572639644145966,
+          "duchy_legal": true,
+          "index": 2,
+          "injected_p_buy_duchy": 0.059832360595464706,
+          "injected_value": 0.10167728364467621,
+          "p_buy_duchy_delta": 0.04569392278790474,
+          "player_turn": 11,
+          "state_hash": "0xb09e6fd0d694c57a",
+          "turn_counter": 20,
+          "value_delta": -0.014049112796783447
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.014371796511113644,
+          "duchy_legal": false,
+          "index": 3,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": 0.029934078454971313,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 11,
+          "state_hash": "0x81177a0119cce0f0",
+          "turn_counter": 21,
+          "value_delta": 0.01556228194385767
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.12056643515825272,
+          "duchy_legal": false,
+          "index": 4,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": 0.14007700979709625,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 12,
+          "state_hash": "0x51e1d2f484c34266",
+          "turn_counter": 22,
+          "value_delta": 0.019510574638843536
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.0033756287302821875,
+          "base_value": -0.05220484733581543,
+          "duchy_legal": true,
+          "index": 5,
+          "injected_p_buy_duchy": 0.01836579665541649,
+          "injected_value": 0.02946513704955578,
+          "p_buy_duchy_delta": 0.014990167925134301,
+          "player_turn": 12,
+          "state_hash": "0xbb275bc702dcadd7",
+          "turn_counter": 23,
+          "value_delta": 0.08166998438537121
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.0190877765417099,
+          "duchy_legal": false,
+          "index": 6,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": 0.07226696610450745,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 13,
+          "state_hash": "0x86c6a08c405357c6",
+          "turn_counter": 24,
+          "value_delta": 0.053179189562797546
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.005926754325628281,
+          "base_value": -0.05130225047469139,
+          "duchy_legal": true,
+          "index": 7,
+          "injected_p_buy_duchy": 0.022101307287812233,
+          "injected_value": -0.006881689187139273,
+          "p_buy_duchy_delta": 0.016174552962183952,
+          "player_turn": 13,
+          "state_hash": "0x8759e26ffa55c971",
+          "turn_counter": 25,
+          "value_delta": 0.04442056128755212
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.01861848123371601,
+          "base_value": -0.03884117305278778,
+          "duchy_legal": true,
+          "index": 8,
+          "injected_p_buy_duchy": 0.10887335240840912,
+          "injected_value": 0.08208084106445312,
+          "p_buy_duchy_delta": 0.09025487117469311,
+          "player_turn": 14,
+          "state_hash": "0x232f209eb462b356",
+          "turn_counter": 26,
+          "value_delta": 0.1209220141172409
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.011639256030321121,
+          "base_value": -0.198188915848732,
+          "duchy_legal": true,
+          "index": 9,
+          "injected_p_buy_duchy": 0.03249271959066391,
+          "injected_value": -0.10480223596096039,
+          "p_buy_duchy_delta": 0.02085346356034279,
+          "player_turn": 14,
+          "state_hash": "0x15265cfb1fa49b34",
+          "turn_counter": 27,
+          "value_delta": 0.0933866798877716
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.060465700924396515,
+          "duchy_legal": false,
+          "index": 10,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": 0.09097565710544586,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 15,
+          "state_hash": "0x8cc1085c94c9fda3",
+          "turn_counter": 28,
+          "value_delta": 0.030509956181049347
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.012315137311816216,
+          "base_value": -0.14133615791797638,
+          "duchy_legal": true,
+          "index": 11,
+          "injected_p_buy_duchy": 0.03348155692219734,
+          "injected_value": -0.0776921957731247,
+          "p_buy_duchy_delta": 0.021166419610381126,
+          "player_turn": 15,
+          "state_hash": "0x8ff465753fa56873",
+          "turn_counter": 29,
+          "value_delta": 0.06364396214485168
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.10230822116136551,
+          "base_value": -0.05618838593363762,
+          "duchy_legal": true,
+          "index": 12,
+          "injected_p_buy_duchy": 0.2908730208873749,
+          "injected_value": -0.12818075716495514,
+          "p_buy_duchy_delta": 0.18856479972600937,
+          "player_turn": 16,
+          "state_hash": "0xb085edf07dffb5a3",
+          "turn_counter": 30,
+          "value_delta": -0.07199237123131752
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.04094109311699867,
+          "base_value": -0.00952957198023796,
+          "duchy_legal": true,
+          "index": 13,
+          "injected_p_buy_duchy": 0.084229975938797,
+          "injected_value": -0.0012519967276602983,
+          "p_buy_duchy_delta": 0.043288882821798325,
+          "player_turn": 16,
+          "state_hash": "0xcf356f3f2b792507",
+          "turn_counter": 31,
+          "value_delta": 0.008277575252577662
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.14251510798931122,
+          "duchy_legal": false,
+          "index": 14,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.4197814166545868,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 17,
+          "state_hash": "0xca241a639858bf4a",
+          "turn_counter": 32,
+          "value_delta": -0.2772663086652756
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.0012205851962789893,
+          "duchy_legal": false,
+          "index": 15,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.004011998884379864,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 17,
+          "state_hash": "0xcf645519159e7db5",
+          "turn_counter": 33,
+          "value_delta": -0.0027914136881008744
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.32804808020591736,
+          "duchy_legal": false,
+          "index": 16,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": 0.12555956840515137,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 18,
+          "state_hash": "0x861edab77e85a339",
+          "turn_counter": 34,
+          "value_delta": -0.202488511800766
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.6514986753463745,
+          "base_value": -0.07243742048740387,
+          "duchy_legal": true,
+          "index": 17,
+          "injected_p_buy_duchy": 0.7125080823898315,
+          "injected_value": -0.05359525606036186,
+          "p_buy_duchy_delta": 0.06100940704345703,
+          "player_turn": 18,
+          "state_hash": "0x627a89f4ca2b0283",
+          "turn_counter": 35,
+          "value_delta": 0.018842164427042007
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.8707391023635864,
+          "base_value": -0.25047221779823303,
+          "duchy_legal": true,
+          "index": 18,
+          "injected_p_buy_duchy": 0.8389145731925964,
+          "injected_value": -0.47871360182762146,
+          "p_buy_duchy_delta": -0.03182452917098999,
+          "player_turn": 19,
+          "state_hash": "0xf91549f7d79ba378",
+          "turn_counter": 36,
+          "value_delta": -0.22824138402938843
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.11168166249990463,
+          "duchy_legal": false,
+          "index": 19,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.11963101476430893,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 19,
+          "state_hash": "0x2567dd7831ab2cf3",
+          "turn_counter": 37,
+          "value_delta": -0.007949352264404297
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.909885585308075,
+          "base_value": 0.31050047278404236,
+          "duchy_legal": true,
+          "index": 20,
+          "injected_p_buy_duchy": 0.8853916525840759,
+          "injected_value": 0.06564143300056458,
+          "p_buy_duchy_delta": -0.024493932723999023,
+          "player_turn": 20,
+          "state_hash": "0x623dca75db8defa3",
+          "turn_counter": 38,
+          "value_delta": -0.24485903978347778
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.7515785098075867,
+          "base_value": 0.02903318963944912,
+          "duchy_legal": true,
+          "index": 21,
+          "injected_p_buy_duchy": 0.7383760809898376,
+          "injected_value": 0.022194422781467438,
+          "p_buy_duchy_delta": -0.013202428817749023,
+          "player_turn": 20,
+          "state_hash": "0xec88b8a5e60bdb47",
+          "turn_counter": 39,
+          "value_delta": -0.006838766857981682
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.3052734434604645,
+          "duchy_legal": false,
+          "index": 22,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.04248303920030594,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 21,
+          "state_hash": "0x52986004303816fe",
+          "turn_counter": 40,
+          "value_delta": -0.3477564826607704
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.008826449513435364,
+          "duchy_legal": false,
+          "index": 23,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": 0.019518759101629257,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 21,
+          "state_hash": "0xd37839ed4aa1ee78",
+          "turn_counter": 41,
+          "value_delta": 0.010692309588193893
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.06206534057855606,
+          "duchy_legal": false,
+          "index": 24,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.22297056019306183,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 22,
+          "state_hash": "0x0da96a19746a3dcc",
+          "turn_counter": 42,
+          "value_delta": -0.2850359007716179
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.012048419564962387,
+          "duchy_legal": false,
+          "index": 25,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.008141973055899143,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 22,
+          "state_hash": "0x6738866a55203009",
+          "turn_counter": 43,
+          "value_delta": 0.003906446509063244
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.22954779863357544,
+          "duchy_legal": false,
+          "index": 26,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.4449766278266907,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 23,
+          "state_hash": "0x5bde614ec87ddfdb",
+          "turn_counter": 44,
+          "value_delta": -0.21542882919311523
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.8927702903747559,
+          "base_value": 0.0061254012398421764,
+          "duchy_legal": true,
+          "index": 27,
+          "injected_p_buy_duchy": 0.8739286661148071,
+          "injected_value": -0.005116866901516914,
+          "p_buy_duchy_delta": -0.01884162425994873,
+          "player_turn": 23,
+          "state_hash": "0xe4c697292f9acae7",
+          "turn_counter": 45,
+          "value_delta": -0.01124226814135909
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.10727940499782562,
+          "duchy_legal": false,
+          "index": 28,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.2268291413784027,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 24,
+          "state_hash": "0x8bd55c25980a5cbf",
+          "turn_counter": 46,
+          "value_delta": -0.11954973638057709
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.024757085368037224,
+          "duchy_legal": false,
+          "index": 29,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": 0.013303006999194622,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 24,
+          "state_hash": "0xe0111edb741af00a",
+          "turn_counter": 47,
+          "value_delta": -0.011454078368842602
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.46388521790504456,
+          "duchy_legal": false,
+          "index": 30,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.5506568551063538,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 25,
+          "state_hash": "0x1dc5e03eb78161ca",
+          "turn_counter": 48,
+          "value_delta": -0.0867716372013092
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.0307453703135252,
+          "duchy_legal": false,
+          "index": 31,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": 0.01871299371123314,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 25,
+          "state_hash": "0xa1274caeb1b9eedc",
+          "turn_counter": 49,
+          "value_delta": -0.01203237660229206
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.005021002609282732,
+          "duchy_legal": false,
+          "index": 32,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.0654774159193039,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 26,
+          "state_hash": "0xf28b5a8b81851c57",
+          "turn_counter": 50,
+          "value_delta": -0.06045641331002116
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.009162197820842266,
+          "duchy_legal": false,
+          "index": 33,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.0018822770798578858,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 26,
+          "state_hash": "0xb4ace6ffeef5abf9",
+          "turn_counter": 51,
+          "value_delta": -0.011044474900700152
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.05568663775920868,
+          "duchy_legal": false,
+          "index": 34,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.14698170125484467,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 27,
+          "state_hash": "0x77c6f678238b1b57",
+          "turn_counter": 52,
+          "value_delta": -0.09129506349563599
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.03577526658773422,
+          "duchy_legal": false,
+          "index": 35,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": 0.016436144709587097,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 27,
+          "state_hash": "0x953babc3d71d077b",
+          "turn_counter": 53,
+          "value_delta": -0.019339121878147125
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.01771053858101368,
+          "duchy_legal": false,
+          "index": 36,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": 0.0025121273938566446,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 28,
+          "state_hash": "0x86815e2174bf91e3",
+          "turn_counter": 54,
+          "value_delta": -0.015198411187157035
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.0423097088932991,
+          "duchy_legal": false,
+          "index": 37,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": 0.025893857702612877,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 28,
+          "state_hash": "0x94095deefe25ae61",
+          "turn_counter": 55,
+          "value_delta": -0.016415851190686226
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.04059038311243057,
+          "duchy_legal": false,
+          "index": 38,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.0590534433722496,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 29,
+          "state_hash": "0xe678d45e65bcaa46",
+          "turn_counter": 56,
+          "value_delta": -0.01846306025981903
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.008347941562533379,
+          "duchy_legal": false,
+          "index": 39,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.001525298459455371,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 29,
+          "state_hash": "0x09461b7b9869c14e",
+          "turn_counter": 57,
+          "value_delta": -0.00987324002198875
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.03516598045825958,
+          "duchy_legal": false,
+          "index": 40,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": 0.03355306386947632,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 30,
+          "state_hash": "0x2a8ce7dc602c3569",
+          "turn_counter": 58,
+          "value_delta": -0.0016129165887832642
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.879966676235199,
+          "base_value": 0.012301068753004074,
+          "duchy_legal": true,
+          "index": 41,
+          "injected_p_buy_duchy": 0.8530152440071106,
+          "injected_value": 0.0034161803778260946,
+          "p_buy_duchy_delta": -0.02695143222808838,
+          "player_turn": 30,
+          "state_hash": "0x3b50f56913c111c0",
+          "turn_counter": 59,
+          "value_delta": -0.00888488837517798
+        }
+      ]
+    },
+    "human_record": {
+      "by_outcome": {
+        "lost": {
+          "mean_probability_mass": null,
+          "money_default_cases": 0,
+          "money_default_rate": null,
+          "qualifying_decisions": 0,
+          "qualifying_games": 0
+        },
+        "tied": {
+          "mean_probability_mass": null,
+          "money_default_cases": 0,
+          "money_default_rate": null,
+          "qualifying_decisions": 0,
+          "qualifying_games": 0
+        },
+        "won": {
+          "mean_probability_mass": null,
+          "money_default_cases": 0,
+          "money_default_rate": null,
+          "qualifying_decisions": 0,
+          "qualifying_games": 0
+        }
+      },
+      "checkpoint": "checkpoints/campaign23/gen_0005.pt",
+      "exports": "exports",
+      "filter_counts": {
+        "files_seen": 1229,
+        "incomplete_or_unreplayable": 121,
+        "pytest_path_exports": 123,
+        "zero_action_stubs": 985
+      },
+      "game_outcomes": {},
+      "meaningful_sample": false,
+      "obs_version": 3,
+      "probe": "human_record_probe",
+      "protocol_version": "v1",
+      "records": [],
+      "sample_note": "too few replayable qualifying human games/decisions for a reliable statistic; the split is reported for inspection only"
+    },
+    "militia": {
+      "cases": [
+        {
+          "hand": [
+            "Copper",
+            "Copper",
+            "Silver",
+            "Estate"
+          ],
+          "label": "copper_copper_estate_silver",
+          "raw_matches_value_optimal": false,
+          "raw_policy_discard": [
+            "Estate"
+          ],
+          "raw_policy_keep": [
+            "Copper",
+            "Copper",
+            "Silver"
+          ],
+          "raw_root_value": 0.03587430715560913,
+          "search_discard": [
+            "Estate"
+          ],
+          "search_keep": [
+            "Copper",
+            "Copper",
+            "Silver"
+          ],
+          "search_matches_value_optimal": false,
+          "value_optimal_discard": [
+            "Copper"
+          ],
+          "value_optimal_keep": [
+            "Copper",
+            "Silver",
+            "Estate"
+          ],
+          "value_optimal_post_resolution_value": 0.030101770535111427,
+          "value_ranking": [
+            {
+              "keep": [
+                "Copper",
+                "Silver",
+                "Estate"
+              ],
+              "value": 0.030101770535111427
+            },
+            {
+              "keep": [
+                "Copper",
+                "Copper",
+                "Estate"
+              ],
+              "value": 0.024022871628403664
+            },
+            {
+              "keep": [
+                "Copper",
+                "Copper",
+                "Silver"
+              ],
+              "value": 0.02245124615728855
+            }
+          ]
+        },
+        {
+          "hand": [
+            "Copper",
+            "Copper",
+            "Silver",
+            "Silver",
+            "Silver"
+          ],
+          "label": "two_copper_three_silver",
+          "raw_matches_value_optimal": false,
+          "raw_policy_discard": [
+            "Silver",
+            "Silver"
+          ],
+          "raw_policy_keep": [
+            "Copper",
+            "Copper",
+            "Silver"
+          ],
+          "raw_root_value": 0.032781556248664856,
+          "search_discard": [
+            "Silver",
+            "Silver"
+          ],
+          "search_keep": [
+            "Copper",
+            "Copper",
+            "Silver"
+          ],
+          "search_matches_value_optimal": false,
+          "value_optimal_discard": [
+            "Copper",
+            "Copper"
+          ],
+          "value_optimal_keep": [
+            "Silver",
+            "Silver",
+            "Silver"
+          ],
+          "value_optimal_post_resolution_value": 0.040282998234033585,
+          "value_ranking": [
+            {
+              "keep": [
+                "Silver",
+                "Silver",
+                "Silver"
+              ],
+              "value": 0.040282998234033585
+            },
+            {
+              "keep": [
+                "Copper",
+                "Silver",
+                "Silver"
+              ],
+              "value": 0.03722981736063957
+            },
+            {
+              "keep": [
+                "Copper",
+                "Copper",
+                "Silver"
+              ],
+              "value": 0.03136305510997772
+            }
+          ]
+        },
+        {
+          "hand": [
+            "Silver",
+            "Silver",
+            "Gold",
+            "Estate",
+            "Estate"
+          ],
+          "label": "two_estates_gold_two_silver_control",
+          "raw_matches_value_optimal": false,
+          "raw_policy_discard": [
+            "Estate",
+            "Estate"
+          ],
+          "raw_policy_keep": [
+            "Silver",
+            "Silver",
+            "Gold"
+          ],
+          "raw_root_value": 0.03712659701704979,
+          "search_discard": [
+            "Gold",
+            "Estate"
+          ],
+          "search_keep": [
+            "Silver",
+            "Silver",
+            "Estate"
+          ],
+          "search_matches_value_optimal": false,
+          "value_optimal_discard": [
+            "Silver",
+            "Gold"
+          ],
+          "value_optimal_keep": [
+            "Silver",
+            "Estate",
+            "Estate"
+          ],
+          "value_optimal_post_resolution_value": 0.03541519492864609,
+          "value_ranking": [
+            {
+              "keep": [
+                "Silver",
+                "Estate",
+                "Estate"
+              ],
+              "value": 0.03541519492864609
+            },
+            {
+              "keep": [
+                "Silver",
+                "Silver",
+                "Estate"
+              ],
+              "value": 0.032079681754112244
+            },
+            {
+              "keep": [
+                "Silver",
+                "Gold",
+                "Estate"
+              ],
+              "value": 0.030115708708763123
+            },
+            {
+              "keep": [
+                "Gold",
+                "Estate",
+                "Estate"
+              ],
+              "value": 0.029645532369613647
+            },
+            {
+              "keep": [
+                "Silver",
+                "Silver",
+                "Gold"
+              ],
+              "value": 0.02628479152917862
+            }
+          ]
+        }
+      ],
+      "checkpoint": "checkpoints/campaign23/gen_0005.pt",
+      "obs_version": 3,
+      "probe": "militia_probe",
+      "protocol": {
+        "determinizations": 2,
+        "mode": "raw greedy policy plus production arena DecisionSearcher",
+        "omitted_incomplete_log_cases": [
+          "Gardens/Copper/Gold incident (full hand not logged)",
+          "own-Militia incident (full hand not logged)"
+        ],
+        "sims": 400
+      },
+      "seed": 168892186,
+      "summary": {
+        "arena_search": "inversion_present",
+        "raw_policy": "inversion_present"
+      }
+    },
+    "value": {
+      "acceptance": {
+        "checked": false
+      },
+      "checkpoint": "checkpoints/campaign23/gen_0005.pt",
+      "means": {
+        "engine": 0.10509057382919959,
+        "junk": -0.6732422475303922,
+        "money": 0.08637118559064609
+      },
+      "obs_version": 3,
+      "probe": "value_probe",
+      "protocol": {
+        "kingdom": [
+          "Village",
+          "Smithy",
+          "Laboratory",
+          "Market",
+          "Chapel",
+          "Festival",
+          "Council Room",
+          "Moat",
+          "Militia",
+          "Witch"
+        ],
+        "minimum_turn_counter": 10,
+        "mode": "raw value head; encoded deck+discard counterfactual only",
+        "state_seeds": [
+          5000,
+          5001,
+          5002,
+          5003,
+          5004,
+          5005,
+          5006,
+          5007,
+          5008,
+          5009,
+          5010,
+          5011,
+          5012,
+          5013
+        ],
+        "states": 14,
+        "variants": {
+          "engine": {
+            "Chapel": 1,
+            "Copper": 3,
+            "Estate": 3,
+            "Laboratory": 2,
+            "Market": 1,
+            "Silver": 2,
+            "Smithy": 2,
+            "Village": 2
+          },
+          "junk": {
+            "Copper": 9,
+            "Curse": 4,
+            "Estate": 3,
+            "Silver": 1
+          },
+          "money": {
+            "Copper": 7,
+            "Estate": 3,
+            "Gold": 2,
+            "Silver": 3
+          }
+        }
+      },
+      "seed": 659918,
+      "states": [
+        {
+          "acting_seat": 0,
+          "index": 0,
+          "seed": 5000,
+          "state_hash": "0x91e8fceaeb43526a",
+          "turn_counter": 10,
+          "values": {
+            "engine": 0.43289709091186523,
+            "junk": -0.6033772826194763,
+            "money": 0.2417493313550949
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 1,
+          "seed": 5001,
+          "state_hash": "0x84329ae9a144e475",
+          "turn_counter": 10,
+          "values": {
+            "engine": 0.05463223531842232,
+            "junk": -0.7437373995780945,
+            "money": 0.019884474575519562
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 2,
+          "seed": 5002,
+          "state_hash": "0x9120a9d9975bf5f8",
+          "turn_counter": 10,
+          "values": {
+            "engine": -0.011692652478814125,
+            "junk": -0.7314857244491577,
+            "money": 0.036111120134592056
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 3,
+          "seed": 5003,
+          "state_hash": "0xe614e69c5002b853",
+          "turn_counter": 10,
+          "values": {
+            "engine": 0.1484796106815338,
+            "junk": -0.6687151193618774,
+            "money": 0.0683959349989891
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 4,
+          "seed": 5004,
+          "state_hash": "0x9b2b00df4be46065",
+          "turn_counter": 10,
+          "values": {
+            "engine": 0.09180458635091782,
+            "junk": -0.7003126740455627,
+            "money": 0.03996547684073448
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 5,
+          "seed": 5005,
+          "state_hash": "0xb93885e35dac8892",
+          "turn_counter": 10,
+          "values": {
+            "engine": 0.8403719067573547,
+            "junk": -0.33121457695961,
+            "money": 0.6804913878440857
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 6,
+          "seed": 5006,
+          "state_hash": "0x69d7c46cee9cd975",
+          "turn_counter": 10,
+          "values": {
+            "engine": -0.2822149693965912,
+            "junk": -0.7276904582977295,
+            "money": -0.15518733859062195
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 7,
+          "seed": 5007,
+          "state_hash": "0x882b7fc8ce259545",
+          "turn_counter": 10,
+          "values": {
+            "engine": -0.200039342045784,
+            "junk": -0.7447622418403625,
+            "money": -0.09235479682683945
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 8,
+          "seed": 5008,
+          "state_hash": "0x194c1767b323d5df",
+          "turn_counter": 10,
+          "values": {
+            "engine": 0.04950142651796341,
+            "junk": -0.6576071381568909,
+            "money": 0.03087020479142666
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 9,
+          "seed": 5009,
+          "state_hash": "0x3b894cdc5d96eb45",
+          "turn_counter": 10,
+          "values": {
+            "engine": 0.02485417202115059,
+            "junk": -0.7063401937484741,
+            "money": -0.0029177414253354073
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 10,
+          "seed": 5010,
+          "state_hash": "0xb16cffddd9cfb0ee",
+          "turn_counter": 10,
+          "values": {
+            "engine": -0.3433832824230194,
+            "junk": -0.757341742515564,
+            "money": -0.16384389996528625
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 11,
+          "seed": 5011,
+          "state_hash": "0xee0e6790456bcb65",
+          "turn_counter": 10,
+          "values": {
+            "engine": 0.049401991069316864,
+            "junk": -0.7515643239021301,
+            "money": 0.14001315832138062
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 12,
+          "seed": 5012,
+          "state_hash": "0xc6734f8120374459",
+          "turn_counter": 10,
+          "values": {
+            "engine": 0.16637259721755981,
+            "junk": -0.6840217709541321,
+            "money": 0.09549055248498917
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 13,
+          "seed": 5013,
+          "state_hash": "0x9e3f63ad726a4e1d",
+          "turn_counter": 10,
+          "values": {
+            "engine": 0.45028266310691833,
+            "junk": -0.6172208189964294,
+            "money": 0.27052873373031616
+          }
+        }
+      ]
+    }
+  },
+  "skipped": []
+}

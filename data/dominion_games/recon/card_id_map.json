@@ -1,0 +1,216 @@
+{
+ "note": "dominion.games CardNames ordinal -> DominionZero DefId. Matched on exact English card name; all 33 matched with no ambiguity. dominion.games expansion BASE (ids 1-33) is exactly the 2E base set = our full supported roster.",
+ "source_client_version": "2.2.9",
+ "card_back_sentinel": {
+  "dgames_id": 0,
+  "meaning": "CardNames.BACK - also used as the hidden/anonymous card placeholder"
+ },
+ "hidden_slot_sentinel": {
+  "wire_value": -1,
+  "meaning": "card occupies this zone slot but identity withheld from this connection"
+ },
+ "base_set_id_range": [
+  1,
+  33
+ ],
+ "map": [
+  {
+   "dgames_id": 1,
+   "dgames_key": "CURSE",
+   "name": "Curse",
+   "def_id": 9
+  },
+  {
+   "dgames_id": 2,
+   "dgames_key": "COPPER",
+   "name": "Copper",
+   "def_id": 0
+  },
+  {
+   "dgames_id": 3,
+   "dgames_key": "SILVER",
+   "name": "Silver",
+   "def_id": 1
+  },
+  {
+   "dgames_id": 4,
+   "dgames_key": "GOLD",
+   "name": "Gold",
+   "def_id": 2
+  },
+  {
+   "dgames_id": 5,
+   "dgames_key": "ESTATE",
+   "name": "Estate",
+   "def_id": 5
+  },
+  {
+   "dgames_id": 6,
+   "dgames_key": "DUCHY",
+   "name": "Duchy",
+   "def_id": 6
+  },
+  {
+   "dgames_id": 7,
+   "dgames_key": "PROVINCE",
+   "name": "Province",
+   "def_id": 7
+  },
+  {
+   "dgames_id": 8,
+   "dgames_key": "ARTISAN",
+   "name": "Artisan",
+   "def_id": 37
+  },
+  {
+   "dgames_id": 9,
+   "dgames_key": "BANDIT",
+   "name": "Bandit",
+   "def_id": 38
+  },
+  {
+   "dgames_id": 10,
+   "dgames_key": "BUREAUCRAT",
+   "name": "Bureaucrat",
+   "def_id": 23
+  },
+  {
+   "dgames_id": 11,
+   "dgames_key": "CELLAR",
+   "name": "Cellar",
+   "def_id": 10
+  },
+  {
+   "dgames_id": 12,
+   "dgames_key": "CHAPEL",
+   "name": "Chapel",
+   "def_id": 11
+  },
+  {
+   "dgames_id": 13,
+   "dgames_key": "COUNCIL_ROOM",
+   "name": "Council Room",
+   "def_id": 36
+  },
+  {
+   "dgames_id": 14,
+   "dgames_key": "FESTIVAL",
+   "name": "Festival",
+   "def_id": 28
+  },
+  {
+   "dgames_id": 15,
+   "dgames_key": "GARDENS",
+   "name": "Gardens",
+   "def_id": 30
+  },
+  {
+   "dgames_id": 16,
+   "dgames_key": "HARBINGER",
+   "name": "Harbinger",
+   "def_id": 34
+  },
+  {
+   "dgames_id": 17,
+   "dgames_key": "LABORATORY",
+   "name": "Laboratory",
+   "def_id": 29
+  },
+  {
+   "dgames_id": 18,
+   "dgames_key": "LIBRARY",
+   "name": "Library",
+   "def_id": 39
+  },
+  {
+   "dgames_id": 19,
+   "dgames_key": "MARKET",
+   "name": "Market",
+   "def_id": 27
+  },
+  {
+   "dgames_id": 20,
+   "dgames_key": "MERCHANT",
+   "name": "Merchant",
+   "def_id": 19
+  },
+  {
+   "dgames_id": 21,
+   "dgames_key": "MILITIA",
+   "name": "Militia",
+   "def_id": 20
+  },
+  {
+   "dgames_id": 22,
+   "dgames_key": "MINE",
+   "name": "Mine",
+   "def_id": 16
+  },
+  {
+   "dgames_id": 23,
+   "dgames_key": "MOAT",
+   "name": "Moat",
+   "def_id": 22
+  },
+  {
+   "dgames_id": 24,
+   "dgames_key": "MONEYLENDER",
+   "name": "Moneylender",
+   "def_id": 31
+  },
+  {
+   "dgames_id": 25,
+   "dgames_key": "POACHER",
+   "name": "Poacher",
+   "def_id": 32
+  },
+  {
+   "dgames_id": 26,
+   "dgames_key": "REMODEL",
+   "name": "Remodel",
+   "def_id": 15
+  },
+  {
+   "dgames_id": 27,
+   "dgames_key": "SENTRY",
+   "name": "Sentry",
+   "def_id": 40
+  },
+  {
+   "dgames_id": 28,
+   "dgames_key": "SMITHY",
+   "name": "Smithy",
+   "def_id": 13
+  },
+  {
+   "dgames_id": 29,
+   "dgames_key": "THRONE_ROOM",
+   "name": "Throne Room",
+   "def_id": 35
+  },
+  {
+   "dgames_id": 30,
+   "dgames_key": "VASSAL",
+   "name": "Vassal",
+   "def_id": 33
+  },
+  {
+   "dgames_id": 31,
+   "dgames_key": "VILLAGE",
+   "name": "Village",
+   "def_id": 12
+  },
+  {
+   "dgames_id": 32,
+   "dgames_key": "WITCH",
+   "name": "Witch",
+   "def_id": 21
+  },
+  {
+   "dgames_id": 33,
+   "dgames_key": "WORKSHOP",
+   "name": "Workshop",
+   "def_id": 14
+  }
+ ]
+}

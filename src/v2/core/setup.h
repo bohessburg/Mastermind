@@ -5,7 +5,7 @@
 
 #include <cstdint>
 
-constexpr int MAX_KINGDOM_DEFS = 10;
+constexpr int MAX_KINGDOM_DEFS = 40;
 
 struct Setup {
     PlayerId num_players = 2;

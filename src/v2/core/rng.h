@@ -42,15 +42,18 @@ struct Xoshiro256pp {
             return 0U;
         }
 
-        const std::uint64_t range = bound;
-        const std::uint64_t threshold = (std::uint64_t{0} - range) % range;
-
-        for (;;) {
-            const std::uint64_t value = next();
-            if (value >= threshold) {
-                return static_cast<std::uint32_t>(value % range);
+        std::uint32_t value = static_cast<std::uint32_t>(next() >> 32U);
+        std::uint64_t product = static_cast<std::uint64_t>(value) * bound;
+        std::uint32_t low = static_cast<std::uint32_t>(product);
+        if (low < bound) {
+            const std::uint32_t threshold = (std::uint32_t{0} - bound) % bound;
+            while (low < threshold) {
+                value = static_cast<std::uint32_t>(next() >> 32U);
+                product = static_cast<std::uint64_t>(value) * bound;
+                low = static_cast<std::uint32_t>(product);
             }
         }
+        return static_cast<std::uint32_t>(product >> 32U);
     }
 
     [[nodiscard]] std::uint32_t bounded(std::uint32_t bound) noexcept {

@@ -1,0 +1,30 @@
+{
+  "_comment": "c21 widened curriculum pools (12 cards, engine samples 10/game -> 66 kingdoms per pool). Additions to the c20-validated cores: Cellar (cheap sifter), Harbinger (topdeck recursion). VALIDATION PENDING: duel each pool engine-vs-bigmoney across sampled kingdoms, bar >=85% engine-dominant.",
+  "sentry_engine_wide": [
+    "Sentry",
+    "Moneylender",
+    "Village",
+    "Laboratory",
+    "Market",
+    "Festival",
+    "Smithy",
+    "Merchant",
+    "Poacher",
+    "Witch",
+    "Cellar",
+    "Harbinger"
+  ],
+  "thin_engine_wide": [
+    "Chapel",
+    "Sentry",
+    "Village",
+    "Smithy",
+    "Laboratory",
+    "Market",
+    "Festival",
+    "Moneylender",
+    "Militia",
+    "Witch",
+    "Cellar"
+  ]
+}

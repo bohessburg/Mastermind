@@ -1,0 +1,193 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dominionzero.local/schemas/game-record-1.0.json",
+  "title": "DominionZero unified game record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "source",
+    "provenance",
+    "game_id",
+    "timestamp",
+    "timestamp_visibility",
+    "kingdom",
+    "player_count",
+    "seats",
+    "obs_version",
+    "obs_version_visibility",
+    "controlled_seat",
+    "controlled_seat_visibility",
+    "results",
+    "records"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "source": {"enum": ["local", "arena"]},
+    "provenance": {"type": "string"},
+    "game_id": {"type": "string"},
+    "timestamp": {"type": ["string", "null"]},
+    "timestamp_visibility": {"$ref": "#/$defs/visibility"},
+    "kingdom": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/card"}
+    },
+    "player_count": {"type": "integer", "minimum": 2},
+    "seats": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/seat"}
+    },
+    "obs_version": {"type": ["integer", "null"]},
+    "obs_version_visibility": {"$ref": "#/$defs/visibility"},
+    "controlled_seat": {"type": ["integer", "null"]},
+    "controlled_seat_visibility": {"$ref": "#/$defs/visibility"},
+    "results": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/result"}
+    },
+    "records": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/record"}
+    }
+  },
+  "$defs": {
+    "visibility": {
+      "enum": ["known", "counts_only", "unknown"]
+    },
+    "card": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["def_id", "name"],
+      "properties": {
+        "def_id": {"type": "integer"},
+        "name": {"type": "string", "minLength": 1}
+      }
+    },
+    "seat": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["index", "kind", "display_name", "controlled", "bot"],
+      "properties": {
+        "index": {"type": "integer", "minimum": 0},
+        "kind": {"type": "string"},
+        "display_name": {"type": ["string", "null"]},
+        "controlled": {"type": "boolean"},
+        "bot": {"type": "boolean"}
+      }
+    },
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["seat", "visibility", "vp", "placing", "outcome"],
+      "properties": {
+        "seat": {"type": "integer", "minimum": 0},
+        "visibility": {"$ref": "#/$defs/visibility"},
+        "vp": {"type": ["integer", "null"]},
+        "placing": {"type": ["integer", "null"], "minimum": 1},
+        "outcome": {"enum": ["win", "loss", "tie", "unknown"]}
+      }
+    },
+    "observed_cards": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["visibility", "count", "cards"],
+      "properties": {
+        "visibility": {"$ref": "#/$defs/visibility"},
+        "count": {"type": ["integer", "null"], "minimum": 0},
+        "cards": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/card"}
+        }
+      }
+    },
+    "resources": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["visibility", "actions", "buys", "coins"],
+      "properties": {
+        "visibility": {"$ref": "#/$defs/visibility"},
+        "actions": {"type": ["integer", "null"]},
+        "buys": {"type": ["integer", "null"]},
+        "coins": {"type": ["integer", "null"]}
+      }
+    },
+    "zone": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["seat", "zone", "visibility", "count"],
+      "properties": {
+        "seat": {"type": ["integer", "null"], "minimum": 0},
+        "zone": {"type": "string"},
+        "visibility": {"$ref": "#/$defs/visibility"},
+        "count": {"type": ["integer", "null"], "minimum": 0}
+      }
+    },
+    "record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "index",
+        "source_index",
+        "timestamp_ms",
+        "timestamp_ms_visibility",
+        "record_type",
+        "event",
+        "turn_number",
+        "turn_number_visibility",
+        "active_seat",
+        "active_seat_visibility",
+        "phase",
+        "phase_visibility",
+        "actor_seat",
+        "actor_seat_visibility",
+        "engine_action_ids",
+        "engine_action_ids_visibility",
+        "action_labels",
+        "action_labels_visibility",
+        "played",
+        "bought",
+        "gained",
+        "trashed",
+        "discarded",
+        "resources_after",
+        "zone_counts_after"
+      ],
+      "properties": {
+        "index": {"type": "integer", "minimum": 0},
+        "source_index": {"type": "integer", "minimum": 0},
+        "timestamp_ms": {"type": ["integer", "null"]},
+        "timestamp_ms_visibility": {"$ref": "#/$defs/visibility"},
+        "record_type": {"type": "string"},
+        "event": {"type": "string"},
+        "turn_number": {"type": ["integer", "null"], "minimum": 1},
+        "turn_number_visibility": {"$ref": "#/$defs/visibility"},
+        "active_seat": {"type": ["integer", "null"], "minimum": 0},
+        "active_seat_visibility": {"$ref": "#/$defs/visibility"},
+        "phase": {"type": ["string", "null"]},
+        "phase_visibility": {"$ref": "#/$defs/visibility"},
+        "actor_seat": {"type": ["integer", "null"], "minimum": 0},
+        "actor_seat_visibility": {"$ref": "#/$defs/visibility"},
+        "engine_action_ids": {
+          "type": "array",
+          "items": {"type": "integer"}
+        },
+        "engine_action_ids_visibility": {"$ref": "#/$defs/visibility"},
+        "action_labels": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "action_labels_visibility": {"$ref": "#/$defs/visibility"},
+        "played": {"$ref": "#/$defs/observed_cards"},
+        "bought": {"$ref": "#/$defs/observed_cards"},
+        "gained": {"$ref": "#/$defs/observed_cards"},
+        "trashed": {"$ref": "#/$defs/observed_cards"},
+        "discarded": {"$ref": "#/$defs/observed_cards"},
+        "resources_after": {"$ref": "#/$defs/resources"},
+        "zone_counts_after": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/zone"}
+        }
+      }
+    }
+  }
+}

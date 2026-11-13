@@ -1,0 +1,36 @@
+services:
+  dominion:
+    image: dominionzero:latest
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        CHECKPOINT_SOURCE: ${CHECKPOINT_SOURCE:-checkpoints/remote/campaign15/gen_0045.pt}
+    ports:
+      - "8000:8000"
+    environment:
+      NN_MCTS_SIMS: ${NN_MCTS_SIMS:-400}
+    volumes:
+      - dominion_exports:/app/exports
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    profiles: ["tls"]
+    environment:
+      DOMAIN: ${DOMAIN:-}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - dominion
+    restart: unless-stopped
+
+volumes:
+  dominion_exports:
+  caddy_data:
+  caddy_config:

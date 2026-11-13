@@ -8,7 +8,7 @@ using PlayerId = std::uint8_t;
 
 constexpr int MAX_PLAYERS = 4;
 constexpr int MAX_SLOTS = 64;
-constexpr int MAX_PILES = 24;
+constexpr int MAX_PILES = 48;
 constexpr int MAX_NONSUPPLY = 8;
 constexpr int MAX_DECK_CARDS = 160;
 constexpr int MAX_EFFECT_DEPTH = 24;

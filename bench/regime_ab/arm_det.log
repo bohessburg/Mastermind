@@ -1,0 +1,60 @@
+{"action_size": 357, "device": "mps", "obs_size": 1788, "parameters": 485414}
+gen 1 selfplay 0/128 games, 0 games/hr
+gen 1 selfplay 0/128 games, 0 games/hr
+gen 1 selfplay 1/128 games, 20 games/hr
+gen 1 selfplay 5/128 games, 75 games/hr
+gen 1 selfplay 10/128 games, 120 games/hr
+gen 1 selfplay 14/128 games, 140 games/hr
+gen 1 selfplay 21/128 games, 180 games/hr
+gen 1 selfplay 34/128 games, 255 games/hr
+gen 1 selfplay 45/128 games, 300 games/hr
+gen 1 selfplay 53/128 games, 318 games/hr
+gen 1 selfplay 57/128 games, 311 games/hr
+gen 1 selfplay 68/128 games, 340 games/hr
+gen 1 selfplay 77/128 games, 355 games/hr
+gen 1 selfplay 84/128 games, 360 games/hr
+gen 1 selfplay 94/128 games, 376 games/hr
+gen 1 selfplay 102/128 games, 382 games/hr
+gen 1 selfplay 106/128 games, 374 games/hr
+gen 1 selfplay 113/128 games, 376 games/hr
+gen 1 selfplay 121/128 games, 381 games/hr
+gen 1 selfplay 125/128 games, 374 games/hr
+{"aggregate_games_per_hour": 369.61554678941826, "anchor_policy_loss": NaN, "anchor_value_loss": NaN, "aux_margin_loss": NaN, "checkpoint": "bench/regime_ab/arm_det/gen_0001.pt", "deep_games": 0, "deep_positions": 0, "entropy": 1.2071505975723267, "eval_end_piles": 0, "eval_end_province": 0, "eval_end_trunc": 0, "eval_games": 0, "eval_games_per_hour": 0.0, "eval_losses": 0, "eval_opponent": "engine3", "eval_ties": 0, "eval_truncated": 0, "eval_win_pct_excl_ties": 0.0, "eval_wins": 0, "games": 128, "games_per_hour": 194.74414933937052, "generation": 1, "inference_pct": 98.43500414043915, "kingdom_phase": "base:random", "league_games": 0, "leaves_per_sec": 1536.3555275972576, "lr": 0.0002, "mean_cards_trashed_per_game": 11.0234375, "nn_evals_per_sec": 1560.781696524652, "opening_lambda": 0.0, "opening_p_unconstrained": 1.0, "opening_template_games_t0": 256, "opening_template_games_t1": 0, "opening_template_games_t2": 0, "opening_template_games_t3": 0, "opening_template_games_t4": 0, "opening_template_games_t5": 0, "opening_template_games_t6": 0, "opening_template_vs_unconstrained_games_t1": 0, "opening_template_vs_unconstrained_games_t2": 0, "opening_template_vs_unconstrained_games_t3": 0, "opening_template_vs_unconstrained_games_t4": 0, "opening_template_vs_unconstrained_games_t5": 0, "opening_template_vs_unconstrained_games_t6": 0, "opening_template_win_rate_vs_unconstrained_t1": 0.0, "opening_template_win_rate_vs_unconstrained_t2": 0.0, "opening_template_win_rate_vs_unconstrained_t3": 0.0, "opening_template_win_rate_vs_unconstrained_t4": 0.0, "opening_template_win_rate_vs_unconstrained_t5": 0.0, "opening_template_win_rate_vs_unconstrained_t6": 0.0, "opening_templates_enabled": false, "plumbing_pct": 1.5437940932516627, "policy_loss": 1.2098216021060944, "positions": 21931, "routed_fast_path_batches": 0, "routed_split_batches": 0, "scripted_games": 0, "scripted_wins": 0, "server_batch_wait_p50_ms": 0.0, "server_batch_wait_p99_ms": 0.0, "server_evals_per_sec": 0.0, "server_mean_batch_size": 0.0, "unconstrained_buys_chapel": 0, "unconstrained_buys_moneylender": 0, "unconstrained_buys_sentry": 0, "unconstrained_buys_village": 0, "value_loss": 0.4927217175811529, "wall_time": 1259.4667277093977, "workers": 2}
+gen 2 selfplay 9/128 games, 515 games/hr
+gen 2 selfplay 21/128 games, 614 games/hr
+gen 2 selfplay 30/128 games, 592 games/hr
+gen 2 selfplay 44/128 games, 652 games/hr
+gen 2 selfplay 51/128 games, 606 games/hr
+gen 2 selfplay 64/128 games, 634 games/hr
+gen 2 selfplay 79/128 games, 671 games/hr
+gen 2 selfplay 86/128 games, 641 games/hr
+gen 2 selfplay 94/128 games, 623 games/hr
+gen 2 selfplay 105/128 games, 627 games/hr
+gen 2 selfplay 114/128 games, 618 games/hr
+gen 2 selfplay 125/128 games, 622 games/hr
+{"aggregate_games_per_hour": 615.2936094702724, "anchor_policy_loss": NaN, "anchor_value_loss": NaN, "aux_margin_loss": NaN, "checkpoint": "bench/regime_ab/arm_det/gen_0002.pt", "deep_games": 0, "deep_positions": 0, "entropy": 1.2226223772764206, "games": 128, "games_per_hour": 317.2325087006688, "generation": 2, "inference_pct": 98.29407655327324, "kingdom_phase": "base:random", "league_games": 0, "leaves_per_sec": 1865.3712112305855, "lr": 0.00016250000000000002, "mean_cards_trashed_per_game": 11.4296875, "nn_evals_per_sec": 1897.745293145508, "opening_lambda": 0.0, "opening_p_unconstrained": 1.0, "opening_template_games_t0": 256, "opening_template_games_t1": 0, "opening_template_games_t2": 0, "opening_template_games_t3": 0, "opening_template_games_t4": 0, "opening_template_games_t5": 0, "opening_template_games_t6": 0, "opening_template_vs_unconstrained_games_t1": 0, "opening_template_vs_unconstrained_games_t2": 0, "opening_template_vs_unconstrained_games_t3": 0, "opening_template_vs_unconstrained_games_t4": 0, "opening_template_vs_unconstrained_games_t5": 0, "opening_template_vs_unconstrained_games_t6": 0, "opening_template_win_rate_vs_unconstrained_t1": 0.0, "opening_template_win_rate_vs_unconstrained_t2": 0.0, "opening_template_win_rate_vs_unconstrained_t3": 0.0, "opening_template_win_rate_vs_unconstrained_t4": 0.0, "opening_template_win_rate_vs_unconstrained_t5": 0.0, "opening_template_win_rate_vs_unconstrained_t6": 0.0, "opening_templates_enabled": false, "plumbing_pct": 1.684348005004926, "policy_loss": 1.224566370844841, "positions": 22516, "routed_fast_path_batches": 0, "routed_split_batches": 0, "scripted_games": 0, "scripted_wins": 0, "server_batch_wait_p50_ms": 0.0, "server_batch_wait_p99_ms": 0.0, "server_evals_per_sec": 0.0, "server_mean_batch_size": 0.0, "unconstrained_buys_chapel": 0, "unconstrained_buys_moneylender": 0, "unconstrained_buys_sentry": 0, "unconstrained_buys_village": 0, "value_loss": 0.26427424151450396, "wall_time": 760.8519871667959, "workers": 2}
+gen 3 selfplay 11/128 games, 624 games/hr
+gen 3 selfplay 23/128 games, 671 games/hr
+gen 3 selfplay 30/128 games, 588 games/hr
+gen 3 selfplay 41/128 games, 607 games/hr
+gen 3 selfplay 52/128 games, 618 games/hr
+gen 3 selfplay 66/128 games, 653 games/hr
+gen 3 selfplay 73/128 games, 620 games/hr
+gen 3 selfplay 82/128 games, 610 games/hr
+gen 3 selfplay 96/128 games, 636 games/hr
+gen 3 selfplay 108/128 games, 644 games/hr
+gen 3 selfplay 116/128 games, 629 games/hr
+{"aggregate_games_per_hour": 644.750486512006, "anchor_policy_loss": NaN, "anchor_value_loss": NaN, "aux_margin_loss": NaN, "checkpoint": "bench/regime_ab/arm_det/gen_0003.pt", "deep_games": 0, "deep_positions": 0, "entropy": 1.2512341344356537, "games": 128, "games_per_hour": 329.0597411278099, "generation": 3, "inference_pct": 98.27339709773034, "kingdom_phase": "base:random", "league_games": 0, "leaves_per_sec": 1834.5080567875402, "lr": 8.750000000000001e-05, "mean_cards_trashed_per_game": 8.796875, "nn_evals_per_sec": 1866.7392305194962, "opening_lambda": 0.0, "opening_p_unconstrained": 1.0, "opening_template_games_t0": 256, "opening_template_games_t1": 0, "opening_template_games_t2": 0, "opening_template_games_t3": 0, "opening_template_games_t4": 0, "opening_template_games_t5": 0, "opening_template_games_t6": 0, "opening_template_vs_unconstrained_games_t1": 0, "opening_template_vs_unconstrained_games_t2": 0, "opening_template_vs_unconstrained_games_t3": 0, "opening_template_vs_unconstrained_games_t4": 0, "opening_template_vs_unconstrained_games_t5": 0, "opening_template_vs_unconstrained_games_t6": 0, "opening_template_win_rate_vs_unconstrained_t1": 0.0, "opening_template_win_rate_vs_unconstrained_t2": 0.0, "opening_template_win_rate_vs_unconstrained_t3": 0.0, "opening_template_win_rate_vs_unconstrained_t4": 0.0, "opening_template_win_rate_vs_unconstrained_t5": 0.0, "opening_template_win_rate_vs_unconstrained_t6": 0.0, "opening_templates_enabled": false, "plumbing_pct": 1.7046502919755457, "policy_loss": 1.25155674636364, "positions": 21321, "routed_fast_path_batches": 0, "routed_split_batches": 0, "scripted_games": 0, "scripted_wins": 0, "server_batch_wait_p50_ms": 0.0, "server_batch_wait_p99_ms": 0.0, "server_evals_per_sec": 0.0, "server_mean_batch_size": 0.0, "unconstrained_buys_chapel": 0, "unconstrained_buys_moneylender": 0, "unconstrained_buys_sentry": 0, "unconstrained_buys_village": 0, "value_loss": 0.20856948774307965, "wall_time": 727.5326358340681, "workers": 2}
+gen 4 selfplay 4/128 games, 232 games/hr
+gen 4 selfplay 13/128 games, 385 games/hr
+gen 4 selfplay 28/128 games, 554 games/hr
+gen 4 selfplay 37/128 games, 550 games/hr
+gen 4 selfplay 49/128 games, 583 games/hr
+gen 4 selfplay 59/128 games, 586 games/hr
+gen 4 selfplay 72/128 games, 613 games/hr
+gen 4 selfplay 80/128 games, 597 games/hr
+gen 4 selfplay 96/128 games, 637 games/hr
+gen 4 selfplay 108/128 games, 645 games/hr
+gen 4 selfplay 120/128 games, 651 games/hr
+gen 4 selfplay 125/128 games, 623 games/hr
+{"aggregate_games_per_hour": 596.5138676488148, "anchor_policy_loss": NaN, "anchor_value_loss": NaN, "aux_margin_loss": NaN, "checkpoint": "bench/regime_ab/arm_det/gen_0004.pt", "deep_games": 0, "deep_positions": 0, "entropy": 1.266729421019554, "games": 128, "games_per_hour": 320.5527911923833, "generation": 4, "inference_pct": 98.27145575085243, "kingdom_phase": "base:random", "league_games": 0, "leaves_per_sec": 1834.385608208913, "lr": 5e-05, "mean_cards_trashed_per_game": 8.21875, "nn_evals_per_sec": 1866.6515054581362, "opening_lambda": 0.0, "opening_p_unconstrained": 1.0, "opening_template_games_t0": 256, "opening_template_games_t1": 0, "opening_template_games_t2": 0, "opening_template_games_t3": 0, "opening_template_games_t4": 0, "opening_template_games_t5": 0, "opening_template_games_t6": 0, "opening_template_vs_unconstrained_games_t1": 0, "opening_template_vs_unconstrained_games_t2": 0, "opening_template_vs_unconstrained_games_t3": 0, "opening_template_vs_unconstrained_games_t4": 0, "opening_template_vs_unconstrained_games_t5": 0, "opening_template_vs_unconstrained_games_t6": 0, "opening_template_win_rate_vs_unconstrained_t1": 0.0, "opening_template_win_rate_vs_unconstrained_t2": 0.0, "opening_template_win_rate_vs_unconstrained_t3": 0.0, "opening_template_win_rate_vs_unconstrained_t4": 0.0, "opening_template_win_rate_vs_unconstrained_t5": 0.0, "opening_template_win_rate_vs_unconstrained_t6": 0.0, "opening_templates_enabled": false, "plumbing_pct": 1.7067901543320576, "policy_loss": 1.2659849631786346, "positions": 20436, "routed_fast_path_batches": 0, "routed_split_batches": 0, "scripted_games": 0, "scripted_wins": 0, "server_batch_wait_p50_ms": 0.0, "server_batch_wait_p99_ms": 0.0, "server_evals_per_sec": 0.0, "server_mean_batch_size": 0.0, "unconstrained_buys_chapel": 0, "unconstrained_buys_moneylender": 0, "unconstrained_buys_sentry": 0, "unconstrained_buys_village": 0, "value_loss": 0.2193537287414074, "wall_time": 785.917943791952, "workers": 2}

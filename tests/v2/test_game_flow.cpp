@@ -1,5 +1,6 @@
 #include "v2/core/actions.h"
 #include "v2/core/game.h"
+#include "v2/core/score.h"
 #include "v2/core/turns.h"
 
 #include <catch2/catch_test_macros.hpp>
@@ -24,6 +25,7 @@ void clear_player_cards(GameState& state, PlayerId player_id) {
     }
     player.deck.size = 0;
     player.discard.size = 0;
+    player.set_aside.size = 0;
     player.in_play_size = 0;
 }
 
@@ -119,4 +121,33 @@ TEST_CASE("v2 turn cap sets truncated at end of turn", "[v2][flow]") {
     REQUIRE(state.phase == static_cast<std::uint8_t>(Phase::Over));
     REQUIRE(state.truncated == 1U);
     REQUIRE(state.turn_counter == MAX_TURNS);
+}
+
+TEST_CASE("v2 equal-VP finish goes to the player with fewer turns", "[v2][flow][score]") {
+    GameState state = Game::new_game(Setup{}, 78U);
+    give_hand(state, 0U, DEF_GOLD, 3U);
+    clear_player_cards(state, 1U);
+    state.players[1].hand[slot_of(state, DEF_PROVINCE)] = 1U;
+    find_pile(state, DEF_PROVINCE)->count = 1U;
+
+    REQUIRE(Game::step(state, A_PASS) == false);
+    REQUIRE(Game::step(state, play_action(DEF_GOLD)) == false);
+    REQUIRE(Game::step(state, play_action(DEF_GOLD)) == false);
+    REQUIRE(Game::step(state, play_action(DEF_GOLD)) == false);
+    REQUIRE(Game::step(state, buy_action(DEF_PROVINCE)) == true);
+
+    REQUIRE(state.phase == static_cast<std::uint8_t>(Phase::Over));
+    REQUIRE(score(state, 0U) == score(state, 1U));
+    REQUIRE(state.turns_taken[0] == 1U);
+    REQUIRE(state.turns_taken[1] == 0U);
+    // Seat 0 ended the game on its own turn having played one more turn.
+    REQUIRE(game_winner(state) == 1U);
+
+    GameState truncated = state;
+    truncated.truncated = 1U;
+    REQUIRE(game_winner(truncated) == NONE);
+
+    GameState even = state;
+    even.turns_taken[1] = 1U;
+    REQUIRE(game_winner(even) == NONE);
 }

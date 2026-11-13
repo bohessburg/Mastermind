@@ -2,7 +2,10 @@
   "permissions": {
     "allow": [
       "Bash(cmake --build /Users/paisho/Projects/Mastermind/build --target dominion_zero)",
-      "Bash(ctest --output-on-failure)"
+      "Bash(ctest --output-on-failure)",
+      "WebFetch(domain:www.slcc.edu)",
+      "WebSearch",
+      "WebFetch(domain:catalog.slcc.edu)"
     ]
   }
 }

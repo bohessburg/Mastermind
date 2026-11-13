@@ -1,0 +1,116 @@
+{
+  "gen5:sentry": {
+    "wins": 6,
+    "games": 24,
+    "buys_per_game": {
+      "Silver": 2.71,
+      "Gold": 2.71,
+      "Province": 2.71,
+      "Laboratory": 2.17,
+      "Duchy": 2.04,
+      "Sentry": 1.96,
+      "Village": 1.79,
+      "Witch": 1.46,
+      "Smithy": 0.58,
+      "Poacher": 0.54,
+      "Merchant": 0.5,
+      "Estate": 0.5,
+      "Moneylender": 0.46,
+      "Festival": 0.42
+    },
+    "plays_per_game": {
+      "Copper": 43.71,
+      "Silver": 20.21,
+      "Sentry": 11.58,
+      "Gold": 9.83,
+      "Village": 9.25,
+      "Witch": 8.25,
+      "Laboratory": 7.46,
+      "Poacher": 3.33
+    }
+  },
+  "gen5:random": {
+    "wins": 6,
+    "games": 24,
+    "buys_per_game": {
+      "Gold": 4.0,
+      "Silver": 3.33,
+      "Province": 2.79,
+      "Duchy": 2.5,
+      "Laboratory": 1.38,
+      "Witch": 0.79,
+      "Village": 0.75,
+      "Estate": 0.62,
+      "Militia": 0.62,
+      "Gardens": 0.58,
+      "Sentry": 0.54,
+      "Merchant": 0.54,
+      "Bureaucrat": 0.46,
+      "Bandit": 0.42
+    },
+    "plays_per_game": {
+      "Copper": 46.67,
+      "Silver": 16.25,
+      "Gold": 11.71,
+      "Witch": 3.54,
+      "Laboratory": 3.46,
+      "Sentry": 2.17,
+      "Village": 2.0,
+      "Merchant": 1.92
+    }
+  },
+  "champ:sentry": {
+    "wins": 5,
+    "games": 24,
+    "buys_per_game": {
+      "Silver": 6.54,
+      "Duchy": 4.54,
+      "Estate": 4.04,
+      "Gold": 3.12,
+      "Province": 2.71,
+      "Witch": 1.96,
+      "Poacher": 0.79,
+      "Festival": 0.21,
+      "Merchant": 0.04,
+      "Village": 0.04
+    },
+    "plays_per_game": {
+      "Copper": 49.12,
+      "Silver": 24.67,
+      "Gold": 8.83,
+      "Witch": 6.88,
+      "Poacher": 1.29,
+      "Festival": 0.12
+    }
+  },
+  "champ:random": {
+    "wins": 10,
+    "games": 24,
+    "buys_per_game": {
+      "Silver": 5.25,
+      "Gold": 3.62,
+      "Duchy": 3.38,
+      "Province": 2.79,
+      "Estate": 2.54,
+      "Gardens": 1.08,
+      "Militia": 1.0,
+      "Witch": 0.96,
+      "Market": 0.33,
+      "Moat": 0.29,
+      "Poacher": 0.21,
+      "Bureaucrat": 0.17,
+      "Bandit": 0.12,
+      "Copper": 0.12
+    },
+    "plays_per_game": {
+      "Copper": 45.83,
+      "Silver": 18.38,
+      "Gold": 9.08,
+      "Witch": 2.46,
+      "Militia": 2.0,
+      "Market": 0.96,
+      "Poacher": 0.75,
+      "Moat": 0.67
+    }
+  }
+}

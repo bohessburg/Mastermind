@@ -1,0 +1,475 @@
+#pragma once
+
+#include "v2/core/setup.h"
+#include "v2/core/types.h"
+#include "v2/encode/encoder.h"
+#include "v2/mcts/tree.h"
+
+#include <cstddef>
+#include <cstdint>
+#include <memory>
+#include <optional>
+#include <type_traits>
+#include <vector>
+
+// The training curriculum can restrict random kingdoms to a larger candidate
+// pool. Keep this fixed-size so individual slot descriptors remain cheap to
+// copy across the runner/pybind boundary.
+constexpr std::uint8_t MAX_SELFPLAY_KINGDOM_POOL = 32U;
+constexpr std::uint8_t SELFPLAY_OPENING_TEMPLATE_COUNT = 7U;
+constexpr std::uint8_t SELFPLAY_UNCONSTRAINED_TEMPLATE = 0U;
+constexpr std::uint8_t SELFPLAY_OPENING_TELEMETRY_CARD_COUNT = 4U;
+
+enum class SelfPlayKingdomMode : std::uint8_t {
+    Fixed,
+    Random,
+};
+
+enum class SelfPlayValueTarget : std::uint8_t {
+    Outcome,
+    Margin,
+    MarginBlend,
+};
+
+// Root-sampling policy for training self-play.  Off preserves the historical
+// perfect-information search root exactly; the other modes sample one honest
+// hidden-information world before every NN search.
+enum class SelfPlayDeterminizeMode : std::uint8_t {
+    Off,
+    PerDecision,
+    PerTurn,
+};
+
+// Root-temperature policy for training self-play. Legacy retains the
+// historical global decision clock; PerSeatBuy gives buys, action plays, and
+// effect decisions separate exploration horizons.
+enum class SelfPlayTempMode : std::uint8_t {
+    Legacy,
+    PerSeatBuy,
+};
+
+// Training-only opponent mode. The policy implementation is shared with
+// EvalRunner so scripted data and eval use identical BigMoney/Engine/Random
+// behavior. EngineV3 keeps its per-game policy state in ScriptedPool's slot
+// storage. None preserves the existing NN-vs-NN self-play path exactly.
+enum class SelfPlayScriptedBotKind : std::uint8_t {
+    None,
+    BigMoney,
+    Engine,
+    Random,
+    Scaffold,
+    EngineV3,
+    Thinner,
+};
+
+// Per-game attributes for a heterogeneous self-play runner.  A non-empty
+// SelfPlayConfig::slot_manifest creates exactly one game for every entry;
+// unlike the legacy path, completed manifest slots are retired rather than
+// immediately reset into a new game stream.  game_index is deliberately
+// independent of the slot's storage position so worker-side segment splitting
+// or prioritization cannot perturb the game's seed.
+struct SelfPlaySlotConfig {
+    std::uint64_t game_index = 0U;
+    std::uint32_t seat0_model_id = 0U;
+    std::uint32_t seat1_model_id = 0U;
+    SelfPlayKingdomMode kingdom_mode = SelfPlayKingdomMode::Random;
+    // Empty means the complete implemented random-kingdom pool.  The pool is
+    // ignored for Fixed mode, exactly as SelfPlayConfig::kingdom_pool is.
+    DefId kingdom_pool[MAX_SELFPLAY_KINGDOM_POOL]{};
+    std::uint8_t kingdom_pool_count = 0U;
+    // Zero inherits SelfPlayConfig::sims_per_move; a positive value is a
+    // deep-search override for this slot only.
+    std::uint32_t sims_override = 0U;
+    SelfPlayScriptedBotKind scripted_bot = SelfPlayScriptedBotKind::None;
+    PlayerId scripted_nn_player = 0U;
+};
+
+static_assert(std::is_trivially_copyable_v<SelfPlaySlotConfig>);
+
+struct SelfPlayConfig {
+    std::uint32_t n_games = 64;
+    std::uint32_t sims_per_move = 64;
+    float c_puct = 1.25F;
+    MctsCPuctSchedule c_puct_schedule = MctsCPuctSchedule::Fixed;
+    float c_puct_init = 1.25F;
+    float c_puct_base = 19652.0F;
+    float dirichlet_alpha = 0.30F;
+    float dirichlet_frac = 0.25F;
+    // KataGo-style root exploration/pruning is opt-in to preserve legacy
+    // replay and checkpoint behavior exactly when omitted.
+    bool forced_playouts = false;
+    float forced_playouts_k = 2.0F;
+    // Legacy is intentionally the default so an explicit temp_moves setting
+    // continues to select moves on the exact historical global-ply clock.
+    std::uint16_t temp_moves = 20;
+    SelfPlayTempMode temp_mode = SelfPlayTempMode::Legacy;
+    // PerSeatBuy thresholds. Buy turns are one-based; action/effect clocks
+    // are zero-based completed-decision counts for the acting seat.
+    std::uint16_t temp_buy_turns = 14;
+    std::uint16_t temp_action_plies = 10;
+    std::uint16_t temp_effect_plies = 6;
+    // Used after the applicable schedule cutoff. Zero is ordinary argmax.
+    float temp_final = 0.0F;
+    std::uint32_t max_batch = 256;
+    // NN evaluations a single game may have in flight at once (virtual loss
+    // spreads them over the tree). 1 = historical one-leaf-per-game. Deep-
+    // slice games (slot sims_override > 0) use deep_leaves_in_flight when
+    // positive. Scripted games always keep one.
+    std::uint8_t leaves_in_flight = 1;
+    std::uint8_t deep_leaves_in_flight = 0;
+    // Generation-tail boost: once this runner has <= tail_games_threshold
+    // live games, each may keep up to min(tail_leaves_in_flight,
+    // sims_target / 32) leaves in flight (never below its normal cap), so the
+    // last deep games fill the otherwise idle GPU. 0 disables.
+    std::uint16_t tail_games_threshold = 0;
+    // Caps the normal/deep in-flight leaves at sims_target / this so small
+    // (adaptive) searches keep virtual loss to a small fraction of their
+    // visits. 0 disables. Applied before the tail boost.
+    std::uint16_t leaves_min_sims_per_leaf = 0;
+    std::uint8_t tail_leaves_in_flight = 0;
+    // Tree node capacity for deep-slice slots (sims_override > 0); 0 = use
+    // max_tree_nodes. Nodes cost ~40 KB per 32 nodes per game, so only the
+    // few deep slots should get the large pool.
+    std::uint32_t deep_max_tree_nodes = 0;
+    std::uint64_t seed = 0x545241494EULL;
+    ObsVersion obs_version = ObsVersion::V1;
+    SelfPlayKingdomMode kingdom_mode = SelfPlayKingdomMode::Random;
+    Setup fixed_setup{};
+    // Empty means sample random kingdoms from every implemented card. A
+    // non-empty pool is used only by Random mode and must contain at least ten
+    // distinct implemented kingdom defs.
+    DefId kingdom_pool[MAX_SELFPLAY_KINGDOM_POOL]{};
+    std::uint8_t kingdom_pool_count = 0;
+    std::uint16_t max_recorded_moves = 512;
+    // Zero preserves the engine-only turn cap. A positive value is a
+    // training self-play cap applied with the engine truncation semantics.
+    std::uint16_t selfplay_max_turns = 0;
+    // How a game stopped by selfplay_max_turns is labelled. Adjudicate scores
+    // it from the position at the cap (VP margin + tiebreak) exactly like a
+    // finished game; false restores the legacy zero (draw) target, which
+    // taught "long game = draw" on up to half of c22b-c24 self-play data.
+    bool adjudicate_truncation = true;
+    // Value target = (1 - blend) * game outcome + blend * search root value.
+    // 0 keeps pure outcome targets.
+    float root_value_blend = 0.0F;
+    // Search options (2026-11 audit); defaults reproduce legacy behavior.
+    // See MctsConfig::fpu_reduction.
+    float fpu_reduction = -1.0F;
+    // Score game-end tree nodes on the value target's margin scale
+    // (margin_scale / margin_blend_alpha) instead of +-1.
+    bool scaled_terminal_values = false;
+    // >0: Dirichlet alpha = dirichlet_alpha_total / legal_count (clamped to
+    // [0.03, 1]) instead of the fixed dirichlet_alpha.
+    float dirichlet_alpha_total = 0.0F;
+    // With forced playouts, sample the PLAYED move from the pruned target
+    // distribution rather than raw visits (which include forced/noise visits).
+    bool sample_from_pruned_policy = false;
+    // >0: a normal (non-deep) decision with L legal root actions gets at most
+    // max(adaptive_sims_floor, adaptive_sims_per_legal * L) new simulations.
+    // 57% of c24 positions had 2-3 legal actions yet received 512 sims.
+    std::uint32_t adaptive_sims_per_legal = 0;
+    std::uint32_t adaptive_sims_floor = 64;
+    std::uint32_t max_tree_nodes = 4096;
+    std::uint32_t scaffold_sims = 400;
+    // Zero keeps the endgame budget for the whole game. A positive value is
+    // used before a supply pile empties or Provinces fall to four or fewer.
+    std::uint32_t scaffold_sims_opening = 0;
+    std::uint8_t scaffold_determinizations = 2;
+    // Zero keeps Scaffold synchronous, which is useful for deterministic
+    // reference runs. Positive values create that many Scaffold workers.
+    std::uint8_t scripted_threads = 2;
+    SelfPlayValueTarget value_target = SelfPlayValueTarget::Outcome;
+    float margin_scale = 20.0F;
+    float margin_blend_alpha = 0.6F;
+    SelfPlayScriptedBotKind scripted_bot = SelfPlayScriptedBotKind::None;
+    PlayerId scripted_nn_player = 0U;
+    bool auto_play_treasures = false;
+    bool prune_treasure_plays = false;
+    // Training-only search-depth controls. Both remain opt-in so default
+    // self-play and gate/eval behavior keep their established full trees.
+    bool tree_reuse = false;
+    // Honest-information root sampling is opt-in so existing training runs
+    // retain their exact Phase-T.1 perfect-information behavior by default.
+    SelfPlayDeterminizeMode determinize = SelfPlayDeterminizeMode::Off;
+    // Diagnostics (2026-11 drawing board); defaults reproduce legacy behavior.
+    // Per-seat simulation budget for asymmetric matches (0 = inherit the
+    // slot/config budget). Requires tree_reuse off: a retained subtree would
+    // hand one seat's search effort to the other.
+    std::uint32_t seat_sims[MAX_PLAYERS]{};
+    // Route every leaf of a search to the SEARCHING seat's model. The legacy
+    // routing sends a leaf to the model of the player deciding AT the leaf,
+    // so in a two-model match each side's tree is scored by the opponent's
+    // priors and value at every opponent node (i.e. right after each of its
+    // own buys). Requires tree_reuse off (one tree, one model).
+    bool independent_search = false;
+    // Snapshot the live GameState of every recorded decision into
+    // SelfPlayRecord::states (16 KB each; analysis runs only).
+    bool record_states = false;
+    std::uint16_t min_new_sims = 64U;
+    std::uint8_t expand_top_k = 0;
+    // Opening templates are a self-play-runner concern, deliberately kept
+    // out of GameState so search/state frames remain POD.  The Python train
+    // loop supplies opening_lambda and weights anew for every generation.
+    bool opening_templates_enabled = false;
+    float opening_lambda = 0.6F;
+    std::int32_t opening_turn_window = 8;
+    // Index zero is Unconstrained; one through six are the static opening
+    // archetypes implemented in selfplay.cpp.
+    float template_weights[SELFPLAY_OPENING_TEMPLATE_COUNT] = {
+        0.3F,
+        0.11666667F,
+        0.11666667F,
+        0.11666667F,
+        0.11666667F,
+        0.11666667F,
+        0.11666667F,
+    };
+    // Empty preserves the historical homogeneous, continuously-reset runner
+    // behavior.  A populated manifest makes every GameSlot independently
+    // configured and lets a worker keep all segment games live together.
+    std::vector<SelfPlaySlotConfig> slot_manifest;
+};
+
+[[nodiscard]] bool is_selfplay_implemented_kingdom(DefId def) noexcept;
+
+// Computes the non-tie MarginBlend target after terminal scoring has
+// established a score margin. Kept separate from SelfPlayRunner so the exact
+// target transform is unit-testable without constructing a terminal game.
+[[nodiscard]] float selfplay_dirichlet_alpha(const SelfPlayConfig& config, int legal_count) noexcept;
+[[nodiscard]] Action selfplay_sample_from_policy(
+    const float* policy,
+    float temperature,
+    Xoshiro256pp& rng,
+    Action fallback) noexcept;
+[[nodiscard]] float selfplay_margin_blend_value(
+    float margin,
+    float margin_scale,
+    float margin_blend_alpha) noexcept;
+
+// Build the self-play training target after removing non-best visits that
+// were allocated solely to root forced playouts. The caller gates this to
+// training roots with both forced playouts and Dirichlet noise enabled.
+void selfplay_pruned_root_visit_policy(
+    const Mcts& search,
+    float forced_playouts_k,
+    float* out) noexcept;
+
+// Derive the dedicated root-sampling seed without consuming the game's action
+// sampling, Dirichlet-noise, or opening-template streams.  This is public so
+// deterministic runner fixtures can assert the PerDecision/PerTurn contract.
+[[nodiscard]] std::uint64_t selfplay_determinization_seed(
+    std::uint64_t game_seed,
+    PlayerId seat,
+    std::uint16_t move_index,
+    std::uint16_t turn_counter,
+    SelfPlayDeterminizeMode mode) noexcept;
+
+// Compute the root-sampling temperature for one decision. The caller passes
+// the legacy global move index, the acting seat's completed-decision count,
+// and its one-based turn number. This is public so schedule fixtures can test
+// the policy without driving a complete game.
+[[nodiscard]] float selfplay_temperature_for(
+    const SelfPlayConfig& config,
+    DecisionKind decision_kind,
+    std::uint16_t move_index,
+    std::uint16_t seat_decision_count,
+    std::uint16_t seat_turn_number) noexcept;
+
+// Convert the live two-player turn counter to the acting seat's one-based
+// turn number. turn_counter increments only after a completed player turn.
+[[nodiscard]] std::uint16_t selfplay_seat_turn_number(
+    std::uint16_t turn_counter) noexcept;
+
+// Resolve an opening-template preference for the current root decision. A_END
+// means that the template has no legal preference (including after its window
+// expires). This narrow, allocation-free helper is public for focused runner
+// tests; normal callers should leave action choice to MCTS.
+[[nodiscard]] Action selfplay_opening_preferred_action(
+    const GameState& state,
+    PlayerId player,
+    std::uint8_t template_id,
+    std::int32_t opening_turn_window,
+    const ActionMask& legal) noexcept;
+
+// Mix an already-normalized root prior with a one-hot preferred action. The
+// operation is a strict no-op for lambda == 0 or an unavailable preference.
+void selfplay_mix_opening_prior(
+    float* priors,
+    const ActionMask& legal,
+    int legal_count,
+    Action preferred_action,
+    float lambda) noexcept;
+
+struct SelfPlayRecord {
+    std::vector<float> observations;
+    std::vector<float> policy_targets;
+    // C++ test/diagnostic metadata for selected root actions. It is separate
+    // from policy_targets, whose temperature-one semantics never change.
+    std::vector<Action> sampled_actions;
+    // One true root legal-action bitset per recorded decision. These are
+    // deliberately separate from visit policies: a legal action may receive
+    // zero simulations and therefore have a zero policy target.
+    std::vector<std::uint64_t> legal_mask_words;
+    std::vector<float> values;
+    // Final signed score differential for each recorded decision's player.
+    // This remains independent of the scalar value-target convention.
+    std::vector<std::int16_t> margins;
+    std::vector<PlayerId> players;
+    // Live state at each recorded decision; filled only when
+    // SelfPlayConfig::record_states is set.
+    std::vector<GameState> states;
+    DefId kingdom[MAX_KINGDOM_DEFS]{};
+    std::uint8_t kingdom_count = 0;
+    std::uint64_t seed = 0;
+    std::uint16_t moves = 0;
+    std::uint16_t turn_counter = 0;
+    bool truncated = false;
+    // Read-only outcome metadata for Python-side head-to-head evaluation.
+    // It is not consumed by self-play search or replay generation.
+    PlayerId winner = NONE;
+    // Final scores are read-only metadata for diagnostics and Python-side
+    // value-target validation; self-play search never consumes them.
+    std::int16_t scores[MAX_PLAYERS]{};
+    // None for NN-vs-NN games. Scripted-game records contain only decisions
+    // from this NN player, which lets Python derive cheap per-generation
+    // head-to-head outcomes without inspecting private engine state.
+    PlayerId scripted_nn_player = NONE;
+    // Slot metadata is surfaced with the record because heterogeneous slots
+    // complete interleaved. Python uses it for per-kind/per-opponent counters
+    // without relying on completion order.
+    std::uint64_t game_index = 0;
+    std::uint32_t seat0_model_id = 0;
+    std::uint32_t seat1_model_id = 0;
+    SelfPlayScriptedBotKind scripted_bot = SelfPlayScriptedBotKind::None;
+    std::uint32_t sims_override = 0;
+    // Opening-template telemetry. Both seats are assigned independently;
+    // zero denotes an unconstrained seat.
+    std::uint8_t seat_template_ids[MAX_PLAYERS]{};
+    std::uint16_t cards_trashed = 0U;
+    // Counts actual buy actions while the opening window is active. Keeping
+    // this fixed-size makes the integration smoke inspectable without adding
+    // a per-move allocation path.
+    std::uint16_t opening_buy_counts[ACTION_DEF_COUNT]{};
+    // Chapel, Sentry, Moneylender, Village in that order. Only buys made by
+    // seats assigned the unconstrained template contribute.
+    std::uint16_t unconstrained_buy_counts[SELFPLAY_OPENING_TELEMETRY_CARD_COUNT]{};
+};
+
+// Read-only per-slot search counters, primarily useful when profiling batched
+// self-play. sims_started/sims_completed count only work begun for the active
+// decision; root_visits includes any inherited tree-reuse evidence.
+struct SelfPlaySearchStats {
+    std::uint32_t sims_target = 0;
+    std::uint32_t sims_started = 0;
+    std::uint32_t sims_completed = 0;
+    std::uint32_t root_visits = 0;
+    bool search_active = false;
+};
+
+class SelfPlayRunner {
+public:
+    explicit SelfPlayRunner(const SelfPlayConfig& config);
+    ~SelfPlayRunner();
+
+    [[nodiscard]] std::uint32_t collect_leaves(std::uint32_t max_batch) noexcept;
+    void provide_evaluations(const float* values, const float* policies, std::uint32_t count) noexcept;
+    [[nodiscard]] const float* leaf_observations() const noexcept;
+    [[nodiscard]] const bool* leaf_legal_masks() const noexcept;
+    [[nodiscard]] const PlayerId* leaf_players() const noexcept;
+    // Seat whose model must evaluate each pending leaf: the leaf's deciding
+    // player, or the searching seat under SelfPlayConfig::independent_search.
+    [[nodiscard]] const PlayerId* leaf_route_seats() const noexcept;
+    // Aligned with leaf_observations()/leaf_players().  It identifies the
+    // worker-model-table entry that must evaluate this pending leaf.
+    [[nodiscard]] const std::uint32_t* leaf_model_ids() const noexcept;
+    // Aligned with the pending leaves and stable for the manifest slot's
+    // prescribed game.  It lets Python retain per-slot routing metrics while
+    // evaluations themselves are grouped by model id.
+    [[nodiscard]] const std::uint64_t* leaf_game_indices() const noexcept;
+    [[nodiscard]] std::uint32_t leaf_count() const noexcept;
+    [[nodiscard]] std::size_t observation_size() const noexcept;
+    [[nodiscard]] std::uint64_t games_completed() const noexcept;
+    [[nodiscard]] std::uint64_t skipped_degenerate_targets() const noexcept { return skipped_degenerate_targets_; }
+    [[nodiscard]] float total_virtual_loss() const noexcept;
+    [[nodiscard]] SelfPlaySearchStats search_stats(std::uint32_t index) const noexcept;
+    // Async Scaffold jobs preserve each seed's trajectory, but cross-slot
+    // completion timing can still change the arrival order of these records.
+    [[nodiscard]] const std::vector<SelfPlayRecord>& finished_games() const noexcept;
+    std::vector<SelfPlayRecord> take_finished_games();
+
+private:
+    struct GameSlot;
+    struct PendingLeaf;
+    struct ScriptedPool;
+
+    void reset_game(std::uint32_t index) noexcept;
+    void start_search(GameSlot& game) noexcept;
+    void auto_play_treasures(GameSlot& game) noexcept;
+    void drive_scripted(GameSlot& game) noexcept;
+    [[nodiscard]] Action choose_scripted_action(
+        GameSlot& game,
+        const GameState& state,
+        const ActionMask& legal,
+        int legal_count) noexcept;
+    void drive_scaffold(GameSlot& game, Mcts& scratch) noexcept;
+    // Returns true while an offloaded Scaffold job owns this slot (including
+    // the pass on which the job is queued).
+    [[nodiscard]] bool offload_scripted_slot(std::uint32_t index) noexcept;
+    void drain_scripted_ready() noexcept;
+    void run_scripted_job(std::uint32_t index, Mcts& scratch) noexcept;
+    [[nodiscard]] std::uint32_t scaffold_sims_for(
+        const GameState& state,
+        const ActionMask& legal) const noexcept;
+    [[nodiscard]] bool game_has_pending(std::uint32_t index) const noexcept;
+    void maybe_finish_move(GameSlot& game) noexcept;
+    [[nodiscard]] std::uint32_t leaves_in_flight_cap(const GameSlot& game) const noexcept;
+    void record_decision(
+        GameSlot& game,
+        const float* policy,
+        const ActionMask& legal) noexcept;
+    void finish_game(GameSlot& game) noexcept;
+    [[nodiscard]] Setup setup_for(const GameSlot& game) const noexcept;
+    // Keep the raw difference for scalar margin targets, whose configured
+    // scale may exceed the compact record-column saturation range.
+    [[nodiscard]] int terminal_margin_for(const GameState& state, PlayerId player) const noexcept;
+    [[nodiscard]] float terminal_value_for(
+        const GameState& state,
+        PlayerId player,
+        int terminal_margin) const noexcept;
+    void normalize_policy(
+        const float* logits,
+        const ActionMask& legal,
+        int legal_count,
+        bool add_root_noise,
+        Action opening_preference,
+        float* out,
+        Xoshiro256pp& rng) noexcept;
+    void reapply_root_noise(GameSlot& game) noexcept;
+    [[nodiscard]] bool resolve_scripted_tree_leaf(GameSlot& game, const MctsPendingLeaf& leaf) noexcept;
+
+    SelfPlayConfig config_{};
+    std::uint32_t slot_count_ = 0;
+    bool manifest_mode_ = false;
+    std::size_t obs_size_ = OBS_SIZE_V1;
+    MctsConfig mcts_config_{};
+    MctsConfig scaffold_mcts_config_{};
+    // Used only for scripted_threads=0. Async Scaffold jobs use the
+    // per-worker scratch trees in scripted_pool_.
+    std::optional<Mcts> scaffold_mcts_{};
+    std::unique_ptr<GameSlot[]> games_;
+    std::unique_ptr<PendingLeaf[]> pending_;
+    std::unique_ptr<float[]> leaf_obs_;
+    std::unique_ptr<bool[]> leaf_masks_;
+    std::unique_ptr<PlayerId[]> leaf_players_;
+    std::unique_ptr<PlayerId[]> leaf_route_seats_;
+    std::unique_ptr<std::uint32_t[]> leaf_model_ids_;
+    std::unique_ptr<std::uint64_t[]> leaf_game_indices_;
+    std::unique_ptr<float[]> normalized_policy_;
+    std::vector<SelfPlayRecord> finished_;
+    std::uint32_t pending_count_ = 0;
+    std::uint32_t next_collect_game_ = 0;
+    std::uint64_t completed_ = 0;
+    bool tail_mode_ = false;
+    std::uint64_t skipped_degenerate_targets_ = 0;
+    std::unique_ptr<ScriptedPool> scripted_pool_{};
+};

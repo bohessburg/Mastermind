@@ -1,0 +1,229 @@
+pg,9,0,33,W
+pg,4,0,31,W
+pg,8,0,35,W
+pg,0,0,36,L
+pg,7,0,40,L
+pg,6,0,46,L
+pg,2,0,41,W
+pg,19,0,39,W
+pg,3,0,51,W
+pg,1,0,53,W
+progress: 10/200 7-3-0 64.9 games/hr eta 175.8 min
+pg,5,0,54,L
+pg,13,0,33,W
+pg,14,0,51,W
+pg,18,0,46,L
+pg,12,0,42,L
+pg,10,0,54,L
+pg,16,0,51,W
+pg,15,0,46,L
+pg,11,0,49,W
+pg,28,0,27,W
+progress: 20/200 12-8-0 64.8 games/hr eta 166.6 min
+pg,17,0,67,W
+pg,23,0,38,L
+pg,26,0,49,W
+pg,20,0,45,W
+pg,25,0,40,L
+pg,24,0,56,L
+pg,38,0,30,L
+pg,33,0,33,W
+pg,21,0,46,L
+pg,27,0,37,W
+progress: 30/200 17-13-0 71.5 games/hr eta 142.7 min
+pg,30,0,33,W
+pg,36,0,35,W
+pg,48,0,36,L
+pg,43,0,32,L
+pg,29,0,64,L
+pg,31,0,31,W
+pg,34,0,49,W
+pg,37,0,40,L
+pg,35,0,42,L
+pg,22,0,62,L
+progress: 40/200 21-19-0 71.5 games/hr eta 134.3 min
+pg,58,0,40,L
+pg,46,0,53,T
+pg,40,0,59,L
+pg,39,0,38,L
+pg,53,0,53,W
+pg,44,0,33,W
+pg,47,0,40,L
+pg,68,0,33,W
+pg,49,0,34,L
+pg,45,0,48,L
+progress: 50/200 24-25-1 74.3 games/hr eta 121.2 min
+pg,32,0,44,L
+pg,41,0,59,W
+pg,56,0,37,W
+pg,63,0,39,W
+pg,50,0,35,W
+pg,54,0,46,L
+pg,57,0,53,W
+pg,42,0,35,W
+pg,64,0,34,L
+pg,59,0,55,W
+progress: 60/200 31-28-1 73.2 games/hr eta 114.8 min
+pg,73,0,49,W
+pg,52,0,38,L
+pg,66,0,63,W
+pg,78,0,54,L
+pg,55,0,48,L
+pg,69,0,39,W
+pg,51,0,46,L
+pg,74,0,57,W
+pg,67,0,60,L
+pg,76,0,43,T
+progress: 70/200 35-33-2 69.2 games/hr eta 112.7 min
+pg,88,0,53,W
+pg,62,0,61,W
+pg,83,0,48,L
+pg,65,0,53,W
+pg,60,0,64,L
+pg,79,0,49,W
+pg,61,0,47,W
+pg,77,0,50,L
+pg,98,0,53,W
+pg,93,0,47,W
+progress: 80/200 42-36-2 68.8 games/hr eta 104.7 min
+pg,84,0,53,L
+pg,86,0,63,W
+pg,72,0,55,W
+pg,89,0,50,L
+pg,70,0,57,W
+pg,71,0,55,W
+pg,75,0,60,L
+pg,108,1,45,L
+pg,99,0,35,W
+pg,87,0,59,W
+progress: 90/200 48-40-2 70.5 games/hr eta 93.6 min
+pg,96,0,45,W
+pg,103,1,46,W
+pg,82,0,36,L
+pg,81,0,39,W
+pg,80,0,38,L
+pg,109,1,47,L
+pg,118,1,49,L
+pg,91,0,41,W
+pg,92,0,35,W
+pg,94,0,71,W
+progress: 100/200 54-44-2 71.2 games/hr eta 84.3 min
+pg,106,1,39,L
+pg,113,1,60,W
+pg,119,1,30,W
+pg,104,1,28,W
+pg,90,0,51,W
+pg,101,1,34,W
+pg,116,1,38,W
+pg,129,1,35,L
+pg,102,1,43,L
+pg,85,0,58,L
+progress: 110/200 60-48-2 72.7 games/hr eta 74.3 min
+pg,97,0,46,L
+pg,123,1,56,W
+pg,112,1,35,L
+pg,139,1,49,L
+pg,95,0,45,W
+pg,107,1,53,L
+pg,133,1,44,W
+pg,128,1,63,L
+pg,114,1,63,L
+pg,111,1,62,W
+progress: 120/200 64-54-2 71.8 games/hr eta 66.8 min
+pg,149,1,32,W
+pg,126,1,68,W
+pg,122,1,51,L
+pg,105,1,33,L
+pg,143,1,37,L
+pg,138,1,43,L
+pg,117,1,50,W
+pg,124,1,52,W
+pg,159,1,46,W
+pg,121,1,52,W
+progress: 130/200 70-58-2 72.3 games/hr eta 58.1 min
+pg,132,1,45,L
+pg,100,1,73,L
+pg,153,1,49,L
+pg,115,1,63,L
+pg,110,1,36,W
+pg,131,1,54,W
+pg,127,1,60,W
+pg,142,1,35,L
+pg,169,1,41,L
+pg,148,1,57,L
+progress: 140/200 73-65-2 72.2 games/hr eta 49.9 min
+pg,134,1,58,W
+pg,136,1,58,L
+pg,163,1,45,L
+pg,152,1,41,L
+pg,141,1,51,L
+pg,146,1,43,L
+pg,144,1,55,L
+pg,173,1,53,L
+pg,158,1,66,W
+pg,120,1,61,L
+progress: 150/200 75-73-2 70.1 games/hr eta 42.8 min
+pg,183,1,32,W
+pg,179,1,45,L
+pg,151,1,44,W
+pg,168,1,40,W
+pg,130,1,41,L
+pg,125,1,59,L
+pg,154,1,49,L
+pg,156,1,64,W
+pg,162,1,51,L
+pg,161,1,48,W
+progress: 160/200 80-78-2 69.5 games/hr eta 34.6 min
+pg,189,1,50,W
+pg,193,1,37,L
+pg,140,1,33,L
+pg,137,1,69,L
+pg,135,1,61,L
+pg,199,1,31,L
+pg,164,1,53,L
+pg,178,1,57,L
+pg,171,1,38,W
+pg,172,1,50,W
+progress: 170/200 83-85-2 70.7 games/hr eta 25.5 min
+pg,166,1,50,W
+pg,145,1,34,W
+pg,188,1,34,W
+pg,147,1,54,L
+pg,174,1,47,L
+pg,181,1,56,W
+pg,198,1,47,L
+pg,150,1,55,L
+pg,182,1,47,L
+pg,184,1,54,W
+progress: 180/200 88-90-2 69.8 games/hr eta 17.2 min
+pg,157,1,51,L
+pg,160,1,42,W
+pg,194,1,35,L
+pg,155,1,53,L
+pg,176,1,61,L
+pg,167,1,57,L
+pg,192,1,51,L
+pg,191,1,55,L
+pg,186,1,50,W
+pg,165,1,45,L
+progress: 190/200 90-98-2 67.7 games/hr eta 8.9 min
+pg,170,1,79,L
+pg,196,1,60,W
+pg,177,1,73,L
+pg,180,1,53,L
+pg,190,1,46,L
+pg,175,1,59,L
+pg,187,1,52,W
+pg,197,1,32,W
+pg,185,1,33,L
+pg,195,1,45,L
+progress: 200/200 93-105-2 65.7 games/hr eta 0.0 min
+config: {"a": "checkpoints/remote/campaign19/gen_0040.pt", "a_obs_versions": [3], "b": null, "b_obs_versions": [], "determinizations_a": 2, "determinizations_b": 2, "device": "cpu", "games": 200, "kingdom_sampling": "sorted(random.Random(game_seed).sample(kingdom_def_ids(), 10))", "opponent": "engine3", "seat_blocked_first_half_games": 100, "seed": 20260728, "sims_a": 1600, "sims_b": 1600, "torch_threads": 1, "workers": 10}
+overall: W-L-T 93-105-2 errors 0 win% excl ties 46.97
+a_seat_0: W-L-T 55-43-2 errors 0 win% excl ties 56.12
+a_seat_1: W-L-T 38-62-0 errors 0 win% excl ties 38.00
+end conditions: province 154 piles 46 truncated 0
+mean turns: 47.47
+wall time: 10951.53 s
+games/hr: 65.74
+results: bench/honest_eval/c19g40_vs_engine3_1600.json

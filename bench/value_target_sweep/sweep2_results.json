@@ -1,0 +1,4321 @@
+[
+  {
+    "alpha": 0.6,
+    "seed": 1,
+    "value_probe": {
+      "acceptance": {
+        "checked": false
+      },
+      "checkpoint": "/Users/paisho/Projects/Mastermind/bench/value_target_sweep/fit2_a0.6_s1.pt",
+      "means": {
+        "engine": 0.3084320245044572,
+        "junk": -0.9240954901490893,
+        "money": 0.6213389877229929
+      },
+      "obs_version": 3,
+      "probe": "value_probe",
+      "protocol": {
+        "kingdom": [
+          "Village",
+          "Smithy",
+          "Laboratory",
+          "Market",
+          "Chapel",
+          "Festival",
+          "Council Room",
+          "Moat",
+          "Militia",
+          "Witch"
+        ],
+        "minimum_turn_counter": 10,
+        "mode": "raw value head; encoded deck+discard counterfactual only",
+        "state_seeds": [
+          5000,
+          5001,
+          5002,
+          5003,
+          5004,
+          5005,
+          5006,
+          5007,
+          5008,
+          5009,
+          5010,
+          5011,
+          5012,
+          5013
+        ],
+        "states": 14,
+        "variants": {
+          "engine": {
+            "Chapel": 1,
+            "Copper": 3,
+            "Estate": 3,
+            "Laboratory": 2,
+            "Market": 1,
+            "Silver": 2,
+            "Smithy": 2,
+            "Village": 2
+          },
+          "junk": {
+            "Copper": 9,
+            "Curse": 4,
+            "Estate": 3,
+            "Silver": 1
+          },
+          "money": {
+            "Copper": 7,
+            "Estate": 3,
+            "Gold": 2,
+            "Silver": 3
+          }
+        }
+      },
+      "seed": 659918,
+      "states": [
+        {
+          "acting_seat": 0,
+          "index": 0,
+          "seed": 5000,
+          "state_hash": "0xa391d8aa0d8de0aa",
+          "turn_counter": 10,
+          "values": {
+            "engine": -0.09770744293928146,
+            "junk": -0.9905482530593872,
+            "money": -0.3475622236728668
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 1,
+          "seed": 5001,
+          "state_hash": "0xbff35d94b15a49d5",
+          "turn_counter": 10,
+          "values": {
+            "engine": 0.8957560658454895,
+            "junk": -0.8296176195144653,
+            "money": 0.95707768201828
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 2,
+          "seed": 5002,
+          "state_hash": "0x068c6af217925938",
+          "turn_counter": 10,
+          "values": {
+            "engine": 0.8622994422912598,
+            "junk": -0.906157910823822,
+            "money": 0.9344261288642883
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 3,
+          "seed": 5003,
+          "state_hash": "0xcb287ad78009a073",
+          "turn_counter": 10,
+          "values": {
+            "engine": -0.08609891682863235,
+            "junk": -0.9835530519485474,
+            "money": 0.6312331557273865
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 4,
+          "seed": 5004,
+          "state_hash": "0x35b5abaaefdb7765",
+          "turn_counter": 10,
+          "values": {
+            "engine": -0.03633175790309906,
+            "junk": -0.98362135887146,
+            "money": 0.6040691137313843
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 5,
+          "seed": 5005,
+          "state_hash": "0x5a7418f66def68f2",
+          "turn_counter": 10,
+          "values": {
+            "engine": 0.2083563357591629,
+            "junk": -0.9315366148948669,
+            "money": 0.8886021375656128
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 6,
+          "seed": 5006,
+          "state_hash": "0x65752cba00b61555",
+          "turn_counter": 10,
+          "values": {
+            "engine": 0.06715906411409378,
+            "junk": -0.9897620677947998,
+            "money": -0.023340556770563126
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 7,
+          "seed": 5007,
+          "state_hash": "0xb8e9fd1e93bd4a45",
+          "turn_counter": 10,
+          "values": {
+            "engine": 0.8635669350624084,
+            "junk": -0.9169020056724548,
+            "money": 0.9439534544944763
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 8,
+          "seed": 5008,
+          "state_hash": "0x09bddde4694c14ff",
+          "turn_counter": 10,
+          "values": {
+            "engine": 0.1622389554977417,
+            "junk": -0.9850426316261292,
+            "money": 0.5486603379249573
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 9,
+          "seed": 5009,
+          "state_hash": "0x4fd8fbc8c1a41965",
+          "turn_counter": 10,
+          "values": {
+            "engine": -0.30869388580322266,
+            "junk": -0.98736971616745,
+            "money": 0.24071095883846283
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 10,
+          "seed": 5010,
+          "state_hash": "0xc1caf67a78c6760e",
+          "turn_counter": 10,
+          "values": {
+            "engine": 0.8128725290298462,
+            "junk": -0.9528416395187378,
+            "money": 0.8869078755378723
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 11,
+          "seed": 5011,
+          "state_hash": "0xdae6c72f7ccabac5",
+          "turn_counter": 10,
+          "values": {
+            "engine": 0.9104345440864563,
+            "junk": -0.5165939331054688,
+            "money": 0.9636760354042053
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 12,
+          "seed": 5012,
+          "state_hash": "0x4bb6482800b87579",
+          "turn_counter": 10,
+          "values": {
+            "engine": -0.07520052045583725,
+            "junk": -0.9828247427940369,
+            "money": 0.7403251528739929
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 13,
+          "seed": 5013,
+          "state_hash": "0x60de78624c61957d",
+          "turn_counter": 10,
+          "values": {
+            "engine": 0.13939699530601501,
+            "junk": -0.9809653162956238,
+            "money": 0.7300065755844116
+          }
+        }
+      ]
+    },
+    "duchy_probe": {
+      "checkpoint": "/Users/paisho/Projects/Mastermind/bench/value_target_sweep/fit2_a0.6_s1.pt",
+      "means": {
+        "p_buy_duchy_delta": 0.019724062610683695,
+        "p_buy_duchy_delta_points": 1.9724062610683695,
+        "value_delta": -0.06625634316532385
+      },
+      "obs_version": 3,
+      "probe": "duchy_probe",
+      "protocol": {
+        "counterfactual": "opponent collection Duchy count +2 (+6 VP)",
+        "minimum_player_turn": 10,
+        "mode": "raw policy/value heads only",
+        "states": 42
+      },
+      "reference": null,
+      "seed": 53444,
+      "states": [
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.9895709753036499,
+          "duchy_legal": false,
+          "index": 0,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": 0.9873104691505432,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 10,
+          "state_hash": "0xd7c3a870c6e9767b",
+          "turn_counter": 18,
+          "value_delta": -0.0022605061531066895
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.013839196413755417,
+          "base_value": -0.8830082416534424,
+          "duchy_legal": true,
+          "index": 1,
+          "injected_p_buy_duchy": 0.015272475779056549,
+          "injected_value": -0.9714623689651489,
+          "p_buy_duchy_delta": 0.0014332793653011322,
+          "player_turn": 10,
+          "state_hash": "0x47d9965e54e97c20",
+          "turn_counter": 19,
+          "value_delta": -0.08845412731170654
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.018634725362062454,
+          "base_value": 0.9916715025901794,
+          "duchy_legal": true,
+          "index": 2,
+          "injected_p_buy_duchy": 0.03420518711209297,
+          "injected_value": 0.9827562570571899,
+          "p_buy_duchy_delta": 0.015570461750030518,
+          "player_turn": 11,
+          "state_hash": "0x6bdbf175648580da",
+          "turn_counter": 20,
+          "value_delta": -0.008915245532989502
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.8077786564826965,
+          "duchy_legal": false,
+          "index": 3,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.1047271117568016,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 11,
+          "state_hash": "0x7de061684488dc30",
+          "turn_counter": 21,
+          "value_delta": -0.9125057682394981
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.9831547737121582,
+          "duchy_legal": false,
+          "index": 4,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": 0.9674436450004578,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 12,
+          "state_hash": "0x9e352f2810b51c26",
+          "turn_counter": 22,
+          "value_delta": -0.01571112871170044
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.004931334871798754,
+          "base_value": -0.8599018454551697,
+          "duchy_legal": true,
+          "index": 5,
+          "injected_p_buy_duchy": 0.004838503431528807,
+          "injected_value": -0.9687460064888,
+          "p_buy_duchy_delta": -9.283144026994705e-05,
+          "player_turn": 12,
+          "state_hash": "0x4ecab2c7d36607f7",
+          "turn_counter": 23,
+          "value_delta": -0.10884416103363037
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.9921789765357971,
+          "duchy_legal": false,
+          "index": 6,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": 0.985790491104126,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 13,
+          "state_hash": "0x56c64bea92e7a986",
+          "turn_counter": 24,
+          "value_delta": -0.006388485431671143
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.02839346043765545,
+          "base_value": 0.9036614894866943,
+          "duchy_legal": true,
+          "index": 7,
+          "injected_p_buy_duchy": 0.030955353751778603,
+          "injected_value": 0.41465768218040466,
+          "p_buy_duchy_delta": 0.0025618933141231537,
+          "player_turn": 13,
+          "state_hash": "0x263f8c2ee149ffb1",
+          "turn_counter": 25,
+          "value_delta": -0.4890038073062897
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.06268429011106491,
+          "base_value": 0.9820386171340942,
+          "duchy_legal": true,
+          "index": 8,
+          "injected_p_buy_duchy": 0.5627527832984924,
+          "injected_value": 0.9419850707054138,
+          "p_buy_duchy_delta": 0.5000684931874275,
+          "player_turn": 14,
+          "state_hash": "0xcfc81050e12aaa56",
+          "turn_counter": 26,
+          "value_delta": -0.04005354642868042
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.02461508847773075,
+          "base_value": 0.9697363376617432,
+          "duchy_legal": true,
+          "index": 9,
+          "injected_p_buy_duchy": 0.02556709200143814,
+          "injected_value": 0.9529737234115601,
+          "p_buy_duchy_delta": 0.0009520035237073898,
+          "player_turn": 14,
+          "state_hash": "0x784cc8a6b23a3ff4",
+          "turn_counter": 27,
+          "value_delta": -0.016762614250183105
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.02232382819056511,
+          "duchy_legal": false,
+          "index": 10,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.8691494464874268,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 15,
+          "state_hash": "0x1cf9d3c8c4fc3e83",
+          "turn_counter": 28,
+          "value_delta": -0.8468256182968616
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.023161398246884346,
+          "base_value": 0.9799839854240417,
+          "duchy_legal": true,
+          "index": 11,
+          "injected_p_buy_duchy": 0.023988112807273865,
+          "injected_value": 0.9755107164382935,
+          "p_buy_duchy_delta": 0.0008267145603895187,
+          "player_turn": 15,
+          "state_hash": "0xede6833fb5e2f253",
+          "turn_counter": 29,
+          "value_delta": -0.004473268985748291
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0016594496555626392,
+          "base_value": -0.9616459608078003,
+          "duchy_legal": true,
+          "index": 12,
+          "injected_p_buy_duchy": 0.017762979492545128,
+          "injected_value": -0.9878095984458923,
+          "p_buy_duchy_delta": 0.01610352983698249,
+          "player_turn": 16,
+          "state_hash": "0x6761b6078bf62323",
+          "turn_counter": 30,
+          "value_delta": -0.02616363763809204
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.018024297431111336,
+          "base_value": 0.9637389183044434,
+          "duchy_legal": true,
+          "index": 13,
+          "injected_p_buy_duchy": 0.02427060715854168,
+          "injected_value": 0.9528831243515015,
+          "p_buy_duchy_delta": 0.006246309727430344,
+          "player_turn": 16,
+          "state_hash": "0x89eda04a14140707",
+          "turn_counter": 31,
+          "value_delta": -0.010855793952941895
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.9918786883354187,
+          "duchy_legal": false,
+          "index": 14,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.9959723353385925,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 17,
+          "state_hash": "0x7fe1f47e9167dcea",
+          "turn_counter": 32,
+          "value_delta": -0.004093647003173828
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.9882581233978271,
+          "duchy_legal": false,
+          "index": 15,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": 0.9808874130249023,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 17,
+          "state_hash": "0xc4405247c2e7c455",
+          "turn_counter": 33,
+          "value_delta": -0.007370710372924805
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.993037223815918,
+          "duchy_legal": false,
+          "index": 16,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.9954283237457275,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 18,
+          "state_hash": "0x560cee72a9cd39f9",
+          "turn_counter": 34,
+          "value_delta": -0.0023910999298095703
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.36705219745635986,
+          "base_value": 0.9880016446113586,
+          "duchy_legal": true,
+          "index": 17,
+          "injected_p_buy_duchy": 0.44625192880630493,
+          "injected_value": 0.97640460729599,
+          "p_buy_duchy_delta": 0.07919973134994507,
+          "player_turn": 18,
+          "state_hash": "0xec6adb807d23dcc3",
+          "turn_counter": 35,
+          "value_delta": -0.011597037315368652
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.5971322059631348,
+          "base_value": -0.9837596416473389,
+          "duchy_legal": true,
+          "index": 18,
+          "injected_p_buy_duchy": 0.7369849681854248,
+          "injected_value": -0.9874196648597717,
+          "p_buy_duchy_delta": 0.13985276222229004,
+          "player_turn": 19,
+          "state_hash": "0xe51592dba4eba278",
+          "turn_counter": 36,
+          "value_delta": -0.0036600232124328613
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.9875985980033875,
+          "duchy_legal": false,
+          "index": 19,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": 0.9785270690917969,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 19,
+          "state_hash": "0x96acf74d249fb3b3",
+          "turn_counter": 37,
+          "value_delta": -0.009071528911590576
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.877666175365448,
+          "base_value": -0.9873910546302795,
+          "duchy_legal": true,
+          "index": 20,
+          "injected_p_buy_duchy": 0.9441664218902588,
+          "injected_value": -0.9907557964324951,
+          "p_buy_duchy_delta": 0.06650024652481079,
+          "player_turn": 20,
+          "state_hash": "0x3603bc0769d29723",
+          "turn_counter": 38,
+          "value_delta": -0.003364741802215576
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.1839016228914261,
+          "base_value": 0.982330322265625,
+          "duchy_legal": true,
+          "index": 21,
+          "injected_p_buy_duchy": 0.18740610778331757,
+          "injected_value": 0.9713678359985352,
+          "p_buy_duchy_delta": 0.0035044848918914795,
+          "player_turn": 20,
+          "state_hash": "0x110e8f7947daf907",
+          "turn_counter": 39,
+          "value_delta": -0.010962486267089844
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.9952346086502075,
+          "duchy_legal": false,
+          "index": 22,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.996045708656311,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 21,
+          "state_hash": "0xa96a11dd3fda371e",
+          "turn_counter": 40,
+          "value_delta": -0.0008111000061035156
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.9933378100395203,
+          "duchy_legal": false,
+          "index": 23,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": 0.9905014634132385,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 21,
+          "state_hash": "0x3eb00eaec9e70a18",
+          "turn_counter": 41,
+          "value_delta": -0.0028363466262817383
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.9899458885192871,
+          "duchy_legal": false,
+          "index": 24,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.9914059042930603,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 22,
+          "state_hash": "0x9d568ee34665a2ac",
+          "turn_counter": 42,
+          "value_delta": -0.0014600157737731934
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.9786084890365601,
+          "duchy_legal": false,
+          "index": 25,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": 0.9681973457336426,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 22,
+          "state_hash": "0x52d4961ac60369e9",
+          "turn_counter": 43,
+          "value_delta": -0.01041114330291748
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.9894987940788269,
+          "duchy_legal": false,
+          "index": 26,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.991400957107544,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 23,
+          "state_hash": "0x002593c58de89b9b",
+          "turn_counter": 44,
+          "value_delta": -0.001902163028717041
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.524598240852356,
+          "base_value": 0.9859405755996704,
+          "duchy_legal": true,
+          "index": 27,
+          "injected_p_buy_duchy": 0.5207343697547913,
+          "injected_value": 0.9765275716781616,
+          "p_buy_duchy_delta": -0.0038638710975646973,
+          "player_turn": 23,
+          "state_hash": "0x4a2b4dd910d1f8a7",
+          "turn_counter": 45,
+          "value_delta": -0.009413003921508789
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.9955507516860962,
+          "duchy_legal": false,
+          "index": 28,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.9958339929580688,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 24,
+          "state_hash": "0xcc8587daf112b3df",
+          "turn_counter": 46,
+          "value_delta": -0.00028324127197265625
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.9909628629684448,
+          "duchy_legal": false,
+          "index": 29,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": 0.9857121706008911,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 24,
+          "state_hash": "0x6edf82bc538baaaa",
+          "turn_counter": 47,
+          "value_delta": -0.005250692367553711
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.9929863214492798,
+          "duchy_legal": false,
+          "index": 30,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.994225263595581,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 25,
+          "state_hash": "0x3a14fe49d011656a",
+          "turn_counter": 48,
+          "value_delta": -0.0012389421463012695
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.9910984635353088,
+          "duchy_legal": false,
+          "index": 31,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": 0.9865756630897522,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 25,
+          "state_hash": "0xb9c4990d6c1b3f3c",
+          "turn_counter": 49,
+          "value_delta": -0.004522800445556641
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.9921548962593079,
+          "duchy_legal": false,
+          "index": 32,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.9931003451347351,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 26,
+          "state_hash": "0x581bbeaaa9434b17",
+          "turn_counter": 50,
+          "value_delta": -0.0009454488754272461
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.9672062993049622,
+          "duchy_legal": false,
+          "index": 33,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": 0.9007376432418823,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 26,
+          "state_hash": "0x81e1d06c05195ab9",
+          "turn_counter": 51,
+          "value_delta": -0.06646865606307983
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.9943532347679138,
+          "duchy_legal": false,
+          "index": 34,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.994946300983429,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 27,
+          "state_hash": "0x057be6c030983b97",
+          "turn_counter": 52,
+          "value_delta": -0.0005930662155151367
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.9906282424926758,
+          "duchy_legal": false,
+          "index": 35,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": 0.983954668045044,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 27,
+          "state_hash": "0xbfcc399dbc1319bb",
+          "turn_counter": 53,
+          "value_delta": -0.006673574447631836
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.9912258386611938,
+          "duchy_legal": false,
+          "index": 36,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.9922547936439514,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 28,
+          "state_hash": "0xcbcccc26e733fda3",
+          "turn_counter": 54,
+          "value_delta": -0.0010289549827575684
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.9911866188049316,
+          "duchy_legal": false,
+          "index": 37,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": 0.9866377711296082,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 28,
+          "state_hash": "0x60f0e4516d6ce221",
+          "turn_counter": 55,
+          "value_delta": -0.004548847675323486
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.9921599626541138,
+          "duchy_legal": false,
+          "index": 38,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.9929323792457581,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 29,
+          "state_hash": "0xb84677b1e8cfd0a6",
+          "turn_counter": 56,
+          "value_delta": -0.0007724165916442871
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.9821588397026062,
+          "duchy_legal": false,
+          "index": 39,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": 0.9605995416641235,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 29,
+          "state_hash": "0x68962bf4155e62ee",
+          "turn_counter": 57,
+          "value_delta": -0.021559298038482666
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.9950602054595947,
+          "duchy_legal": false,
+          "index": 40,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.9955304265022278,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 30,
+          "state_hash": "0xe714f271bc0b3369",
+          "turn_counter": 58,
+          "value_delta": -0.00047022104263305664
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.334339439868927,
+          "base_value": 0.9883188605308533,
+          "duchy_legal": true,
+          "index": 41,
+          "injected_p_buy_duchy": 0.33388686180114746,
+          "injected_value": 0.9764713644981384,
+          "p_buy_duchy_delta": -0.000452578067779541,
+          "player_turn": 30,
+          "state_hash": "0xe5858e7c1b1fe380",
+          "turn_counter": 59,
+          "value_delta": -0.011847496032714844
+        }
+      ]
+    },
+    "checkpoint": "/Users/paisho/Projects/Mastermind/bench/value_target_sweep/fit2_a0.6_s1.pt"
+  },
+  {
+    "alpha": 0.6,
+    "seed": 2,
+    "value_probe": {
+      "acceptance": {
+        "checked": false
+      },
+      "checkpoint": "/Users/paisho/Projects/Mastermind/bench/value_target_sweep/fit2_a0.6_s2.pt",
+      "means": {
+        "engine": 0.603066871208804,
+        "junk": -0.9746915740626199,
+        "money": -0.7500241180615765
+      },
+      "obs_version": 3,
+      "probe": "value_probe",
+      "protocol": {
+        "kingdom": [
+          "Village",
+          "Smithy",
+          "Laboratory",
+          "Market",
+          "Chapel",
+          "Festival",
+          "Council Room",
+          "Moat",
+          "Militia",
+          "Witch"
+        ],
+        "minimum_turn_counter": 10,
+        "mode": "raw value head; encoded deck+discard counterfactual only",
+        "state_seeds": [
+          5000,
+          5001,
+          5002,
+          5003,
+          5004,
+          5005,
+          5006,
+          5007,
+          5008,
+          5009,
+          5010,
+          5011,
+          5012,
+          5013
+        ],
+        "states": 14,
+        "variants": {
+          "engine": {
+            "Chapel": 1,
+            "Copper": 3,
+            "Estate": 3,
+            "Laboratory": 2,
+            "Market": 1,
+            "Silver": 2,
+            "Smithy": 2,
+            "Village": 2
+          },
+          "junk": {
+            "Copper": 9,
+            "Curse": 4,
+            "Estate": 3,
+            "Silver": 1
+          },
+          "money": {
+            "Copper": 7,
+            "Estate": 3,
+            "Gold": 2,
+            "Silver": 3
+          }
+        }
+      },
+      "seed": 659918,
+      "states": [
+        {
+          "acting_seat": 0,
+          "index": 0,
+          "seed": 5000,
+          "state_hash": "0xa391d8aa0d8de0aa",
+          "turn_counter": 10,
+          "values": {
+            "engine": -0.1055089682340622,
+            "junk": -0.9830606579780579,
+            "money": -0.9526261687278748
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 1,
+          "seed": 5001,
+          "state_hash": "0xbff35d94b15a49d5",
+          "turn_counter": 10,
+          "values": {
+            "engine": 0.9080353379249573,
+            "junk": -0.9555432796478271,
+            "money": 0.06776369363069534
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 2,
+          "seed": 5002,
+          "state_hash": "0x068c6af217925938",
+          "turn_counter": 10,
+          "values": {
+            "engine": 0.8465781807899475,
+            "junk": -0.9698024988174438,
+            "money": -0.7963775396347046
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 3,
+          "seed": 5003,
+          "state_hash": "0xcb287ad78009a073",
+          "turn_counter": 10,
+          "values": {
+            "engine": 0.5899497866630554,
+            "junk": -0.9771593809127808,
+            "money": -0.8064213991165161
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 4,
+          "seed": 5004,
+          "state_hash": "0x35b5abaaefdb7765",
+          "turn_counter": 10,
+          "values": {
+            "engine": 0.5080044269561768,
+            "junk": -0.9805191159248352,
+            "money": -0.8785551190376282
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 5,
+          "seed": 5005,
+          "state_hash": "0x5a7418f66def68f2",
+          "turn_counter": 10,
+          "values": {
+            "engine": 0.6668087840080261,
+            "junk": -0.9737147092819214,
+            "money": -0.652513325214386
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 6,
+          "seed": 5006,
+          "state_hash": "0x65752cba00b61555",
+          "turn_counter": 10,
+          "values": {
+            "engine": 0.30017244815826416,
+            "junk": -0.9826862215995789,
+            "money": -0.9564192891120911
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 7,
+          "seed": 5007,
+          "state_hash": "0xb8e9fd1e93bd4a45",
+          "turn_counter": 10,
+          "values": {
+            "engine": 0.8671581745147705,
+            "junk": -0.9641202688217163,
+            "money": -0.6565814018249512
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 8,
+          "seed": 5008,
+          "state_hash": "0x09bddde4694c14ff",
+          "turn_counter": 10,
+          "values": {
+            "engine": 0.5060945749282837,
+            "junk": -0.9773476719856262,
+            "money": -0.9271843433380127
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 9,
+          "seed": 5009,
+          "state_hash": "0x4fd8fbc8c1a41965",
+          "turn_counter": 10,
+          "values": {
+            "engine": 0.4700435400009155,
+            "junk": -0.9809994101524353,
+            "money": -0.8789408206939697
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 10,
+          "seed": 5010,
+          "state_hash": "0xc1caf67a78c6760e",
+          "turn_counter": 10,
+          "values": {
+            "engine": 0.7815622091293335,
+            "junk": -0.9734057784080505,
+            "money": -0.931890070438385
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 11,
+          "seed": 5011,
+          "state_hash": "0xdae6c72f7ccabac5",
+          "turn_counter": 10,
+          "values": {
+            "engine": 0.9012755155563354,
+            "junk": -0.9721224308013916,
+            "money": -0.45264291763305664
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 12,
+          "seed": 5012,
+          "state_hash": "0x4bb6482800b87579",
+          "turn_counter": 10,
+          "values": {
+            "engine": 0.6268975138664246,
+            "junk": -0.9765110015869141,
+            "money": -0.7992406487464905
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 13,
+          "seed": 5013,
+          "state_hash": "0x60de78624c61957d",
+          "turn_counter": 10,
+          "values": {
+            "engine": 0.5758646726608276,
+            "junk": -0.9786896109580994,
+            "money": -0.8787083029747009
+          }
+        }
+      ]
+    },
+    "duchy_probe": {
+      "checkpoint": "/Users/paisho/Projects/Mastermind/bench/value_target_sweep/fit2_a0.6_s2.pt",
+      "means": {
+        "p_buy_duchy_delta": 0.010617237346845545,
+        "p_buy_duchy_delta_points": 1.0617237346845545,
+        "value_delta": -0.24977769347883405
+      },
+      "obs_version": 3,
+      "probe": "duchy_probe",
+      "protocol": {
+        "counterfactual": "opponent collection Duchy count +2 (+6 VP)",
+        "minimum_player_turn": 10,
+        "mode": "raw policy/value heads only",
+        "states": 42
+      },
+      "reference": null,
+      "seed": 53444,
+      "states": [
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.9804995059967041,
+          "duchy_legal": false,
+          "index": 0,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": 0.9746308922767639,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 10,
+          "state_hash": "0xd7c3a870c6e9767b",
+          "turn_counter": 18,
+          "value_delta": -0.0058686137199401855
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.0583854578435421,
+          "base_value": -0.9699315428733826,
+          "duchy_legal": true,
+          "index": 1,
+          "injected_p_buy_duchy": 0.0810556560754776,
+          "injected_value": -0.9731820821762085,
+          "p_buy_duchy_delta": 0.0226701982319355,
+          "player_turn": 10,
+          "state_hash": "0x47d9965e54e97c20",
+          "turn_counter": 19,
+          "value_delta": -0.0032505393028259277
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0688493549823761,
+          "base_value": 0.9810065031051636,
+          "duchy_legal": true,
+          "index": 2,
+          "injected_p_buy_duchy": 0.06062663719058037,
+          "injected_value": 0.9539047479629517,
+          "p_buy_duchy_delta": -0.00822271779179573,
+          "player_turn": 11,
+          "state_hash": "0x6bdbf175648580da",
+          "turn_counter": 20,
+          "value_delta": -0.027101755142211914
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.9475547075271606,
+          "duchy_legal": false,
+          "index": 3,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.969124436378479,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 11,
+          "state_hash": "0x7de061684488dc30",
+          "turn_counter": 21,
+          "value_delta": -0.02156972885131836
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.9702011346817017,
+          "duchy_legal": false,
+          "index": 4,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": 0.75981205701828,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 12,
+          "state_hash": "0x9e352f2810b51c26",
+          "turn_counter": 22,
+          "value_delta": -0.21038907766342163
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.05687684565782547,
+          "base_value": -0.9657169580459595,
+          "duchy_legal": true,
+          "index": 5,
+          "injected_p_buy_duchy": 0.11361740529537201,
+          "injected_value": -0.9691651463508606,
+          "p_buy_duchy_delta": 0.05674055963754654,
+          "player_turn": 12,
+          "state_hash": "0x4ecab2c7d36607f7",
+          "turn_counter": 23,
+          "value_delta": -0.003448188304901123
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.9713735580444336,
+          "duchy_legal": false,
+          "index": 6,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": 0.9452325701713562,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 13,
+          "state_hash": "0x56c64bea92e7a986",
+          "turn_counter": 24,
+          "value_delta": -0.026140987873077393
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.03202566131949425,
+          "base_value": -0.9618167877197266,
+          "duchy_legal": true,
+          "index": 7,
+          "injected_p_buy_duchy": 0.014648398384451866,
+          "injected_value": -0.9685052633285522,
+          "p_buy_duchy_delta": -0.01737726293504238,
+          "player_turn": 13,
+          "state_hash": "0x263f8c2ee149ffb1",
+          "turn_counter": 25,
+          "value_delta": -0.006688475608825684
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.19579677283763885,
+          "base_value": 0.8950490951538086,
+          "duchy_legal": true,
+          "index": 8,
+          "injected_p_buy_duchy": 0.25975415110588074,
+          "injected_value": 0.1136573925614357,
+          "p_buy_duchy_delta": 0.06395737826824188,
+          "player_turn": 14,
+          "state_hash": "0xcfc81050e12aaa56",
+          "turn_counter": 26,
+          "value_delta": -0.7813917025923729
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.002675213385373354,
+          "base_value": -0.8809082508087158,
+          "duchy_legal": true,
+          "index": 9,
+          "injected_p_buy_duchy": 0.0022397846914827824,
+          "injected_value": -0.9277589321136475,
+          "p_buy_duchy_delta": -0.0004354286938905716,
+          "player_turn": 14,
+          "state_hash": "0x784cc8a6b23a3ff4",
+          "turn_counter": 27,
+          "value_delta": -0.04685068130493164
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.9700034856796265,
+          "duchy_legal": false,
+          "index": 10,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.9894605875015259,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 15,
+          "state_hash": "0x1cf9d3c8c4fc3e83",
+          "turn_counter": 28,
+          "value_delta": -0.019457101821899414
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.0013349467189982533,
+          "base_value": 0.5555235743522644,
+          "duchy_legal": true,
+          "index": 11,
+          "injected_p_buy_duchy": 0.0013683775905519724,
+          "injected_value": -0.31093043088912964,
+          "p_buy_duchy_delta": 3.3430871553719044e-05,
+          "player_turn": 15,
+          "state_hash": "0xede6833fb5e2f253",
+          "turn_counter": 29,
+          "value_delta": -0.866454005241394
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.08231149613857269,
+          "base_value": -0.9920501708984375,
+          "duchy_legal": true,
+          "index": 12,
+          "injected_p_buy_duchy": 0.1350608766078949,
+          "injected_value": -0.9963583946228027,
+          "p_buy_duchy_delta": 0.052749380469322205,
+          "player_turn": 16,
+          "state_hash": "0x6761b6078bf62323",
+          "turn_counter": 30,
+          "value_delta": -0.004308223724365234
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.002650266280397773,
+          "base_value": -0.751471757888794,
+          "duchy_legal": true,
+          "index": 13,
+          "injected_p_buy_duchy": 0.004307162947952747,
+          "injected_value": -0.8890335559844971,
+          "p_buy_duchy_delta": 0.0016568966675549746,
+          "player_turn": 16,
+          "state_hash": "0x89eda04a14140707",
+          "turn_counter": 31,
+          "value_delta": -0.13756179809570312
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.9952175617218018,
+          "duchy_legal": false,
+          "index": 14,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.9974284172058105,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 17,
+          "state_hash": "0x7fe1f47e9167dcea",
+          "turn_counter": 32,
+          "value_delta": -0.002210855484008789
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.9010550379753113,
+          "duchy_legal": false,
+          "index": 15,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": 0.5896492004394531,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 17,
+          "state_hash": "0xc4405247c2e7c455",
+          "turn_counter": 33,
+          "value_delta": -0.31140583753585815
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.9964601397514343,
+          "duchy_legal": false,
+          "index": 16,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.9980050325393677,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 18,
+          "state_hash": "0x560cee72a9cd39f9",
+          "turn_counter": 34,
+          "value_delta": -0.0015448927879333496
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.4717791974544525,
+          "base_value": 0.6555918455123901,
+          "duchy_legal": true,
+          "index": 17,
+          "injected_p_buy_duchy": 0.6492090225219727,
+          "injected_value": -0.3102489709854126,
+          "p_buy_duchy_delta": 0.17742982506752014,
+          "player_turn": 18,
+          "state_hash": "0xec6adb807d23dcc3",
+          "turn_counter": 35,
+          "value_delta": -0.9658408164978027
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.581641674041748,
+          "base_value": -0.9956251382827759,
+          "duchy_legal": true,
+          "index": 18,
+          "injected_p_buy_duchy": 0.5061129927635193,
+          "injected_value": -0.997011661529541,
+          "p_buy_duchy_delta": -0.07552868127822876,
+          "player_turn": 19,
+          "state_hash": "0xe51592dba4eba278",
+          "turn_counter": 36,
+          "value_delta": -0.0013865232467651367
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.5877863764762878,
+          "duchy_legal": false,
+          "index": 19,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.10291656106710434,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 19,
+          "state_hash": "0x96acf74d249fb3b3",
+          "turn_counter": 37,
+          "value_delta": -0.6907029375433922
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.7495468854904175,
+          "base_value": -0.9951873421669006,
+          "duchy_legal": true,
+          "index": 20,
+          "injected_p_buy_duchy": 0.6537565588951111,
+          "injected_value": -0.9968559741973877,
+          "p_buy_duchy_delta": -0.0957903265953064,
+          "player_turn": 20,
+          "state_hash": "0x3603bc0769d29723",
+          "turn_counter": 38,
+          "value_delta": -0.0016686320304870605
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.6950957179069519,
+          "base_value": 0.5393057465553284,
+          "duchy_legal": true,
+          "index": 21,
+          "injected_p_buy_duchy": 0.779483437538147,
+          "injected_value": -0.22803319990634918,
+          "p_buy_duchy_delta": 0.08438771963119507,
+          "player_turn": 20,
+          "state_hash": "0x110e8f7947daf907",
+          "turn_counter": 39,
+          "value_delta": -0.7673389464616776
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.9964232444763184,
+          "duchy_legal": false,
+          "index": 22,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.9973961114883423,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 21,
+          "state_hash": "0xa96a11dd3fda371e",
+          "turn_counter": 40,
+          "value_delta": -0.0009728670120239258
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.9097838401794434,
+          "duchy_legal": false,
+          "index": 23,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": 0.7245980501174927,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 21,
+          "state_hash": "0x3eb00eaec9e70a18",
+          "turn_counter": 41,
+          "value_delta": -0.18518579006195068
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.9960658550262451,
+          "duchy_legal": false,
+          "index": 24,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.997255802154541,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 22,
+          "state_hash": "0x9d568ee34665a2ac",
+          "turn_counter": 42,
+          "value_delta": -0.0011899471282958984
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.49031829833984375,
+          "duchy_legal": false,
+          "index": 25,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.11846261471509933,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 22,
+          "state_hash": "0x52d4961ac60369e9",
+          "turn_counter": 43,
+          "value_delta": -0.6087809130549431
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.9934256076812744,
+          "duchy_legal": false,
+          "index": 26,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.9963204860687256,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 23,
+          "state_hash": "0x002593c58de89b9b",
+          "turn_counter": 44,
+          "value_delta": -0.002894878387451172
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.776237964630127,
+          "base_value": -0.3298645317554474,
+          "duchy_legal": true,
+          "index": 27,
+          "injected_p_buy_duchy": 0.8058046698570251,
+          "injected_value": -0.7092971205711365,
+          "p_buy_duchy_delta": 0.029566705226898193,
+          "player_turn": 23,
+          "state_hash": "0x4a2b4dd910d1f8a7",
+          "turn_counter": 45,
+          "value_delta": -0.3794325888156891
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.997918426990509,
+          "duchy_legal": false,
+          "index": 28,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.9983683824539185,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 24,
+          "state_hash": "0xcc8587daf112b3df",
+          "turn_counter": 46,
+          "value_delta": -0.00044995546340942383
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.5637415647506714,
+          "duchy_legal": false,
+          "index": 29,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.17289511859416962,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 24,
+          "state_hash": "0x6edf82bc538baaaa",
+          "turn_counter": 47,
+          "value_delta": -0.736636683344841
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.9958220720291138,
+          "duchy_legal": false,
+          "index": 30,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.997188150882721,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 25,
+          "state_hash": "0x3a14fe49d011656a",
+          "turn_counter": 48,
+          "value_delta": -0.0013660788536071777
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.770814836025238,
+          "duchy_legal": false,
+          "index": 31,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": 0.2775713801383972,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 25,
+          "state_hash": "0xb9c4990d6c1b3f3c",
+          "turn_counter": 49,
+          "value_delta": -0.4932434558868408
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.9955669641494751,
+          "duchy_legal": false,
+          "index": 32,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.9969096779823303,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 26,
+          "state_hash": "0x581bbeaaa9434b17",
+          "turn_counter": 50,
+          "value_delta": -0.0013427138328552246
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.7688512802124023,
+          "duchy_legal": false,
+          "index": 33,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.8802228569984436,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 26,
+          "state_hash": "0x81e1d06c05195ab9",
+          "turn_counter": 51,
+          "value_delta": -0.11137157678604126
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.996724545955658,
+          "duchy_legal": false,
+          "index": 34,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.9975447654724121,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 27,
+          "state_hash": "0x057be6c030983b97",
+          "turn_counter": 52,
+          "value_delta": -0.0008202195167541504
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.06537764519453049,
+          "duchy_legal": false,
+          "index": 35,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.5202735662460327,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 27,
+          "state_hash": "0xbfcc399dbc1319bb",
+          "turn_counter": 53,
+          "value_delta": -0.5856512114405632
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.9951683282852173,
+          "duchy_legal": false,
+          "index": 36,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.99673992395401,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 28,
+          "state_hash": "0xcbcccc26e733fda3",
+          "turn_counter": 54,
+          "value_delta": -0.0015715956687927246
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.7790184020996094,
+          "duchy_legal": false,
+          "index": 37,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": 0.15882574021816254,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 28,
+          "state_hash": "0x60f0e4516d6ce221",
+          "turn_counter": 55,
+          "value_delta": -0.6201926618814468
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.9924736022949219,
+          "duchy_legal": false,
+          "index": 38,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.9962032437324524,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 29,
+          "state_hash": "0xb84677b1e8cfd0a6",
+          "turn_counter": 56,
+          "value_delta": -0.0037296414375305176
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.6139163374900818,
+          "duchy_legal": false,
+          "index": 39,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.29320859909057617,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 29,
+          "state_hash": "0x68962bf4155e62ee",
+          "turn_counter": 57,
+          "value_delta": -0.907124936580658
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.9961579442024231,
+          "duchy_legal": false,
+          "index": 40,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.997083842754364,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 30,
+          "state_hash": "0xe714f271bc0b3369",
+          "turn_counter": 58,
+          "value_delta": -0.000925898551940918
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.6187708377838135,
+          "base_value": 0.28392934799194336,
+          "duchy_legal": true,
+          "index": 41,
+          "injected_p_buy_duchy": 0.772857129573822,
+          "injected_value": -0.6612698435783386,
+          "p_buy_duchy_delta": 0.15408629179000854,
+          "player_turn": 30,
+          "state_hash": "0xe5858e7c1b1fe380",
+          "turn_counter": 59,
+          "value_delta": -0.945199191570282
+        }
+      ]
+    },
+    "checkpoint": "/Users/paisho/Projects/Mastermind/bench/value_target_sweep/fit2_a0.6_s2.pt"
+  },
+  {
+    "alpha": 0.6,
+    "seed": 3,
+    "value_probe": {
+      "acceptance": {
+        "checked": false
+      },
+      "checkpoint": "/Users/paisho/Projects/Mastermind/bench/value_target_sweep/fit2_a0.6_s3.pt",
+      "means": {
+        "engine": 0.9779652484825679,
+        "junk": 0.5998450943401882,
+        "money": 0.9908611689295087
+      },
+      "obs_version": 3,
+      "probe": "value_probe",
+      "protocol": {
+        "kingdom": [
+          "Village",
+          "Smithy",
+          "Laboratory",
+          "Market",
+          "Chapel",
+          "Festival",
+          "Council Room",
+          "Moat",
+          "Militia",
+          "Witch"
+        ],
+        "minimum_turn_counter": 10,
+        "mode": "raw value head; encoded deck+discard counterfactual only",
+        "state_seeds": [
+          5000,
+          5001,
+          5002,
+          5003,
+          5004,
+          5005,
+          5006,
+          5007,
+          5008,
+          5009,
+          5010,
+          5011,
+          5012,
+          5013
+        ],
+        "states": 14,
+        "variants": {
+          "engine": {
+            "Chapel": 1,
+            "Copper": 3,
+            "Estate": 3,
+            "Laboratory": 2,
+            "Market": 1,
+            "Silver": 2,
+            "Smithy": 2,
+            "Village": 2
+          },
+          "junk": {
+            "Copper": 9,
+            "Curse": 4,
+            "Estate": 3,
+            "Silver": 1
+          },
+          "money": {
+            "Copper": 7,
+            "Estate": 3,
+            "Gold": 2,
+            "Silver": 3
+          }
+        }
+      },
+      "seed": 659918,
+      "states": [
+        {
+          "acting_seat": 0,
+          "index": 0,
+          "seed": 5000,
+          "state_hash": "0xa391d8aa0d8de0aa",
+          "turn_counter": 10,
+          "values": {
+            "engine": 0.9703179597854614,
+            "junk": 0.2786144018173218,
+            "money": 0.9879688620567322
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 1,
+          "seed": 5001,
+          "state_hash": "0xbff35d94b15a49d5",
+          "turn_counter": 10,
+          "values": {
+            "engine": 0.9898629784584045,
+            "junk": 0.8741522431373596,
+            "money": 0.9928650856018066
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 2,
+          "seed": 5002,
+          "state_hash": "0x068c6af217925938",
+          "turn_counter": 10,
+          "values": {
+            "engine": 0.9878649711608887,
+            "junk": 0.8402464389801025,
+            "money": 0.99196857213974
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 3,
+          "seed": 5003,
+          "state_hash": "0xcb287ad78009a073",
+          "turn_counter": 10,
+          "values": {
+            "engine": 0.9837539196014404,
+            "junk": 0.7885447144508362,
+            "money": 0.9917336702346802
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 4,
+          "seed": 5004,
+          "state_hash": "0x35b5abaaefdb7765",
+          "turn_counter": 10,
+          "values": {
+            "engine": 0.9821282029151917,
+            "junk": 0.6177523732185364,
+            "money": 0.9908361434936523
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 5,
+          "seed": 5005,
+          "state_hash": "0x5a7418f66def68f2",
+          "turn_counter": 10,
+          "values": {
+            "engine": 0.9864493012428284,
+            "junk": 0.9194698929786682,
+            "money": 0.9929178953170776
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 6,
+          "seed": 5006,
+          "state_hash": "0x65752cba00b61555",
+          "turn_counter": 10,
+          "values": {
+            "engine": 0.8934413194656372,
+            "junk": -0.7395365834236145,
+            "money": 0.9837461709976196
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 7,
+          "seed": 5007,
+          "state_hash": "0xb8e9fd1e93bd4a45",
+          "turn_counter": 10,
+          "values": {
+            "engine": 0.9888768792152405,
+            "junk": 0.8673972487449646,
+            "money": 0.9925878643989563
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 8,
+          "seed": 5008,
+          "state_hash": "0x09bddde4694c14ff",
+          "turn_counter": 10,
+          "values": {
+            "engine": 0.9827959537506104,
+            "junk": 0.7352988123893738,
+            "money": 0.9911692142486572
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 9,
+          "seed": 5009,
+          "state_hash": "0x4fd8fbc8c1a41965",
+          "turn_counter": 10,
+          "values": {
+            "engine": 0.9801591038703918,
+            "junk": 0.5062764286994934,
+            "money": 0.9904202222824097
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 10,
+          "seed": 5010,
+          "state_hash": "0xc1caf67a78c6760e",
+          "turn_counter": 10,
+          "values": {
+            "engine": 0.9866506457328796,
+            "junk": 0.5113160610198975,
+            "money": 0.9911375641822815
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 11,
+          "seed": 5011,
+          "state_hash": "0xdae6c72f7ccabac5",
+          "turn_counter": 10,
+          "values": {
+            "engine": 0.9930766224861145,
+            "junk": 0.6120318174362183,
+            "money": 0.9922187328338623
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 12,
+          "seed": 5012,
+          "state_hash": "0x4bb6482800b87579",
+          "turn_counter": 10,
+          "values": {
+            "engine": 0.9839783906936646,
+            "junk": 0.8082453012466431,
+            "money": 0.9916374087333679
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 13,
+          "seed": 5013,
+          "state_hash": "0x60de78624c61957d",
+          "turn_counter": 10,
+          "values": {
+            "engine": 0.9821572303771973,
+            "junk": 0.7780221700668335,
+            "money": 0.990848958492279
+          }
+        }
+      ]
+    },
+    "duchy_probe": {
+      "checkpoint": "/Users/paisho/Projects/Mastermind/bench/value_target_sweep/fit2_a0.6_s3.pt",
+      "means": {
+        "p_buy_duchy_delta": 0.007764679601504689,
+        "p_buy_duchy_delta_points": 0.7764679601504689,
+        "value_delta": -0.054414674994491395
+      },
+      "obs_version": 3,
+      "probe": "duchy_probe",
+      "protocol": {
+        "counterfactual": "opponent collection Duchy count +2 (+6 VP)",
+        "minimum_player_turn": 10,
+        "mode": "raw policy/value heads only",
+        "states": 42
+      },
+      "reference": null,
+      "seed": 53444,
+      "states": [
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.8678786754608154,
+          "duchy_legal": false,
+          "index": 0,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": 0.832210123538971,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 10,
+          "state_hash": "0xd7c3a870c6e9767b",
+          "turn_counter": 18,
+          "value_delta": -0.03566855192184448
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.029734568670392036,
+          "base_value": -0.8816162943840027,
+          "duchy_legal": true,
+          "index": 1,
+          "injected_p_buy_duchy": 0.048132896423339844,
+          "injected_value": -0.8850823640823364,
+          "p_buy_duchy_delta": 0.018398327752947807,
+          "player_turn": 10,
+          "state_hash": "0x47d9965e54e97c20",
+          "turn_counter": 19,
+          "value_delta": -0.0034660696983337402
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.04030591621994972,
+          "base_value": 0.8973948955535889,
+          "duchy_legal": true,
+          "index": 2,
+          "injected_p_buy_duchy": 0.04663403332233429,
+          "injected_value": 0.8611270189285278,
+          "p_buy_duchy_delta": 0.006328117102384567,
+          "player_turn": 11,
+          "state_hash": "0x6bdbf175648580da",
+          "turn_counter": 20,
+          "value_delta": -0.036267876625061035
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.4304197132587433,
+          "duchy_legal": false,
+          "index": 3,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.372349351644516,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 11,
+          "state_hash": "0x7de061684488dc30",
+          "turn_counter": 21,
+          "value_delta": 0.058070361614227295
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.7238089442253113,
+          "duchy_legal": false,
+          "index": 4,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": 0.5533133149147034,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 12,
+          "state_hash": "0x9e352f2810b51c26",
+          "turn_counter": 22,
+          "value_delta": -0.1704956293106079
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.030814988538622856,
+          "base_value": 0.5083832740783691,
+          "duchy_legal": true,
+          "index": 5,
+          "injected_p_buy_duchy": 0.06311909854412079,
+          "injected_value": 0.4706689417362213,
+          "p_buy_duchy_delta": 0.03230411000549793,
+          "player_turn": 12,
+          "state_hash": "0x4ecab2c7d36607f7",
+          "turn_counter": 23,
+          "value_delta": -0.03771433234214783
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.07504887133836746,
+          "duchy_legal": false,
+          "index": 6,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.3157477080821991,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 13,
+          "state_hash": "0x56c64bea92e7a986",
+          "turn_counter": 24,
+          "value_delta": -0.39079657942056656
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.016272153705358505,
+          "base_value": 0.07961847633123398,
+          "duchy_legal": true,
+          "index": 7,
+          "injected_p_buy_duchy": 0.02408226765692234,
+          "injected_value": 0.1810535341501236,
+          "p_buy_duchy_delta": 0.007810113951563835,
+          "player_turn": 13,
+          "state_hash": "0x263f8c2ee149ffb1",
+          "turn_counter": 25,
+          "value_delta": 0.10143505781888962
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.11651533097028732,
+          "base_value": 0.660263180732727,
+          "duchy_legal": true,
+          "index": 8,
+          "injected_p_buy_duchy": 0.23214583098888397,
+          "injected_value": 0.2853552997112274,
+          "p_buy_duchy_delta": 0.11563050001859665,
+          "player_turn": 14,
+          "state_hash": "0xcfc81050e12aaa56",
+          "turn_counter": 26,
+          "value_delta": -0.37490788102149963
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.018770698457956314,
+          "base_value": 0.3103095591068268,
+          "duchy_legal": true,
+          "index": 9,
+          "injected_p_buy_duchy": 0.030067386105656624,
+          "injected_value": 0.3712203800678253,
+          "p_buy_duchy_delta": 0.01129668764770031,
+          "player_turn": 14,
+          "state_hash": "0x784cc8a6b23a3ff4",
+          "turn_counter": 27,
+          "value_delta": 0.060910820960998535
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.6234599351882935,
+          "duchy_legal": false,
+          "index": 10,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.9172599911689758,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 15,
+          "state_hash": "0x1cf9d3c8c4fc3e83",
+          "turn_counter": 28,
+          "value_delta": -0.2938000559806824
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.0202382430434227,
+          "base_value": 0.7189704775810242,
+          "duchy_legal": true,
+          "index": 11,
+          "injected_p_buy_duchy": 0.03815905377268791,
+          "injected_value": 0.7298022508621216,
+          "p_buy_duchy_delta": 0.017920810729265213,
+          "player_turn": 15,
+          "state_hash": "0xede6833fb5e2f253",
+          "turn_counter": 29,
+          "value_delta": 0.010831773281097412
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.042445071041584015,
+          "base_value": -0.9505961537361145,
+          "duchy_legal": true,
+          "index": 12,
+          "injected_p_buy_duchy": 0.0772707387804985,
+          "injected_value": -0.9914594292640686,
+          "p_buy_duchy_delta": 0.03482566773891449,
+          "player_turn": 16,
+          "state_hash": "0x6761b6078bf62323",
+          "turn_counter": 30,
+          "value_delta": -0.0408632755279541
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.059826262295246124,
+          "base_value": 0.689109206199646,
+          "duchy_legal": true,
+          "index": 13,
+          "injected_p_buy_duchy": 0.07760444283485413,
+          "injected_value": 0.720899224281311,
+          "p_buy_duchy_delta": 0.017778180539608,
+          "player_turn": 16,
+          "state_hash": "0x89eda04a14140707",
+          "turn_counter": 31,
+          "value_delta": 0.03179001808166504
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.9427265524864197,
+          "duchy_legal": false,
+          "index": 14,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.9902196526527405,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 17,
+          "state_hash": "0x7fe1f47e9167dcea",
+          "turn_counter": 32,
+          "value_delta": -0.0474931001663208
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.7975491881370544,
+          "duchy_legal": false,
+          "index": 15,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": 0.7982516288757324,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 17,
+          "state_hash": "0xc4405247c2e7c455",
+          "turn_counter": 33,
+          "value_delta": 0.0007024407386779785
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.9858192801475525,
+          "duchy_legal": false,
+          "index": 16,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.993208110332489,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 18,
+          "state_hash": "0x560cee72a9cd39f9",
+          "turn_counter": 34,
+          "value_delta": -0.0073888301849365234
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.5616592168807983,
+          "base_value": 0.8425586819648743,
+          "duchy_legal": true,
+          "index": 17,
+          "injected_p_buy_duchy": 0.5851333141326904,
+          "injected_value": 0.8035783767700195,
+          "p_buy_duchy_delta": 0.02347409725189209,
+          "player_turn": 18,
+          "state_hash": "0xec6adb807d23dcc3",
+          "turn_counter": 35,
+          "value_delta": -0.038980305194854736
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.46566423773765564,
+          "base_value": -0.9747956991195679,
+          "duchy_legal": true,
+          "index": 18,
+          "injected_p_buy_duchy": 0.43068215250968933,
+          "injected_value": -0.9927341938018799,
+          "p_buy_duchy_delta": -0.03498208522796631,
+          "player_turn": 19,
+          "state_hash": "0xe51592dba4eba278",
+          "turn_counter": 36,
+          "value_delta": -0.01793849468231201
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.8910477757453918,
+          "duchy_legal": false,
+          "index": 19,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": 0.8753379583358765,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 19,
+          "state_hash": "0x96acf74d249fb3b3",
+          "turn_counter": 37,
+          "value_delta": -0.01570981740951538
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.6634190678596497,
+          "base_value": -0.8766001462936401,
+          "duchy_legal": true,
+          "index": 20,
+          "injected_p_buy_duchy": 0.607500433921814,
+          "injected_value": -0.9889300465583801,
+          "p_buy_duchy_delta": -0.05591863393783569,
+          "player_turn": 20,
+          "state_hash": "0x3603bc0769d29723",
+          "turn_counter": 38,
+          "value_delta": -0.11232990026473999
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.35983777046203613,
+          "base_value": 0.6983330845832825,
+          "duchy_legal": true,
+          "index": 21,
+          "injected_p_buy_duchy": 0.36719897389411926,
+          "injected_value": 0.5412629842758179,
+          "p_buy_duchy_delta": 0.00736120343208313,
+          "player_turn": 20,
+          "state_hash": "0x110e8f7947daf907",
+          "turn_counter": 39,
+          "value_delta": -0.1570701003074646
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.9796819090843201,
+          "duchy_legal": false,
+          "index": 22,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.9898080825805664,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 21,
+          "state_hash": "0xa96a11dd3fda371e",
+          "turn_counter": 40,
+          "value_delta": -0.010126173496246338
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.904712975025177,
+          "duchy_legal": false,
+          "index": 23,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": 0.8549037575721741,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 21,
+          "state_hash": "0x3eb00eaec9e70a18",
+          "turn_counter": 41,
+          "value_delta": -0.04980921745300293
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.9663081765174866,
+          "duchy_legal": false,
+          "index": 24,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.9868901371955872,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 22,
+          "state_hash": "0x9d568ee34665a2ac",
+          "turn_counter": 42,
+          "value_delta": -0.020581960678100586
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.8799418807029724,
+          "duchy_legal": false,
+          "index": 25,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": 0.8409416675567627,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 22,
+          "state_hash": "0x52d4961ac60369e9",
+          "turn_counter": 43,
+          "value_delta": -0.03900021314620972
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.9784849286079407,
+          "duchy_legal": false,
+          "index": 26,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.988498866558075,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 23,
+          "state_hash": "0x002593c58de89b9b",
+          "turn_counter": 44,
+          "value_delta": -0.010013937950134277
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.7859696745872498,
+          "base_value": 0.7560248970985413,
+          "duchy_legal": true,
+          "index": 27,
+          "injected_p_buy_duchy": 0.7918856739997864,
+          "injected_value": 0.678223729133606,
+          "p_buy_duchy_delta": 0.005915999412536621,
+          "player_turn": 23,
+          "state_hash": "0x4a2b4dd910d1f8a7",
+          "turn_counter": 45,
+          "value_delta": -0.0778011679649353
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.9885721206665039,
+          "duchy_legal": false,
+          "index": 28,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.9919044971466064,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 24,
+          "state_hash": "0xcc8587daf112b3df",
+          "turn_counter": 46,
+          "value_delta": -0.003332376480102539
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.9101808667182922,
+          "duchy_legal": false,
+          "index": 29,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": 0.8802534341812134,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 24,
+          "state_hash": "0x6edf82bc538baaaa",
+          "turn_counter": 47,
+          "value_delta": -0.029927432537078857
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.977317750453949,
+          "duchy_legal": false,
+          "index": 30,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.9834970235824585,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 25,
+          "state_hash": "0x3a14fe49d011656a",
+          "turn_counter": 48,
+          "value_delta": -0.0061792731285095215
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.8623567223548889,
+          "duchy_legal": false,
+          "index": 31,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": 0.8030707836151123,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 25,
+          "state_hash": "0xb9c4990d6c1b3f3c",
+          "turn_counter": 49,
+          "value_delta": -0.05928593873977661
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.9843737483024597,
+          "duchy_legal": false,
+          "index": 32,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.9907198548316956,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 26,
+          "state_hash": "0x581bbeaaa9434b17",
+          "turn_counter": 50,
+          "value_delta": -0.00634610652923584
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.8353793621063232,
+          "duchy_legal": false,
+          "index": 33,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": 0.7703408598899841,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 26,
+          "state_hash": "0x81e1d06c05195ab9",
+          "turn_counter": 51,
+          "value_delta": -0.06503850221633911
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.9818685054779053,
+          "duchy_legal": false,
+          "index": 34,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.9869515299797058,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 27,
+          "state_hash": "0x057be6c030983b97",
+          "turn_counter": 52,
+          "value_delta": -0.005083024501800537
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.8851049542427063,
+          "duchy_legal": false,
+          "index": 35,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": 0.8369638323783875,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 27,
+          "state_hash": "0xbfcc399dbc1319bb",
+          "turn_counter": 53,
+          "value_delta": -0.04814112186431885
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.9795327186584473,
+          "duchy_legal": false,
+          "index": 36,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.984976053237915,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 28,
+          "state_hash": "0xcbcccc26e733fda3",
+          "turn_counter": 54,
+          "value_delta": -0.0054433345794677734
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.8982776999473572,
+          "duchy_legal": false,
+          "index": 37,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": 0.8362137079238892,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 28,
+          "state_hash": "0x60f0e4516d6ce221",
+          "turn_counter": 55,
+          "value_delta": -0.06206399202346802
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.9860256314277649,
+          "duchy_legal": false,
+          "index": 38,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.9915224313735962,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 29,
+          "state_hash": "0xb84677b1e8cfd0a6",
+          "turn_counter": 56,
+          "value_delta": -0.005496799945831299
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.8896100521087646,
+          "duchy_legal": false,
+          "index": 39,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": 0.8310821652412415,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 29,
+          "state_hash": "0x68962bf4155e62ee",
+          "turn_counter": 57,
+          "value_delta": -0.05852788686752319
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.976883590221405,
+          "duchy_legal": false,
+          "index": 40,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.9811167120933533,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 30,
+          "state_hash": "0xe714f271bc0b3369",
+          "turn_counter": 58,
+          "value_delta": -0.004233121871948242
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.7032512426376343,
+          "base_value": 0.790317714214325,
+          "duchy_legal": true,
+          "index": 41,
+          "injected_p_buy_duchy": 0.8212246894836426,
+          "injected_value": 0.5884832739830017,
+          "p_buy_duchy_delta": 0.1179734468460083,
+          "player_turn": 30,
+          "state_hash": "0xe5858e7c1b1fe380",
+          "turn_counter": 59,
+          "value_delta": -0.20183444023132324
+        }
+      ]
+    },
+    "checkpoint": "/Users/paisho/Projects/Mastermind/bench/value_target_sweep/fit2_a0.6_s3.pt"
+  },
+  {
+    "alpha": 0.4,
+    "seed": 1,
+    "value_probe": {
+      "acceptance": {
+        "checked": false
+      },
+      "checkpoint": "/Users/paisho/Projects/Mastermind/bench/value_target_sweep/fit2_a0.4_s1.pt",
+      "means": {
+        "engine": -0.853786860193525,
+        "junk": -0.8707285949162075,
+        "money": -0.7596329663481031
+      },
+      "obs_version": 3,
+      "probe": "value_probe",
+      "protocol": {
+        "kingdom": [
+          "Village",
+          "Smithy",
+          "Laboratory",
+          "Market",
+          "Chapel",
+          "Festival",
+          "Council Room",
+          "Moat",
+          "Militia",
+          "Witch"
+        ],
+        "minimum_turn_counter": 10,
+        "mode": "raw value head; encoded deck+discard counterfactual only",
+        "state_seeds": [
+          5000,
+          5001,
+          5002,
+          5003,
+          5004,
+          5005,
+          5006,
+          5007,
+          5008,
+          5009,
+          5010,
+          5011,
+          5012,
+          5013
+        ],
+        "states": 14,
+        "variants": {
+          "engine": {
+            "Chapel": 1,
+            "Copper": 3,
+            "Estate": 3,
+            "Laboratory": 2,
+            "Market": 1,
+            "Silver": 2,
+            "Smithy": 2,
+            "Village": 2
+          },
+          "junk": {
+            "Copper": 9,
+            "Curse": 4,
+            "Estate": 3,
+            "Silver": 1
+          },
+          "money": {
+            "Copper": 7,
+            "Estate": 3,
+            "Gold": 2,
+            "Silver": 3
+          }
+        }
+      },
+      "seed": 659918,
+      "states": [
+        {
+          "acting_seat": 0,
+          "index": 0,
+          "seed": 5000,
+          "state_hash": "0xa391d8aa0d8de0aa",
+          "turn_counter": 10,
+          "values": {
+            "engine": -0.8680447340011597,
+            "junk": -0.8925881385803223,
+            "money": -0.7371670007705688
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 1,
+          "seed": 5001,
+          "state_hash": "0xbff35d94b15a49d5",
+          "turn_counter": 10,
+          "values": {
+            "engine": -0.8708820343017578,
+            "junk": -0.8754849433898926,
+            "money": -0.7567937970161438
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 2,
+          "seed": 5002,
+          "state_hash": "0x068c6af217925938",
+          "turn_counter": 10,
+          "values": {
+            "engine": -0.8443357348442078,
+            "junk": -0.8636975288391113,
+            "money": -0.7828632593154907
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 3,
+          "seed": 5003,
+          "state_hash": "0xcb287ad78009a073",
+          "turn_counter": 10,
+          "values": {
+            "engine": -0.8512201309204102,
+            "junk": -0.8689071536064148,
+            "money": -0.739138662815094
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 4,
+          "seed": 5004,
+          "state_hash": "0x35b5abaaefdb7765",
+          "turn_counter": 10,
+          "values": {
+            "engine": -0.8602614402770996,
+            "junk": -0.883767306804657,
+            "money": -0.7399659752845764
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 5,
+          "seed": 5005,
+          "state_hash": "0x5a7418f66def68f2",
+          "turn_counter": 10,
+          "values": {
+            "engine": -0.8534186482429504,
+            "junk": -0.8369207382202148,
+            "money": -0.7472102046012878
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 6,
+          "seed": 5006,
+          "state_hash": "0x65752cba00b61555",
+          "turn_counter": 10,
+          "values": {
+            "engine": -0.8652083873748779,
+            "junk": -0.9009313583374023,
+            "money": -0.758999228477478
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 7,
+          "seed": 5007,
+          "state_hash": "0xb8e9fd1e93bd4a45",
+          "turn_counter": 10,
+          "values": {
+            "engine": -0.8387038707733154,
+            "junk": -0.8549468517303467,
+            "money": -0.7695838212966919
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 8,
+          "seed": 5008,
+          "state_hash": "0x09bddde4694c14ff",
+          "turn_counter": 10,
+          "values": {
+            "engine": -0.8487573266029358,
+            "junk": -0.8578400015830994,
+            "money": -0.7405922412872314
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 9,
+          "seed": 5009,
+          "state_hash": "0x4fd8fbc8c1a41965",
+          "turn_counter": 10,
+          "values": {
+            "engine": -0.8581950664520264,
+            "junk": -0.8885260820388794,
+            "money": -0.7437276244163513
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 10,
+          "seed": 5010,
+          "state_hash": "0xc1caf67a78c6760e",
+          "turn_counter": 10,
+          "values": {
+            "engine": -0.8384904861450195,
+            "junk": -0.8634625673294067,
+            "money": -0.7797905802726746
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 11,
+          "seed": 5011,
+          "state_hash": "0xdae6c72f7ccabac5",
+          "turn_counter": 10,
+          "values": {
+            "engine": -0.841601550579071,
+            "junk": -0.8605679869651794,
+            "money": -0.8472129702568054
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 12,
+          "seed": 5012,
+          "state_hash": "0x4bb6482800b87579",
+          "turn_counter": 10,
+          "values": {
+            "engine": -0.8525670170783997,
+            "junk": -0.8690542578697205,
+            "money": -0.7386576533317566
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 13,
+          "seed": 5013,
+          "state_hash": "0x60de78624c61957d",
+          "turn_counter": 10,
+          "values": {
+            "engine": -0.8613296151161194,
+            "junk": -0.8735054135322571,
+            "money": -0.7531585097312927
+          }
+        }
+      ]
+    },
+    "duchy_probe": {
+      "checkpoint": "/Users/paisho/Projects/Mastermind/bench/value_target_sweep/fit2_a0.4_s1.pt",
+      "means": {
+        "p_buy_duchy_delta": 0.014707041869682837,
+        "p_buy_duchy_delta_points": 1.4707041869682838,
+        "value_delta": -0.009691949401582991
+      },
+      "obs_version": 3,
+      "probe": "duchy_probe",
+      "protocol": {
+        "counterfactual": "opponent collection Duchy count +2 (+6 VP)",
+        "minimum_player_turn": 10,
+        "mode": "raw policy/value heads only",
+        "states": 42
+      },
+      "reference": null,
+      "seed": 53444,
+      "states": [
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.699158787727356,
+          "duchy_legal": false,
+          "index": 0,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.7884443998336792,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 10,
+          "state_hash": "0xd7c3a870c6e9767b",
+          "turn_counter": 18,
+          "value_delta": -0.08928561210632324
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.021685386076569557,
+          "base_value": 0.8306270837783813,
+          "duchy_legal": true,
+          "index": 1,
+          "injected_p_buy_duchy": 0.043907321989536285,
+          "injected_value": 0.8290442228317261,
+          "p_buy_duchy_delta": 0.022221935912966728,
+          "player_turn": 10,
+          "state_hash": "0x47d9965e54e97c20",
+          "turn_counter": 19,
+          "value_delta": -0.0015828609466552734
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.01188995037227869,
+          "base_value": -0.818901777267456,
+          "duchy_legal": true,
+          "index": 2,
+          "injected_p_buy_duchy": 0.04256168007850647,
+          "injected_value": -0.8400958180427551,
+          "p_buy_duchy_delta": 0.03067172970622778,
+          "player_turn": 11,
+          "state_hash": "0x6bdbf175648580da",
+          "turn_counter": 20,
+          "value_delta": -0.021194040775299072
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.9433181881904602,
+          "duchy_legal": false,
+          "index": 3,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": 0.9323208332061768,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 11,
+          "state_hash": "0x7de061684488dc30",
+          "turn_counter": 21,
+          "value_delta": -0.010997354984283447
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.8382173180580139,
+          "duchy_legal": false,
+          "index": 4,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.8906272053718567,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 12,
+          "state_hash": "0x9e352f2810b51c26",
+          "turn_counter": 22,
+          "value_delta": -0.05240988731384277
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.0009357312810607255,
+          "base_value": 0.9412952661514282,
+          "duchy_legal": true,
+          "index": 5,
+          "injected_p_buy_duchy": 0.01264483854174614,
+          "injected_value": 0.919995129108429,
+          "p_buy_duchy_delta": 0.011709107260685414,
+          "player_turn": 12,
+          "state_hash": "0x4ecab2c7d36607f7",
+          "turn_counter": 23,
+          "value_delta": -0.021300137042999268
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.7300862073898315,
+          "duchy_legal": false,
+          "index": 6,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.7391762137413025,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 13,
+          "state_hash": "0x56c64bea92e7a986",
+          "turn_counter": 24,
+          "value_delta": -0.009090006351470947
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.010473565198481083,
+          "base_value": 0.9398961067199707,
+          "duchy_legal": true,
+          "index": 7,
+          "injected_p_buy_duchy": 0.025477975606918335,
+          "injected_value": 0.9299130439758301,
+          "p_buy_duchy_delta": 0.015004410408437252,
+          "player_turn": 13,
+          "state_hash": "0x263f8c2ee149ffb1",
+          "turn_counter": 25,
+          "value_delta": -0.009983062744140625
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.03395528718829155,
+          "base_value": -0.7968061566352844,
+          "duchy_legal": true,
+          "index": 8,
+          "injected_p_buy_duchy": 0.408418744802475,
+          "injected_value": -0.8033891916275024,
+          "p_buy_duchy_delta": 0.3744634576141834,
+          "player_turn": 14,
+          "state_hash": "0xcfc81050e12aaa56",
+          "turn_counter": 26,
+          "value_delta": -0.006583034992218018
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.00369948404841125,
+          "base_value": 0.9726163148880005,
+          "duchy_legal": true,
+          "index": 9,
+          "injected_p_buy_duchy": 0.013195078819990158,
+          "injected_value": 0.9614351987838745,
+          "p_buy_duchy_delta": 0.009495594771578908,
+          "player_turn": 14,
+          "state_hash": "0x784cc8a6b23a3ff4",
+          "turn_counter": 27,
+          "value_delta": -0.011181116104125977
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.9118096828460693,
+          "duchy_legal": false,
+          "index": 10,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.9250755310058594,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 15,
+          "state_hash": "0x1cf9d3c8c4fc3e83",
+          "turn_counter": 28,
+          "value_delta": -0.013265848159790039
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.007745279930531979,
+          "base_value": 0.9904510378837585,
+          "duchy_legal": true,
+          "index": 11,
+          "injected_p_buy_duchy": 0.02403649501502514,
+          "injected_value": 0.9826551675796509,
+          "p_buy_duchy_delta": 0.01629121508449316,
+          "player_turn": 15,
+          "state_hash": "0xede6833fb5e2f253",
+          "turn_counter": 29,
+          "value_delta": -0.007795870304107666
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.041982606053352356,
+          "base_value": -0.9561237692832947,
+          "duchy_legal": true,
+          "index": 12,
+          "injected_p_buy_duchy": 0.17974092066287994,
+          "injected_value": -0.9686664938926697,
+          "p_buy_duchy_delta": 0.1377583146095276,
+          "player_turn": 16,
+          "state_hash": "0x6761b6078bf62323",
+          "turn_counter": 30,
+          "value_delta": -0.012542724609375
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.054762955754995346,
+          "base_value": 0.9857286214828491,
+          "duchy_legal": true,
+          "index": 13,
+          "injected_p_buy_duchy": 0.12040752172470093,
+          "injected_value": 0.9801320433616638,
+          "p_buy_duchy_delta": 0.06564456596970558,
+          "player_turn": 16,
+          "state_hash": "0x89eda04a14140707",
+          "turn_counter": 31,
+          "value_delta": -0.005596578121185303
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.9633871912956238,
+          "duchy_legal": false,
+          "index": 14,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.974504292011261,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 17,
+          "state_hash": "0x7fe1f47e9167dcea",
+          "turn_counter": 32,
+          "value_delta": -0.011117100715637207
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.9817048907279968,
+          "duchy_legal": false,
+          "index": 15,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": 0.9737849831581116,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 17,
+          "state_hash": "0xc4405247c2e7c455",
+          "turn_counter": 33,
+          "value_delta": -0.007919907569885254
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.969144344329834,
+          "duchy_legal": false,
+          "index": 16,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.9774155616760254,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 18,
+          "state_hash": "0x560cee72a9cd39f9",
+          "turn_counter": 34,
+          "value_delta": -0.008271217346191406
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.8554317355155945,
+          "base_value": 0.9891306757926941,
+          "duchy_legal": true,
+          "index": 17,
+          "injected_p_buy_duchy": 0.907746434211731,
+          "injected_value": 0.9830769300460815,
+          "p_buy_duchy_delta": 0.052314698696136475,
+          "player_turn": 18,
+          "state_hash": "0xec6adb807d23dcc3",
+          "turn_counter": 35,
+          "value_delta": -0.006053745746612549
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.7541566491127014,
+          "base_value": -0.9716584086418152,
+          "duchy_legal": true,
+          "index": 18,
+          "injected_p_buy_duchy": 0.7035779356956482,
+          "injected_value": -0.9760542511940002,
+          "p_buy_duchy_delta": -0.05057871341705322,
+          "player_turn": 19,
+          "state_hash": "0xe51592dba4eba278",
+          "turn_counter": 36,
+          "value_delta": -0.004395842552185059
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.9909161329269409,
+          "duchy_legal": false,
+          "index": 19,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": 0.9871810674667358,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 19,
+          "state_hash": "0x96acf74d249fb3b3",
+          "turn_counter": 37,
+          "value_delta": -0.003735065460205078
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.8846303224563599,
+          "base_value": -0.9744464159011841,
+          "duchy_legal": true,
+          "index": 20,
+          "injected_p_buy_duchy": 0.8321338891983032,
+          "injected_value": -0.9797064661979675,
+          "p_buy_duchy_delta": -0.05249643325805664,
+          "player_turn": 20,
+          "state_hash": "0x3603bc0769d29723",
+          "turn_counter": 38,
+          "value_delta": -0.005260050296783447
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.8989002108573914,
+          "base_value": 0.9838737845420837,
+          "duchy_legal": true,
+          "index": 21,
+          "injected_p_buy_duchy": 0.908152163028717,
+          "injected_value": 0.9785042405128479,
+          "p_buy_duchy_delta": 0.009251952171325684,
+          "player_turn": 20,
+          "state_hash": "0x110e8f7947daf907",
+          "turn_counter": 39,
+          "value_delta": -0.00536954402923584
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.9765263199806213,
+          "duchy_legal": false,
+          "index": 22,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.9784009456634521,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 21,
+          "state_hash": "0xa96a11dd3fda371e",
+          "turn_counter": 40,
+          "value_delta": -0.0018746256828308105
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.9853010177612305,
+          "duchy_legal": false,
+          "index": 23,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": 0.9775588512420654,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 21,
+          "state_hash": "0x3eb00eaec9e70a18",
+          "turn_counter": 41,
+          "value_delta": -0.007742166519165039
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.9803987145423889,
+          "duchy_legal": false,
+          "index": 24,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.9815992712974548,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 22,
+          "state_hash": "0x9d568ee34665a2ac",
+          "turn_counter": 42,
+          "value_delta": -0.001200556755065918
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.9920017123222351,
+          "duchy_legal": false,
+          "index": 25,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": 0.988334596157074,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 22,
+          "state_hash": "0x52d4961ac60369e9",
+          "turn_counter": 43,
+          "value_delta": -0.003667116165161133
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.9715198874473572,
+          "duchy_legal": false,
+          "index": 26,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.9745053648948669,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 23,
+          "state_hash": "0x002593c58de89b9b",
+          "turn_counter": 44,
+          "value_delta": -0.0029854774475097656
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.87982577085495,
+          "base_value": 0.9815517663955688,
+          "duchy_legal": true,
+          "index": 27,
+          "injected_p_buy_duchy": 0.8661006093025208,
+          "injected_value": 0.9769473075866699,
+          "p_buy_duchy_delta": -0.0137251615524292,
+          "player_turn": 23,
+          "state_hash": "0x4a2b4dd910d1f8a7",
+          "turn_counter": 45,
+          "value_delta": -0.004604458808898926
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.9796146750450134,
+          "duchy_legal": false,
+          "index": 28,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.98252934217453,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 24,
+          "state_hash": "0xcc8587daf112b3df",
+          "turn_counter": 46,
+          "value_delta": -0.0029146671295166016
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.9895100593566895,
+          "duchy_legal": false,
+          "index": 29,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": 0.9844065308570862,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 24,
+          "state_hash": "0x6edf82bc538baaaa",
+          "turn_counter": 47,
+          "value_delta": -0.0051035284996032715
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.9776287078857422,
+          "duchy_legal": false,
+          "index": 30,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.9815322160720825,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 25,
+          "state_hash": "0x3a14fe49d011656a",
+          "turn_counter": 48,
+          "value_delta": -0.003903508186340332
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.9793665409088135,
+          "duchy_legal": false,
+          "index": 31,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": 0.9745690226554871,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 25,
+          "state_hash": "0xb9c4990d6c1b3f3c",
+          "turn_counter": 49,
+          "value_delta": -0.004797518253326416
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.9715851545333862,
+          "duchy_legal": false,
+          "index": 32,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.9741600751876831,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 26,
+          "state_hash": "0x581bbeaaa9434b17",
+          "turn_counter": 50,
+          "value_delta": -0.002574920654296875
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.9653124809265137,
+          "duchy_legal": false,
+          "index": 33,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": 0.9627230763435364,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 26,
+          "state_hash": "0x81e1d06c05195ab9",
+          "turn_counter": 51,
+          "value_delta": -0.002589404582977295
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.9835100173950195,
+          "duchy_legal": false,
+          "index": 34,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.9867129921913147,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 27,
+          "state_hash": "0x057be6c030983b97",
+          "turn_counter": 52,
+          "value_delta": -0.003202974796295166
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.9843389987945557,
+          "duchy_legal": false,
+          "index": 35,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": 0.9798658490180969,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 27,
+          "state_hash": "0xbfcc399dbc1319bb",
+          "turn_counter": 53,
+          "value_delta": -0.00447314977645874
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.9644664525985718,
+          "duchy_legal": false,
+          "index": 36,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.9695653319358826,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 28,
+          "state_hash": "0xcbcccc26e733fda3",
+          "turn_counter": 54,
+          "value_delta": -0.005098879337310791
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.9883909821510315,
+          "duchy_legal": false,
+          "index": 37,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": 0.9837881922721863,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 28,
+          "state_hash": "0x60f0e4516d6ce221",
+          "turn_counter": 55,
+          "value_delta": -0.004602789878845215
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.9662398099899292,
+          "duchy_legal": false,
+          "index": 38,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.9700079560279846,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 29,
+          "state_hash": "0xb84677b1e8cfd0a6",
+          "turn_counter": 56,
+          "value_delta": -0.00376814603805542
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.9715005159378052,
+          "duchy_legal": false,
+          "index": 39,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": 0.9633585810661316,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 29,
+          "state_hash": "0x68962bf4155e62ee",
+          "turn_counter": 57,
+          "value_delta": -0.008141934871673584
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.9731112718582153,
+          "duchy_legal": false,
+          "index": 40,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.9790413975715637,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 30,
+          "state_hash": "0xe714f271bc0b3369",
+          "turn_counter": 58,
+          "value_delta": -0.005930125713348389
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.6205037832260132,
+          "base_value": 0.939075231552124,
+          "duchy_legal": true,
+          "index": 41,
+          "injected_p_buy_duchy": 0.6101728677749634,
+          "injected_value": 0.9361199140548706,
+          "p_buy_duchy_delta": -0.010330915451049805,
+          "player_turn": 30,
+          "state_hash": "0xe5858e7c1b1fe380",
+          "turn_counter": 59,
+          "value_delta": -0.002955317497253418
+        }
+      ]
+    },
+    "checkpoint": "/Users/paisho/Projects/Mastermind/bench/value_target_sweep/fit2_a0.4_s1.pt"
+  },
+  {
+    "alpha": 0.4,
+    "seed": 2,
+    "value_probe": {
+      "acceptance": {
+        "checked": false
+      },
+      "checkpoint": "/Users/paisho/Projects/Mastermind/bench/value_target_sweep/fit2_a0.4_s2.pt",
+      "means": {
+        "engine": -0.5892520887511117,
+        "junk": -0.9822634075369153,
+        "money": -0.946559203522546
+      },
+      "obs_version": 3,
+      "probe": "value_probe",
+      "protocol": {
+        "kingdom": [
+          "Village",
+          "Smithy",
+          "Laboratory",
+          "Market",
+          "Chapel",
+          "Festival",
+          "Council Room",
+          "Moat",
+          "Militia",
+          "Witch"
+        ],
+        "minimum_turn_counter": 10,
+        "mode": "raw value head; encoded deck+discard counterfactual only",
+        "state_seeds": [
+          5000,
+          5001,
+          5002,
+          5003,
+          5004,
+          5005,
+          5006,
+          5007,
+          5008,
+          5009,
+          5010,
+          5011,
+          5012,
+          5013
+        ],
+        "states": 14,
+        "variants": {
+          "engine": {
+            "Chapel": 1,
+            "Copper": 3,
+            "Estate": 3,
+            "Laboratory": 2,
+            "Market": 1,
+            "Silver": 2,
+            "Smithy": 2,
+            "Village": 2
+          },
+          "junk": {
+            "Copper": 9,
+            "Curse": 4,
+            "Estate": 3,
+            "Silver": 1
+          },
+          "money": {
+            "Copper": 7,
+            "Estate": 3,
+            "Gold": 2,
+            "Silver": 3
+          }
+        }
+      },
+      "seed": 659918,
+      "states": [
+        {
+          "acting_seat": 0,
+          "index": 0,
+          "seed": 5000,
+          "state_hash": "0xa391d8aa0d8de0aa",
+          "turn_counter": 10,
+          "values": {
+            "engine": -0.7399682998657227,
+            "junk": -0.9876128435134888,
+            "money": -0.9604326486587524
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 1,
+          "seed": 5001,
+          "state_hash": "0xbff35d94b15a49d5",
+          "turn_counter": 10,
+          "values": {
+            "engine": -0.5009996891021729,
+            "junk": -0.9759390354156494,
+            "money": -0.9363658428192139
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 2,
+          "seed": 5002,
+          "state_hash": "0x068c6af217925938",
+          "turn_counter": 10,
+          "values": {
+            "engine": -0.29928144812583923,
+            "junk": -0.9789476990699768,
+            "money": -0.9350689649581909
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 3,
+          "seed": 5003,
+          "state_hash": "0xcb287ad78009a073",
+          "turn_counter": 10,
+          "values": {
+            "engine": -0.660083532333374,
+            "junk": -0.9824413657188416,
+            "money": -0.9542080163955688
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 4,
+          "seed": 5004,
+          "state_hash": "0x35b5abaaefdb7765",
+          "turn_counter": 10,
+          "values": {
+            "engine": -0.6464091539382935,
+            "junk": -0.9847014546394348,
+            "money": -0.9525009393692017
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 5,
+          "seed": 5005,
+          "state_hash": "0x5a7418f66def68f2",
+          "turn_counter": 10,
+          "values": {
+            "engine": -0.5427284240722656,
+            "junk": -0.9764894843101501,
+            "money": -0.9455146789550781
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 6,
+          "seed": 5006,
+          "state_hash": "0x65752cba00b61555",
+          "turn_counter": 10,
+          "values": {
+            "engine": -0.7761592864990234,
+            "junk": -0.9908015727996826,
+            "money": -0.9564945101737976
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 7,
+          "seed": 5007,
+          "state_hash": "0xb8e9fd1e93bd4a45",
+          "turn_counter": 10,
+          "values": {
+            "engine": -0.5362065434455872,
+            "junk": -0.9781925082206726,
+            "money": -0.9373130798339844
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 8,
+          "seed": 5008,
+          "state_hash": "0x09bddde4694c14ff",
+          "turn_counter": 10,
+          "values": {
+            "engine": -0.6922712922096252,
+            "junk": -0.9845390915870667,
+            "money": -0.9560301899909973
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 9,
+          "seed": 5009,
+          "state_hash": "0x4fd8fbc8c1a41965",
+          "turn_counter": 10,
+          "values": {
+            "engine": -0.6782418489456177,
+            "junk": -0.9857006669044495,
+            "money": -0.953352153301239
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 10,
+          "seed": 5010,
+          "state_hash": "0xc1caf67a78c6760e",
+          "turn_counter": 10,
+          "values": {
+            "engine": -0.5736593008041382,
+            "junk": -0.9835876822471619,
+            "money": -0.9402816295623779
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 11,
+          "seed": 5011,
+          "state_hash": "0xdae6c72f7ccabac5",
+          "turn_counter": 10,
+          "values": {
+            "engine": -0.47771164774894714,
+            "junk": -0.9787587523460388,
+            "money": -0.9205355644226074
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 12,
+          "seed": 5012,
+          "state_hash": "0x4bb6482800b87579",
+          "turn_counter": 10,
+          "values": {
+            "engine": -0.6237577199935913,
+            "junk": -0.9818471074104309,
+            "money": -0.9525503516197205
+          }
+        },
+        {
+          "acting_seat": 0,
+          "index": 13,
+          "seed": 5013,
+          "state_hash": "0x60de78624c61957d",
+          "turn_counter": 10,
+          "values": {
+            "engine": -0.502051055431366,
+            "junk": -0.9821284413337708,
+            "money": -0.9511802792549133
+          }
+        }
+      ]
+    },
+    "duchy_probe": {
+      "checkpoint": "/Users/paisho/Projects/Mastermind/bench/value_target_sweep/fit2_a0.4_s2.pt",
+      "means": {
+        "p_buy_duchy_delta": 0.015485161050621952,
+        "p_buy_duchy_delta_points": 1.5485161050621952,
+        "value_delta": -0.06569274639089902
+      },
+      "obs_version": 3,
+      "probe": "duchy_probe",
+      "protocol": {
+        "counterfactual": "opponent collection Duchy count +2 (+6 VP)",
+        "minimum_player_turn": 10,
+        "mode": "raw policy/value heads only",
+        "states": 42
+      },
+      "reference": null,
+      "seed": 53444,
+      "states": [
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.7179598212242126,
+          "duchy_legal": false,
+          "index": 0,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.7499673366546631,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 10,
+          "state_hash": "0xd7c3a870c6e9767b",
+          "turn_counter": 18,
+          "value_delta": -0.03200751543045044
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.036339692771434784,
+          "base_value": 0.8998651504516602,
+          "duchy_legal": true,
+          "index": 1,
+          "injected_p_buy_duchy": 0.055997297167778015,
+          "injected_value": 0.8978722095489502,
+          "p_buy_duchy_delta": 0.01965760439634323,
+          "player_turn": 10,
+          "state_hash": "0x47d9965e54e97c20",
+          "turn_counter": 19,
+          "value_delta": -0.001992940902709961
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.03856149688363075,
+          "base_value": -0.943501353263855,
+          "duchy_legal": true,
+          "index": 2,
+          "injected_p_buy_duchy": 0.04618540778756142,
+          "injected_value": -0.9496460556983948,
+          "p_buy_duchy_delta": 0.007623910903930664,
+          "player_turn": 11,
+          "state_hash": "0x6bdbf175648580da",
+          "turn_counter": 20,
+          "value_delta": -0.006144702434539795
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.9295554161071777,
+          "duchy_legal": false,
+          "index": 3,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": 0.9290544986724854,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 11,
+          "state_hash": "0x7de061684488dc30",
+          "turn_counter": 21,
+          "value_delta": -0.0005009174346923828
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.9270053505897522,
+          "duchy_legal": false,
+          "index": 4,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.910174548625946,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 12,
+          "state_hash": "0x9e352f2810b51c26",
+          "turn_counter": 22,
+          "value_delta": 0.016830801963806152
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.03760155290365219,
+          "base_value": 0.926193118095398,
+          "duchy_legal": true,
+          "index": 5,
+          "injected_p_buy_duchy": 0.056938692927360535,
+          "injected_value": 0.9158291220664978,
+          "p_buy_duchy_delta": 0.019337140023708344,
+          "player_turn": 12,
+          "state_hash": "0x4ecab2c7d36607f7",
+          "turn_counter": 23,
+          "value_delta": -0.010363996028900146
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.8003698587417603,
+          "duchy_legal": false,
+          "index": 6,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": 0.7884269952774048,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 13,
+          "state_hash": "0x56c64bea92e7a986",
+          "turn_counter": 24,
+          "value_delta": -0.011942863464355469
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.032764557749032974,
+          "base_value": 0.6430259943008423,
+          "duchy_legal": true,
+          "index": 7,
+          "injected_p_buy_duchy": 0.02633187174797058,
+          "injected_value": -0.08677501231431961,
+          "p_buy_duchy_delta": -0.006432686001062393,
+          "player_turn": 13,
+          "state_hash": "0x263f8c2ee149ffb1",
+          "turn_counter": 25,
+          "value_delta": -0.7298010066151619
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.10502030700445175,
+          "base_value": 0.8439699411392212,
+          "duchy_legal": true,
+          "index": 8,
+          "injected_p_buy_duchy": 0.20803523063659668,
+          "injected_value": 0.5663340091705322,
+          "p_buy_duchy_delta": 0.10301492363214493,
+          "player_turn": 14,
+          "state_hash": "0xcfc81050e12aaa56",
+          "turn_counter": 26,
+          "value_delta": -0.27763593196868896
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.016442805528640747,
+          "base_value": 0.7353954911231995,
+          "duchy_legal": true,
+          "index": 9,
+          "injected_p_buy_duchy": 0.021049698814749718,
+          "injected_value": -0.2653546631336212,
+          "p_buy_duchy_delta": 0.004606893286108971,
+          "player_turn": 14,
+          "state_hash": "0x784cc8a6b23a3ff4",
+          "turn_counter": 27,
+          "value_delta": -1.0007501542568207
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.9396113753318787,
+          "duchy_legal": false,
+          "index": 10,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.9567108750343323,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 15,
+          "state_hash": "0x1cf9d3c8c4fc3e83",
+          "turn_counter": 28,
+          "value_delta": -0.017099499702453613
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.009329942986369133,
+          "base_value": 0.922709047794342,
+          "duchy_legal": true,
+          "index": 11,
+          "injected_p_buy_duchy": 0.01609642431139946,
+          "injected_value": 0.737294614315033,
+          "p_buy_duchy_delta": 0.006766481325030327,
+          "player_turn": 15,
+          "state_hash": "0xede6833fb5e2f253",
+          "turn_counter": 29,
+          "value_delta": -0.18541443347930908
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.037312425673007965,
+          "base_value": -0.739621639251709,
+          "duchy_legal": true,
+          "index": 12,
+          "injected_p_buy_duchy": 0.06826833635568619,
+          "injected_value": -0.9830789566040039,
+          "p_buy_duchy_delta": 0.030955910682678223,
+          "player_turn": 16,
+          "state_hash": "0x6761b6078bf62323",
+          "turn_counter": 30,
+          "value_delta": -0.24345731735229492
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.012602741830050945,
+          "base_value": 0.9414125680923462,
+          "duchy_legal": true,
+          "index": 13,
+          "injected_p_buy_duchy": 0.0260009765625,
+          "injected_value": 0.850376307964325,
+          "p_buy_duchy_delta": 0.013398234732449055,
+          "player_turn": 16,
+          "state_hash": "0x89eda04a14140707",
+          "turn_counter": 31,
+          "value_delta": -0.09103626012802124
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.981330156326294,
+          "duchy_legal": false,
+          "index": 14,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.9928632974624634,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 17,
+          "state_hash": "0x7fe1f47e9167dcea",
+          "turn_counter": 32,
+          "value_delta": -0.011533141136169434
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.9946702122688293,
+          "duchy_legal": false,
+          "index": 15,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": 0.9868379831314087,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 17,
+          "state_hash": "0xc4405247c2e7c455",
+          "turn_counter": 33,
+          "value_delta": -0.007832229137420654
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.9923791885375977,
+          "duchy_legal": false,
+          "index": 16,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.9963183999061584,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 18,
+          "state_hash": "0x560cee72a9cd39f9",
+          "turn_counter": 34,
+          "value_delta": -0.003939211368560791
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.4903193414211273,
+          "base_value": 0.9918839335441589,
+          "duchy_legal": true,
+          "index": 17,
+          "injected_p_buy_duchy": 0.5903655290603638,
+          "injected_value": 0.9810518026351929,
+          "p_buy_duchy_delta": 0.10004618763923645,
+          "player_turn": 18,
+          "state_hash": "0xec6adb807d23dcc3",
+          "turn_counter": 35,
+          "value_delta": -0.010832130908966064
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.38442301750183105,
+          "base_value": -0.9932907819747925,
+          "duchy_legal": true,
+          "index": 18,
+          "injected_p_buy_duchy": 0.4022483229637146,
+          "injected_value": -0.9964550733566284,
+          "p_buy_duchy_delta": 0.017825305461883545,
+          "player_turn": 19,
+          "state_hash": "0xe51592dba4eba278",
+          "turn_counter": 36,
+          "value_delta": -0.0031642913818359375
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.9941540956497192,
+          "duchy_legal": false,
+          "index": 19,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": 0.9882320165634155,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 19,
+          "state_hash": "0x96acf74d249fb3b3",
+          "turn_counter": 37,
+          "value_delta": -0.005922079086303711
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.710435688495636,
+          "base_value": -0.9909808039665222,
+          "duchy_legal": true,
+          "index": 20,
+          "injected_p_buy_duchy": 0.6676047444343567,
+          "injected_value": -0.9963948130607605,
+          "p_buy_duchy_delta": -0.0428309440612793,
+          "player_turn": 20,
+          "state_hash": "0x3603bc0769d29723",
+          "turn_counter": 38,
+          "value_delta": -0.005414009094238281
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.39717841148376465,
+          "base_value": 0.9914151430130005,
+          "duchy_legal": true,
+          "index": 21,
+          "injected_p_buy_duchy": 0.48839694261550903,
+          "injected_value": 0.9826936721801758,
+          "p_buy_duchy_delta": 0.09121853113174438,
+          "player_turn": 20,
+          "state_hash": "0x110e8f7947daf907",
+          "turn_counter": 39,
+          "value_delta": -0.008721470832824707
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.9943047761917114,
+          "duchy_legal": false,
+          "index": 22,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.996088445186615,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 21,
+          "state_hash": "0xa96a11dd3fda371e",
+          "turn_counter": 40,
+          "value_delta": -0.0017836689949035645
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.9976237416267395,
+          "duchy_legal": false,
+          "index": 23,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": 0.9956266283988953,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 21,
+          "state_hash": "0x3eb00eaec9e70a18",
+          "turn_counter": 41,
+          "value_delta": -0.0019971132278442383
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.9957360625267029,
+          "duchy_legal": false,
+          "index": 24,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.9978740215301514,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 22,
+          "state_hash": "0x9d568ee34665a2ac",
+          "turn_counter": 42,
+          "value_delta": -0.0021379590034484863
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.9907486438751221,
+          "duchy_legal": false,
+          "index": 25,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": 0.9855954051017761,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 22,
+          "state_hash": "0x52d4961ac60369e9",
+          "turn_counter": 43,
+          "value_delta": -0.005153238773345947
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.9871063232421875,
+          "duchy_legal": false,
+          "index": 26,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.9931586384773254,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 23,
+          "state_hash": "0x002593c58de89b9b",
+          "turn_counter": 44,
+          "value_delta": -0.0060523152351379395
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.728159487247467,
+          "base_value": 0.9877799153327942,
+          "duchy_legal": true,
+          "index": 27,
+          "injected_p_buy_duchy": 0.8462217450141907,
+          "injected_value": 0.9739691615104675,
+          "p_buy_duchy_delta": 0.11806225776672363,
+          "player_turn": 23,
+          "state_hash": "0x4a2b4dd910d1f8a7",
+          "turn_counter": 45,
+          "value_delta": -0.01381075382232666
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.9967145323753357,
+          "duchy_legal": false,
+          "index": 28,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.997653067111969,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 24,
+          "state_hash": "0xcc8587daf112b3df",
+          "turn_counter": 46,
+          "value_delta": -0.0009385347366333008
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.9969799518585205,
+          "duchy_legal": false,
+          "index": 29,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": 0.9931780099868774,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 24,
+          "state_hash": "0x6edf82bc538baaaa",
+          "turn_counter": 47,
+          "value_delta": -0.0038019418716430664
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.9893003702163696,
+          "duchy_legal": false,
+          "index": 30,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.9938101768493652,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 25,
+          "state_hash": "0x3a14fe49d011656a",
+          "turn_counter": 48,
+          "value_delta": -0.0045098066329956055
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.99676913022995,
+          "duchy_legal": false,
+          "index": 31,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": 0.9927977919578552,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 25,
+          "state_hash": "0xb9c4990d6c1b3f3c",
+          "turn_counter": 49,
+          "value_delta": -0.0039713382720947266
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.9955841302871704,
+          "duchy_legal": false,
+          "index": 32,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.997255265712738,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 26,
+          "state_hash": "0x581bbeaaa9434b17",
+          "turn_counter": 50,
+          "value_delta": -0.001671135425567627
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.9860371351242065,
+          "duchy_legal": false,
+          "index": 33,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": 0.9606883525848389,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 26,
+          "state_hash": "0x81e1d06c05195ab9",
+          "turn_counter": 51,
+          "value_delta": -0.025348782539367676
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.9968523383140564,
+          "duchy_legal": false,
+          "index": 34,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.9981409311294556,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 27,
+          "state_hash": "0x057be6c030983b97",
+          "turn_counter": 52,
+          "value_delta": -0.00128859281539917
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.9945460557937622,
+          "duchy_legal": false,
+          "index": 35,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": 0.9881382584571838,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 27,
+          "state_hash": "0xbfcc399dbc1319bb",
+          "turn_counter": 53,
+          "value_delta": -0.006407797336578369
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.9953800439834595,
+          "duchy_legal": false,
+          "index": 36,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.9974761009216309,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 28,
+          "state_hash": "0xcbcccc26e733fda3",
+          "turn_counter": 54,
+          "value_delta": -0.0020960569381713867
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.9974090456962585,
+          "duchy_legal": false,
+          "index": 37,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": 0.9938084483146667,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 28,
+          "state_hash": "0x60f0e4516d6ce221",
+          "turn_counter": 55,
+          "value_delta": -0.003600597381591797
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.989566445350647,
+          "duchy_legal": false,
+          "index": 38,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.9967780113220215,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 29,
+          "state_hash": "0xb84677b1e8cfd0a6",
+          "turn_counter": 56,
+          "value_delta": -0.007211565971374512
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.0,
+          "base_value": 0.9949252009391785,
+          "duchy_legal": false,
+          "index": 39,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": 0.986531674861908,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 29,
+          "state_hash": "0x68962bf4155e62ee",
+          "turn_counter": 57,
+          "value_delta": -0.008393526077270508
+        },
+        {
+          "acting_seat": 0,
+          "base_p_buy_duchy": 0.0,
+          "base_value": -0.9930999875068665,
+          "duchy_legal": false,
+          "index": 40,
+          "injected_p_buy_duchy": 0.0,
+          "injected_value": -0.9960018992424011,
+          "p_buy_duchy_delta": 0.0,
+          "player_turn": 30,
+          "state_hash": "0xe714f271bc0b3369",
+          "turn_counter": 58,
+          "value_delta": -0.002901911735534668
+        },
+        {
+          "acting_seat": 1,
+          "base_p_buy_duchy": 0.6288242340087891,
+          "base_value": 0.9966216683387756,
+          "duchy_legal": true,
+          "index": 41,
+          "injected_p_buy_duchy": 0.795951247215271,
+          "injected_value": 0.989278256893158,
+          "p_buy_duchy_delta": 0.16712701320648193,
+          "player_turn": 30,
+          "state_hash": "0xe5858e7c1b1fe380",
+          "turn_counter": 59,
+          "value_delta": -0.007343411445617676
+        }
+      ]
+    },
+    "checkpoint": "/Users/paisho/Projects/Mastermind/bench/value_target_sweep/fit2_a0.4_s2.pt"
+  },
+  {
+    "alpha": 0.4,
+    "seed": 3,
+    "value_probe": null,
+    "duchy_probe": null,
+    "checkpoint": "/Users/paisho/Projects/Mastermind/bench/value_target_sweep/fit2_a0.4_s3.pt"
+  },
+  {
+    "alpha": 0.2,
+    "seed": 1,
+    "value_probe": null,
+    "duchy_probe": null,
+    "checkpoint": "/Users/paisho/Projects/Mastermind/bench/value_target_sweep/fit2_a0.2_s1.pt"
+  },
+  {
+    "alpha": 0.2,
+    "seed": 2,
+    "value_probe": null,
+    "duchy_probe": null,
+    "checkpoint": "/Users/paisho/Projects/Mastermind/bench/value_target_sweep/fit2_a0.2_s2.pt"
+  },
+  {
+    "alpha": 0.2,
+    "seed": 3,
+    "value_probe": null,
+    "duchy_probe": null,
+    "checkpoint": "/Users/paisho/Projects/Mastermind/bench/value_target_sweep/fit2_a0.2_s3.pt"
+  },
+  {
+    "alpha": 0.0,
+    "seed": 1,
+    "value_probe": null,
+    "duchy_probe": null,
+    "checkpoint": "/Users/paisho/Projects/Mastermind/bench/value_target_sweep/fit2_a0.0_s1.pt"
+  },
+  {
+    "alpha": 0.0,
+    "seed": 2,
+    "value_probe": null,
+    "duchy_probe": null,
+    "checkpoint": "/Users/paisho/Projects/Mastermind/bench/value_target_sweep/fit2_a0.0_s2.pt"
+  },
+  {
+    "alpha": 0.0,
+    "seed": 3,
+    "value_probe": null,
+    "duchy_probe": null,
+    "checkpoint": "/Users/paisho/Projects/Mastermind/bench/value_target_sweep/fit2_a0.0_s3.pt"
+  }
+]
