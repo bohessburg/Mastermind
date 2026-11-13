@@ -3174,6 +3174,7 @@ Ladder against c29 gen 43 every fifth generation (`bench/c31_ladder`, 200 pairs 
 | 18 | 0.5106 | 0.4956 | rejected | 0.734 | 0.687 | 3 | 44.8 |
 | 19 | 0.5231 | 0.5077 | **accepted** | 0.733 | 0.674 | 0 | 42.2 |
 | 20 | 0.4888 | 0.4739 | rejected | 0.728 | 0.660 | 1 | 40.7 |
+| 21 | 0.4775 | 0.4631 | rejected | 0.728 | 0.681 | 1 | 38.6 |
 
 Gen 1 notes: 31.1 minutes, inside c30's 29 to 33 minute range. Self-play mix was 820 self games, 102 league games
 (25, 26 and 19 wins of 34 against c29 gen 10, 25 and 35) and 102 scripted
@@ -3296,3 +3297,9 @@ Gen 19 engine3 eval: 75-25-0 and 69-30-1 = 72.4% excluding ties over 200
 one standard error. Gen 20 (05:07 UTC) rejected at 0.4888 against gen 19,
 lower bound 0.4739; best stays gen 19, rejection streak 1. The gen 20
 ladder match against c29 gen 43 started at 05:07 UTC.
+
+Gen 20 ladder match against c29 gen 43, 400 games at 128 sims: 213-180-7,
+0.541 [0.497, 0.586], +29 Elo (gen 15 0.534, gen 10 0.517, gen 5 0.489): the
+slow climb continues, still inside the interval. Gen 21 (05:47 UTC) rejected
+at 0.4775 against gen 19 (372-408-20), lower bound 0.4631; best stays gen
+19, rejection streak 2.
