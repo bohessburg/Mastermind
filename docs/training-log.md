@@ -3184,6 +3184,7 @@ Ladder against c29 gen 43 every fifth generation (`bench/c31_ladder`, 200 pairs 
 | 28 | 0.4963 | 0.4815 | rejected | 0.708 | 0.637 | 0 | 35.8 |
 | 29 | 0.5094 | 0.4947 | rejected | 0.714 | 0.682 | 2 | 41.0 |
 | 30 | 0.4931 | 0.4787 | rejected | 0.716 | 0.650 | 0 | 33.5 |
+| 31 | 0.5050 | 0.4895 | rejected | 0.716 | 0.710 | 3 | 40.1 |
 
 Gen 1 notes: 31.1 minutes, inside c30's 29 to 33 minute range. Self-play mix was 820 self games, 102 league games
 (25, 26 and 19 wins of 34 against c29 gen 10, 25 and 35) and 102 scripted
@@ -3409,3 +3410,15 @@ the deploy: gen 31's rows overlap the old replayed slice at chance level
 self-play with the compiled 17-pile graph; about 100 seconds of downtime.
 Expect the anchor policy loss to sit near 0.52 to 0.57 from here, since no
 generation trains on replayed rows any more.
+
+Ladder, gen 30 against c29 gen 43 (200 pairs, 128 sims): 213W-178L-9T,
+score 0.544, 95% interval 0.501 to 0.586, +30 Elo. Identical to gen 25
+(0.544). The ladder has read 0.534, 0.541, 0.544, 0.544 since gen 15: the
+run's lead over c29 gen 43 has stopped growing inside what 400 games can
+resolve.
+
+Gen 31 (12:08 UTC): rejected, 0.5050 (392-384-24, lb 0.4895) against
+gen 27. Streak 4, best stays gen 27. 40.1 minutes, server 144.3k evals/s.
+First generation on the fixed anchor stream: anchor policy loss 0.520,
+value 0.184, as expected for rows that are not replayed. Held-out value r2
+0.710, the highest of the run.
