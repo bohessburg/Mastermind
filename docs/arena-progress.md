@@ -540,6 +540,16 @@ The first gen 22 session went 5-4-0 over nine games (log
 checkpoint (198 arena tests, dry run 3/3). Ledger at restart: 487 rows.
 First game without the pause: 185885223.
 
+Restart, 2026-11-13 09:40 UTC: c31 gen 27 was promoted at 09:37 UTC. The
+gen 22 session without the pause went 8-5-1 over fourteen games (log
+`arena_c29_run28.log`); gen 22 overall 13-9-1 over 23. Stopped between
+games and relaunched on `checkpoints/remote/campaign31/gen_0027.pt` (198
+arena tests, dry run 3/3), pause still zero. Ledger at restart: 501 rows.
+First game on gen 27: 185886611. The first relaunch attempt exited 8
+("arena already running"): a helper shell whose command line contained the
+launcher's own process-search pattern was matched by `arena_retry.sh`; the
+helper was stopped and the launcher rerun, one minute of downtime.
+
 ## Status by phase
 
 - **P0 — Recording harness: complete (2026-07-24).**
