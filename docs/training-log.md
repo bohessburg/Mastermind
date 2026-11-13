@@ -3175,6 +3175,7 @@ Ladder against c29 gen 43 every fifth generation (`bench/c31_ladder`, 200 pairs 
 | 19 | 0.5231 | 0.5077 | **accepted** | 0.733 | 0.674 | 0 | 42.2 |
 | 20 | 0.4888 | 0.4739 | rejected | 0.728 | 0.660 | 1 | 40.7 |
 | 21 | 0.4775 | 0.4631 | rejected | 0.728 | 0.681 | 1 | 38.6 |
+| 22 | 0.5169 | 0.5016 | **accepted** | 0.726 | 0.660 | 0 | 38.3 |
 
 Gen 1 notes: 31.1 minutes, inside c30's 29 to 33 minute range. Self-play mix was 820 self games, 102 league games
 (25, 26 and 19 wins of 34 against c29 gen 10, 25 and 35) and 102 scripted
@@ -3303,3 +3304,9 @@ Gen 20 ladder match against c29 gen 43, 400 games at 128 sims: 213-180-7,
 slow climb continues, still inside the interval. Gen 21 (05:47 UTC) rejected
 at 0.4775 against gen 19 (372-408-20), lower bound 0.4631; best stays gen
 19, rejection streak 2.
+
+Gen 22 (06:26 UTC) **accepted** at 0.5169 against gen 19 (398-371-31), lower
+bound 0.5016: the sixth promotion (6, 12, 15, 17, 19, 22); best = gen 22,
+rejection streak reset. Checkpoint copied to
+`checkpoints/remote/campaign31/gen_0022.pt` (sha256 `ef4bec9f...43e3`,
+matches the box); the arena moved to it at 06:35 UTC.

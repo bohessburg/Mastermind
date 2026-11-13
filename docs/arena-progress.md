@@ -524,6 +524,12 @@ was stopped between games and relaunched on
 `checkpoints/remote/campaign31/gen_0019.pt` (198 arena tests, dry run 3/3).
 Ledger at restart: 466 rows. First game on gen 19: 185880851.
 
+Restart, 2026-11-13 06:35 UTC: c31 gen 22 was promoted at 06:26 UTC. The
+gen 19 session went 6-6-0 over twelve games (log `arena_c29_run26.log`); it
+was stopped between games and relaunched on
+`checkpoints/remote/campaign31/gen_0022.pt` (198 arena tests, dry run 3/3).
+Ledger at restart: 478 rows. First game on gen 22: 185883345.
+
 ## Status by phase
 
 - **P0 — Recording harness: complete (2026-07-24).**
