@@ -487,6 +487,24 @@ was sent. A ten-minute retry loop got in at 23:57 UTC, once the opponent had
 ended that game; first new game 185872600 at 23:59 UTC, run directory
 `exports/arena/20261112T235753.655460Z`.
 
+Abort, 2026-11-13 01:00 UTC: game 185874433 against ilyaaaaa (our seat 1,
+turn 11, buy phase) stopped with `DivergenceError: unrecognized inbound
+server rejection/error ... raw=0000003affffffff`. Not a driver bug. Inbound
+message 1 is the client's `Failure` (reason ordinal, card ordinal or -1), and
+ordinal 58 in the client's `FailureReasons` list is `INVALID_SESSION_ID`
+(85, seen in the earlier answer rejection, is `ILLEGAL_ANSWER`). The arena's
+websocket dropped at 01:00:43 UTC, the page reconnected with its stored
+session and the server refused it. At the same second a one-off run of
+`scripts/dgames_ratings.py` finished (summary
+`ratings-summary-20261113T010043.954431Z.json`, started 00:59:51,
+`credentialed_relogins: 1`): the leaderboard poller logged in on the same
+account and the site ended the arena's session. The poller was not started
+by the arena session. Rule: do not run the poller on the bot account while
+the arena is in a game. Session before the abort: 4-0-0 on c31 gen 12; the
+aborted game has no ledger row. Ledger 445 rows. Log
+`arena_c29_run22.log`; relaunched 01:03 UTC with the exit-5 retry loop,
+198 arena tests, dry run 3/3.
+
 ## Status by phase
 
 - **P0 — Recording harness: complete (2026-07-24).**
