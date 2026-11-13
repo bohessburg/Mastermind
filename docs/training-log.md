@@ -3170,6 +3170,7 @@ Ladder against c29 gen 43 every fifth generation (`bench/c31_ladder`, 200 pairs 
 | 14 | 0.5031 | 0.4886 | rejected | 0.734 | 0.680 | 1 | 40.7 |
 | 15 | 0.5294 | 0.5137 | **accepted** | 0.727 | 0.692 | 0 | 40.7 |
 | 16 | 0.5038 | 0.4892 | rejected | 0.729 | 0.660 | 3 | 45.9 |
+| 17 | 0.5175 | 0.5017 | **accepted** | 0.729 | 0.685 | 1 | 41.2 |
 
 Gen 1 notes: 31.1 minutes, inside c30's 29 to 33 minute range. Self-play mix was 820 self games, 102 league games
 (25, 26 and 19 wins of 34 against c29 gen 10, 25 and 35) and 102 scripted
@@ -3266,3 +3267,10 @@ points, so lower but not separated). Ladder against c29 gen 43, 200 pairs at
 the trend upward, and the interval still includes even. Gen 16 (02:18 UTC)
 rejected at 0.5038 against gen 15; 45.9 minutes with the eval and the ladder
 sharing the GPU.
+
+Gen 17 (2026-11-13 02:59 UTC) accepted at 0.5175 against gen 15, lower bound
+0.5017: fourth promotion (6, 12, 15, 17) and the narrowest, 0.0017 over the
+one-standard-error line. Under c30's z=2 gate it would have been rejected.
+Best is gen 17, rejection streak 0. Checkpoint copied to
+`checkpoints/remote/campaign31/gen_0017.pt` (sha256 `9deaf369...a47068bf`,
+matches the box); engine3 eval started on the box.
