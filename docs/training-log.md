@@ -3182,6 +3182,7 @@ Ladder against c29 gen 43 every fifth generation (`bench/c31_ladder`, 200 pairs 
 | 26 | 0.4919 | 0.4767 | rejected | 0.707 | 0.670 | 2 | 39.6 |
 | 27 | 0.5244 | 0.5095 | **accepted** | 0.706 | 0.653 | 2 | 38.0 |
 | 28 | 0.4963 | 0.4815 | rejected | 0.708 | 0.637 | 0 | 35.8 |
+| 29 | 0.5094 | 0.4947 | rejected | 0.714 | 0.682 | 2 | 41.0 |
 
 Gen 1 notes: 31.1 minutes, inside c30's 29 to 33 minute range. Self-play mix was 820 self games, 102 league games
 (25, 26 and 19 wins of 34 against c29 gen 10, 25 and 35) and 102 scripted
@@ -3385,3 +3386,7 @@ reaches rows it has not replayed (gens 13-14, 21-23). Not fixed yet.
 Gen 28 (10:13 UTC): rejected, 0.4963 (385-391-24, lb 0.4815) against
 gen 27. Streak 1, best stays gen 27. 35.8 minutes, the fastest generation
 of the run; server 160.3k evals/s. Anchor policy loss 0.461, value 0.173.
+
+Gen 29 (10:54 UTC): rejected, 0.5094 (396-381-23, lb 0.4947) against
+gen 27. Streak 2, best stays gen 27. 41.0 minutes, server 130.6k evals/s.
+Anchor policy loss 0.488, value 0.177.
