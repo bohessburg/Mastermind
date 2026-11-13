@@ -3183,6 +3183,7 @@ Ladder against c29 gen 43 every fifth generation (`bench/c31_ladder`, 200 pairs 
 | 27 | 0.5244 | 0.5095 | **accepted** | 0.706 | 0.653 | 2 | 38.0 |
 | 28 | 0.4963 | 0.4815 | rejected | 0.708 | 0.637 | 0 | 35.8 |
 | 29 | 0.5094 | 0.4947 | rejected | 0.714 | 0.682 | 2 | 41.0 |
+| 30 | 0.4931 | 0.4787 | rejected | 0.716 | 0.650 | 0 | 33.5 |
 
 Gen 1 notes: 31.1 minutes, inside c30's 29 to 33 minute range. Self-play mix was 820 self games, 102 league games
 (25, 26 and 19 wins of 34 against c29 gen 10, 25 and 35) and 102 scripted
@@ -3381,7 +3382,8 @@ so under half of the corpus has reached the anchor loss in c31 and the first
 slice has been replayed after each of the restarts at gens 6, 14 and 23.
 The anchor policy loss shows it: 0.46 to 0.48 on the replayed slice right
 after each restart (gens 15-19, 24-27), 0.53 to 0.57 once the iterator
-reaches rows it has not replayed (gens 13-14, 21-23). Not fixed yet.
+reaches rows it has not replayed (gens 13-14, 21-23). Fixed in `15be1a8`,
+see the gen 30 entry below.
 
 Gen 28 (10:13 UTC): rejected, 0.4963 (385-391-24, lb 0.4815) against
 gen 27. Streak 1, best stays gen 27. 35.8 minutes, the fastest generation
@@ -3390,3 +3392,20 @@ of the run; server 160.3k evals/s. Anchor policy loss 0.461, value 0.173.
 Gen 29 (10:54 UTC): rejected, 0.5094 (396-381-23, lb 0.4947) against
 gen 27. Streak 2, best stays gen 27. 41.0 minutes, server 130.6k evals/s.
 Anchor policy loss 0.488, value 0.177.
+
+Gen 30 (11:27 UTC): rejected, 0.4931 (381-392-27, lb 0.4787) against
+gen 27. Streak 3, best stays gen 27. 33.5 minutes, the fastest generation
+of the run; server 155.2k evals/s. Anchor policy loss 0.516, value 0.178.
+
+Anchor sampler fix deployed at the gen 30 boundary (11:27 to 11:29 UTC,
+box HEAD `15be1a8`, at Jack's request). `anchor_batches_for_generation`
+positions the anchor stream (generation - 1) x train_steps batches into its
+seeded pass, so a resumed trainer continues where an uninterrupted run would
+be instead of replaying the start; a fresh run from gen 1 is unchanged. Gen 31
+starts 2,400 batches in (33% into the second pass), and the corpus is now
+covered once every 22.5 generations. Checked on the box's real corpus before
+the deploy: gen 31's rows overlap the old replayed slice at chance level
+(7,263 of 40,960, 17.7%). The trainer resumed from `gen_0030.pt` and reached
+self-play with the compiled 17-pile graph; about 100 seconds of downtime.
+Expect the anchor policy loss to sit near 0.52 to 0.57 from here, since no
+generation trains on replayed rows any more.
