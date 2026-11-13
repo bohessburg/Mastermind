@@ -505,6 +505,13 @@ aborted game has no ledger row. Ledger 445 rows. Log
 `arena_c29_run22.log`; relaunched 01:03 UTC with the exit-5 retry loop,
 198 arena tests, dry run 3/3.
 
+Restart, 2026-11-13 01:40 UTC: c31 gen 15 was promoted at 01:32 UTC. The
+01:03 relaunch got in on its first attempt and went 4-0-0 on gen 12 (log
+`arena_c29_run23.log`); it was stopped between games and relaunched on
+`checkpoints/remote/campaign31/gen_0015.pt` (198 arena tests, dry run 3/3).
+c31 gen 12 overall: 17-5-0 recorded over three sessions, plus two aborted
+games without ledger rows. Ledger at restart: 449 rows; first game 185875864.
+
 ## Status by phase
 
 - **P0 — Recording harness: complete (2026-07-24).**
