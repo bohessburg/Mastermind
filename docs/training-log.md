@@ -3168,6 +3168,7 @@ Ladder against c29 gen 43 every fifth generation (`bench/c31_ladder`, 200 pairs 
 | 12 | 0.5275 | 0.5122 | **accepted** | 0.741 | 0.670 | 0 | 42.1 |
 | 13 | 0.4913 | 0.4763 | rejected | 0.738 | 0.651 | 1 | 44.0 |
 | 14 | 0.5031 | 0.4886 | rejected | 0.734 | 0.680 | 1 | 40.7 |
+| 15 | 0.5294 | 0.5137 | **accepted** | 0.727 | 0.692 | 0 | 40.7 |
 
 Gen 1 notes: 31.1 minutes, inside c30's 29 to 33 minute range. Self-play mix was 820 self games, 102 league games
 (25, 26 and 19 wins of 34 against c29 gen 10, 25 and 35) and 102 scripted
@@ -3247,3 +3248,11 @@ redone from self-play; its first run is lost. No out-of-memory kill
 (`oom_kill 0`, 103 GB in use after the restart). The memory logger and the
 ladder watcher do not survive a container restart and were started again by
 hand at 00:52 and 00:54 UTC.
+
+Gen 15 (2026-11-13 01:32 UTC, the rerun after the outage) accepted at 0.5294
+against gen 12, lower bound 0.5137: third promotion of the run, after gens 6
+and 12. Best is gen 15 and the rejection streak is back to 0. Held-out r2
+0.692, no truncated self-play games. Checkpoint copied to
+`checkpoints/remote/campaign31/gen_0015.pt` (sha256 `6cad6df5...517582bc`,
+matches the box). Its engine3 eval and the ladder match against c29 gen 43
+started on the box at 01:32 UTC and share the GPU with gen 16.
