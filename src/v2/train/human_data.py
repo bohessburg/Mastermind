@@ -124,20 +124,37 @@ class HumanBatchIterator(Iterator[HumanBatch]):
     def __iter__(self) -> "HumanBatchIterator":
         return self
 
-    def __next__(self) -> HumanBatch:
+    def _advance(self, rows: int, *, collect: bool) -> list[np.ndarray]:
         # A batch may cross an epoch boundary (and may be larger than the
-        # corpus), so collect one or more contiguous permutation slices.
+        # corpus), so walk one or more contiguous permutation slices.
         pieces: list[np.ndarray] = []
-        remaining = self.batch_size
+        remaining = rows
         while remaining:
             available = len(self._order) - self._cursor
             take = min(remaining, available)
-            pieces.append(self._order[self._cursor : self._cursor + take])
+            if collect:
+                pieces.append(self._order[self._cursor : self._cursor + take])
             self._cursor += take
             remaining -= take
             if self._cursor == len(self._order):
                 self._order = self.rng.permutation(len(self.dataset))
                 self._cursor = 0
+        return pieces
+
+    def skip_batches(self, count: int) -> None:
+        """Advance past ``count`` batches without reading any rows.
+
+        The iterator ends in exactly the state ``count`` calls to ``next``
+        would leave it in, so a resumed trainer can continue the corpus pass
+        where an uninterrupted run would be instead of replaying its start.
+        """
+
+        if not isinstance(count, int) or isinstance(count, bool) or count < 0:
+            raise ValueError("count must be a non-negative integer")
+        self._advance(count * self.batch_size, collect=False)
+
+    def __next__(self) -> HumanBatch:
+        pieces = self._advance(self.batch_size, collect=True)
         indices = pieces[0] if len(pieces) == 1 else np.concatenate(pieces)
         return HumanBatch(
             obs=np.ascontiguousarray(self.dataset.obs[indices]),

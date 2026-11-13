@@ -1199,6 +1199,29 @@ def write_stop_marker(config: TrainConfig, generation: int, best_generation: int
     return path
 
 
+def anchor_batches_for_generation(
+    dataset: HumanTupleDataset,
+    config: TrainConfig,
+    generation: int,
+) -> Iterator[HumanBatch]:
+    """Return the anchor batch stream positioned for ``generation``.
+
+    The stream is one seeded pass over the human corpus that every generation
+    advances by ``train_steps_per_generation`` batches.  A trainer that starts
+    at a later generation skips to where an uninterrupted run would be;
+    restarting the stream instead replayed the same opening slice of the
+    corpus after every resume (c31: under half the corpus ever reached the
+    anchor loss, and its first slice was replayed after each restart).
+    """
+
+    batches = dataset.minibatches(
+        config.imitation.anchor_batch_size,
+        int(config.seed) ^ 0x414E_4348_4F52,
+    )
+    batches.skip_batches(max(0, int(generation) - 1) * int(config.optim.train_steps_per_generation))
+    return batches
+
+
 def run_training(config: TrainConfig, resume: str | None = None, profile: bool = False) -> dict[str, Any]:
     requested = config
     if not isinstance(config.init_weights, str):
@@ -1673,10 +1696,7 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
                 anchor_active = effective_anchor_weight > 0.0
                 aux_active = float(config.aux_margin_weight) > 0.0
                 if anchor_active and anchor_batches is None:
-                    anchor_batches = ensure_human_dataset().minibatches(
-                        config.imitation.anchor_batch_size,
-                        int(config.seed) ^ 0x414E_4348_4F52,
-                    )
+                    anchor_batches = anchor_batches_for_generation(ensure_human_dataset(), config, generation)
                 accum = {
                     "policy_loss": 0.0,
                     "value_loss": 0.0,

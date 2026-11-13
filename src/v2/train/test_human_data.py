@@ -102,6 +102,49 @@ def test_seeded_minibatches_cycle_forever_and_match_across_iterators(tmp_path: P
         np.testing.assert_array_equal(first_batch.value, second_batch.value)
 
 
+def test_skip_batches_lands_where_the_same_number_of_draws_would(tmp_path: Path) -> None:
+    root = make_tuple_root(tmp_path / "tuples")
+    # Batch 3 over 4 rows: every skip count below crosses reshuffle boundaries.
+    for skipped in (0, 1, 2, 5, 9):
+        drawn = load_human_tuples(root).minibatches(batch_size=3, seed=913)
+        for _ in range(skipped):
+            next(drawn)
+        jumped = load_human_tuples(root).minibatches(batch_size=3, seed=913)
+        jumped.skip_batches(skipped)
+        for _ in range(5):
+            expected = next(drawn)
+            actual = next(jumped)
+            np.testing.assert_array_equal(actual.obs, expected.obs)
+            np.testing.assert_array_equal(actual.action, expected.action)
+
+    with pytest.raises(ValueError, match="non-negative"):
+        load_human_tuples(root).minibatches(batch_size=3, seed=913).skip_batches(-1)
+
+
+def test_resumed_anchor_stream_continues_the_corpus_pass_instead_of_replaying_it(tmp_path: Path) -> None:
+    from src.v2.train.config import TrainConfig
+    from src.v2.train.train import anchor_batches_for_generation
+
+    root = make_tuple_root(tmp_path / "tuples")
+    config = TrainConfig()
+    config.seed = 31
+    config.imitation.anchor_batch_size = 3
+    config.optim.train_steps_per_generation = 2
+
+    # One uninterrupted trainer: generations 1..4, two anchor batches each.
+    uninterrupted = anchor_batches_for_generation(load_human_tuples(root), config, 1)
+    by_generation = {
+        generation: [next(uninterrupted).obs for _ in range(config.optim.train_steps_per_generation)]
+        for generation in (1, 2, 3, 4)
+    }
+
+    # A trainer restarted at each generation sees that generation's batches.
+    for generation, expected in by_generation.items():
+        resumed = anchor_batches_for_generation(load_human_tuples(root), config, generation)
+        for batch in expected:
+            np.testing.assert_array_equal(next(resumed).obs, batch)
+
+
 def test_signed_policy_weight_curve_boundaries_and_deviation_discount() -> None:
     assert policy_weight_for_rating(39.0) == pytest.approx(POLICY_WEIGHT_EPSILON)
     assert policy_weight_for_rating(40.0) == pytest.approx(POLICY_WEIGHT_EPSILON)
