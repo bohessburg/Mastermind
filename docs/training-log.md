@@ -3173,6 +3173,7 @@ Ladder against c29 gen 43 every fifth generation (`bench/c31_ladder`, 200 pairs 
 | 17 | 0.5175 | 0.5017 | **accepted** | 0.729 | 0.685 | 1 | 41.2 |
 | 18 | 0.5106 | 0.4956 | rejected | 0.734 | 0.687 | 3 | 44.8 |
 | 19 | 0.5231 | 0.5077 | **accepted** | 0.733 | 0.674 | 0 | 42.2 |
+| 20 | 0.4888 | 0.4739 | rejected | 0.728 | 0.660 | 1 | 40.7 |
 
 Gen 1 notes: 31.1 minutes, inside c30's 29 to 33 minute range. Self-play mix was 820 self games, 102 league games
 (25, 26 and 19 wins of 34 against c29 gen 10, 25 and 35) and 102 scripted
@@ -3289,3 +3290,9 @@ Gen 19 (2026-11-13 04:26 UTC) accepted at 0.5231 against gen 17, lower bound
 generations since the box restart. Best is gen 19, rejection streak 0.
 Checkpoint copied to `checkpoints/remote/campaign31/gen_0019.pt` (sha256
 `1d18bd85...b1d62381`, matches the box); engine3 eval started on the box.
+
+Gen 19 engine3 eval: 75-25-0 and 69-30-1 = 72.4% excluding ties over 200
+(gen 17 71.7%, gen 15 71.0%, gen 12 75.9%, gen 6 74.2%): still flat within
+one standard error. Gen 20 (05:07 UTC) rejected at 0.4888 against gen 19,
+lower bound 0.4739; best stays gen 19, rejection streak 1. The gen 20
+ladder match against c29 gen 43 started at 05:07 UTC.
