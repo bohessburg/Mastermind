@@ -343,3 +343,106 @@ def test_archive_loop_invalidates_shadow_and_records_undo_resync(
         record["event_type"] == "UndoResync"
         for record in archived
     ) == 1
+
+
+# Both runs aborted on an unrequested FullState: the opponent took back their
+# own treasure plays and the server rewound without asking the other seat.
+TREASURE_REWIND_ARCHIVES = {
+    181415316: (
+        Path("exports/arena/20260726T085210.446326Z/frames.jsonl"),
+        2,
+        2,
+    ),
+    185890558: (
+        Path("exports/arena/20261113T094043.763381Z/frames.jsonl"),
+        4,
+        2,
+    ),
+}
+
+
+def _replay_to_treasure_rewind(
+    game_id: int,
+) -> tuple[Tracker, tuple[GameEvent, ...], FullState]:
+    archive = TREASURE_REWIND_ARCHIVES[game_id][0]
+    if not archive.is_file():
+        pytest.skip(f"missing treasure-rewind fixture: {archive}")
+    events = parse_recording(archive).events
+    target = [
+        event
+        for event in events
+        if isinstance(event, FullState) and event.game_id == game_id
+    ][-1]
+    tracker = Tracker()
+    for event in events:
+        if event is target:
+            break
+        tracker.consume(event)
+        assert tracker.last_undo_resync is None
+    return tracker, events, target
+
+
+@pytest.mark.parametrize("game_id", sorted(TREASURE_REWIND_ARCHIVES))
+def test_unrequested_treasure_rewind_reseeds_the_tracker(game_id: int) -> None:
+    tracker, _, target = _replay_to_treasure_rewind(game_id)
+    _, hand_count, in_play_count = TREASURE_REWIND_ARCHIVES[game_id]
+
+    tracker.consume(target)
+
+    resync = tracker.last_undo_resync
+    assert resync is not None
+    assert not resync.signalled
+    assert (resync.requester_seat, resync.decision_index) == (0, -1)
+    opponent = tracker.snapshot().seats[0]
+    assert opponent.hand_count == hand_count
+    assert opponent.in_play_count == in_play_count
+
+
+def test_treasure_rewind_shape_on_our_own_turn_still_raises() -> None:
+    tracker, _, target = _replay_to_treasure_rewind(181415316)
+    tracker.turn_owner = tracker.our_seat
+
+    with pytest.raises(TrackerError, match="FullState zone-count mismatch"):
+        tracker.consume(target)
+
+
+def test_unrequested_rewind_of_a_non_treasure_still_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tracker, _, target = _replay_to_treasure_rewind(181415316)
+    monkeypatch.setattr(
+        "src.v2.arena.shadow.tracker.TREASURE_NAMES",
+        frozenset({"Gold"}),
+    )
+
+    with pytest.raises(TrackerError, match="FullState zone-count mismatch"):
+        tracker.consume(target)
+
+
+def test_archive_loop_survives_an_unrequested_treasure_rewind(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    _, events, _ = _replay_to_treasure_rewind(181415316)
+
+    with caplog.at_level("CRITICAL"):
+        results = asyncio.run(
+            run_game_loop(
+                events,
+                actuator=MockActuator(replay=True),
+                decision_provider=RecordedDecisionProvider(events),
+                archive_factory=lambda game_id: GameArchive(
+                    tmp_path,
+                    game_id=game_id,
+                ),
+            )
+        )
+
+    # The recording stops right after the rewind, so the rewound game itself
+    # has no result; before the fix it ended the loop as a divergence abort.
+    assert results
+    assert not any(result.divergence_aborted for result in results)
+    assert sum(
+        "unrequested FullState reseeded game 181415316" in record.getMessage()
+        for record in caplog.records
+    ) == 1

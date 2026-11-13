@@ -59,6 +59,9 @@ class UndoResyncInfo:
     decision_index: int
     signal_timestamp_ms: int | None
     full_state_timestamp_ms: int | None
+    # False when the server rewound the turn player's own treasure plays
+    # without sending an undo request; decision_index is then -1.
+    signalled: bool = True
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -380,22 +383,108 @@ class Tracker:
             self._zone_owner = old_zone_owner
             self._supply_name = old_supply_name
             self._resources = old_resources
-            if not self._undo_signal_is_recent(event):
+            signalled = self._undo_signal_is_recent(event)
+            if not signalled and not self._is_treasure_play_rewind(
+                event, totals, zones
+            ):
                 raise
 
-        request = self._recent_undo_request
-        assert request is not None
+        if signalled:
+            request = self._recent_undo_request
+            assert request is not None
+            resync = UndoResyncInfo(
+                game_id=event.game_id,
+                requester_seat=request.requester_seat,
+                decision_index=request.decision_index,
+                signal_timestamp_ms=request.timestamp_ms,
+                full_state_timestamp_ms=event.timestamp_ms,
+            )
+        else:
+            assert self.turn_owner is not None
+            resync = UndoResyncInfo(
+                game_id=event.game_id,
+                requester_seat=self.turn_owner,
+                decision_index=-1,
+                signal_timestamp_ms=None,
+                full_state_timestamp_ms=event.timestamp_ms,
+                signalled=False,
+            )
         self._replace_full_state(event, totals, zones)
         self.pending_decision = None
-        self.last_undo_resync = UndoResyncInfo(
-            game_id=event.game_id,
-            requester_seat=request.requester_seat,
-            decision_index=request.decision_index,
-            signal_timestamp_ms=request.timestamp_ms,
-            full_state_timestamp_ms=event.timestamp_ms,
-        )
+        self.last_undo_resync = resync
         self._recent_undo_request = None
         self._events_since_undo_request = None
+
+    def _is_treasure_play_rewind(
+        self,
+        event: FullState,
+        totals: Counter[str],
+        zones: dict[int, _ZoneState],
+    ) -> bool:
+        """Whether a mismatching FullState only takes back opponent treasure plays.
+
+        The server rewinds a player's own treasure plays without asking the
+        other seat: no undo request reaches us, only a fresh GameStart and
+        FullState (games 181415316 and 185890558). Accept exactly that shape:
+        the opponent's turn, nothing asked of us, and the only difference is
+        treasures moving from the turn player's play area back to their hand.
+        """
+        owner = self.turn_owner
+        if (
+            owner is None
+            or self.our_seat is None
+            or owner == self.our_seat
+            or self.turn_number is None
+            or self.ended
+            or self.pending_decision is not None
+            or totals != self._card_totals
+        ):
+            return False
+        reported_supply: Counter[str] = Counter()
+        reported_counts: Counter[tuple[int | None, str]] = Counter()
+        reported_in_play = _ZoneState()
+        for zone in event.zones:
+            state = zones[zone.index]
+            kind = _tracked_zone_kind(zone.kind)
+            if kind == "supply":
+                reported_supply.update(state.known)
+            if kind in TRACKED_ZONE_KINDS or kind == "trash":
+                reported_counts[(zone.owner, kind)] += state.count
+            if kind == "in-play" and zone.owner == owner:
+                reported_in_play.known.update(state.known)
+                reported_in_play.anonymous += state.anonymous
+        if reported_supply != self._supply():
+            return False
+        tracked_counts = Counter(
+            {
+                key: value
+                for key, value in self._zone_counts_by_owner_kind().items()
+                if key[1] in TRACKED_ZONE_KINDS or key[1] == "trash"
+            }
+        )
+        hand = (owner, "hand")
+        in_play = (owner, "in-play")
+        differing = {
+            key
+            for key in tracked_counts.keys() | reported_counts.keys()
+            if tracked_counts[key] != reported_counts[key]
+        }
+        returned = tracked_counts[in_play] - reported_counts[in_play]
+        if (
+            differing != {hand, in_play}
+            or returned <= 0
+            or reported_counts[hand] - tracked_counts[hand] != returned
+        ):
+            return False
+        tracked_in_play = self._aggregate_seat(owner, "in-play")
+        if tracked_in_play.anonymous or reported_in_play.anonymous:
+            return False
+        if reported_in_play.known - tracked_in_play.known:
+            return False
+        taken_back = tracked_in_play.known - reported_in_play.known
+        return sum(taken_back.values()) == returned and all(
+            name in TREASURE_NAMES for name in taken_back
+        )
 
     def _undo_signal_is_recent(self, full_state: FullState) -> bool:
         request = self._recent_undo_request

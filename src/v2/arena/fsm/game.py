@@ -1083,19 +1083,33 @@ async def run_game_loop(
                     game_id=undo_resync.game_id,
                     requester_seat=undo_resync.requester_seat,
                     decision_index=undo_resync.decision_index,
-                    reason="mismatching FullState after recent undo signal",
+                    reason=(
+                        "mismatching FullState after recent undo signal"
+                        if undo_resync.signalled
+                        else "unrequested FullState took back the turn "
+                        "player's treasure plays"
+                    ),
                     timestamp_ms=undo_resync.full_state_timestamp_ms,
                 )
                 if active.archive is not None:
                     active.archive.append_event(frame_index, marker)
-                LOGGER.critical(
-                    "UNDO RESYNC: authoritative FullState reseeded game %d "
-                    "after seat %d requested decision %d; invalidated the "
-                    "mid-turn shadow and pending actuation",
-                    undo_resync.game_id,
-                    undo_resync.requester_seat,
-                    undo_resync.decision_index,
-                )
+                if undo_resync.signalled:
+                    LOGGER.critical(
+                        "UNDO RESYNC: authoritative FullState reseeded game %d "
+                        "after seat %d requested decision %d; invalidated the "
+                        "mid-turn shadow and pending actuation",
+                        undo_resync.game_id,
+                        undo_resync.requester_seat,
+                        undo_resync.decision_index,
+                    )
+                else:
+                    LOGGER.critical(
+                        "UNDO RESYNC: unrequested FullState reseeded game %d "
+                        "after seat %d took back its own treasure plays; "
+                        "invalidated the mid-turn shadow and pending actuation",
+                        undo_resync.game_id,
+                        undo_resync.requester_seat,
+                    )
                 continue
 
             if isinstance(event, GameStart):
