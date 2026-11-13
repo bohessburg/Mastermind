@@ -102,6 +102,7 @@ def build_model(model_config: Mapping[str, Any] | Any, obs_size: int, action_siz
             derived_features=bool(config.get("derived_features", False)),
             final_norm=bool(config.get("final_norm", False)),
             embedding_init_std=config.get("embedding_init_std"),
+            token_trim=bool(config.get("token_trim", True)),
         )
     else:
         raise ValueError(f"unknown model.arch {arch!r}; expected 'mlp' or 'card_transformer'")

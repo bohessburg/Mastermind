@@ -309,6 +309,43 @@ def test_shared_cpu_inference_server_selfplay_smoke(tmp_path: Path) -> None:
     assert all(float(row["server_batch_wait_p99_ms"]) >= float(row["server_batch_wait_p50_ms"]) for row in rows)
 
 
+@pytest.mark.skipif(not torch.backends.mps.is_available(), reason="requires an Apple GPU")
+@pytest.mark.parametrize(
+    ("backend", "fp16", "token_trim"),
+    [("torch", False, True), ("torch", True, True), ("mlx", True, True), ("mlx", False, False)],
+)
+def test_shared_apple_gpu_inference_server_selfplay_smoke(
+    tmp_path: Path,
+    backend: str,
+    fp16: bool,
+    token_trim: bool,
+) -> None:
+    """Both Apple serving options run real self-play across a weight update."""
+    if backend == "mlx":
+        pytest.importorskip("mlx.core")
+    cfg = server_config(tmp_path)
+    cfg.server_device = "mps"
+    cfg.server_backend = backend
+    cfg.server_fp16 = fp16
+    cfg.selfplay.obs_version = 3
+    cfg.model.arch = "card_transformer"
+    cfg.model.obs_version = 3
+    cfg.model.d_model = 32
+    cfg.model.n_layers = 1
+    cfg.model.n_heads = 2
+    cfg.model.derived_features = True
+    cfg.model.final_norm = True
+    cfg.model.token_trim = token_trim
+    cfg.server_response_timeout_s = 20.0
+    result = run_training(cfg)
+
+    assert result["config"]["server_backend"] == backend
+    assert [row["games"] for row in result["metrics"]] == [2, 2]
+    rows = read_metrics(Path(cfg.metrics_csv))
+    assert len(rows) == 2
+    assert all(float(row["server_evals_per_sec"]) > 0.0 for row in rows)
+
+
 def test_sharded_cpu_inference_server_selfplay_smoke(tmp_path: Path) -> None:
     cfg = server_config(tmp_path, generations=1)
     cfg.server_shards = 2

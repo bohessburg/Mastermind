@@ -36,7 +36,8 @@ except ImportError:  # pragma: no cover - supported CPython versions provide it
 
 import dominion_v2_py as dz
 
-from .config import TrainConfig
+from .apple_backend import SERVER_BACKENDS, build_host_backend
+from .config import TrainConfig, load_config
 from .inference_protocol import (
     InferenceServerEndpoints,
     WorkerSharedMemorySpec,
@@ -467,6 +468,7 @@ class _PinnedStaging:
         # Bool and uint8 both occupy one byte. Workers intentionally write the
         # compact uint8 legal mask directly into this persistent Bool tensor.
         self.masks_np = self.masks.numpy().view(np.uint8)
+        self.masks_bool_np = self.masks.numpy()
         self.values_np = self.values.numpy()
         self.policies_np = self.policies.numpy()
 
@@ -506,7 +508,20 @@ class _PinnedStaging:
         evaluator: torch.nn.Module | None = None,
         use_bf16: bool = False,
         batch_buckets: tuple[int, ...] | list[int] | None = None,
+        host_backend: Any | None = None,
     ) -> _InFlightForward:
+        if host_backend is not None:
+            # Apple-GPU serving (see apple_backend): synchronous, host NumPy
+            # rows in and out, precision handled inside the backend.
+            capacity = int(self.obs.shape[0])
+            rows = max(int(count), min(capacity, int(host_backend.padded_rows(count, capacity))))
+            if rows > count:
+                self.zero_inputs_slice(count, rows)
+            started_at_s = time.perf_counter()
+            policies_np, values_np = host_backend.evaluate(self.obs_np[:rows], self.masks_bool_np[:rows])
+            self.values_np[:count] = values_np[:count]
+            self.policies_np[:count] = policies_np[:count]
+            return _InFlightForward(started_at_s, None)
         forward_count = _bucketed_batch_size(count, batch_buckets)
         if forward_count > self.obs.shape[0]:
             raise ValueError("bucketed server batch exceeds staging capacity")
@@ -572,6 +587,7 @@ class _PinnedStaging:
         evaluator: torch.nn.Module | None = None,
         use_bf16: bool = False,
         batch_buckets: tuple[int, ...] | list[int] | None = None,
+        host_backend: Any | None = None,
     ) -> float:
         """Synchronous compatibility wrapper used only during warmup."""
 
@@ -582,6 +598,7 @@ class _PinnedStaging:
             evaluator=evaluator,
             use_bf16=use_bf16,
             batch_buckets=batch_buckets,
+            host_backend=host_backend,
         ).finish()
 
     def zero_inputs_slice(self, start: int, end: int) -> None:
@@ -627,6 +644,14 @@ class _ResidentModel:
     model: torch.nn.Module
     evaluator: torch.nn.Module | None
     staging: _PinnedStaging
+    # Set for Apple-GPU serving; owns precision and (for MLX) converted weights.
+    host_backend: Any | None = None
+
+    def load_weights(self, state_dict: dict[str, torch.Tensor]) -> None:
+        self.model.load_state_dict(state_dict)
+        self.model.eval()
+        if self.host_backend is not None:
+            self.host_backend.refresh()
 
 
 def _payload_parts(
@@ -659,11 +684,15 @@ def _build_resident_model(
     encoder_generation = int(model_config.get("encoder_generation", 2))
     if encoder_generation < 1:
         raise ValueError(f"server model has invalid encoder_generation {encoder_generation!r}")
+    backend_name = str(getattr(config, "server_backend", "torch")).lower()
+    # The MLX backend runs its own copy of the network on the GPU; the PyTorch
+    # model then only owns the weights and stays on the CPU.
+    model_device = torch.device("cpu") if backend_name == "mlx" else device
     model = build_model(
         model_config,
         obs_size_for_version(obs_version),
         dz.ACTION_SPACE_SIZE,
-    ).to(device)
+    ).to(model_device)
     model.eval()
     normalized_config = model_config_dict(getattr(model, "_dominion_model_config", model_config))
     normalized_config["encoder_generation"] = encoder_generation
@@ -672,6 +701,22 @@ def _build_resident_model(
         max(int(config.server_max_batch), max(batch_buckets, default=0)),
         obs_size_for_version(obs_version),
     )
+    host_backend = build_host_backend(model, device, backend_name, half=bool(config.server_fp16))
+    if host_backend is not None:
+        if bool(config.server_compile):
+            logger.warning("server_compile=true is ignored on %s", device.type)
+        if batch_buckets:
+            logger.warning("server_batch_buckets is ignored on %s", device.type)
+        logger.info(
+            "inference server backend=%s device=%s half=%s token_trim=%s",
+            host_backend.name,
+            device.type,
+            bool(config.server_fp16),
+            getattr(model, "token_trim", None),
+        )
+        return _ResidentModel(
+            normalized_config, obs_version, encoder_generation, model, None, staging, host_backend
+        )
     evaluator = _maybe_compile_server_evaluator(model, device, bool(config.server_compile))
     _warm_server_evaluator(
         staging,
@@ -688,8 +733,10 @@ def _build_resident_model(
 def _server_device(name: str) -> torch.device:
     requested = name.lower()
     base, _, index = requested.partition(":")
-    if base not in {"cpu", "cuda"} or (index and (base != "cuda" or not index.isdigit())):
-        raise ValueError("server_device must be 'cpu', 'cuda', or 'cuda:<index>'")
+    if base not in {"cpu", "cuda", "mps"} or (index and (base != "cuda" or not index.isdigit())):
+        raise ValueError("server_device must be 'cpu', 'cuda', 'cuda:<index>', or 'mps'")
+    if base == "mps" and not torch.backends.mps.is_available():
+        raise RuntimeError("server_device=mps requested but unavailable")
     if base == "cuda" and not torch.cuda.is_available():
         raise RuntimeError("server_device=cuda requested but unavailable")
     if index and int(index) >= torch.cuda.device_count():
@@ -815,6 +862,7 @@ def _server_main(
                     "Check the full-graph compiler error above."
                 ) from exc
             raise
+        drain_before_fire = device.type == "mps"
         if endpoints.transport == "shm":
             assert endpoints.shared_memory_specs is not None
             views = [WorkerSharedMemoryViews(spec) for spec in endpoints.shared_memory_specs]
@@ -910,8 +958,7 @@ def _server_main(
                                 "refusing to fall back to eager execution"
                             ) from exc
                         raise
-                resident.model.load_state_dict(deserialize_cpu_state_dict(state_payload))
-                resident.model.eval()
+                resident.load_weights(deserialize_cpu_state_dict(state_payload))
                 installed.append(resident)
             resident_models = installed
 
@@ -928,8 +975,7 @@ def _server_main(
                     return
                 if kind == "weights":
                     _, generation, payload = command
-                    resident_models[0].model.load_state_dict(deserialize_cpu_state_dict(payload))
-                    resident_models[0].model.eval()
+                    resident_models[0].load_weights(deserialize_cpu_state_dict(payload))
                     status_queue.put(("weights", generation, None))
                     continue
                 if kind == "models":
@@ -1089,6 +1135,15 @@ def _server_main(
             handle_commands()
             if not running:
                 break
+            if drain_before_fire:
+                # Host backends run synchronously, so nothing was dequeued
+                # during the previous forward. Collect everything that queued
+                # up meanwhile, or each stale request would fire on its own.
+                while True:
+                    try:
+                        pending.add(dequeue_request(0.0))
+                    except queue.Empty:
+                        break
             ready = pending.ready_model(time.perf_counter())
             if ready is None:
                 until_deadline = pending.seconds_until_deadline(time.perf_counter())
@@ -1116,6 +1171,7 @@ def _server_main(
                 evaluator=resident.evaluator,
                 use_bf16=use_bf16,
                 batch_buckets=batch_buckets,
+                host_backend=resident.host_backend,
             )
             inference_time = _drain_during_flight(
                 in_flight,
@@ -1536,6 +1592,51 @@ class InferenceServer:
             shard.close()
 
 
+_BENCH_KINGDOM = (
+    "Village",
+    "Smithy",
+    "Market",
+    "Witch",
+    "Moat",
+    "Cellar",
+    "Chapel",
+    "Workshop",
+    "Remodel",
+    "Mine",
+)
+
+
+def _bench_game_rows(count: int, obs_size: int, seed: int) -> tuple[np.ndarray, np.ndarray]:
+    """Rows from random two-player games.
+
+    Constant-filled rows mark either none or all 48 supply slots as used, which
+    is unrepresentative for a network whose cost depends on the active piles.
+    """
+
+    versions = {obs_size_for_version(version): version for version in (1, 2, 3)}
+    if obs_size not in versions:
+        raise ValueError(f"no observation version has size {obs_size}")
+    version = versions[obs_size]
+    rng = np.random.default_rng(seed)
+    obs = np.empty((count, obs_size), dtype=np.float32)
+    masks = np.empty((count, dz.ACTION_SPACE_SIZE), dtype=np.uint8)
+    row = 0
+    game_index = 0
+    while row < count:
+        game = dz.new_game(dz.Setup(players=2, kingdom=list(_BENCH_KINGDOM)), seed * 100_003 + game_index)
+        game_index += 1
+        for _ in range(600):
+            legal = np.asarray(game.legal_mask(), dtype=bool)
+            actions = np.flatnonzero(legal)
+            if actions.size == 0 or row >= count:
+                break
+            obs[row] = game.encode(int(game.current_decision()["player"]), version)
+            masks[row] = legal
+            row += 1
+            game.step(int(rng.choice(actions)))
+    return obs, masks
+
+
 def _bench_worker_main(
     endpoints: InferenceServerEndpoints,
     worker_id: int,
@@ -1543,6 +1644,7 @@ def _bench_worker_main(
     stop_event: Any,
     ready_queue: Any,
     result_queue: Any,
+    game_rows: bool = False,
 ) -> None:
     """Synthetic max-rate requester used by ``--bench-server``."""
     shared_views: WorkerSharedMemoryViews | None = None
@@ -1551,8 +1653,11 @@ def _bench_worker_main(
             assert endpoints.shared_memory_specs is not None
             shared_views = WorkerSharedMemoryViews(endpoints.shared_memory_specs[worker_id])
         count = endpoints.request_batch_size
-        obs = np.full((count, endpoints.obs_size), float(worker_id), dtype=np.float32)
-        masks = np.ones((count, dz.ACTION_SPACE_SIZE), dtype=np.uint8)
+        if game_rows:
+            obs, masks = _bench_game_rows(count, endpoints.obs_size, worker_id)
+        else:
+            obs = np.full((count, endpoints.obs_size), float(worker_id), dtype=np.float32)
+            masks = np.ones((count, dz.ACTION_SPACE_SIZE), dtype=np.uint8)
         response_queue = endpoints.response_queues[worker_id]
         sequence = 0
         batches = 0
@@ -1714,6 +1819,11 @@ def bench_server(
     max_batch: int,
     transport: str,
     poll: str,
+    backend: str = "torch",
+    fp16: bool = False,
+    model_config_path: str | None = None,
+    token_trim: bool = True,
+    coalesce_rows: int | None = None,
 ) -> list[dict[str, float | int | str]]:
     """Run standalone synthetic transport/server measurements for each worker count."""
     if duration_s <= 0.0 or max_batch <= 0:
@@ -1727,11 +1837,20 @@ def bench_server(
         cfg.server_transport = transport
         cfg.server_poll = poll
         cfg.server_max_batch = max_batch
-        cfg.server_coalesce_target_rows = min(512, max_batch)
+        cfg.server_coalesce_target_rows = min(512 if coalesce_rows is None else int(coalesce_rows), max_batch)
         cfg.server_coalesce_ms = 4.0
         cfg.server_response_timeout_s = 10.0
         cfg.selfplay.max_batch = max_batch
-        cfg.model.hidden_sizes = [32]
+        cfg.server_backend = backend
+        cfg.server_fp16 = fp16
+        if model_config_path is None:
+            cfg.model.hidden_sizes = [32]
+        else:
+            # Serve the real network of a training config from game rows.
+            source = load_config(model_config_path)
+            cfg.model = source.model
+            cfg.model.token_trim = bool(token_trim)
+            cfg.selfplay.obs_version = int(source.selfplay.obs_version)
         server = InferenceServer(cfg, worker_count)
         start_event = context.Event()
         stop_event = context.Event()
@@ -1740,7 +1859,15 @@ def bench_server(
         workers = [
             context.Process(
                 target=_bench_worker_main,
-                args=(server.endpoints, worker_id, start_event, stop_event, ready_queue, result_queue),
+                args=(
+                    server.endpoints,
+                    worker_id,
+                    start_event,
+                    stop_event,
+                    ready_queue,
+                    result_queue,
+                    model_config_path is not None,
+                ),
                 name=f"inference-bench-{worker_id}",
             )
             for worker_id in range(worker_count)
@@ -1750,6 +1877,14 @@ def bench_server(
                 worker.start()
             for _ in workers:
                 ready_queue.get(timeout=15.0)
+            # Workers treat a not-yet-ready server as a dead one, and building
+            # a real model takes longer than starting the workers.
+            ready_deadline = time.monotonic() + 120.0
+            while not server.alive_event.is_set():
+                server.ensure_alive()
+                if time.monotonic() >= ready_deadline:
+                    raise RuntimeError("inference server did not become ready")
+                time.sleep(0.05)
             start = time.perf_counter()
             start_event.set()
             time.sleep(duration_s)
@@ -1765,6 +1900,8 @@ def bench_server(
                     worker.join(timeout=5.0)
             errors = [result[3] for result in results if result[3] is not None]
             if errors:
+                # A dead server is the usual cause; surface its traceback.
+                server.ensure_alive()
                 raise RuntimeError(f"benchmark synthetic worker failure: {errors[0]}")
             metrics = server.collect_metrics(generation=0, include_totals=True)
             header_round_trip_us = _bench_queue_header_round_trip(context, worker_count, min(1.0, duration_s))
@@ -1773,6 +1910,10 @@ def bench_server(
             rows.append(
                 {
                     "device": device,
+                    "backend": backend,
+                    "fp16": fp16,
+                    "arch": str(cfg.model.arch),
+                    "token_trim": bool(cfg.model.token_trim),
                     "transport": server.transport,
                     "poll": server.poll,
                     "workers": worker_count,
@@ -1798,7 +1939,16 @@ def bench_server(
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--bench-server", action="store_true")
-    parser.add_argument("--device", choices=["cpu", "cuda"], default="cpu")
+    parser.add_argument("--device", choices=["cpu", "cuda", "mps"], default="cpu")
+    parser.add_argument("--backend", choices=list(SERVER_BACKENDS), default="torch")
+    parser.add_argument("--fp16", action="store_true")
+    parser.add_argument(
+        "--model-config",
+        default=None,
+        help="training config whose model is served from real game rows (default: a tiny MLP)",
+    )
+    parser.add_argument("--no-token-trim", action="store_true")
+    parser.add_argument("--coalesce-rows", type=int, default=None)
     parser.add_argument("--workers", default="8,16,24")
     parser.add_argument("--duration", type=float, default=3.0)
     parser.add_argument("--max-batch", type=int, default=1024)
@@ -1815,6 +1965,11 @@ def main(argv: list[str] | None = None) -> int:
         max_batch=args.max_batch,
         transport=args.transport,
         poll=args.poll,
+        backend=args.backend,
+        fp16=args.fp16,
+        model_config_path=args.model_config,
+        token_trim=not args.no_token_trim,
+        coalesce_rows=args.coalesce_rows,
     ):
         print(json.dumps(row, sort_keys=True))
     return 0

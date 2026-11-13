@@ -156,8 +156,12 @@ class CardTokenNet(nn.Module):
         derived_features: bool = False,
         final_norm: bool = False,
         embedding_init_std: float | None = None,
+        token_trim: bool = True,
     ):
         super().__init__()
+        # Runtime execution option, not architecture: no parameter depends on
+        # it and state_dicts are identical either way.  See ``forward``.
+        self.token_trim = bool(token_trim)
         if int(obs_size) == OBS_SIZE_V2:
             inferred_obs_version = 2
         elif int(obs_size) == OBS_SIZE_V3:
@@ -340,7 +344,7 @@ class CardTokenNet(nn.Module):
         gardens = ((def_ids == DEF_GARDENS) & card_mask).to(own.dtype)
 
         own_counts = own.clamp_min(0).sum(dim=-1) * mask  # per pile, all zones
-        opp_collection = opponents[:, 0, 75:139][:, :MAX_PILES].clamp_min(0) * mask
+        opp_collection = opponents[:, 0, 75:139][:, : own.shape[1]].clamp_min(0) * mask
         own_total = own_counts.sum(dim=-1)
         opp_total = opp_collection.sum(dim=-1)
         own_vp = (own_counts * pile_vp).sum(dim=-1) + (own_counts * gardens).sum(dim=-1) * torch.floor(own_total / 10.0)
@@ -382,20 +386,62 @@ class CardTokenNet(nn.Module):
         embedded = self.def_embedding(source_ids)
         return embedded * source_present.unsqueeze(-1).to(dtype=embedded.dtype)
 
-    def tokenize(self, obs: torch.Tensor) -> TokenizedCards:
+    def active_pile_count(self, obs: torch.Tensor) -> int:
+        """Leading supply slots used by at least one row of ``obs`` (minimum 1).
+
+        Piles occupy a contiguous slot prefix (17 in a two-player base-set
+        game); the rest of the 48 supply blocks are empty.  This reads one
+        scalar back from the device, so it must not run inside a compiled
+        graph.
+        """
+
+        base_ids_plus_one = obs[
+            :,
+            OBS_SUPPLY_OFFSET + 2 : OBS_SUPPLY_OFFSET + (MAX_PILES * SUPPLY_BLOCK_SIZE) : SUPPLY_BLOCK_SIZE,
+        ].round().to(torch.long)
+        used = ((base_ids_plus_one >= 1) & (base_ids_plus_one <= self.num_card_defs)).any(dim=0)
+        positions = torch.arange(1, MAX_PILES + 1, device=obs.device)
+        return max(1, int((used.to(torch.long) * positions).max().item()))
+
+    def _forward_pile_count(self, obs: torch.Tensor) -> int | None:
+        """Token width for ``forward``: ``None`` keeps all 48 supply tokens.
+
+        Inactive supply tokens are excluded from attention and never read by
+        a head, so dropping them changes no output; it only removes the work
+        of carrying them through every layer.  A compiled (``fullgraph``)
+        server graph cannot read the count back, so it keeps the full width.
+        """
+
+        if not self.token_trim:
+            return None
+        is_compiling = getattr(getattr(torch, "compiler", None), "is_compiling", None)
+        if is_compiling is not None and is_compiling():
+            return None
+        return self.active_pile_count(obs)
+
+    def tokenize(self, obs: torch.Tensor, n_piles: int | None = None) -> TokenizedCards:
         """Recover active card tokens directly from a batched v2/v3 observation.
 
         Supply block ``k`` provides the base DefId for Slot ``k``.  We gather
         all Slot-indexed own/opponent composition fields by that pile index,
         rather than relying on a global card-ID order.
+
+        ``n_piles`` limits the tokens to the first ``n_piles`` supply slots.
+        The default keeps all ``MAX_PILES`` blocks, which is the documented
+        inspection shape.  Callers that pass a smaller count are responsible
+        for it covering every active pile in the batch
+        (:meth:`active_pile_count`).
         """
 
         if obs.ndim != 2 or obs.shape[1] != self.obs_size:
             raise ValueError(f"expected obs with shape [B, {self.obs_size}], got {tuple(obs.shape)}")
+        piles = MAX_PILES if n_piles is None else int(n_piles)
+        if piles < 1 or piles > MAX_PILES:
+            raise ValueError(f"n_piles must be in [1, {MAX_PILES}], got {n_piles}")
 
         batch_size = obs.shape[0]
         supply = obs[:, OBS_SUPPLY_OFFSET : OBS_SUPPLY_OFFSET + (MAX_PILES * SUPPLY_BLOCK_SIZE)]
-        supply = supply.reshape(batch_size, MAX_PILES, SUPPLY_BLOCK_SIZE)
+        supply = supply.reshape(batch_size, MAX_PILES, SUPPLY_BLOCK_SIZE)[:, :piles]
 
         # Encoder DefIds are stored as def + 1.  Round first so tokenization
         # remains robust to float32 transport while retaining the integer ABI.
@@ -405,7 +451,7 @@ class CardTokenNet(nn.Module):
         embedding_ids = def_ids.clamp(min=0, max=self.num_card_defs - 1)
 
         own = obs[:, OBS_OWN_OFFSET : OBS_OWN_OFFSET + (5 * MAX_SLOTS)]
-        own = own.reshape(batch_size, 5, MAX_SLOTS)[:, :, :MAX_PILES].transpose(1, 2)
+        own = own.reshape(batch_size, 5, MAX_SLOTS)[:, :, :piles].transpose(1, 2)
 
         opponents = obs[
             :, OBS_OPPONENT_OFFSET : OBS_OPPONENT_OFFSET + (MAX_OPPONENTS * OPPONENT_BLOCK_SIZE_V2)
@@ -421,7 +467,7 @@ class CardTokenNet(nn.Module):
                 opponents[:, :, 203:267],
             ),
             dim=2,
-        ).reshape(batch_size, MAX_OPPONENTS * 4, MAX_SLOTS)[:, :, :MAX_PILES].transpose(1, 2)
+        ).reshape(batch_size, MAX_OPPONENTS * 4, MAX_SLOTS)[:, :, :piles].transpose(1, 2)
 
         supply_remaining = supply[:, :, 0:1]
         top_ids_plus_one = supply[:, :, 1].round().to(torch.long)
@@ -437,7 +483,7 @@ class CardTokenNet(nn.Module):
             # The trash composition is Slot-indexed like own-zone counts, so
             # supply token k gathers trash count for Slot k.
             trash = obs[:, OBS_V3_TRASH_OFFSET : OBS_V3_TRASH_OFFSET + MAX_SLOTS]
-            trash = torch.log1p(trash[:, :MAX_PILES].clamp_min(0)).unsqueeze(-1)
+            trash = torch.log1p(trash[:, :piles].clamp_min(0)).unsqueeze(-1)
             card_features = torch.cat((count_features, top_is_base, trash), dim=-1)
 
         card_tokens = self.def_embedding(embedding_ids) + self.card_projection(card_features)
@@ -471,6 +517,14 @@ class CardTokenNet(nn.Module):
         valid_tokens = torch.cat((global_mask, tokenized.card_mask), dim=1)
         return self.transformer(tokens, src_key_padding_mask=~valid_tokens)
 
+    @classmethod
+    def _pointer_fill(cls, dtype: torch.dtype) -> float:
+        """``POINTER_FILL``, or the most negative float16 where it would overflow."""
+
+        if dtype == torch.float16:
+            return float(torch.finfo(torch.float16).min)
+        return cls.POINTER_FILL
+
     def _pointer_logits(
         self,
         scores: torch.Tensor,
@@ -479,10 +533,11 @@ class CardTokenNet(nn.Module):
         """Scatter card-token scores into the current per-DefId action band."""
 
         batch_size = scores.shape[0]
-        by_def = scores.new_full((batch_size, self.action_def_count), self.POINTER_FILL)
+        fill = self._pointer_fill(scores.dtype)
+        by_def = scores.new_full((batch_size, self.action_def_count), fill)
         action_def_ids = tokenized.def_ids.clamp(min=0, max=self.action_def_count - 1)
         valid = tokenized.card_mask & (tokenized.def_ids < self.action_def_count)
-        source = scores.masked_fill(~valid, self.POINTER_FILL)
+        source = scores.masked_fill(~valid, fill)
         # A normal game has one pile/token per DefId.  amax also defines a
         # deterministic outcome should a malformed observation repeat a DefId.
         by_def.scatter_reduce_(1, action_def_ids, source, reduce="amax", include_self=True)
@@ -552,15 +607,18 @@ class CardTokenNet(nn.Module):
         )
 
     def forward(self, obs: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        return self.forward_tokenized(self.tokenize(obs))
+        return self.forward_tokenized(self.tokenize(obs, self._forward_pile_count(obs)))
 
     def forward_with_aux(self, obs: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Opt-in auxiliary output without changing ``forward``'s ABI."""
 
-        return self.forward_tokenized_with_aux(self.tokenize(obs))
+        return self.forward_tokenized_with_aux(self.tokenize(obs, self._forward_pile_count(obs)))
 
     @torch.no_grad()
     def evaluate(self, obs: torch.Tensor, legal_mask: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         logits, values = self(obs)
+        if logits.dtype == torch.float16:
+            # The public fill does not fit in float16; mask in float32.
+            logits = logits.float()
         masked_logits = logits.masked_fill(~legal_mask, self.POINTER_FILL)
         return masked_logits, values

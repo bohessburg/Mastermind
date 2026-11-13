@@ -39,6 +39,10 @@ class ModelConfig:
     derived_features: bool = False
     final_norm: bool = False
     embedding_init_std: float | None = None
+    # CardTokenNet execution option (not architecture; weights are unaffected).
+    # True drops the supply tokens no row in a batch uses before the encoder:
+    # identical outputs, about 2.5x the throughput. False runs all 49 tokens.
+    token_trim: bool = True
 
 
 @dataclass
@@ -282,6 +286,12 @@ class TrainConfig:
     # Retained for config/checkpoint compatibility; coalescing now uses the
     # explicit deadline above.
     server_max_wait_ms: float = 2.0
+    # "torch" or "mlx". "mlx" serves a card_transformer through Apple's MLX
+    # (optional dependency) and requires server_device="mps"; training, gating
+    # and evaluation always stay on PyTorch.
+    server_backend: str = "torch"
+    # Half-precision serving. CUDA: fp16 autocast. mps: float16 weights
+    # (torch backend) or float16 MLX arrays (mlx backend).
     server_fp16: bool = False
     # CUDA-only opt-in: compile the serving evaluation graph with
     # torch.compile(mode="reduce-overhead"). Non-CUDA devices keep eager mode.
@@ -806,6 +816,11 @@ def validate_server_shards(config: TrainConfig) -> None:
         not isinstance(gpu, int) or isinstance(gpu, bool) or gpu < 0 for gpu in gpu_ids
     ):
         raise ValueError("server_gpu_ids must be a list of non-negative integers")
+    backend = str(getattr(config, "server_backend", "torch")).lower()
+    if backend not in ("torch", "mlx"):
+        raise ValueError(f"server_backend must be 'torch' or 'mlx', got {config.server_backend!r}")
+    if backend == "mlx" and str(config.server_device).lower() != "mps":
+        raise ValueError("server_backend='mlx' requires server_device='mps'")
 
 
 GATE_MODES = ("legacy", "paired")

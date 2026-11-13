@@ -1236,6 +1236,7 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
         config.server_coalesce_ms = requested.server_coalesce_ms
         config.server_max_wait_ms = requested.server_max_wait_ms
         config.server_fp16 = requested.server_fp16
+        config.server_backend = requested.server_backend
         config.server_compile = requested.server_compile
         config.server_autocast_bf16 = requested.server_autocast_bf16
         config.server_batch_buckets = requested.server_batch_buckets
