@@ -584,6 +584,21 @@ of waiting out the ten-minute retry (203 arena tests, dry run 3/3, run at
 `exports/arena/20261113T131737.996915Z`, first game 185891036, still c31
 gen 27 with no pause. The treasure-rewind fix is live from this session.
 
+Abort, 2026-11-13 17:07 UTC: game 185898702 against sterlingblue (our seat
+1, turn 12, opponent's buy phase) stopped with the same
+`raw=0000003affffffff` (`INVALID_SESSION_ID`) as the 01:00 UTC abort, for
+the same reason: `scripts/dgames_ratings.py` ran on the bot account from
+17:06:09 to 17:07:01 UTC (summary
+`ratings-summary-20261113T170701.548987Z.json`, `credentialed_relogins: 1`)
+and the site ended the arena's session. The poller was not started by the
+arena session and no cron or launch agent schedules it. Session before the
+abort: 30-14-0 over 44 games on c31 gen 27 with no other aborts and no
+treasure rewind (log `arena_c29_run30.log`); gen 27 overall 52-29-1 over
+82. The aborted game has no ledger row. Ledger 583 rows. Relaunched 17:08
+UTC (203 arena tests, dry run 3/3); the first attempt found the table still
+live and exited 5, the ten-minute retry got in at 17:19 UTC, run directory
+`exports/arena/20261113T171902.651988Z`, first game 185899186.
+
 ## Status by phase
 
 - **P0 — Recording harness: complete (2026-07-24).**
