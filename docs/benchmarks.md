@@ -116,6 +116,45 @@ self-play, so there is no measured generation time.
   3 GB in the second attempt with no loss of throughput.
 - The gate and the training step were never reached on the Mac.
 
+#### One full generation on the M1 Max (2026-11-14)
+
+`selfplay.max_concurrent_games: 64` plays each worker's 128 games in waves
+(at most 512 games, about 44 GB of trees, at once), which fits 64 GB with the
+memory compressor at 2-3 GB. One generation from c31 gen 27, c31 settings,
+with the arena client running on the same machine for most of it:
+
+| Phase | Wall time | Notes |
+|-------|-----------|-------|
+| Self-play | 70 min | 1,024 games, 228,906 positions |
+| Training step | 0.5 min | 80 steps, batch 2,048 |
+| Gate | 34 min | 800 games at 128 sims (box: 17 min) |
+| Generation | 104.7 min | `wall_time` 6,284 s |
+
+- Self-play was not steady. The first 30 minutes ran at 41-46k evals/s and
+  finished 719 games; the last 305 games took another 40 minutes. The
+  generation average was 25.5k evals/s (mean server batch 165 rows).
+- The tail is on the workers holding the league and scripted games.
+  `split_segments_by_quotas` fills workers in plan order, so workers 0-5 got
+  self-play only and workers 6-7 got all 102 league and 102 scripted games.
+  First waves took 12-20 min on workers 0-5, 35 min on worker 6 (86 league
+  games) and over 46 min on worker 7 (16 league, 102 scripted). Why those
+  games are slow is not established.
+- A fix was tried and reverted the same day: dealing every segment across
+  all eight workers and sending a step's per-model server requests together.
+  The second run was stopped at 37 minutes with 541 games finished (the
+  first run had 719 at 30 minutes); the server fell from 38k to 9-22k
+  evals/s at minute 18 with five of eight workers nearly idle. Spreading the
+  slow games gave every worker a slow wave tail. The slowest worker of the
+  first run held mostly scripted games, which use one model, so sequential
+  per-model round trips were not the main cause.
+- The gate rejected the candidate at 0.444 (343-432-25), about 3.5 standard
+  errors below 0.5. That is lower than the box's two generations trained
+  from an empty buffer (c31 gen 1 at 0.501, gen 7 at 0.494) and lower than
+  any c31 gate on the box (minimum 0.466). Cause not established. Held-out
+  fit was normal (policy CE 0.704, value r2 0.679). Known differences from
+  those box generations: anchor weight 0.1 (box: 0.5 and about 0.37), fp16
+  MLX serving, and training on MPS.
+
 ### Compiled CUDA serving (RTX 5090 box, November 2026)
 
 The box serves through `torch.compile` with static batch buckets and bf16

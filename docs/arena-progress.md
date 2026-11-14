@@ -639,6 +639,96 @@ each multiple of ten ledger rows the arena is stopped between games,
 the poller no longer ends a live game. Earlier polls: 44.10 (2026-11-13
 01:00 UTC), 46.16 (17:07 UTC), 46.74 (2026-11-14 01:52 UTC, 753 games).
 
+Rating checkpoints, 2026-11-14 (`i_claudius`, RATINGS_2P; percentile = share
+of rated 2P players below, from the same poll; printed by
+`scripts/ops/claudius_rating.py`). Earlier polls for comparison: 44.10
+(58.2nd percentile, 2026-11-13 01:00 UTC), 46.16 (70.1st, 17:07 UTC), 46.74
+(73.2nd, 2026-11-14 01:52 UTC).
+
+| Ledger rows | Poll (UTC) | Level | mu +/- phi | Rank | Percentile | Site games |
+|---|---|---|---|---|---|---|
+| 720 | 05:53 | 46.87 | 48.31 +/- 0.72 | 2557 of 9767 | 73.8 | 799 |
+| 730 | 07:06 | 46.94 | 48.36 +/- 0.71 | 2523 of 9767 | 74.2 | 809 |
+| 740 | 07:57 | 46.96 | 48.37 +/- 0.71 | 2503 of 9767 | 74.4 | 819 |
+| 750 | 09:37 | 46.94 | 48.34 +/- 0.70 | 2516 of 9769 | 74.2 | 829 |
+| 760 | 10:37 | 46.98 | 48.37 +/- 0.69 | 2490 of 9769 | 74.5 | 839 |
+| 770 | 11:41 | 47.07 | 48.44 +/- 0.68 | 2445 of 9767 | 75.0 | 850 |
+| 780 | 12:36 | 47.12 | 48.47 +/- 0.68 | 2417 of 9767 | 75.3 | 860 |
+| 790 | 13:22 | 47.08 | 48.42 +/- 0.67 | 2436 of 9768 | 75.1 | 870 |
+
+Leaderboard thresholds at the 750-row poll: 75th percentile 47.07, 90th
+51.11, 95th 53.64, 99th 59.05. Jack's stated project goal is the 99th
+percentile, expected only once training covers the full card set. Records
+at 760 rows: gen 27 155-104-1 over 260, lifetime 401-349-10 over 760.
+
+Pause, 2026-11-14 08:11-08:47 UTC: stopped between games at Jack's request
+for the one-generation Mac training test (`docs/benchmarks.md`), then
+relaunched to run beside it. The 750-row stop followed at 09:36 UTC, relaunch
+09:38 UTC (run `exports/arena/20261114T093831.883554Z`, log archive
+`arena_c29_run37.log`, 5-5-0).
+
+760-row stop and an abandoned game, 2026-11-14 10:35-11:09 UTC:
+
+- 10:35:40 stopped cleanly after row 760; poll at 10:36.
+- 10:37:43 relaunch exited 5 after 93 s (`lobby-failure-homepage-start-search-not-found`,
+  run `exports/arena/20261114T103744.286603Z`). The retry loop waited ten minutes.
+- 10:49:16 the retry got in (run `exports/arena/20261114T104917.604955Z`) and
+  won three games (185926937, 185927003, 185927045; rows 761-763).
+- 10:58:18 game 185927091 against shirin12 started (our seat 0, turn 1).
+- About 10:58:20 the arena session stopped the retry loop's background task
+  to do an immediate restart Jack had asked for, without first checking
+  whether the 10:49 attempt had come up. It had, so this killed the driver
+  on turn 1 of a rated game. **Operator error, not a driver fault.** The game
+  has no ledger row and its result is not known here (presumably a timeout
+  loss); the next poll's site game count should be one higher than the
+  ledger accounts for.
+- 10:58:27 the immediate relaunch reconnected to that live game and exited 5
+  after 38 s (run `exports/arena/20261114T105828.194405Z`,
+  `dom-20261114T105900.040024Z-lobby-resume-recovery.html`): the server
+  replayed the log but sent no `FullState` within 30 s, and a live board has
+  no Leave Table control. This is the known limit of the resume path: a
+  driver restarted into a running game cannot rejoin it, and every launch
+  exits 5 until the opponent ends that game.
+- 11:09:05 the ten-minute retry got in (run
+  `exports/arena/20261114T110906.417161Z`, first game 185927288). Ledger 766
+  rows at 11:25 UTC: gen 27 159-106-1 over 266, lifetime 405-351-10 over 766.
+
+Rule from this: before stopping an arena background task, check
+`pgrep -f "caffeinate -is env PYTHONPATH=build"` and the tail of the arena
+log; if it is up, stop it only with `scripts/ops/arena_stop_after_game.sh`.
+
+770-row stop, 11:40 UTC: clean, relaunched 11:41 UTC (log archive
+`arena_c29_run39.log`, 4-3-0 since 11:09). The poll's site game count is 850
+= 839 + 10 ledger games + 1, which confirms game 185927091 was scored. Last
+ten 7-3-0; gen 27 162-107-1 over 270; lifetime 408-352-10 over 770.
+
+780-row stop, 12:35 UTC: clean, relaunched 12:37 UTC (log archive
+`arena_c29_run40.log`, 6-4-0). Last ten 6-4-0; gen 27 168-111-1 over 280;
+lifetime 414-356-10 over 780.
+
+790-row stop, 13:21 UTC: clean (log archive `arena_c29_run41.log`, 4-6-0).
+Last ten 4-6-0; gen 27 172-117-1 over 290; lifetime 418-362-10 over 790. The
+relaunch took three tries, no game was affected:
+
+- 13:23:37 `arena_retry.sh` exited 8 ("arena already running") with nothing
+  running. Its guard is `pgrep -x caffeinate` and
+  `pgrep -f "caffeinate -is env PYTHONPATH=build"`. The session harness had
+  its own `caffeinate -i -t 300` alive, and the shell command that called
+  `arena_relaunch.sh` carried the same pattern in its own text as a
+  pre-check, so both matched. Call the relaunch script on its own (it does
+  the check itself); do the pre-check in a separate command.
+- 13:24:13 launch exited 5 after 93 s,
+  `lobby-failure-homepage-start-search-not-found` (run
+  `exports/arena/20261114T132414.525438Z`, no game). Same transient as
+  10:37, again on the first launch after a rating poll. No table was
+  retained, so the ten-minute wait was skipped: with the arena confirmed
+  down, the sleeping retry loop and cycle were stopped and started again.
+- 13:27:25 launch got in (run `exports/arena/20261114T132726.153344Z`,
+  first game 185930226). Rating cycle armed for 800 rows.
+
+The operating scripts used for all of the above lived in a session scratch
+directory; copies are now in `scripts/ops/` (see `docs/handoff-2026-11-14.md`).
+
 ## Status by phase
 
 - **P0 — Recording harness: complete (2026-07-24).**

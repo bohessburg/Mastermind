@@ -1,5 +1,7 @@
 # Session Handoff — Training Program State
 
+> **2026-11-14:** the current handoff is `docs/handoff-2026-11-14.md`.
+
 > **2026-11-10: this snapshot is stale.** Current state and plan are in
 > `docs/c29-plan.md` and the 2026-11-10 entry at the tail of
 > `docs/training-log.md`. Short version: the training gate was found to score

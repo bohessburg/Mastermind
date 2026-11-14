@@ -3422,3 +3422,19 @@ gen 27. Streak 4, best stays gen 27. 40.1 minutes, server 144.3k evals/s.
 First generation on the fixed anchor stream: anchor policy loss 0.520,
 value 0.184, as expected for rows that are not replayed. Held-out value r2
 0.710, the highest of the run.
+
+Box outage (from 12:16 UTC 2026-11-13): ssh to 149.20.250.202:41550 has
+refused connections since shortly after gen 31 finished. On 2026-11-14 Jack
+said the box is down and to ignore it. c31 therefore stands at best = gen 27
+with gen 31 the last completed generation (gens 28-31 rejected). If the box
+returns, supervisor program `dominion-c31` should auto-resume from
+`gen_0031.pt` at box HEAD `15be1a8` with an empty replay buffer; confirm
+that, log the outage window here, and continue the per-generation entries
+(next ladder capture at gen 35).
+
+Mac generation tests (2026-11-14): one full c31 generation was run on the
+M1 Max from gen 27 (`configs/run_c31_mac.json`, wave cap 64): 104.7 minutes,
+gate 0.444 (rejected). Measurements, the reverted tail fix and the open
+questions are in `docs/benchmarks.md` ("One full generation on the M1 Max")
+and `docs/handoff-2026-11-14.md`. These runs are not part of c31's lineage;
+their files are under `checkpoints/campaign31_mac/attempt3/` and `attempt4/`.
