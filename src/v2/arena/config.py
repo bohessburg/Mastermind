@@ -18,6 +18,11 @@ class LobbyConfig:
 
     card_pool: str = "base"
     rated: bool = False
+    # "automatch" searches; "host" creates a My Table and waits for a joiner.
+    mode: str = "automatch"
+    host_card_pool_level: int = 1
+    # Zero waits forever for someone to join the hosted table.
+    host_wait_timeout_seconds: float = 0.0
     max_games_per_session: int = 0
     homepage_timeout_seconds: float = 90.0
     reconnect_limit_policy: str = "return_to_lobby"
@@ -118,6 +123,13 @@ class ArenaConfig:
             lobby=LobbyConfig(
                 card_pool=str(lobby_raw.get("card_pool", "base")),
                 rated=bool(lobby_raw.get("rated", False)),
+                mode=str(lobby_raw.get("mode", "automatch")),
+                host_card_pool_level=int(
+                    lobby_raw.get("host_card_pool_level", 1)
+                ),
+                host_wait_timeout_seconds=float(
+                    lobby_raw.get("host_wait_timeout_seconds", 0.0)
+                ),
                 max_games_per_session=int(
                     lobby_raw.get("max_games_per_session", 0)
                 ),
@@ -195,6 +207,12 @@ class ArenaConfig:
             raise ValueError("maximum think time must be at least the minimum")
         if self.actuation_mode not in {"protocol", "clicks"}:
             raise ValueError("actuation_mode must be 'protocol' or 'clicks'")
+        if self.lobby.mode not in {"automatch", "host"}:
+            raise ValueError("lobby mode must be 'automatch' or 'host'")
+        if not 1 <= self.lobby.host_card_pool_level <= 10:
+            raise ValueError("lobby host_card_pool_level must be 1-10")
+        if self.lobby.host_wait_timeout_seconds < 0:
+            raise ValueError("lobby host_wait_timeout_seconds cannot be negative")
         if self.lobby.max_games_per_session < 0:
             raise ValueError("lobby max_games_per_session cannot be negative")
         if self.lobby.max_fruitless_search_attempts <= 0:

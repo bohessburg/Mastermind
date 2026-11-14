@@ -81,6 +81,10 @@ class NonPlayingIdleWatchdog:
         if isinstance(event, GameStart):
             self.game_started()
 
+    def touch(self) -> None:
+        """Count a deliberate wait (an open hosted table) as progress."""
+        self.last_game_relevant_event_at = self.clock()
+
     def game_started(self) -> None:
         """Disarm the non-playing watchdog while the game loop owns progress."""
         self.game_is_active = True
@@ -350,6 +354,7 @@ async def _run_live(
             session.page,
             config.lobby,
             snapshot_dom=session.snapshot_dom,
+            keepalive=idle_watchdog.touch,
         )
         click_actuator = PlaywrightActuator(
             session.page,

@@ -1134,7 +1134,16 @@ async def run_game_loop(
                     if active.archive is not None:
                         active.archive.append_event(frame_index, event)
                     unknown = _unknown_kingdom(event.kingdom)
-                    if unknown:
+                    if len(event.players) < 2:
+                        LOGGER.critical(
+                            "SOLO GAME %d: only %s seated; resigning instead "
+                            "of playing",
+                            event.game_id,
+                            list(event.players),
+                        )
+                        active.kingdom_rejected = True
+                        await _maybe_await(resign_hook)
+                    elif unknown:
                         active.kingdom_rejected = True
                         await _maybe_await(resign_hook)
                 continue

@@ -42,6 +42,10 @@ class LobbyControl(str, Enum):
     LEAVE_TABLE = "leave_table"
     RECONNECT_LIMIT_RECONNECT = "reconnect_limit_reconnect"
     RECONNECT_LIMIT_RETURN_TO_LOBBY = "reconnect_limit_return_to_lobby"
+    NEW_TABLE_TAB = "new_table_tab"
+    MY_TABLE_TAB = "my_table_tab"
+    HOST_READY = "host_ready"
+    HOST_LEAVE_TABLE = "host_leave_table"
 
 
 # Evidence: dom-34066.html/4341034.html have the first selector and its
@@ -141,6 +145,43 @@ _HOMEPAGE_TRANSIENT_BLOCKER_SELECTORS = (
     LOADING_GAME_SELECTOR,
 )
 
+# Evidence: live probe 2026-11-14 (scratch DOM of the hosted-table page).  The
+# lobby tab "New Table" creates the table on click and is relabelled
+# "My Table" while the account owns one.  The hosted table renders inside
+# ``my-table``; its buttons are ``div.lobby-button`` in ``table-buttons``
+# (not the automatch ``score-table-buttons button``).  Card Pool Level is a
+# host-only number input bound to ``$ctrl.cardPool``.
+_LOBBY_TAB_SELECTOR = 'ul.lobby-tabs li.tab[ng-click="lobby.clickTab(tab)"]'
+NEW_TABLE_TAB_SELECTOR = (
+    f'{_LOBBY_TAB_SELECTOR}:has(button.tab-button:text-is("New Table"))'
+)
+MY_TABLE_TAB_SELECTOR = (
+    f'{_LOBBY_TAB_SELECTOR}:has(button.tab-button:text-is("My Table"))'
+)
+MY_TABLE_SELECTOR = "my-table"
+HOST_READY_SELECTOR = (
+    'my-table table-buttons div.lobby-button[ng-click="$ctrl.readyClick()"]'
+)
+HOST_LEAVE_TABLE_SELECTOR = (
+    'my-table table-buttons div.lobby-button[ng-click="$ctrl.leave()"]'
+)
+HOST_CARD_POOL_INPUT_SELECTOR = (
+    'my-table input.numeric-button[ng-model="$ctrl.cardPool"]'
+)
+# Spectators render as ``table-person-line`` too; only ``is-spec="false"``
+# lines are seated players.  A live smoke run on 2026-11-14 counted every line,
+# readied with one seated player, and the server started a solo game.
+HOST_PLAYER_LINE_SELECTOR = (
+    'my-table participant-list table-person-line[is-spec="false"]'
+)
+HOST_PLAYERS_TITLE_SELECTOR = "my-table participant-list div.fieldset-title"
+HOST_SELF_READY_SELECTOR = (
+    'my-table participant-list table-person-line[is-spec="false"]'
+    ":has(.table-host-indicator) .table-ready-indicator.active"
+)
+_PLAYERS_TITLE_PATTERN = re.compile(r"Players \((?P<seated>\d+)/(?P<seats>\d+)\)")
+_HOST_PLAYERS_NEEDED = 2
+
 _RETURN_TO_HOMEPAGE = object()
 
 @dataclass(frozen=True, kw_only=True)
@@ -207,6 +248,32 @@ _CONTROL_SPECS = {
         ancestor_tag="reconnecting-failed",
         requires_timeout_descendant=True,
     ),
+    LobbyControl.NEW_TABLE_TAB: _ControlSpec(
+        selector=NEW_TABLE_TAB_SELECTOR,
+        label="New Table",
+        handler="lobby.clickTab(tab)",
+        required_class="tab",
+    ),
+    LobbyControl.MY_TABLE_TAB: _ControlSpec(
+        selector=MY_TABLE_TAB_SELECTOR,
+        label="My Table",
+        handler="lobby.clickTab(tab)",
+        required_class="tab",
+    ),
+    LobbyControl.HOST_READY: _ControlSpec(
+        selector=HOST_READY_SELECTOR,
+        label="Ready",
+        handler="$ctrl.readyClick()",
+        required_class="lobby-button",
+        ancestor_tag="table-buttons",
+    ),
+    LobbyControl.HOST_LEAVE_TABLE: _ControlSpec(
+        selector=HOST_LEAVE_TABLE_SELECTOR,
+        label="Leave Table",
+        handler="$ctrl.leave()",
+        required_class="lobby-button",
+        ancestor_tag="table-buttons",
+    ),
 }
 
 
@@ -228,6 +295,7 @@ class LobbyFSM:
         clock: Callable[[], float] = time.monotonic,
         poll_seconds: float = 0.25,
         snapshot_dom: Callable[[str], Awaitable[Any]] | None = None,
+        keepalive: Callable[[], None] | None = None,
     ) -> None:
         if poll_seconds <= 0:
             raise ValueError("lobby poll interval must be positive")
@@ -237,6 +305,7 @@ class LobbyFSM:
         self.clock = clock
         self.poll_seconds = poll_seconds
         self.snapshot_dom = snapshot_dom
+        self.keepalive = keepalive
         self.state = LobbyState.HOMEPAGE
         self._login_seen_at: float | None = None
         self._login_submitted_at: float | None = None
@@ -256,7 +325,158 @@ class LobbyFSM:
     async def queue_next_game(self) -> bool:
         """Search and start the next table; True if a retained board resumed."""
         LOGGER.info("lobby requeue requested at %.3f", self.clock())
+        if self.hosting:
+            return await self.host_table_and_wait()
         return await self.start_or_resume_game()
+
+    @property
+    def hosting(self) -> bool:
+        """Whether this session hosts its own table instead of automatching."""
+        return self.config.mode == "host"
+
+    async def host_table_and_wait(self) -> bool:
+        """Open a My Table, wait for one joiner, Ready up; True if resumed.
+
+        The table is created by the New Table tab itself.  The FSM only clicks
+        Ready while exactly two players are seated and its own ready light is
+        off, because the client's Ready is a toggle.
+        """
+        self._require_state(LobbyState.HOMEPAGE)
+        while True:
+            entry = await self._wait_for_homepage_start_search_or_game()
+            if entry is None:
+                LOGGER.info("host: retained in-play board at %.3f", self.clock())
+                self._transition(LobbyState.IN_GAME)
+                return True
+            if await self._selector_count(MY_TABLE_SELECTOR) == 0:
+                tab = await self._control_if_present(LobbyControl.MY_TABLE_TAB)
+                control = LobbyControl.MY_TABLE_TAB
+                if tab is None:
+                    tab = await self._control_if_present(LobbyControl.NEW_TABLE_TAB)
+                    control = LobbyControl.NEW_TABLE_TAB
+                if tab is None:
+                    await self._snapshot_failure("host-no-table-tab")
+                    raise self._error("neither the New Table nor My Table tab exists")
+                await self._click(tab, control)
+            await self._wait_for_control(
+                LobbyControl.HOST_READY,
+                state=LobbyState.TABLE_WAITING,
+            )
+            await self._ensure_card_pool_level()
+            self._transition(LobbyState.TABLE_WAITING)
+            outcome = await self._wait_for_joiner_and_start()
+            if outcome is _RETURN_TO_HOMEPAGE:
+                self._transition(LobbyState.HOMEPAGE)
+                continue
+            self._transition(LobbyState.IN_GAME)
+            return False
+
+    async def _board_appears_within(self, seconds: float) -> bool:
+        deadline = self.clock() + seconds
+        while self.clock() < deadline:
+            if await self._in_game_board_is_present():
+                return True
+            if await self._selector_count(MY_TABLE_SELECTOR) > 0:
+                return False
+            await self._sleep_poll()
+        return False
+
+    async def _seated_players(self) -> int:
+        """Seated players, or 0 unless the line count and title agree.
+
+        Readying with an open seat lets the server start a solo game, so both
+        the non-spectator lines and the "Players (n/2)" title must say the
+        table is full before this reports two.
+        """
+        lines = await self._selector_count(HOST_PLAYER_LINE_SELECTOR)
+        titles = await self._visible_selector_texts(HOST_PLAYERS_TITLE_SELECTOR)
+        match = (
+            _PLAYERS_TITLE_PATTERN.fullmatch(titles[0]) if len(titles) == 1 else None
+        )
+        if match is None:
+            return 0
+        if int(match["seats"]) != _HOST_PLAYERS_NEEDED:
+            return 0
+        return min(lines, int(match["seated"]))
+
+    async def _ensure_card_pool_level(self) -> None:
+        """Set and verify the hosted table's Card Pool Level."""
+        want = str(self.config.host_card_pool_level)
+        field = self.page.locator(HOST_CARD_POOL_INPUT_SELECTOR)
+        try:
+            if await field.count() != 1:
+                raise self._error(
+                    f"card pool input ({HOST_CARD_POOL_INPUT_SELECTOR}) "
+                    "was not unique"
+                )
+            current = await field.input_value()
+            if current != want:
+                LOGGER.warning("host: card pool level %s -> %s", current, want)
+                await field.fill(want)
+                await field.dispatch_event("change")
+            deadline = self.clock() + self.config.table_waiting_timeout_seconds
+            while (current := await field.input_value()) != want:
+                if self.clock() >= deadline:
+                    await self._snapshot_failure("host-card-pool-level")
+                    raise self._error(
+                        f"card pool level stayed {current!r}, wanted {want}"
+                    )
+                await self._sleep_poll()
+        except LobbyError:
+            raise
+        except Exception as error:
+            raise self._error(f"could not set card pool level: {error}") from error
+        LOGGER.warning("host: table open at card pool level %s", want)
+
+    async def _wait_for_joiner_and_start(self) -> object | None:
+        """Poll the hosted table until play starts; None means in game."""
+        await self._snapshot_waiting(LobbyState.TABLE_WAITING)
+        timeout = self.config.host_wait_timeout_seconds
+        deadline = None if timeout == 0 else self.clock() + timeout
+        last_players = -1
+        while True:
+            if self.keepalive is not None:
+                self.keepalive()
+            if await self._resolve_blocking_modal_if_present():
+                if self.config.reconnect_limit_policy == "return_to_lobby":
+                    return _RETURN_TO_HOMEPAGE
+                continue
+            if await self._in_game_board_is_present():
+                LOGGER.warning("host: game started at %.3f", self.clock())
+                return None
+            if await self._selector_count(MY_TABLE_SELECTOR) == 0:
+                # The table page unmounts a moment before game-area renders
+                # (live 2026-11-14), so give the board a chance first.
+                if await self._board_appears_within(
+                    self.config.table_waiting_timeout_seconds
+                ):
+                    LOGGER.warning("host: game started at %.3f", self.clock())
+                    return None
+                LOGGER.warning("host: the table page disappeared; reopening")
+                return _RETURN_TO_HOMEPAGE
+            players = await self._seated_players()
+            if players != last_players:
+                LOGGER.warning("host: %d/%d players seated", players, _HOST_PLAYERS_NEEDED)
+                last_players = players
+            if (
+                players == _HOST_PLAYERS_NEEDED
+                and await self._selector_count(HOST_SELF_READY_SELECTOR) == 0
+            ):
+                ready = await self._control_if_present(LobbyControl.HOST_READY)
+                if ready is not None:
+                    classes = (await ready.get_attribute("class") or "").split()
+                    if "disabled-button" not in classes:
+                        LOGGER.warning("host: table full; clicking Ready")
+                        await self._click(ready, LobbyControl.HOST_READY)
+                        # Let the ready light catch up before re-checking.
+                        await self.sleep(1.0)
+                        continue
+            if deadline is not None and self.clock() >= deadline:
+                await self._snapshot_failure("host-no-joiner")
+                raise self._error(
+                    f"nobody joined the hosted table within {timeout:.0f}s"
+                )
+            await self._sleep_poll()
 
     async def start_or_resume_game(self) -> bool:
         """Poll startup controls until automatch starts or a board resumes.
@@ -605,7 +825,7 @@ class LobbyFSM:
             timeout_seconds=self.config.game_ended_dialog_timeout_seconds,
         )
         if dismiss_game_ended is None:
-            leave_table = await self._control_if_present(LobbyControl.LEAVE_TABLE)
+            leave_table, leave_control = await self._leave_control_if_present()
             if leave_table is None:
                 spec = _CONTROL_SPECS[LobbyControl.LEAVE_TABLE]
                 raise self._error(
@@ -627,19 +847,59 @@ class LobbyFSM:
                 LobbyControl.DISMISS_GAME_ENDED,
                 timeout_seconds=self.config.game_ended_dialog_timeout_seconds,
             )
-            leave_table = await self._wait_for_control(
-                LobbyControl.LEAVE_TABLE,
-                state=LobbyState.GAME_OVER,
-            )
+            leave_table, leave_control = await self._wait_for_leave_control()
         self._transition(LobbyState.LEAVING)
-        await self._click(leave_table, LobbyControl.LEAVE_TABLE)
-        await self._wait_for_control(
-            LobbyControl.START_SEARCH,
-            state=LobbyState.LEAVING,
-        )
+        await self._click(leave_table, leave_control)
+        if self.hosting:
+            await self._wait_for_host_homepage()
+        else:
+            await self._wait_for_control(
+                LobbyControl.START_SEARCH,
+                state=LobbyState.LEAVING,
+            )
         self._transition(LobbyState.HOMEPAGE)
         if requeue:
             await self.queue_next_game()
+
+    async def _leave_control_if_present(self) -> tuple[Any | None, LobbyControl]:
+        """The post-game Leave Table: automatch score table or hosted table."""
+        for control in (LobbyControl.LEAVE_TABLE, LobbyControl.HOST_LEAVE_TABLE):
+            locator = await self._control_if_present(control)
+            if locator is not None:
+                return locator, control
+        return None, LobbyControl.LEAVE_TABLE
+
+    async def _wait_for_leave_control(self) -> tuple[Any, LobbyControl]:
+        deadline = self.clock() + self._timeout_for(LobbyState.GAME_OVER)
+        while True:
+            if await self._resolve_blocking_modal_if_present():
+                continue
+            locator, control = await self._leave_control_if_present()
+            if locator is not None:
+                return locator, control
+            if self.clock() >= deadline:
+                await self._snapshot_failure("game_over-leave_table-not-found")
+                raise self._timeout_error(
+                    LobbyState.GAME_OVER,
+                    f"{LEAVE_TABLE_SELECTOR} or {HOST_LEAVE_TABLE_SELECTOR}",
+                )
+            await self._sleep_poll()
+
+    async def _wait_for_host_homepage(self) -> None:
+        """After leaving, wait for the lobby's New Table tab to come back."""
+        deadline = self.clock() + self._timeout_for(LobbyState.LEAVING)
+        while True:
+            if await self._resolve_blocking_modal_if_present():
+                continue
+            if await self._control_if_present(LobbyControl.NEW_TABLE_TAB) is not None:
+                return
+            if self.clock() >= deadline:
+                await self._snapshot_failure("leaving-new_table-not-found")
+                raise self._timeout_error(
+                    LobbyState.LEAVING,
+                    self._control_description(LobbyControl.NEW_TABLE_TAB),
+                )
+            await self._sleep_poll()
 
     async def _wait_for_match(self) -> str:
         """Wait for a table start control or an actual in-play board."""
@@ -730,7 +990,7 @@ class LobbyFSM:
                 continue
             if await self._in_game_board_is_present():
                 return None
-            locator = await self._control_if_present(LobbyControl.START_SEARCH)
+            locator = await self._homepage_ready_control()
             if locator is not None:
                 return locator
             if await self._submit_remembered_login_if_ready():
@@ -766,6 +1026,18 @@ class LobbyFSM:
             if reloaded_now:
                 continue
             await self._sleep_poll()
+
+    async def _homepage_ready_control(self) -> Any | None:
+        """Start search for automatch; a table tab (or open table) for host."""
+        if not self.hosting:
+            return await self._control_if_present(LobbyControl.START_SEARCH)
+        if await self._selector_count(MY_TABLE_SELECTOR) > 0:
+            return self.page.locator(MY_TABLE_SELECTOR)
+        for control in (LobbyControl.MY_TABLE_TAB, LobbyControl.NEW_TABLE_TAB):
+            locator = await self._control_if_present(control)
+            if locator is not None:
+                return locator
+        return None
 
     async def _submit_remembered_login_if_ready(self) -> bool:
         """Click Login when the logged-out page shows its pre-filled form.
