@@ -50,6 +50,7 @@ from src.v2.arena.protocol.events import (
     ResourceUpdate,
     Shuffle,
     UnknownFrame,
+    ZoneTransfer,
 )
 from src.v2.arena.protocol.messages import ANSWER_QUESTION, encode_answer
 from src.v2.arena.protocol.recording import parse_recording
@@ -2471,14 +2472,81 @@ def test_local_shuffle_draws_separate_the_old_deck_from_the_shuffled_cards() -> 
         from_zone_index=0,
         to_zone_index=0,
     )
-    assert game_module._local_shuffle_draws(snapshot, (shuffle, draw)) == ["Moat"]
+    assert game_module._local_shuffle_draws(snapshot, (shuffle, draw)) == [["Moat"]]
     with pytest.raises(BridgeError, match="undrawn"):
         game_module._local_shuffle_draws(
             snapshot,
             (shuffle, replace(draw, cards=("Moat",), count=1)),
         )
-    with pytest.raises(BridgeError, match="two local shuffles"):
-        game_module._local_shuffle_draws(snapshot, (shuffle, draw, shuffle))
+
+    # Two reshuffles in one step: the first one's last card is still on the
+    # deck when the second is announced, and is drawn before the second's.
+    def discard_under_deck(count: int) -> ZoneTransfer:
+        return ZoneTransfer(
+            seat=seat,
+            movement="PUT_ON_BOTTOM_OF",
+            cards=(),
+            count=count,
+            from_zone="discard",
+            to_zone="deck",
+            from_zone_index=0,
+            to_zone_index=0,
+        )
+
+    assert game_module._local_shuffle_draws(
+        snapshot,
+        (
+            discard_under_deck(2),
+            shuffle,
+            draw,
+            discard_under_deck(1),
+            shuffle,
+            replace(draw, cards=("Cellar", "Chapel")),
+        ),
+    ) == [["Moat", "Cellar"], ["Chapel"]]
+
+
+DOUBLE_SHUFFLE_ARCHIVE = Path("exports/arena/20261114T020506.512457Z/frames.jsonl")
+DOUBLE_SHUFFLE_GAME_ID = 185921571
+THRONED_VASSAL_QUESTION = 108
+NEXT_THRONE_ROOM_QUESTION = 109
+
+
+def test_throned_vassal_that_reshuffles_one_card_twice_does_not_abort() -> None:
+    """Game 185921571: Throne Room on Vassal, empty deck, one Province discarded.
+
+    Each Vassal shuffled the lone Province into the deck and discarded it, so
+    the step held two local shuffles and the bridge refused it ("cannot rig
+    two local shuffles in one step").  Each reshuffle now gets its own order.
+    """
+    if not DOUBLE_SHUFFLE_ARCHIVE.is_file():
+        pytest.skip(f"missing live arena fixture: {DOUBLE_SHUFFLE_ARCHIVE}")
+    events = _events_of_game(
+        parse_recording(DOUBLE_SHUFFLE_ARCHIVE).events,
+        DOUBLE_SHUFFLE_GAME_ID,
+    )
+    provider = _RecordedReplayWithShadowLog(events)
+
+    results = asyncio.run(
+        run_game_loop(
+            events,
+            actuator=MockActuator(replay=True),
+            decision_provider=provider,
+        )
+    )
+
+    assert not any(result.divergence_aborted for result in results)
+    _, _, snapshot, decision = provider.seen[THRONED_VASSAL_QUESTION]
+    seat = snapshot.seats[snapshot.our_seat]
+    assert decision.question_id == "THRONE_ROOM"
+    assert seat.deck_count == 0
+    assert dict(seat.discard) == {"Province": 1}
+    _, shadow, snapshot, decision = provider.seen[NEXT_THRONE_ROOM_QUESTION]
+    seat = snapshot.seats[snapshot.our_seat]
+    assert decision.question_id == "THRONE_ROOM"
+    assert _shadow_hand_names(shadow, snapshot) == dict(seat.hand)
+    assert shadow.deck_count(snapshot.our_seat) == seat.deck_count == 0
+    assert shadow.discard_count(snapshot.our_seat) == seat.discard_count == 1
 
 
 def test_shadow_reshuffle_that_cannot_supply_the_observed_draw_is_an_error() -> None:

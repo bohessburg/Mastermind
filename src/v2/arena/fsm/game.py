@@ -2067,21 +2067,44 @@ def _rig_local_shuffle(
     seat = snapshot.our_seat
     if seat is None:
         raise BridgeError("shuffle rigging has no local seat")
-    drawn = _local_shuffle_draws(snapshot, events)
-    game.rig_shuffles(seat, [[int(dz.def_id(name)) for name in drawn]])
-    return len(drawn)
+    orders = _local_shuffle_draws(snapshot, events)
+    if len(orders) > 1:
+        # The client announces a shuffle even when the discard pile is empty;
+        # the interpreter does not reshuffle then, so an announcement nothing
+        # was drawn from must not take the next reshuffle's prescription.
+        orders = [order for order in orders if order] or [[]]
+    if len(orders) > _MAX_RIGGED_SHUFFLES:
+        raise BridgeError(
+            f"cannot rig {len(orders)} local shuffles in one step"
+        )
+    game.rig_shuffles(
+        seat,
+        [[int(dz.def_id(name)) for name in order] for order in orders],
+    )
+    return sum(len(order) for order in orders)
+
+
+# ShuffleRig::MAX_SHUFFLES in src/v2/core/interp.h.
+_MAX_RIGGED_SHUFFLES = 4
 
 
 def _local_shuffle_draws(
     snapshot: TrackerSnapshot,
     events: Iterable[GameEvent],
-) -> list[str]:
-    """Return the cards the local reshuffle put on top of the new deck.
+) -> list[list[str]]:
+    """Return, per local reshuffle, the cards it put on top of the new deck.
 
     The client moves the discard pile under the deck before it draws, so the
-    draw that follows the Shuffle event still holds the old deck's last cards.
-    Those, and cards put back on the deck after the shuffle, are not part of
-    the shuffled order.
+    draw that follows a Shuffle event still holds the earlier deck's last
+    cards.  Those, and cards put back on the deck after a shuffle, are not
+    part of that shuffle's order.
+
+    One step can reshuffle more than once: a Throne Room'd Vassal with an
+    empty deck and one card in the discard pile shuffles that card in, discards
+    it, and shuffles it in again.  A reshuffle's cards all lie above the next
+    one's, so a drawn card belongs to the earliest reshuffle that still has
+    cards; the discard cards moved under the deck before a Shuffle event give
+    that reshuffle's size.
     """
     seat = snapshot.our_seat
     if seat is None:
@@ -2090,20 +2113,29 @@ def _local_shuffle_draws(
         raise BridgeError("cannot rig a local shuffle with anonymous cards")
     old: Counter[str] = Counter(dict(snapshot.seats[seat].deck))
     injected: Counter[str] = Counter()
-    shuffled = False
-    drawn: list[str] = []
+    moved = 0
+    sizes: list[int] = []
+    orders: list[list[str]] = []
     for event in events:
+        if (
+            isinstance(event, ZoneTransfer)
+            and event.seat == seat
+            and event.from_zone == "discard"
+            and event.to_zone == "deck"
+        ):
+            moved += event.count
+            continue
         if isinstance(event, Shuffle) and event.seat == seat:
-            if shuffled:
-                raise BridgeError("cannot rig two local shuffles in one step")
-            shuffled = True
+            sizes.append(moved)
+            moved = 0
+            orders.append([])
             continue
         if (
             isinstance(event, Topdeck)
             and event.seat == seat
             and event.to_zone == "deck"
         ):
-            (injected if shuffled else old).update(event.cards)
+            (injected if orders else old).update(event.cards)
             continue
         if not (
             isinstance(event, (Draw, Reveal, Discard, ZoneTransfer))
@@ -2114,22 +2146,27 @@ def _local_shuffle_draws(
         for name in event.cards:
             if old[name] > 0:
                 old[name] -= 1
-            elif not shuffled:
+            elif not orders:
                 raise BridgeError(
                     f"observed draw {name!r} is absent from the shadow deck"
                 )
             elif injected[name] > 0:
                 injected[name] -= 1
             else:
-                drawn.append(name)
-    if not shuffled:
+                target = len(orders) - 1
+                for index in range(target):
+                    if len(orders[index]) < sizes[index]:
+                        target = index
+                        break
+                orders[target].append(name)
+    if not orders:
         raise BridgeError("shuffle rigging found no local shuffle")
     undrawn = sorted((+old).elements())
     if undrawn:
         raise BridgeError(
             f"local shuffle left old deck cards undrawn: {tuple(undrawn)}"
         )
-    return drawn
+    return orders
 
 
 def _check_local_shuffle(shuffle_rig: dict[str, Any], prescribed: int) -> None:
