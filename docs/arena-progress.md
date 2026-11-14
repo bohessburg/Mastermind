@@ -614,6 +614,31 @@ first attempt found the table still live and exited 5, the ten-minute
 retry got in at 02:05 UTC, run directory
 `exports/arena/20261114T020506.512457Z`, first game 185917063.
 
+Abort, 2026-11-14 05:25 UTC: game 185921571 against yoyone (our seat 0,
+turn 12) stopped with `BridgeError: cannot rig two local shuffles in one
+step`. We played Throne Room on Vassal with an empty deck and one Province
+in the discard pile: each Vassal shuffled that Province into the deck and
+discarded it, so one step held two local shuffles, and
+`_local_shuffle_draws` refused a second one although the engine's shuffle
+rig takes up to four. Fixed in `6dc9480`: each reshuffle gets its own
+prescribed order, a drawn card going to the earliest reshuffle that still
+has cards (sizes from the discard cards the client moves under the deck
+before each Shuffle event). Replay test
+`test_throned_vassal_that_reshuffles_one_card_twice_does_not_abort`; 204
+arena tests. Session before the abort: 21-18-0 over 39 games (log
+`arena_c29_run32.log`); gen 27 overall 129-84-1 over 214. The aborted game
+has no ledger row. Ledger 715 rows. Relaunched 05:29 UTC on the pre-fix
+code (preflight ran before the edit), in on the first attempt, run
+directory `exports/arena/20261114T052900.563792Z`, first game 185921703;
+the fix is live from the next relaunch.
+
+Ratings, from 2026-11-14 05:20 UTC: at Jack's request the bot account's
+leaderboard rating (`i_claudius`) is reported after every 10th game. At
+each multiple of ten ledger rows the arena is stopped between games,
+`scripts/dgames_ratings.py --once` runs, and the arena is relaunched, so
+the poller no longer ends a live game. Earlier polls: 44.10 (2026-11-13
+01:00 UTC), 46.16 (17:07 UTC), 46.74 (2026-11-14 01:52 UTC, 753 games).
+
 ## Status by phase
 
 - **P0 — Recording harness: complete (2026-07-24).**
