@@ -599,6 +599,21 @@ UTC (203 arena tests, dry run 3/3); the first attempt found the table still
 live and exited 5, the ten-minute retry got in at 17:19 UTC, run directory
 `exports/arena/20261113T171902.651988Z`, first game 185899186.
 
+Abort, 2026-11-14 01:52 UTC: game 185916700 against reeonski (our seat 1,
+turn 10, opponent's action phase) stopped with `raw=0000003affffffff`
+(`INVALID_SESSION_ID`), the third abort of this kind and for the same
+reason: `scripts/dgames_ratings.py` ran on the bot account from 01:51:45 to
+01:52:39 UTC (summary `ratings-summary-20261114T015239.117084Z.json`,
+`credentialed_relogins: 1`) and the site ended the arena's session at
+01:52:38. The poller was not started by the arena session and no cron or
+launch agent schedules it. Session before the abort: 56-37-0 over 93 games
+on c31 gen 27 in 8.5 hours with no other aborts (log `arena_c29_run31.log`);
+gen 27 overall 108-66-1 over 175. The aborted game has no ledger row.
+Ledger 676 rows. Relaunched 01:54 UTC (203 arena tests, dry run 3/3); the
+first attempt found the table still live and exited 5, the ten-minute
+retry got in at 02:05 UTC, run directory
+`exports/arena/20261114T020506.512457Z`, first game 185917063.
+
 ## Status by phase
 
 - **P0 — Recording harness: complete (2026-07-24).**
