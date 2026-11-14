@@ -655,6 +655,7 @@ of rated 2P players below, from the same poll; printed by
 | 770 | 11:41 | 47.07 | 48.44 +/- 0.68 | 2445 of 9767 | 75.0 | 850 |
 | 780 | 12:36 | 47.12 | 48.47 +/- 0.68 | 2417 of 9767 | 75.3 | 860 |
 | 790 | 13:22 | 47.08 | 48.42 +/- 0.67 | 2436 of 9768 | 75.1 | 870 |
+| 800 | 14:17 | 47.07 | 48.40 +/- 0.67 | 2446 of 9770 | 75.0 | 880 |
 
 Leaderboard thresholds at the 750-row poll: 75th percentile 47.07, 90th
 51.11, 95th 53.64, 99th 59.05. Jack's stated project goal is the 99th
@@ -713,10 +714,11 @@ relaunch took three tries, no game was affected:
 - 13:23:37 `arena_retry.sh` exited 8 ("arena already running") with nothing
   running. Its guard is `pgrep -x caffeinate` and
   `pgrep -f "caffeinate -is env PYTHONPATH=build"`. The session harness had
-  its own `caffeinate -i -t 300` alive, and the shell command that called
-  `arena_relaunch.sh` carried the same pattern in its own text as a
-  pre-check, so both matched. Call the relaunch script on its own (it does
-  the check itself); do the pre-check in a separate command.
+  its own `caffeinate -i -t 300` alive, and a session shell command with
+  the same pattern in its own text was alive at that moment, so both
+  matched. (First blamed on the pre-check in the command that called
+  `arena_relaunch.sh`; the 800-row stop showed the status check that was
+  waiting in the foreground does it too.)
 - 13:24:13 launch exited 5 after 93 s,
   `lobby-failure-homepage-start-search-not-found` (run
   `exports/arena/20261114T132414.525438Z`, no game). Same transient as
@@ -725,6 +727,20 @@ relaunch took three tries, no game was affected:
   down, the sleeping retry loop and cycle were stopped and started again.
 - 13:27:25 launch got in (run `exports/arena/20261114T132726.153344Z`,
   first game 185930226). Rating cycle armed for 800 rows.
+
+800-row stop, 14:16 UTC: clean (log archive `arena_c29_run42.log`, 5-5-0).
+Last ten 5-5-0; gen 27 177-122-1 over 300; lifetime 423-367-10 over 800.
+The relaunch exited 8 again at 14:18:24, this time with no pattern in the
+relaunch command: a foreground status command that contained the `pgrep`
+pattern and was waiting 75 s was alive when `arena_retry.sh` ran its guard.
+Relaunched by hand at 14:19:17, in game 185931725 at 14:19:40 (run
+`exports/arena/20261114T141918.450151Z`); about three minutes down, no game
+affected. Rating cycle armed for 810.
+
+Rule: while a relaunch is pending, no shell command whose text contains
+`caffeinate -is env PYTHONPATH=build` may be alive, foreground or
+background. Status checks go through `scripts/ops/arena_status.sh [SECONDS]`,
+which keeps the pattern inside the file.
 
 The operating scripts used for all of the above lived in a session scratch
 directory; copies are now in `scripts/ops/` (see `docs/handoff-2026-11-14.md`).
