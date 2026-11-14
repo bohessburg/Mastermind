@@ -13,6 +13,7 @@ from .workers import (
     _record_manifest_outcomes,
     build_slot_manifest,
     index_selfplay_segments,
+    manifest_waves,
 )
 
 
@@ -221,3 +222,47 @@ def test_manifest_scaffold_slot_keeps_async_offload_live() -> None:
     assert len(records) == len(slots)
     scaffold_record = next(record for record in records if record["scripted_nn_player"] is not None)
     assert scaffold_record["scripted_nn_player"] == 1
+
+
+def test_manifest_waves_cap_a_workers_concurrent_games() -> None:
+    slots = build_slot_manifest(
+        index_selfplay_segments(
+            [SelfPlaySegment(100, 0, 0), SelfPlaySegment(16, 0, 0, sims_override=2), SelfPlaySegment(12, 0, 1)]
+        )
+    )
+    assert manifest_waves(slots, 0, 0) == [slots]
+    assert manifest_waves(slots, 128, 1) == [slots]
+
+    even = manifest_waves(slots, 64, 0)
+    odd = manifest_waves(slots, 64, 1)
+    assert [len(wave) for wave in even] == [64, 64]
+    # Odd workers open with a half wave so wave boundaries do not coincide.
+    assert [len(wave) for wave in odd] == [32, 64, 32]
+    for waves in (even, odd):
+        dealt = [slot.game_index for wave in waves for slot in wave]
+        assert sorted(dealt) == sorted(slot.game_index for slot in slots)
+    # No wave is left holding all of one segment (deep games use 4x the tree).
+    deep_per_wave = [sum(1 for slot in wave if slot.sims_override) for wave in even]
+    assert all(2 <= count <= 14 for count in deep_per_wave)
+
+
+def test_waved_manifest_plays_the_same_games_as_one_runner() -> None:
+    cfg = _tiny_config()
+    seed = 0x5E1F_1003
+    slots = build_slot_manifest(index_selfplay_segments([SelfPlaySegment(8, 0, 0)]))
+
+    whole = dz.SelfPlayRunner(make_runner_config(cfg, seed, slot_manifest=slots))
+    whole_records, _ = _drive_zero_evaluator(whole, len(slots))
+
+    waved_records: list[dict] = []
+    waves = manifest_waves(slots, 3, 0)
+    assert [len(wave) for wave in waves] == [3, 3, 2]
+    for wave in waves:
+        runner = dz.SelfPlayRunner(make_runner_config(cfg, seed, slot_manifest=wave))
+        records, _ = _drive_zero_evaluator(runner, len(wave))
+        waved_records.extend(records)
+        del runner
+
+    assert sorted(_record_fingerprint(record) for record in waved_records) == sorted(
+        _record_fingerprint(record) for record in whole_records
+    )

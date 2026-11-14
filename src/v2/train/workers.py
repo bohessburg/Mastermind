@@ -1035,6 +1035,34 @@ def _generate_manifest_games(
     return stats
 
 
+def manifest_waves(
+    slots: list[SelfPlaySlotManifest],
+    max_concurrent: int,
+    worker_index: int,
+) -> list[list[SelfPlaySlotManifest]]:
+    """Split one worker's manifest into waves of at most ``max_concurrent`` games.
+
+    Trees are allocated per game when a runner is built, so a worker's memory
+    follows its wave size rather than its quota. Slots are dealt in a fixed
+    scrambled order so every wave gets the generation's mix of segments, and
+    odd workers open with a half wave: their thin end-of-wave rounds then fall
+    while the even workers are mid-wave and still filling the server's batches.
+    Games are seeded by game index, so the split does not change which games
+    are played.
+    """
+    if max_concurrent <= 0 or len(slots) <= max_concurrent:
+        return [slots]
+    dealt = sorted(
+        slots,
+        key=lambda slot: (int(slot.game_index) * 0x9E3779B97F4A7C15) & 0xFFFFFFFFFFFFFFFF,
+    )
+    first = max_concurrent if worker_index % 2 == 0 else max(1, max_concurrent // 2)
+    waves = [dealt[:first]]
+    for start in range(first, len(dealt), max_concurrent):
+        waves.append(dealt[start : start + max_concurrent])
+    return waves
+
+
 def _accumulate_stats(total: SelfPlayStats, update: SelfPlayStats) -> None:
     total.games += update.games
     total.positions += update.positions
@@ -1209,35 +1237,45 @@ def _worker_main(
                     manifest_model_table = list(model_table)
                     manifest_device = device
                     manifest_evaluate = None
-                manifest_runner = dz.SelfPlayRunner(
-                    make_runner_config(
-                        worker_selfplay,
-                        worker_seed ^ (int(generation) * 0x9E37),
-                        slot_manifest=slots,
-                    )
-                )
                 route_audit: dict[tuple[int, int], int] = {}
-                stats = _generate_manifest_games(
-                    manifest_runner,
+                stats = SelfPlayStats()
+                for wave in manifest_waves(
                     slots,
-                    manifest_evaluate,
-                    manifest_model_table,
-                    manifest_device,
-                    collect_max_batch,
-                    result_queue,
+                    int(worker_selfplay.max_concurrent_games),
                     worker_index,
-                    int(generation),
-                    obs_size=obs_size,
-                    route_audit=route_audit,
-                )
-                # Release the runner before this worker blocks on the next
-                # generation. Tree slabs are allocated eagerly, so leaving the
-                # name bound makes the next assignment build a second runner
-                # while the first is still alive: 64 workers going from about
-                # 3 GB to 5 GB each took the container from 213 GB to 339 GB
-                # against a 342 GiB limit, and the OOM killer ended the trainer
-                # at every c28 and c29 generation boundary.
-                del manifest_runner
+                ):
+                    manifest_runner = dz.SelfPlayRunner(
+                        make_runner_config(
+                            worker_selfplay,
+                            worker_seed ^ (int(generation) * 0x9E37),
+                            slot_manifest=wave,
+                        )
+                    )
+                    _accumulate_stats(
+                        stats,
+                        _generate_manifest_games(
+                            manifest_runner,
+                            wave,
+                            manifest_evaluate,
+                            manifest_model_table,
+                            manifest_device,
+                            collect_max_batch,
+                            result_queue,
+                            worker_index,
+                            int(generation),
+                            obs_size=obs_size,
+                            route_audit=route_audit,
+                        ),
+                    )
+                    # Release the runner before the next wave is built and
+                    # before this worker blocks on the next generation. Tree
+                    # slabs are allocated eagerly, so leaving the name bound
+                    # makes the next assignment build a second runner while
+                    # the first is still alive: 64 workers going from about
+                    # 3 GB to 5 GB each took the container from 213 GB to
+                    # 339 GB against a 342 GiB limit, and the OOM killer ended
+                    # the trainer at every c28 and c29 generation boundary.
+                    del manifest_runner
                 league_games = sum(
                     1
                     for slot in slots

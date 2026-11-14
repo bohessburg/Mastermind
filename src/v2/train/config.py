@@ -92,6 +92,10 @@ class SelfPlayConfig:
     tail_leaves_in_flight: int = 0
     # Tree capacity for deep-slice games only; 0 = max_tree_nodes.
     deep_max_tree_nodes: int = 0
+    # Per-worker cap on manifest games in memory at once; 0 = the whole quota.
+    # A game's search tree is allocated when its runner is built (about 85 MB
+    # a game at c31's settings), so 1,024 games need 88 GB without a cap.
+    max_concurrent_games: int = 0
     # Value target = (1 - b) * outcome + b * search root value (per position).
     root_value_blend: float = 0.0
     # Search options; defaults reproduce legacy behavior.
@@ -523,7 +527,7 @@ def validate_selfplay_max_turns_config(config: SelfPlayConfig) -> None:
         flight = getattr(config, name)
         if not isinstance(flight, int) or isinstance(flight, bool) or not lower <= flight <= 64:
             raise ValueError(f"selfplay.{name} must be an integer between {lower} and 64")
-    for name, upper in (("tail_games_threshold", 1024), ("tail_leaves_in_flight", 128), ("leaves_min_sims_per_leaf", 4096), ("deep_max_tree_nodes", 1 << 20)):
+    for name, upper in (("tail_games_threshold", 1024), ("tail_leaves_in_flight", 128), ("leaves_min_sims_per_leaf", 4096), ("deep_max_tree_nodes", 1 << 20), ("max_concurrent_games", 1 << 16)):
         value = getattr(config, name)
         if not isinstance(value, int) or isinstance(value, bool) or not 0 <= value <= upper:
             raise ValueError(f"selfplay.{name} must be an integer between 0 and {upper}")
