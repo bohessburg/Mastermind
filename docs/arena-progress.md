@@ -742,6 +742,13 @@ Rule: while a relaunch is pending, no shell command whose text contains
 background. Status checks go through `scripts/ops/arena_status.sh [SECONDS]`,
 which keeps the pattern inside the file.
 
+**Arena stopped 14:25 UTC 2026-11-14 at Jack's request** ("Stop the arena
+bot"). The 810-row rating cycle was cancelled first, then
+`arena_stop_after_game.sh` let game 185931797 finish (a win) and stopped the
+driver between games; exit 0, nothing retained. Two games since the 800-row
+stop, both wins. Final: gen 27 179-122-1 over 302; lifetime 425-367-10 over
+802. Nothing is relaunching it; restart only when Jack asks.
+
 The operating scripts used for all of the above lived in a session scratch
 directory; copies are now in `scripts/ops/` (see `docs/handoff-2026-11-14.md`).
 
