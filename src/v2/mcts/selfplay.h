@@ -471,6 +471,21 @@ private:
     std::uint32_t next_collect_game_ = 0;
     std::uint64_t completed_ = 0;
     bool tail_mode_ = false;
+    // DZ_REVEAL_STATS=1 (diagnostic only): per simulation, whether its leaf lies
+    // past the first hidden-information reveal from the search root (a deck
+    // shrinking = a draw from an unseen pile; the state RNG advancing = a
+    // shuffle). Printed to stderr when the runner is destroyed.
+    bool reveal_stats_ = false;
+    std::uint64_t reveal_sims_ = 0;
+    std::uint64_t reveal_past_ = 0;
+    std::uint64_t reveal_depth_sum_ = 0;
+    std::uint64_t reveal_first_depth_sum_ = 0;
+    std::uint64_t reveal_turns_[4]{};
+    std::uint64_t reveal_root_buy_ = 0;
+    std::uint64_t reveal_root_buy_past_ = 0;
+    std::uint64_t reveal_depth_hist_[6]{};
+    std::uint64_t reveal_depth_hist_past_[6]{};
+    void record_reveal_stats(const MctsPendingLeaf& leaf, const Mcts& mcts) noexcept;
     std::uint64_t skipped_degenerate_targets_ = 0;
     std::unique_ptr<ScriptedPool> scripted_pool_{};
 };

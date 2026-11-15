@@ -16,6 +16,7 @@
 #include <cmath>
 #include <condition_variable>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <limits>
 #include <mutex>
@@ -904,6 +905,10 @@ SelfPlayRunner::SelfPlayRunner(const SelfPlayConfig& config)
       leaf_model_ids_(new std::uint32_t[std::max(1U, config.max_batch)]),
       leaf_game_indices_(new std::uint64_t[std::max(1U, config.max_batch)]),
       normalized_policy_(new float[static_cast<std::size_t>(std::max(1U, config.max_batch)) * ACTION_SPACE_SIZE]) {
+    {
+        const char* reveal = std::getenv("DZ_REVEAL_STATS");
+        reveal_stats_ = reveal != nullptr && reveal[0] == '1';
+    }
     if (slot_count_ == 0U) {
         throw std::invalid_argument(
             manifest_mode_ ? "SelfPlayConfig.slot_manifest must not be empty"
@@ -1168,6 +1173,75 @@ SelfPlayRunner::~SelfPlayRunner() {
     if (scripted_pool_) {
         scripted_pool_->stop();
     }
+    if (reveal_stats_ && reveal_sims_ != 0U) {
+        const double sims = static_cast<double>(reveal_sims_);
+        std::fprintf(
+            stderr,
+            "REVEAL_STATS sims=%llu past_first_reveal=%.4f mean_leaf_depth=%.2f mean_first_reveal_depth=%.2f "
+            "turns_ahead_0=%.4f turns_ahead_1=%.4f turns_ahead_2=%.4f turns_ahead_3plus=%.4f "
+            "buy_root_sims=%llu buy_root_past=%.4f depth_hist=",
+            static_cast<unsigned long long>(reveal_sims_),
+            static_cast<double>(reveal_past_) / sims,
+            static_cast<double>(reveal_depth_sum_) / sims,
+            reveal_past_ ? static_cast<double>(reveal_first_depth_sum_) / static_cast<double>(reveal_past_) : 0.0,
+            static_cast<double>(reveal_turns_[0]) / sims,
+            static_cast<double>(reveal_turns_[1]) / sims,
+            static_cast<double>(reveal_turns_[2]) / sims,
+            static_cast<double>(reveal_turns_[3]) / sims,
+            static_cast<unsigned long long>(reveal_root_buy_),
+            reveal_root_buy_ ? static_cast<double>(reveal_root_buy_past_) / static_cast<double>(reveal_root_buy_) : 0.0);
+        for (int i = 0; i < 6; ++i) {
+            std::fprintf(stderr, "%s%llu/%llu", i ? "," : "",
+                static_cast<unsigned long long>(reveal_depth_hist_[i]),
+                static_cast<unsigned long long>(reveal_depth_hist_past_[i]));
+        }
+        std::fprintf(stderr, "\n");
+    }
+}
+
+void SelfPlayRunner::record_reveal_stats(const MctsPendingLeaf& leaf, const Mcts& mcts) noexcept {
+    if (leaf.depth == 0U) {
+        return;
+    }
+    const std::uint32_t root_state = mcts.node(leaf.path[0]).state_index;
+    if (root_state == MCTS_NULL) {
+        return;
+    }
+    const GameState& root = mcts.state_for(root_state);
+    std::uint32_t first_reveal = 0U;
+    const GameState* previous = &root;
+    for (std::uint8_t i = 1; i < leaf.depth; ++i) {
+        const std::uint32_t index = mcts.node(leaf.path[i]).state_index;
+        if (index == MCTS_NULL) {
+            continue;
+        }
+        const GameState& current = mcts.state_for(index);
+        bool revealed = std::memcmp(&previous->rng, &current.rng, sizeof(current.rng)) != 0;
+        for (PlayerId p = 0; p < current.num_players && !revealed; ++p) {
+            revealed = current.players[p].deck.size < previous->players[p].deck.size;
+        }
+        if (revealed) {
+            first_reveal = i;
+            break;
+        }
+        previous = &current;
+    }
+    const std::uint32_t leaf_index = leaf.state_index != MCTS_NULL ? leaf.state_index : mcts.node(leaf.path[leaf.depth - 1U]).state_index;
+    const GameState& last = leaf_index != MCTS_NULL ? mcts.state_for(leaf_index) : root;
+    const int turns = static_cast<int>(last.turn_counter) - static_cast<int>(root.turn_counter);
+    const std::size_t bucket = std::min<std::size_t>(5U, static_cast<std::size_t>(leaf.depth) / 4U);
+    ++reveal_sims_;
+    reveal_depth_sum_ += leaf.depth;
+    ++reveal_turns_[std::min(3, std::max(0, turns))];
+    ++reveal_depth_hist_[bucket];
+    const bool buy_root = root.phase == static_cast<std::uint8_t>(Phase::Buy);
+    reveal_root_buy_ += buy_root ? 1U : 0U;
+    if (first_reveal != 0U) {
+        ++reveal_past_;
+        reveal_first_depth_sum_ += first_reveal;
+        ++reveal_depth_hist_past_[bucket];
+        reveal_root_buy_past_ += buy_root ? 1U : 0U;
+    }
 }
 
 std::uint32_t SelfPlayRunner::collect_leaves(std::uint32_t max_batch) noexcept {
@@ -1275,6 +1349,9 @@ std::uint32_t SelfPlayRunner::collect_leaves(std::uint32_t max_batch) noexcept {
             // Retry after the in-flight evaluation lands; nothing started.
             ++idle;
             continue;
+        }
+        if (reveal_stats_) {
+            record_reveal_stats(leaf, game.mcts);
         }
         ++game.sims_started;
         if (!need_eval) {
