@@ -1,5 +1,5 @@
 {
-  "_comment": "Campaign 32 (2026-11-15, Jack). Continues the c31 line from c31 best gen 27 with an empty replay buffer on a new vast box (RTX 5090, 92 cores). Launch: scripts/box/resume.sh configs/run_c32.json checkpoints/remote/campaign31/gen_0027.pt. Changes against c31: (1) human anchor on the finalized level-1 dominion.games corpus (exports/tuples_dgames_level1: 19,728 games, 2.47M rows, 699k effective policy rows under the same skill weighting, against 403k for tuples_all_40plus); the anchor schedule restarts at 0.5 decaying to 0.1 by gen 20, since an empty buffer needs the heavier anchor (Mac trials: 0.444/0.467 at 0.1, 0.500 at 0.5); (2) self-play generation cut-off at 99%: training starts when 1014 of 1024 games are in, the rest finish in the background and join the next generation's replay; (3) scripted-opponent games keep the normal 8 leaves in flight (b9204a6). Unchanged: model, search (1024 sims), league and scripted mix, z=1 head-to-head gate, stop after 10 rejections. Not used as init: bc_a_40plus (c31 gens 25 and 30 already beat c29's best).",
+  "_comment": "Campaign 32 (2026-11-15, Jack). Continues the c31 line from c31 best gen 27 with an empty replay buffer on a new vast box (RTX 5090, 92 cores). Launch: scripts/box/resume.sh configs/run_c32.json checkpoints/remote/campaign31/gen_0027.pt. Changes against c31: (1) human anchor on the finalized level-1 dominion.games corpus (exports/tuples_dgames_level1: 19,728 games, 2.47M rows, 699k effective policy rows under the same skill weighting, against 403k for tuples_all_40plus); the anchor schedule restarts at 0.5 decaying to 0.1 by gen 20, since an empty buffer needs the heavier anchor (Mac trials: 0.444/0.467 at 0.1, 0.500 at 0.5); (2) self-play generation cut-off at 99%: training starts when 1014 of 1024 games are in, the rest finish in the background and join the next generation's replay; (3) scripted-opponent games keep the normal 8 leaves in flight (b9204a6). Unchanged: model, search (1024 sims), league and scripted mix, z=1 head-to-head gate, stop after 10 rejections. Not used as init: bc_a_40plus (c31 gens 25 and 30 already beat c29's best). Gate: 8 worker processes from gen 5 (gate_workers; timed 14 min against 23 single-process while sharing the GPU with c32's own gate).",
   "seed": 20261115,
   "generations": 60,
   "init_weights": "",
@@ -168,5 +168,6 @@
   "gate_third_party_background": true,
   "gate_force_accept_every": 0,
   "gate_warmup_generations": 0,
-  "stop_after_rejections": 10
+  "stop_after_rejections": 10,
+  "gate_workers": 8
 }
