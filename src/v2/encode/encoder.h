@@ -20,16 +20,28 @@ inline constexpr std::uint16_t ENCODER_GENERATION = 2;
 // versioning. They deliberately continue to describe the v1/default layout.
 inline constexpr std::uint16_t OBS_VERSION = static_cast<std::uint16_t>(ObsVersion::V1);
 
+// The observation layout is frozen independently of engine capacity: it keeps
+// three opponent blocks, 48 supply blocks and four per-pile token seats even
+// though the engine now holds 2 players and 32 piles. Unused blocks encode as
+// zero, so every observation is byte-identical to the 4-player/48-pile build
+// and existing checkpoints, replay buffers and Python offsets stay valid.
+inline constexpr std::size_t OBS_MAX_OPPONENTS = 3;
+inline constexpr std::size_t OBS_MAX_PILES = 48;
+inline constexpr std::size_t OBS_PILE_TOKEN_SEATS = 4;
+static_assert(MAX_PLAYERS - 1 <= static_cast<int>(OBS_MAX_OPPONENTS));
+static_assert(MAX_PILES <= static_cast<int>(OBS_MAX_PILES));
+static_assert(MAX_PLAYERS <= static_cast<int>(OBS_PILE_TOKEN_SEATS));
+
 inline constexpr std::size_t OBS_META_SIZE = 4;
 inline constexpr std::size_t OBS_OWN_ZONE_COUNT = 5;
 inline constexpr std::size_t OBS_OWN_SIZE = OBS_OWN_ZONE_COUNT * MAX_SLOTS;
 inline constexpr std::size_t OBS_OPPONENT_BLOCK_SIZE_V1 = 75;
-inline constexpr std::size_t OBS_OPPONENT_SIZE_V1 = (MAX_PLAYERS - 1) * OBS_OPPONENT_BLOCK_SIZE_V1;
+inline constexpr std::size_t OBS_OPPONENT_SIZE_V1 = OBS_MAX_OPPONENTS * OBS_OPPONENT_BLOCK_SIZE_V1;
 inline constexpr std::size_t OBS_PILE_BLOCK_SIZE = 11;
 inline constexpr std::size_t OBS_PILE_COUNT_FIELD = 0;
 inline constexpr std::size_t OBS_PILE_BASE_FIELD = 2;
 inline constexpr std::size_t OBS_PILE_TRAIT_FIELD = 4;
-inline constexpr std::size_t OBS_SUPPLY_SIZE = MAX_PILES * OBS_PILE_BLOCK_SIZE;
+inline constexpr std::size_t OBS_SUPPLY_SIZE = OBS_MAX_PILES * OBS_PILE_BLOCK_SIZE;
 inline constexpr std::size_t OBS_LANDSCAPE_ID_SECTION_COUNT = 4;
 inline constexpr std::size_t OBS_LANDSCAPE_ID_SIZE = OBS_LANDSCAPE_ID_SECTION_COUNT * MAX_LANDSCAPES;
 inline constexpr std::size_t OBS_LANDSCAPE_PROJECT_BOUGHT_OFFSET = OBS_LANDSCAPE_ID_SIZE;
@@ -57,7 +69,7 @@ inline constexpr std::size_t OBS_V2_OPPONENT_COLLECTION_OFFSET = OBS_OPPONENT_BL
 inline constexpr std::size_t OBS_V2_OPPONENT_DISCARD_OFFSET = OBS_V2_OPPONENT_COLLECTION_OFFSET + MAX_SLOTS;
 inline constexpr std::size_t OBS_V2_OPPONENT_SET_ASIDE_OFFSET = OBS_V2_OPPONENT_DISCARD_OFFSET + MAX_SLOTS;
 inline constexpr std::size_t OBS_OPPONENT_BLOCK_SIZE_V2 = OBS_V2_OPPONENT_SET_ASIDE_OFFSET + MAX_SLOTS;
-inline constexpr std::size_t OBS_OPPONENT_SIZE_V2 = (MAX_PLAYERS - 1) * OBS_OPPONENT_BLOCK_SIZE_V2;
+inline constexpr std::size_t OBS_OPPONENT_SIZE_V2 = OBS_MAX_OPPONENTS * OBS_OPPONENT_BLOCK_SIZE_V2;
 
 inline constexpr std::size_t OBS_V2_META_OFFSET = 0;
 inline constexpr std::size_t OBS_V2_OWN_OFFSET = OBS_V2_META_OFFSET + OBS_META_SIZE;

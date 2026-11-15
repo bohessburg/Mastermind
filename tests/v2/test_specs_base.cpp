@@ -31,6 +31,7 @@ namespace {
 } // namespace
 
 CARD_SPEC("v2 Cellar discards selected cards and draws per chosen") {
+    kingdom("Cellar");
     given().hand("Cellar", "Copper", "Estate", "Copper").deck("Silver", "Gold");
 
     play("Cellar");
@@ -52,6 +53,7 @@ CARD_SPEC("v2 Cellar discards selected cards and draws per chosen") {
 }
 
 CARD_SPEC("v2 Cellar can pass immediately with zero discards") {
+    kingdom("Cellar");
     given().hand("Cellar", "Copper").deck("Silver");
 
     play("Cellar");
@@ -65,6 +67,7 @@ CARD_SPEC("v2 Cellar can pass immediately with zero discards") {
 }
 
 CARD_SPEC("v2 Chapel trashes up to four cards") {
+    kingdom("Chapel");
     given().hand("Chapel", "Copper", "Copper", "Copper", "Estate", "Estate");
 
     play("Chapel");
@@ -84,6 +87,7 @@ CARD_SPEC("v2 Chapel trashes up to four cards") {
 }
 
 CARD_SPEC("v2 Village draws one and adds two actions") {
+    kingdom("Village");
     given().hand("Village").deck("Silver");
 
     play("Village");
@@ -95,6 +99,7 @@ CARD_SPEC("v2 Village draws one and adds two actions") {
 }
 
 CARD_SPEC("v2 Smithy draws three cards") {
+    kingdom("Smithy");
     given().hand("Smithy").deck("Copper", "Silver", "Gold");
 
     play("Smithy");
@@ -104,6 +109,7 @@ CARD_SPEC("v2 Smithy draws three cards") {
 }
 
 CARD_SPEC("v2 Workshop gains a card costing up to four to discard") {
+    kingdom("Workshop");
     given().hand("Workshop");
 
     play("Workshop");
@@ -119,6 +125,7 @@ CARD_SPEC("v2 Workshop gains a card costing up to four to discard") {
 }
 
 CARD_SPEC("v2 Remodel trashes one card and gains up to two more to discard") {
+    kingdom("Remodel");
     given().hand("Remodel", "Estate");
 
     play("Remodel");
@@ -139,6 +146,7 @@ CARD_SPEC("v2 Remodel trashes one card and gains up to two more to discard") {
 }
 
 CARD_SPEC("v2 Mine trashes a treasure and gains to hand") {
+    kingdom("Mine");
     given().hand("Mine", "Silver");
 
     play("Mine");
@@ -160,6 +168,7 @@ CARD_SPEC("v2 Mine trashes a treasure and gains to hand") {
 }
 
 CARD_SPEC("v2 clone-equivalence holds while suspended in Choose") {
+    kingdom("Cellar");
     given().hand("Cellar", "Copper", "Estate").deck("Silver", "Gold");
 
     play("Cellar");
@@ -174,6 +183,7 @@ CARD_SPEC("v2 clone-equivalence holds while suspended in Choose") {
 }
 
 CARD_SPEC("v2 Remodel with no cards to trash auto-completes") {
+    kingdom("Remodel");
     given().hand("Remodel");
 
     play("Remodel");
@@ -185,6 +195,7 @@ CARD_SPEC("v2 Remodel with no cards to trash auto-completes") {
 }
 
 CARD_SPEC("v2 Mine with no treasures auto-completes") {
+    kingdom("Mine");
     given().hand("Mine", "Estate");
 
     play("Mine");
@@ -196,6 +207,7 @@ CARD_SPEC("v2 Mine with no treasures auto-completes") {
 }
 
 CARD_SPEC("v2 mandatory Choose clamps min to available selections") {
+    kingdom("ExactTwoTest");
     given().hand("ExactTwoTest", "Copper");
 
     play("ExactTwoTest");
@@ -213,6 +225,7 @@ CARD_SPEC("v2 mandatory Choose clamps min to available selections") {
 }
 
 CARD_SPEC("v2 ChooseGain auto-completes when no supply pile matches") {
+    kingdom("Remodel");
     given().hand("Remodel", "Estate", "Gold");
     empty_supply_up_to(4);
 
@@ -226,6 +239,7 @@ CARD_SPEC("v2 ChooseGain auto-completes when no supply pile matches") {
 }
 
 CARD_SPEC("v2 Repeat runs a program containing Choose the specified number of times") {
+    kingdom("RepeatChooseTest");
     given().hand("RepeatChooseTest", "Copper", "Estate");
 
     play("RepeatChooseTest");
@@ -245,6 +259,7 @@ CARD_SPEC("v2 Repeat runs a program containing Choose the specified number of ti
 }
 
 CARD_SPEC("v2 Market draws and grants action buy and coin") {
+    kingdom("Market");
     given().hand("Market").deck("Copper");
 
     play("Market");
@@ -255,6 +270,7 @@ CARD_SPEC("v2 Market draws and grants action buy and coin") {
 }
 
 CARD_SPEC("v2 Festival grants actions buy and coins") {
+    kingdom("Festival");
     given().hand("Festival");
 
     play("Festival");
@@ -265,6 +281,7 @@ CARD_SPEC("v2 Festival grants actions buy and coins") {
 }
 
 CARD_SPEC("v2 Laboratory draws two and grants an action") {
+    kingdom("Laboratory");
     given().hand("Laboratory").deck("Copper", "Silver");
 
     play("Laboratory");
@@ -275,6 +292,7 @@ CARD_SPEC("v2 Laboratory draws two and grants an action") {
 }
 
 CARD_SPEC("v2 Gardens scores one VP per ten owned cards") {
+    kingdom("Gardens");
     given().hand(
         "Gardens",
         "Copper", "Copper", "Copper", "Copper", "Copper",
@@ -287,6 +305,7 @@ CARD_SPEC("v2 Gardens scores one VP per ten owned cards") {
 }
 
 CARD_SPEC("v2 Moneylender may trash Copper for three coins") {
+    kingdom("Moneylender");
     given().hand("Moneylender", "Copper", "Estate");
 
     play("Moneylender");
@@ -303,6 +322,7 @@ CARD_SPEC("v2 Moneylender may trash Copper for three coins") {
 }
 
 CARD_SPEC("v2 Moneylender with no Copper resolves without coins") {
+    kingdom("Moneylender");
     given().hand("Moneylender", "Estate");
 
     play("Moneylender");
@@ -313,6 +333,7 @@ CARD_SPEC("v2 Moneylender with no Copper resolves without coins") {
 }
 
 CARD_SPEC("v2 Poacher with no empty piles discards nothing") {
+    kingdom("Poacher");
     given().hand("Poacher", "Estate").deck("Copper");
 
     play("Poacher");
@@ -323,6 +344,7 @@ CARD_SPEC("v2 Poacher with no empty piles discards nothing") {
 }
 
 CARD_SPEC("v2 Poacher discards one card for one empty pile") {
+    kingdom("Poacher");
     given().hand("Poacher", "Copper", "Estate").deck("Silver");
     empty_supply("Curse");
 
@@ -340,6 +362,7 @@ CARD_SPEC("v2 Poacher discards one card for one empty pile") {
 }
 
 CARD_SPEC("v2 Poacher discards two cards for two empty piles") {
+    kingdom("Poacher");
     given().hand("Poacher", "Copper", "Estate").deck("Silver", "Gold");
     empty_supply("Curse");
     empty_supply("Copper");
@@ -362,6 +385,7 @@ CARD_SPEC("v2 Poacher discards two cards for two empty piles") {
 }
 
 CARD_SPEC("v2 Vassal discards a revealed non-Action") {
+    kingdom("Vassal");
     given().hand("Vassal").deck("Estate");
 
     play("Vassal");
@@ -372,6 +396,7 @@ CARD_SPEC("v2 Vassal discards a revealed non-Action") {
 }
 
 CARD_SPEC("v2 Vassal may decline to play a revealed Action") {
+    kingdom("Village", "Vassal");
     given().hand("Vassal").deck("Village");
 
     play("Vassal");
@@ -387,6 +412,7 @@ CARD_SPEC("v2 Vassal may decline to play a revealed Action") {
 }
 
 CARD_SPEC("v2 Vassal may play a revealed Action from discard") {
+    kingdom("Village", "Vassal");
     given().hand("Vassal").deck("Silver", "Village");
 
     play("Vassal");
@@ -400,6 +426,7 @@ CARD_SPEC("v2 Vassal may play a revealed Action from discard") {
 }
 
 CARD_SPEC("v2 Harbinger with empty discard resolves immediately") {
+    kingdom("Harbinger");
     given().hand("Harbinger").deck("Copper");
 
     play("Harbinger");
@@ -410,6 +437,7 @@ CARD_SPEC("v2 Harbinger with empty discard resolves immediately") {
 }
 
 CARD_SPEC("v2 Harbinger may topdeck from discard") {
+    kingdom("Harbinger");
     given().hand("Harbinger").deck("Silver").discard("Estate", "Copper");
 
     play("Harbinger");
@@ -426,6 +454,7 @@ CARD_SPEC("v2 Harbinger may topdeck from discard") {
 }
 
 CARD_SPEC("v2 Throne Room with no Actions in hand auto-completes") {
+    kingdom("Throne Room");
     given().hand("Throne Room", "Copper");
 
     play("Throne Room");
@@ -436,6 +465,7 @@ CARD_SPEC("v2 Throne Room with no Actions in hand auto-completes") {
 }
 
 CARD_SPEC("v2 Throne Room plays Cellar twice") {
+    kingdom("Cellar", "Throne Room");
     given().hand("Throne Room", "Cellar", "Copper", "Estate").deck("Silver", "Gold");
 
     play("Throne Room");
@@ -460,6 +490,7 @@ CARD_SPEC("v2 Throne Room plays Cellar twice") {
 }
 
 CARD_SPEC("v2 Throne Room plays Remodel twice") {
+    kingdom("Remodel", "Throne Room");
     given().hand("Throne Room", "Remodel", "Estate", "Copper");
 
     play("Throne Room");
@@ -483,6 +514,7 @@ CARD_SPEC("v2 Throne Room plays Remodel twice") {
 }
 
 CARD_SPEC("v2 nested Throne Room plays one Sentry exactly twice") {
+    kingdom("Throne Room", "Sentry");
     given()
         .hand("Throne Room", "Throne Room", "Sentry")
         .deck(
@@ -516,6 +548,7 @@ CARD_SPEC("v2 nested Throne Room plays one Sentry exactly twice") {
 }
 
 CARD_SPEC("v2 nested Throne Room chooses a fresh target for each inner resolution") {
+    kingdom("Smithy", "Moat", "Throne Room");
     given()
         .hand("Throne Room", "Throne Room", "Smithy", "Moat")
         .deck(
@@ -546,6 +579,7 @@ CARD_SPEC("v2 nested Throne Room chooses a fresh target for each inner resolutio
 }
 
 CARD_SPEC("v2 Council Room draws for the player and each other player") {
+    kingdom("Council Room");
     given()
         .hand("Council Room")
         .deck("Copper", "Silver", "Gold", "Estate")
@@ -565,6 +599,7 @@ CARD_SPEC("v2 Council Room draws for the player and each other player") {
 }
 
 CARD_SPEC("v2 Artisan gains to hand and topdecks a card from hand") {
+    kingdom("Artisan");
     given().hand("Artisan", "Copper");
 
     play("Artisan");
@@ -582,6 +617,7 @@ CARD_SPEC("v2 Artisan gains to hand and topdecks a card from hand") {
 }
 
 CARD_SPEC("v2 Bandit gains Gold and trashes a revealed non-Copper Treasure") {
+    kingdom("Bandit");
     given().hand("Bandit").player_deck(1U, "Copper", "Silver");
 
     play("Bandit");
@@ -592,6 +628,7 @@ CARD_SPEC("v2 Bandit gains Gold and trashes a revealed non-Copper Treasure") {
 }
 
 CARD_SPEC("v2 Bandit does not re-reveal its first revealed Treasure after reshuffle") {
+    kingdom("Bandit");
     given()
         .hand("Bandit")
         .player_deck(1U, "Silver")
@@ -616,6 +653,7 @@ CARD_SPEC("v2 Bandit does not re-reveal its first revealed Treasure after reshuf
 }
 
 CARD_SPEC("v2 Bandit keeps revealed cards set aside across a trash choice") {
+    kingdom("Bandit");
     given()
         .hand("Bandit")
         .player_deck(1U, "Silver")
@@ -652,6 +690,7 @@ CARD_SPEC("v2 Bandit keeps revealed cards set aside across a trash choice") {
 }
 
 CARD_SPEC("v2 Library draws until hand has seven cards") {
+    kingdom("Library");
     given()
         .hand("Library", "Copper", "Copper", "Copper", "Estate", "Estate")
         .deck("Copper", "Silver", "Gold");
@@ -665,6 +704,7 @@ CARD_SPEC("v2 Library draws until hand has seven cards") {
 }
 
 CARD_SPEC("v2 Library stops when deck and discard are exhausted") {
+    kingdom("Library");
     given().hand("Library", "Copper").deck("Silver").discard("Estate");
 
     play("Library");
@@ -676,6 +716,7 @@ CARD_SPEC("v2 Library stops when deck and discard are exhausted") {
 }
 
 CARD_SPEC("v2 Library can set aside drawn Actions and discards them afterwards") {
+    kingdom("Smithy", "Library");
     given()
         .hand("Library", "Copper", "Copper", "Estate", "Estate", "Silver")
         .deck("Copper", "Silver", "Gold", "Smithy");
@@ -695,6 +736,7 @@ CARD_SPEC("v2 Library can set aside drawn Actions and discards them afterwards")
 }
 
 CARD_SPEC("v2 Library can keep drawn Actions in hand") {
+    kingdom("Smithy", "Library");
     given()
         .hand("Library", "Copper", "Copper", "Estate", "Estate", "Silver")
         .deck("Copper", "Silver", "Gold", "Smithy");
@@ -714,6 +756,7 @@ CARD_SPEC("v2 Library can keep drawn Actions in hand") {
 }
 
 CARD_SPEC("v2 Sentry supports every trash discard keep pair") {
+    kingdom("Sentry");
     constexpr std::uint8_t kTrash = 0;
     constexpr std::uint8_t kDiscard = 1;
     constexpr std::uint8_t kKeep = 2;
@@ -767,6 +810,7 @@ CARD_SPEC("v2 Sentry supports every trash discard keep pair") {
 }
 
 CARD_SPEC("v2 Sentry handles a single card to look at") {
+    kingdom("Sentry");
     given().hand("Sentry").deck("Copper", "Gold");
 
     play("Sentry");
@@ -781,6 +825,7 @@ CARD_SPEC("v2 Sentry handles a single card to look at") {
 }
 
 CARD_SPEC("v2 Throne Room plays Sentry twice") {
+    kingdom("Throne Room", "Sentry");
     given().hand("Throne Room", "Sentry").deck("Copper", "Estate", "Silver", "Gold");
 
     play("Throne Room");
@@ -799,6 +844,7 @@ CARD_SPEC("v2 Throne Room plays Sentry twice") {
 }
 
 CARD_SPEC("v2 Throne Room plays Library twice") {
+    kingdom("Throne Room", "Library");
     given()
         .hand("Throne Room", "Library", "Copper", "Copper", "Estate", "Estate", "Silver")
         .deck("Copper", "Gold");
@@ -813,6 +859,7 @@ CARD_SPEC("v2 Throne Room plays Library twice") {
 }
 
 CARD_SPEC("v2 Throne Room Library asks about the first Action it draws") {
+    kingdom("Smithy", "Throne Room", "Library");
     given()
         .hand("Throne Room", "Library", "Copper")
         .deck("Copper", "Copper", "Copper", "Copper", "Copper", "Copper", "Smithy");
@@ -838,6 +885,7 @@ CARD_SPEC("v2 Throne Room Library asks about the first Action it draws") {
 }
 
 CARD_SPEC("v2 Vassal Library asks about the first Action it draws") {
+    kingdom("Smithy", "Vassal", "Library");
     given()
         .hand("Vassal", "Copper")
         .deck("Copper", "Copper", "Copper", "Copper", "Copper", "Copper", "Smithy", "Library");
@@ -862,6 +910,7 @@ CARD_SPEC("v2 Vassal Library asks about the first Action it draws") {
 }
 
 CARD_SPEC("v2 clone-equivalence holds while suspended in Library") {
+    kingdom("Smithy", "Library");
     given()
         .hand("Library", "Copper", "Copper", "Estate", "Estate", "Silver")
         .deck("Copper", "Gold", "Smithy");
@@ -879,6 +928,7 @@ CARD_SPEC("v2 clone-equivalence holds while suspended in Library") {
 }
 
 CARD_SPEC("v2 clone-equivalence holds while suspended in Sentry") {
+    kingdom("Sentry");
     given().hand("Sentry").deck("Copper", "Estate", "Gold");
 
     play("Sentry");

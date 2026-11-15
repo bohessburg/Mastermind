@@ -21,6 +21,8 @@ from torch import nn
 OBS_SIZE_V2 = 1717
 OBS_SIZE_V3 = 1788
 MAX_SLOTS = 64
+# Observation-layout capacities (encoder.h OBS_MAX_PILES/OBS_MAX_OPPONENTS),
+# not engine capacity: the engine holds 2 players and 32 piles, padded here.
 MAX_PILES = 48
 MAX_OPPONENTS = 3
 OPPONENT_BLOCK_SIZE_V2 = 267

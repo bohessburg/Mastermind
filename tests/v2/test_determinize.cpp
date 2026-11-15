@@ -135,8 +135,6 @@ void play_to_completion(GameState state, std::uint64_t seed) {
     RandomBot bots[MAX_PLAYERS] = {
         RandomBot(seed ^ 0xB070'0000ULL),
         RandomBot(seed ^ 0xB071'0000ULL),
-        RandomBot(seed ^ 0xB072'0000ULL),
-        RandomBot(seed ^ 0xB073'0000ULL),
     };
 
     for (int step = 0; step < 10000 && state.phase != static_cast<std::uint8_t>(Phase::Over); ++step) {

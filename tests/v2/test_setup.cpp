@@ -68,20 +68,45 @@ TEST_CASE("v2 setup initializes two-player basic piles and opening hands", "[v2]
     }
 }
 
-TEST_CASE("v2 setup uses four-player and colony pile counts", "[v2][setup]") {
+TEST_CASE("v2 setup clamps to two players and uses colony pile counts", "[v2][setup]") {
     Setup setup{};
     setup.num_players = 4;
     setup.use_colony_platinum = true;
 
     const GameState state = Game::new_game(setup, 5678U);
 
-    REQUIRE(state.num_players == 4U);
+    REQUIRE(state.num_players == 2U);
     REQUIRE(state.num_piles == 9U);
-    REQUIRE(find_pile(state, DEF_COPPER)->count == 32U);
-    REQUIRE(find_pile(state, DEF_ESTATE)->count == 12U);
-    REQUIRE(find_pile(state, DEF_DUCHY)->count == 12U);
-    REQUIRE(find_pile(state, DEF_PROVINCE)->count == 12U);
-    REQUIRE(find_pile(state, DEF_CURSE)->count == 30U);
+    REQUIRE(find_pile(state, DEF_COPPER)->count == 46U);
+    REQUIRE(find_pile(state, DEF_ESTATE)->count == 8U);
+    REQUIRE(find_pile(state, DEF_DUCHY)->count == 8U);
+    REQUIRE(find_pile(state, DEF_PROVINCE)->count == 8U);
+    REQUIRE(find_pile(state, DEF_CURSE)->count == 10U);
     REQUIRE(find_pile(state, DEF_PLATINUM)->count == 12U);
-    REQUIRE(find_pile(state, DEF_COLONY)->count == 12U);
+    REQUIRE(find_pile(state, DEF_COLONY)->count == 8U);
+}
+
+TEST_CASE("v2 setup fits a maximal kingdom within MAX_PILES", "[v2][setup]") {
+    constexpr DefId kKingdom[] = {
+        DEF_CELLAR, DEF_CHAPEL, DEF_MOAT, DEF_HARBINGER, DEF_MERCHANT, DEF_VASSAL,
+        DEF_VILLAGE, DEF_WORKSHOP, DEF_BUREAUCRAT, DEF_GARDENS, DEF_MILITIA,
+        DEF_MONEYLENDER, DEF_POACHER, DEF_REMODEL, DEF_SMITHY, DEF_THRONE_ROOM,
+        DEF_BANDIT, DEF_COUNCIL_ROOM, DEF_FESTIVAL, DEF_LABORATORY, DEF_LIBRARY,
+        DEF_MARKET,
+    };
+    static_assert(sizeof(kKingdom) / sizeof(kKingdom[0]) == MAX_KINGDOM_DEFS);
+    Setup setup{};
+    setup.use_colony_platinum = true;
+    setup.kingdom_count = MAX_KINGDOM_DEFS;
+    for (int i = 0; i < MAX_KINGDOM_DEFS; ++i) {
+        setup.kingdom[i] = kKingdom[i];
+    }
+
+    const GameState state = Game::new_game(setup, 91U);
+
+    REQUIRE(state.num_piles == 9U + MAX_KINGDOM_DEFS);
+    REQUIRE(state.num_piles <= MAX_PILES);
+    for (const DefId def : kKingdom) {
+        REQUIRE(find_pile(state, def) != nullptr);
+    }
 }

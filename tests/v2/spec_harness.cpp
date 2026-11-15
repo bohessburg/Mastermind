@@ -8,47 +8,7 @@
 
 namespace {
 
-[[nodiscard]] Setup full_phase2_setup() {
-    Setup setup{};
-    constexpr DefId kKingdom[] = {
-        DEF_CELLAR,
-        DEF_CHAPEL,
-        DEF_VILLAGE,
-        DEF_SMITHY,
-        DEF_WORKSHOP,
-        DEF_REMODEL,
-        DEF_MINE,
-        DEF_MERCHANT,
-        DEF_MILITIA,
-        DEF_WITCH,
-        DEF_MOAT,
-        DEF_BUREAUCRAT,
-        DEF_MARKET,
-        DEF_FESTIVAL,
-        DEF_LABORATORY,
-        DEF_GARDENS,
-        DEF_MONEYLENDER,
-        DEF_POACHER,
-        DEF_VASSAL,
-        DEF_HARBINGER,
-        DEF_THRONE_ROOM,
-        DEF_COUNCIL_ROOM,
-        DEF_ARTISAN,
-        DEF_BANDIT,
-        DEF_LIBRARY,
-        DEF_SENTRY,
-        DEF_EXACT_TWO_TEST,
-        DEF_REPEAT_CHOOSE_TEST,
-        DEF_ORDER_ALPHA_TEST,
-        DEF_ORDER_BETA_TEST,
-        DEF_ORDER_GAMMA_TEST,
-    };
-    setup.kingdom_count = static_cast<std::uint8_t>(sizeof(kKingdom) / sizeof(kKingdom[0]));
-    for (std::uint8_t i = 0; i < setup.kingdom_count; ++i) {
-        setup.kingdom[i] = kKingdom[i];
-    }
-    return setup;
-}
+constexpr std::uint64_t kSpecSeed = 0x5'EC5'0001ULL;
 
 [[nodiscard]] int count_ordered(const OrderedZone& zone) {
     return zone.size;
@@ -187,10 +147,21 @@ SpecHarness::ExpectBuilder& SpecHarness::ExpectBuilder::player_trash_count(const
 }
 
 SpecHarness::SpecHarness()
-    : state_(Game::new_game(full_phase2_setup(), 0x5'EC5'0001ULL)),
+    : state_(Game::new_game(Setup{}, kSpecSeed)),
       baseline_(0),
       given_(*this),
       expect_(*this) {
+    refresh_baseline();
+}
+
+void SpecHarness::use_kingdom(const char* const* names, std::size_t count) {
+    REQUIRE(count <= static_cast<std::size_t>(MAX_KINGDOM_DEFS));
+    Setup setup{};
+    setup.kingdom_count = static_cast<std::uint8_t>(count);
+    for (std::size_t i = 0; i < count; ++i) {
+        setup.kingdom[i] = def_named(names[i]);
+    }
+    state_ = Game::new_game(setup, kSpecSeed);
     refresh_baseline();
 }
 

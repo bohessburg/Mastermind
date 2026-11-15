@@ -195,46 +195,6 @@ void require_order_options(const GameState& state, std::uint8_t count) {
 
 } // namespace
 
-TEST_CASE("v2 attacks resolve opponents in turn order", "[v2][attack]") {
-    GameState state = Game::new_game(attack_setup(4U), 0xA77A'0001ULL);
-    reset_for_action(state);
-
-    add_hand(state, 0U, DEF_MILITIA);
-    add_hand(state, 1U, DEF_COPPER, 3U);
-    add_hand(state, 1U, DEF_ESTATE);
-    add_hand(state, 2U, DEF_COPPER, 3U);
-    add_hand(state, 2U, DEF_SILVER);
-    add_hand(state, 3U, DEF_COPPER, 3U);
-    add_hand(state, 3U, DEF_GOLD);
-
-    step_checked(state, play_action(DEF_MILITIA));
-    REQUIRE(state.decision.kind == static_cast<std::uint8_t>(DecisionKind::Choose));
-    REQUIRE(state.decision.player == 1U);
-
-    step_checked(state, select_action(DEF_COPPER));
-    REQUIRE(state.decision.player == 1U);
-    step_checked(state, select_action(DEF_COPPER));
-    REQUIRE(state.decision.player == 1U);
-    step_checked(state, select_action(DEF_COPPER));
-    REQUIRE(state.decision.kind == static_cast<std::uint8_t>(DecisionKind::Choose));
-    REQUIRE(state.decision.player == 2U);
-
-    step_checked(state, select_action(DEF_COPPER));
-    step_checked(state, select_action(DEF_COPPER));
-    step_checked(state, select_action(DEF_COPPER));
-    REQUIRE(state.decision.kind == static_cast<std::uint8_t>(DecisionKind::Choose));
-    REQUIRE(state.decision.player == 3U);
-
-    step_checked(state, select_action(DEF_GOLD));
-    step_checked(state, select_action(DEF_COPPER));
-    REQUIRE(state.decision.player == 3U);
-    step_checked(state, select_action(DEF_COPPER));
-    REQUIRE(state.phase == static_cast<std::uint8_t>(Phase::Buy));
-    REQUIRE(hand_total(state, 1U) == 3U);
-    REQUIRE(hand_total(state, 2U) == 3U);
-    REQUIRE(hand_total(state, 3U) == 3U);
-}
-
 TEST_CASE("v2 Moat reveal grants attack immunity", "[v2][attack][reaction]") {
     GameState state = Game::new_game(attack_setup(), 0xA77A'0002ULL);
     reset_for_action(state);

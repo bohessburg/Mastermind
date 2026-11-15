@@ -57,6 +57,11 @@ constexpr std::uint8_t kKingdomSupply = 10;
 
 void add_uniform_pile(GameState& state, DefId def, std::uint8_t count) noexcept {
     assert(state.num_piles < MAX_PILES);
+    // MAX_KINGDOM_DEFS keeps a Setup within MAX_PILES; this also holds in
+    // Release, where the assert is compiled out.
+    if (state.num_piles >= MAX_PILES) {
+        return;
+    }
     Pile& pile = state.piles[state.num_piles];
     pile.base = add_slot(state, def);
     pile.count = count;

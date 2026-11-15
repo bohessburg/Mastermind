@@ -1,6 +1,12 @@
 # DominionZero v2 Observation Layout
 
-Observations are versioned fixed-size `float32` arrays. Def-like ids use
+Observations are versioned fixed-size `float32` arrays.
+
+The layout capacities (`OBS_MAX_OPPONENTS = 3`, `OBS_MAX_PILES = 48`, four
+per-pile token seats) are frozen in `encoder.h` independently of the engine,
+which since 2026-11-14 holds `MAX_PLAYERS = 2` and `MAX_PILES = 32`. The extra
+blocks always encode as zero, so observations are byte-identical to the
+earlier 4-player/48-pile engine and existing checkpoints remain valid. Def-like ids use
 `def_id + 1`; `0` means none/empty. This keeps Copper (`DEF_COPPER = 0`)
 distinguishable from no card.
 
@@ -24,8 +30,8 @@ Hidden information is intentionally excluded:
 |---|---:|---:|---|
 | Meta | 0 | 4 | Version and fixed shape metadata |
 | Own zones | 4 | 320 | Perspective player's private/public zone counts |
-| Opponents | 324 | 225 | Public info for up to `MAX_PLAYERS - 1` opponents |
-| Supply | 549 | 528 | Public pile state for up to `MAX_PILES` piles |
+| Opponents | 324 | 225 | Public info for up to `OBS_MAX_OPPONENTS` opponents |
+| Supply | 549 | 528 | Public pile state for up to `OBS_MAX_PILES` piles |
 | Landscapes | 1077 | 27 | Public landscape/project/artifact state |
 | Resources | 1104 | 12 | Current resources and perspective-player tokens |
 | Turn | 1116 | 10 | Phase/current-player/turn scalars |
@@ -54,7 +60,7 @@ Each zone is `MAX_SLOTS = 64` floats indexed by `Slot`.
 
 ### Opponent blocks, offset 324
 
-There are `MAX_PLAYERS - 1 = 3` blocks of 75 floats. Block 0 is the next player
+There are `OBS_MAX_OPPONENTS = 3` blocks of 75 floats. Block 0 is the next player
 after the perspective player, so 2-player games keep the only opponent dense and
 first. Unused blocks are all zero.
 
@@ -77,7 +83,7 @@ Block offset: `324 + block_index * 75`.
 
 ### Supply blocks, offset 549
 
-There are `MAX_PILES = 48` blocks of 11 floats. Unused blocks are all zero.
+There are `OBS_MAX_PILES = 48` blocks of 11 floats. Unused blocks are all zero.
 
 Block offset: `549 + pile_index * 11`.
 
@@ -167,7 +173,7 @@ blocks remain all zero.
 | Meta | 0 | 4 | Version and fixed shape metadata |
 | Own zones | 4 | 320 | Unchanged perspective-player zone counts |
 | Opponents | 324 | 801 | Three public-memory opponent blocks of 267 floats |
-| Supply | 1125 | 528 | Public pile state for up to `MAX_PILES` piles |
+| Supply | 1125 | 528 | Public pile state for up to `OBS_MAX_PILES` piles |
 | Landscapes | 1653 | 27 | Public landscape/project/artifact state |
 | Resources | 1680 | 12 | Current resources and perspective-player tokens |
 | Turn | 1692 | 10 | Phase/current-player/turn scalars |
@@ -196,7 +202,7 @@ Each zone is `MAX_SLOTS = 64` floats indexed by `Slot`.
 
 ### Opponent blocks, offset 324
 
-There are `MAX_PLAYERS - 1 = 3` blocks of 267 floats. Block 0 is the next
+There are `OBS_MAX_OPPONENTS = 3` blocks of 267 floats. Block 0 is the next
 player after the perspective player. The first 75 values are the unchanged v1
 opponent prefix; the three new 64-slot fields are appended so that this prefix
 remains layout-continuous inside a v2 block.
@@ -223,7 +229,7 @@ Block offset: `324 + block_index * 267`.
 
 ### Supply blocks, offset 1125
 
-There are `MAX_PILES = 48` blocks of 11 floats. Unused blocks are all zero.
+There are `OBS_MAX_PILES = 48` blocks of 11 floats. Unused blocks are all zero.
 
 Block offset: `1125 + pile_index * 11`.
 

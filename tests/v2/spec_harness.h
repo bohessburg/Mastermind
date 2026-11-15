@@ -5,6 +5,7 @@
 #include "v2/core/setup.h"
 
 #include <catch2/catch_test_macros.hpp>
+#include <cstddef>
 #include <cstdint>
 
 #define CARD_SPEC(Name) TEST_CASE_METHOD(SpecHarness, Name, "[v2][spec]")
@@ -86,6 +87,15 @@ public:
 
     SpecHarness();
 
+    // Rebuild the game with exactly these kingdom cards plus the basic piles.
+    // Each spec names its own kingdom: a single all-cards game no longer fits
+    // MAX_PILES, and per-test kingdoms keep scaling as card sets are added.
+    template <typename... Names>
+    void kingdom(Names... names) {
+        const char* list[] = {names..., nullptr};
+        use_kingdom(list, sizeof...(Names));
+    }
+
     GivenBuilder& given();
     ExpectBuilder& expect();
 
@@ -104,6 +114,7 @@ public:
     [[nodiscard]] int total_cards() const;
 
 private:
+    void use_kingdom(const char* const* names, std::size_t count);
     void add_hand(const char* name);
     void add_hand(PlayerId player, const char* name);
     void add_deck(const char* name);

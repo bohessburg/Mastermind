@@ -57,7 +57,8 @@ _OBS_OWN_ZONE_COUNT = 5
 _OBS_OPPONENT_BLOCK_SIZE_V1 = 75
 _OBS_PILE_BLOCK_SIZE = 11
 _BASE_SUPPLY_PILES = 7  # Copper, Silver, Gold, Estate, Duchy, Province, Curse.
-_MAX_PILES = 48
+_OBS_MAX_PILES = 48  # observation supply blocks; the engine holds fewer piles
+_OBS_MAX_OPPONENTS = 3  # observation opponent blocks; the engine is 2-player
 _OBS_LANDSCAPE_SIZE = 27
 _OBS_RESOURCE_SIZE = 12
 _OBS_PHASE_COUNT = 5
@@ -197,7 +198,7 @@ def _v2_supply_offset() -> int:
     return (
         _OBS_META_SIZE
         + (_OBS_OWN_ZONE_COUNT * int(dz.MAX_SLOTS))
-        + ((int(dz.MAX_PLAYERS) - 1) * (_OBS_OPPONENT_BLOCK_SIZE_V1 + (3 * int(dz.MAX_SLOTS))))
+        + (_OBS_MAX_OPPONENTS * (_OBS_OPPONENT_BLOCK_SIZE_V1 + (3 * int(dz.MAX_SLOTS))))
     )
 
 
@@ -206,7 +207,7 @@ def _v2_turn_counter_offset() -> int:
     # then phase one-hot, active-player, perspective, and turn counter.
     return (
         _v2_supply_offset()
-        + (_MAX_PILES * _OBS_PILE_BLOCK_SIZE)
+        + (_OBS_MAX_PILES * _OBS_PILE_BLOCK_SIZE)
         + _OBS_LANDSCAPE_SIZE
         + _OBS_RESOURCE_SIZE
         + _OBS_PHASE_COUNT

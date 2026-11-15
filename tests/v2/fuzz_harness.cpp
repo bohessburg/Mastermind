@@ -438,7 +438,7 @@ Setup random_kingdom_setup(std::uint64_t seed, PlayerId players) noexcept {
     Setup setup{};
     setup.num_players = players;
     if (setup.num_players < 2U || setup.num_players > MAX_PLAYERS) {
-        setup.num_players = static_cast<PlayerId>(2U + rng.uniform(3U));
+        setup.num_players = static_cast<PlayerId>(2U + rng.uniform(MAX_PLAYERS - 1U));
     }
     setup.use_colony_platinum = rng.uniform(5U) == 0U;
 
@@ -476,11 +476,10 @@ FuzzResult run_fuzz(const FuzzConfig& config) noexcept {
             return result;
         }
 
+        static_assert(MAX_PLAYERS == 2, "seed one RandomBot per seat");
         RandomBot bots[MAX_PLAYERS] = {
             RandomBot(bot_seed(seed, 0U)),
             RandomBot(bot_seed(seed, 1U)),
-            RandomBot(bot_seed(seed, 2U)),
-            RandomBot(bot_seed(seed, 3U)),
         };
 
         bool done = static_cast<Phase>(state.phase) == Phase::Over;

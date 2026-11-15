@@ -59,7 +59,8 @@ def final_state_hash_matches(data: Mapping[str, Any], state_hash: int) -> bool:
     Generation 2 coincided with ``ENCODER_GENERATION`` (landscape-sentinel
     repair). Generation 3 (``dz.STATE_HASH_GENERATION``) is a pure GameState
     layout change with no encoder change, so every recorded generation field
-    is accepted.
+    is accepted. Generation 4 is likewise layout-only: the 2-player /
+    32-pile GameState (MAX_PLAYERS 4 -> 2, MAX_PILES 48 -> 32).
     """
     actual_hash = f"0x{int(state_hash):016x}"
     expected_hashes = (data.get("final_state_hash"),) + tuple(

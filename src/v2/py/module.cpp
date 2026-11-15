@@ -2601,7 +2601,7 @@ PYBIND11_MODULE(dominion_v2_py, module) {
     // Raw-byte GameState hash generation. Diverged from ENCODER_GENERATION at
     // gen 3 (2026-11: MAX_IN_PLAY 24->64 and per-seat turns_taken) without any
     // observation change.
-    module.attr("STATE_HASH_GENERATION") = py::int_(3);
+    module.attr("STATE_HASH_GENERATION") = py::int_(4);
     module.attr("OBS_SIZE") = py::int_(OBS_SIZE);
     module.attr("OBS_SIZE_V1") = py::int_(OBS_SIZE_V1);
     module.attr("OBS_SIZE_V2") = py::int_(OBS_SIZE_V2);
@@ -2623,6 +2623,10 @@ PYBIND11_MODULE(dominion_v2_py, module) {
     module.attr("A_CALL_BASE") = py::int_(A_CALL_BASE);
     module.attr("ACTION_DEF_COUNT") = py::int_(ACTION_DEF_COUNT);
     module.attr("MAX_PLAYERS") = py::int_(MAX_PLAYERS);
+    module.attr("MAX_PILES") = py::int_(MAX_PILES);
+    // Observation layout capacities, frozen independently of the engine's.
+    module.attr("OBS_MAX_OPPONENTS") = py::int_(OBS_MAX_OPPONENTS);
+    module.attr("OBS_MAX_PILES") = py::int_(OBS_MAX_PILES);
     module.attr("MAX_SLOTS") = py::int_(MAX_SLOTS);
     add_def_constants(module);
 }
