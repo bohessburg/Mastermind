@@ -144,6 +144,9 @@ def main() -> int:
     parser.add_argument("--smoke", action="store_true", help="50 steps per arm, to test the plumbing")
     parser.add_argument("--seed", type=int, default=None, help="override the recipe's training seed")
     parser.add_argument("--ramp-start", type=float, default=40.0, help="level where the policy-weight ramp starts")
+    parser.add_argument("--select-on", choices=("total", "policy"), default="total",
+                        help="early-stop on total or policy-only validation loss")
+    parser.add_argument("--lr-decay", action="store_true", help="cosine-decay the learning rate over --steps")
     args = parser.parse_args()
     arms = [arm for arm in args.arms.split(",") if arm]
     for arm in arms:
@@ -162,7 +165,7 @@ def main() -> int:
         device=str(device), smoke=args.smoke, skill_weighting=True, steps=args.steps,
         eval_every=args.eval_every, patience=args.patience, train_tuples=args.train_tuples,
         val_tuples=args.val_tuples, output_dir=args.output_dir, model_config=args.model_config,
-        dropout=None, select_on="total", weight_decay=None, seed=args.seed,
+        dropout=None, select_on=args.select_on, weight_decay=None, seed=args.seed, lr_decay=args.lr_decay,
     )
     args.output_dir.mkdir(parents=True, exist_ok=True)
     args.report_dir.mkdir(parents=True, exist_ok=True)

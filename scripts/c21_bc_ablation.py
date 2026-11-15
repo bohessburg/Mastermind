@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import copy
 import json
+import math
 import sys
 import time
 from pathlib import Path
@@ -160,13 +161,22 @@ def _run_arm(
         # the shared c21 behavior-cloning path.
         until_evaluation = total_steps - steps_run if args.smoke else min(eval_every - (steps_run % eval_every), total_steps - steps_run)
         chunk = min(50, until_evaluation)
+        chunk_lr = config.imitation.pretrain_lr
+        if getattr(args, "lr_decay", False):
+            # Cosine to 2% of the base rate over the full step budget, so a
+            # run ends at a settled point instead of a constant-rate snapshot
+            # (2026-11-15: constant-rate seeds of one recipe differed by 14
+            # engine3 points).
+            base = float(config.imitation.pretrain_lr if config.imitation.pretrain_lr is not None else config.optim.lr)
+            progress = min(1.0, steps_run / max(1, total_steps))
+            chunk_lr = base * (0.02 + 0.98 * 0.5 * (1.0 + math.cos(math.pi * progress)))
         run_human_pretrain(
             model,
             optimizer,
             train_batches,
             steps=chunk,
             device=device,
-            pretrain_lr=config.imitation.pretrain_lr,
+            pretrain_lr=chunk_lr,
         )
         steps_run += chunk
         if not args.smoke and steps_run % eval_every != 0 and steps_run != total_steps:
