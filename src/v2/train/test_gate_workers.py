@@ -83,3 +83,26 @@ def test_worker_failure_fails_the_match(tmp_path: Path) -> None:
             candidate, best, match_config, pairs=4, seed=1, device=torch.device("cpu"),
             workers=2, chunk=0, config=cfg,
         )
+
+
+def test_resume_follows_the_requested_gate_workers(monkeypatch, tmp_path: Path) -> None:
+    """gate_workers is a speed knob: a resumed run must use the requested value."""
+    from . import gating
+    from .train import run_training
+
+    calls: list[int] = []
+    original = gating.run_parallel_paired_match
+
+    def recording(*args, **kwargs):
+        calls.append(int(kwargs["workers"]))
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(gating, "run_parallel_paired_match", recording)
+    first = _paired_gate_config(tmp_path, generations=1)
+    run_training(first)
+    assert calls == []
+    resumed = _paired_gate_config(tmp_path, generations=2)
+    resumed.gate_workers = 2
+    resumed.selfplay.generation_cutoff_fraction = 0.75
+    run_training(resumed, resume=str(Path(first.checkpoint_dir) / "gen_0001.pt"))
+    assert calls == [2]

@@ -1298,6 +1298,11 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
         config.gate_ci_z = requested.gate_ci_z
         config.gate_determinize = requested.gate_determinize
         config.gate_chunk = requested.gate_chunk
+        # How the gate is computed, not what it decides (same games, same
+        # precision unless gate_fp16 is asked for): follow the requested config.
+        config.gate_workers = requested.gate_workers
+        config.gate_backend = requested.gate_backend
+        config.gate_fp16 = requested.gate_fp16
         config.gate_third_party_opponent = requested.gate_third_party_opponent
         config.gate_third_party_games = requested.gate_third_party_games
         config.gate_third_party_sims = requested.gate_third_party_sims
@@ -1331,6 +1336,9 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
         config.selfplay.leaves_in_flight = requested.selfplay.leaves_in_flight
         config.selfplay.deep_leaves_in_flight = requested.selfplay.deep_leaves_in_flight
         config.selfplay.leaves_min_sims_per_leaf = requested.selfplay.leaves_min_sims_per_leaf
+        config.selfplay.max_concurrent_games = requested.selfplay.max_concurrent_games
+        config.selfplay.generation_cutoff_fraction = requested.selfplay.generation_cutoff_fraction
+        validate_gate_config(config)
         validate_aux_margin_config(config)
         validate_model_config(config)
         validate_imitation_config(config.imitation)
