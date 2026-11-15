@@ -85,6 +85,10 @@ def _prepare_config(args: argparse.Namespace, arm: dict[str, int]):
     config.imitation.human_tuples = str(args.train_tuples)
     config.imitation.skill_weighting = bool(args.skill_weighting)
     config.imitation.pretrain_steps = 50 if args.smoke else args.steps
+    if getattr(args, "seed", None) is not None:
+        # A second seed of the same recipe (BC retrains differ by up to ~6
+        # engine3 points, so single runs cannot compare corpora).
+        config.seed = int(args.seed)
     if args.model_config is not None:
         # Take the architecture (e.g. c25 derived features / final norm) from
         # another run config while keeping the frozen BC optimizer recipe.

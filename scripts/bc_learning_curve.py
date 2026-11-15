@@ -142,6 +142,7 @@ def main() -> int:
     parser.add_argument("--output-dir", type=Path, default=Path("checkpoints/bc_curve"))
     parser.add_argument("--report-dir", type=Path, default=Path("bench/bc_curve"))
     parser.add_argument("--smoke", action="store_true", help="50 steps per arm, to test the plumbing")
+    parser.add_argument("--seed", type=int, default=None, help="override the recipe's training seed")
     args = parser.parse_args()
     arms = [arm for arm in args.arms.split(",") if arm]
     for arm in arms:
@@ -160,7 +161,7 @@ def main() -> int:
         device=str(device), smoke=args.smoke, skill_weighting=True, steps=args.steps,
         eval_every=args.eval_every, patience=args.patience, train_tuples=args.train_tuples,
         val_tuples=args.val_tuples, output_dir=args.output_dir, model_config=args.model_config,
-        dropout=None, select_on="total", weight_decay=None,
+        dropout=None, select_on="total", weight_decay=None, seed=args.seed,
     )
     args.output_dir.mkdir(parents=True, exist_ok=True)
     args.report_dir.mkdir(parents=True, exist_ok=True)
