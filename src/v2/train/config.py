@@ -393,6 +393,11 @@ class TrainConfig:
     # models on the trainer device; "mlx" serves them through the MLX backend
     # self-play uses (requires an mps trainer device). gate_fp16 evaluates in
     # float16 (MLX arrays, or a half copy of the PyTorch weights on mps).
+    # Paired mode: processes that play the gate's boards in parallel. Each
+    # takes a contiguous slice of boards and plays it from both seats; games
+    # are seeded by board, so the split does not change which games are
+    # played. 1 = the original single-process loop (one CPU core).
+    gate_workers: int = 1
     gate_backend: str = "torch"
     gate_fp16: bool = False
     # Paired mode: a candidate that passes the head-to-head must also not
@@ -872,6 +877,9 @@ def validate_gate_config(config: TrainConfig) -> None:
         raise ValueError("gate_ci_z must be non-negative")
     if int(config.gate_chunk) <= 0:
         raise ValueError("gate_chunk must be positive")
+    workers = config.gate_workers
+    if not isinstance(workers, int) or isinstance(workers, bool) or not 1 <= workers <= 64:
+        raise ValueError("gate_workers must be an integer between 1 and 64")
     if config.gate_backend not in ("torch", "mlx"):
         raise ValueError(f"gate_backend must be 'torch' or 'mlx', got {config.gate_backend!r}")
     if not isinstance(config.gate_fp16, bool):

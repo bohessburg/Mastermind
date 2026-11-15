@@ -1532,6 +1532,177 @@ def gate_host_backends(
     return backends
 
 
+_GATE_PROGRESS: Any = None
+
+
+def _gate_worker_init(progress_queue: Any) -> None:
+    global _GATE_PROGRESS
+    _GATE_PROGRESS = progress_queue
+
+
+def _gate_model_payload(model: torch.nn.Module) -> bytes:
+    """Pickle a CPU copy of a gate model, keeping its routing attributes."""
+    import pickle
+
+    module = getattr(model, "_orig_mod", model)
+    return pickle.dumps(copy.deepcopy(module).to("cpu").eval())
+
+
+def _gate_slice_worker(task: tuple[Any, ...]) -> dict[str, Any]:
+    """Play one contiguous slice of gate boards from both seats (spawned process)."""
+    import pickle
+
+    from .diagnostics import greedy_stats, play_manifest_games
+
+    worker_index, payloads, match_config, seed, device_name, indices, chunk, config = task
+    torch.set_num_threads(2)
+    device = torch.device(device_name)
+    models = [pickle.loads(payload).to(device).eval() for payload in payloads]
+    host_backends = gate_host_backends(tuple(models), config, device)
+    model_a, model_b = models
+    seats: dict[int, list[dict[str, Any]]] = {0: [], 1: []}
+    non_greedy = decisions = evals_total = games_total = 0
+    last = [0.0]
+
+    def report(games: int, evals: int, force: bool = False) -> None:
+        now = time.perf_counter()
+        if _GATE_PROGRESS is not None and (force or now - last[0] >= 5.0):
+            last[0] = now
+            _GATE_PROGRESS.put((worker_index, games, evals))
+
+    with torch.inference_mode():
+        for first in range(0, len(indices), int(chunk)):
+            block = list(indices[first : first + int(chunk)])
+            for a_seat in (0, 1):
+                seat_models = (model_a, model_b) if a_seat == 0 else (model_b, model_a)
+                games_before, evals_before = games_total, evals_total
+                records, evals = play_manifest_games(
+                    seat_models,
+                    match_config,
+                    seed=seed,
+                    device=device,
+                    game_indices=block,
+                    independent_search=True,
+                    host_backends=host_backends,
+                    tick=lambda done, used, g=games_before, e=evals_before: report(g + done, e + used),
+                )
+                greedy = greedy_stats(records)
+                non_greedy += int(greedy["non_greedy"])
+                decisions += int(greedy["decisions"])
+                evals_total += int(evals)
+                games_total += len(records)
+                # Full records carry every position's observations (about
+                # 1.3 MB a game); the parent only needs the outcome fields.
+                seats[a_seat].extend(
+                    {
+                        "game_index": int(record["game_index"]),
+                        "winner": record.get("winner"),
+                        "turn_counter": int(record["turn_counter"]),
+                        "truncated": bool(record["truncated"]),
+                    }
+                    for record in records
+                )
+                report(games_total, evals_total, force=True)
+    return {
+        "seat0": seats[0],
+        "seat1": seats[1],
+        "non_greedy": non_greedy,
+        "decisions": decisions,
+        "nn_evals": evals_total,
+    }
+
+
+def gate_board_slices(pairs: int, workers: int) -> list[list[int]]:
+    """Split boards 0..pairs-1 into at most ``workers`` contiguous, balanced slices."""
+    workers = max(1, min(int(workers), int(pairs)))
+    base, extra = divmod(int(pairs), workers)
+    slices: list[list[int]] = []
+    start = 0
+    for index in range(workers):
+        size = base + (1 if index < extra else 0)
+        slices.append(list(range(start, start + size)))
+        start += size
+    return slices
+
+
+def run_parallel_paired_match(
+    model_a: torch.nn.Module,
+    model_b: torch.nn.Module,
+    match_config: Any,
+    *,
+    pairs: int,
+    seed: int,
+    device: torch.device,
+    workers: int,
+    chunk: int,
+    config: TrainConfig,
+    tick: Callable[[int, int], None] | None = None,
+) -> Any:
+    """``run_paired_match`` with the boards spread over spawned processes.
+
+    Games are seeded by board index, so every board is the same game it would
+    be in the serial loop; only GPU batch composition (and so the last bits of
+    some evaluations) can differ. Results are reassembled in board order so
+    the paired standard error still pairs each board's two games.
+    """
+    import concurrent.futures
+    import multiprocessing as mp
+    import queue as queue_module
+
+    from .diagnostics import PairedMatch, _score_for
+
+    slices = gate_board_slices(pairs, workers)
+    payloads = (_gate_model_payload(model_a), _gate_model_payload(model_b))
+    context = mp.get_context("spawn")
+    progress_queue = context.Queue()
+    match = PairedMatch()
+    started = time.perf_counter()
+    latest: dict[int, tuple[int, int]] = {}
+    with concurrent.futures.ProcessPoolExecutor(
+        max_workers=len(slices),
+        mp_context=context,
+        initializer=_gate_worker_init,
+        initargs=(progress_queue,),
+    ) as pool:
+        futures = [
+            pool.submit(
+                _gate_slice_worker,
+                (index, payloads, match_config, int(seed), str(device), board_slice, int(chunk), config),
+            )
+            for index, board_slice in enumerate(slices)
+        ]
+        pending = set(futures)
+        while pending:
+            done, pending = concurrent.futures.wait(pending, timeout=1.0)
+            for future in done:
+                future.result()  # re-raise a worker failure now
+            while True:
+                try:
+                    worker_index, games, evals = progress_queue.get_nowait()
+                except queue_module.Empty:
+                    break
+                latest[int(worker_index)] = (int(games), int(evals))
+            if tick is not None and latest:
+                tick(sum(g for g, _ in latest.values()), sum(e for _, e in latest.values()))
+        results = [future.result() for future in futures]
+    progress_queue.close()
+    for board_slice, result in zip(slices, results, strict=True):
+        seat0 = sorted(result["seat0"], key=lambda record: record["game_index"])
+        seat1 = sorted(result["seat1"], key=lambda record: record["game_index"])
+        if [r["game_index"] for r in seat0] != board_slice or [r["game_index"] for r in seat1] != board_slice:
+            raise RuntimeError("parallel gate worker returned the wrong boards")
+        match.a_as_seat0.extend(_score_for(record, 0) for record in seat0)
+        match.a_as_seat1.extend(_score_for(record, 1) for record in seat1)
+        for record in (*seat0, *seat1):
+            match.turns.append(int(record["turn_counter"]))
+            match.truncated += int(record["truncated"])
+        match.non_greedy += int(result["non_greedy"])
+        match.decisions += int(result["decisions"])
+        match.nn_evals += int(result["nn_evals"])
+    match.wall_time = time.perf_counter() - started
+    return match
+
+
 def run_paired_gate_match(
     candidate: torch.nn.Module,
     best: torch.nn.Module,
@@ -1562,22 +1733,40 @@ def run_paired_gate_match(
     was_training = (candidate.training, best.training)
     candidate.eval()
     best.eval()
-    host_backends = gate_host_backends((candidate, best), config, device)
-    if host_backends is not None and log is not None:
+    host_backends = (
+        gate_host_backends((candidate, best), config, device) if int(config.gate_workers) <= 1 else None
+    )
+    if (config.gate_backend != "torch" or config.gate_fp16) and log is not None:
         precision = "fp16" if config.gate_fp16 else "fp32"
         log(f"gate gen {generation}: evaluating through {config.gate_backend} {precision}")
-    match = run_paired_match(
-        candidate,
-        best,
-        match_config,
-        pairs=pairs,
-        seed=gate_match_seed(config, generation),
-        device=device,
-        independent_search=True,
-        chunk=int(config.gate_chunk),
-        tick=tick,
-        host_backends=host_backends,
-    )
+    if int(config.gate_workers) > 1:
+        if log is not None:
+            log(f"gate gen {generation}: {min(int(config.gate_workers), pairs)} worker processes")
+        match = run_parallel_paired_match(
+            candidate,
+            best,
+            match_config,
+            pairs=pairs,
+            seed=gate_match_seed(config, generation),
+            device=device,
+            workers=int(config.gate_workers),
+            chunk=int(config.gate_chunk),
+            config=config,
+            tick=tick,
+        )
+    else:
+        match = run_paired_match(
+            candidate,
+            best,
+            match_config,
+            pairs=pairs,
+            seed=gate_match_seed(config, generation),
+            device=device,
+            independent_search=True,
+            chunk=int(config.gate_chunk),
+            tick=tick,
+            host_backends=host_backends,
+        )
     candidate.train(was_training[0])
     best.train(was_training[1])
     return match.summary()
