@@ -352,6 +352,28 @@ class MlxBackend:
         return logits, values
 
 
+def evaluate_host_rows(backend: Any, obs: np.ndarray, masks: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Evaluate unpadded rows through a host backend, padding like the server.
+
+    MLX compiles one graph per input shape, so rows are padded with zero
+    observations and empty legal masks (immaterial to the real rows) up to
+    the backend's bucket size, and only the real rows are returned.
+    """
+
+    count = int(obs.shape[0])
+    rows = max(count, int(backend.padded_rows(count, max(count, 1 << 20))))
+    if rows > count:
+        obs = np.concatenate([obs, np.zeros((rows - count, obs.shape[1]), dtype=obs.dtype)])
+        masks = np.concatenate([masks, np.zeros((rows - count, masks.shape[1]), dtype=masks.dtype)])
+    policies, values = backend.evaluate(
+        np.ascontiguousarray(obs, dtype=np.float32), np.ascontiguousarray(masks, dtype=bool)
+    )
+    return (
+        np.asarray(policies[:count], dtype=np.float32),
+        np.asarray(values[:count], dtype=np.float32),
+    )
+
+
 def build_host_backend(
     model: torch.nn.Module,
     device: torch.device,

@@ -1512,6 +1512,26 @@ def _third_party_score_from(
     return third_party_score(model, config, device)
 
 
+def gate_host_backends(
+    models: tuple[torch.nn.Module, ...], config: TrainConfig, device: torch.device
+) -> dict[int, Any] | None:
+    """Host backends for the gate's models, or ``None`` for plain PyTorch."""
+
+    backend = str(config.gate_backend)
+    half = bool(config.gate_fp16)
+    if backend == "torch" and not half:
+        return None
+    if device.type != "mps":
+        raise ValueError(f"gate_backend={backend!r} with gate_fp16={half} requires an mps trainer device")
+    from .apple_backend import build_host_backend
+
+    backends: dict[int, Any] = {}
+    for model in models:
+        if id(model) not in backends:
+            backends[id(model)] = build_host_backend(model, device, backend, half=half)
+    return backends
+
+
 def run_paired_gate_match(
     candidate: torch.nn.Module,
     best: torch.nn.Module,
@@ -1542,6 +1562,10 @@ def run_paired_gate_match(
     was_training = (candidate.training, best.training)
     candidate.eval()
     best.eval()
+    host_backends = gate_host_backends((candidate, best), config, device)
+    if host_backends is not None and log is not None:
+        precision = "fp16" if config.gate_fp16 else "fp32"
+        log(f"gate gen {generation}: evaluating through {config.gate_backend} {precision}")
     match = run_paired_match(
         candidate,
         best,
@@ -1552,6 +1576,7 @@ def run_paired_gate_match(
         independent_search=True,
         chunk=int(config.gate_chunk),
         tick=tick,
+        host_backends=host_backends,
     )
     candidate.train(was_training[0])
     best.train(was_training[1])

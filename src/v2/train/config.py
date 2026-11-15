@@ -384,6 +384,12 @@ class TrainConfig:
     gate_determinize: str = ""
     # Paired mode: boards played concurrently (bounds memory, sets batch size).
     gate_chunk: int = 64
+    # Paired mode: how the gate evaluates leaves. "torch" runs the PyTorch
+    # models on the trainer device; "mlx" serves them through the MLX backend
+    # self-play uses (requires an mps trainer device). gate_fp16 evaluates in
+    # float16 (MLX arrays, or a half copy of the PyTorch weights on mps).
+    gate_backend: str = "torch"
+    gate_fp16: bool = False
     # Paired mode: a candidate that passes the head-to-head must also not
     # lose ground against a fixed scripted opponent. Both the candidate and
     # the current best play gate_third_party_games against it on the same
@@ -858,6 +864,10 @@ def validate_gate_config(config: TrainConfig) -> None:
         raise ValueError("gate_ci_z must be non-negative")
     if int(config.gate_chunk) <= 0:
         raise ValueError("gate_chunk must be positive")
+    if config.gate_backend not in ("torch", "mlx"):
+        raise ValueError(f"gate_backend must be 'torch' or 'mlx', got {config.gate_backend!r}")
+    if not isinstance(config.gate_fp16, bool):
+        raise ValueError("gate_fp16 must be a boolean")
     if config.gate_determinize not in ("", *DETERMINIZE_MODES):
         allowed = ", ".join(sorted(DETERMINIZE_MODES))
         raise ValueError(f"gate_determinize must be empty or one of {allowed}")

@@ -113,6 +113,7 @@ def play_manifest_games(
     record_states: bool = False,
     on_finished: Callable[[list[dict]], None] | None = None,
     tick: Callable[[int, int], None] | None = None,
+    host_backends: dict[int, Any] | None = None,
 ) -> tuple[list[dict], int]:
     """Play each listed game index exactly once; returns (records, nn_evals).
 
@@ -160,7 +161,8 @@ def play_manifest_games(
         else:
             route = None if same else runner.leaf_route_seats()
             logits, values = route_leaf_evaluations(
-                seat_models, obs, masks, route, device, same_model_fast_path=same
+                seat_models, obs, masks, route, device, same_model_fast_path=same,
+                host_backends=host_backends,
             )
             runner.provide_evaluations(values, logits)
             evals += batch
@@ -319,6 +321,7 @@ def run_paired_match(
     chunk: int = 64,
     progress: Callable[[PairedMatch], None] | None = None,
     tick: Callable[[int, int], None] | None = None,
+    host_backends: dict[int, Any] | None = None,
 ) -> PairedMatch:
     """Play ``pairs`` boards twice each (A as seat 0, then A as seat 1).
 
@@ -326,6 +329,8 @@ def run_paired_match(
     done in chunks of ``chunk`` concurrent games so memory stays bounded and
     a long match reports progress: ``progress(match)`` after each chunk and
     ``tick(games_finished, nn_evals)`` after every inference batch.
+    ``host_backends`` (``id(model)`` -> Apple host backend) evaluates those
+    models through the backend instead of PyTorch.
     """
     if pairs <= 0:
         raise ValueError("pairs must be positive")
@@ -347,6 +352,7 @@ def run_paired_match(
                 game_indices=indices,
                 seat_sims=seat_sims,
                 independent_search=independent_search,
+                host_backends=host_backends,
                 tick=None if tick is None else (
                     lambda done, used, g=games_before, e=evals_before: tick(g + done, e + used)
                 ),

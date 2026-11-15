@@ -640,8 +640,13 @@ def route_leaf_evaluations(
     device: torch.device,
     *,
     same_model_fast_path: bool | None = None,
+    host_backends: Mapping[int, Any] | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Evaluate a mixed self-play leaf batch with the model for its seat.
+
+    ``host_backends`` maps ``id(model)`` to an Apple host backend
+    (:mod:`apple_backend`); a model with an entry is evaluated through it
+    instead of its PyTorch forward.
 
     ``SelfPlayRunner.leaf_players()`` is aligned with ``collect_leaves``.  The
     split/scatter keeps the engine's original batch order intact for
@@ -654,6 +659,9 @@ def route_leaf_evaluations(
     if len(seat_models) != 2:
         raise ValueError("two seat models are required")
     source_version = obs_version_for_width(int(obs.shape[-1]))
+
+    def host_backend_for(model: torch.nn.Module) -> Any | None:
+        return None if host_backends is None else host_backends.get(id(model))
 
     def evaluate_model(model: torch.nn.Module, model_obs: np.ndarray) -> tuple[torch.Tensor, torch.Tensor]:
         adapted_obs = observations_for_model(
@@ -673,6 +681,17 @@ def route_leaf_evaluations(
     if use_fast_path:
         model = seat_models[0]
         model.eval()
+        backend = host_backend_for(model)
+        if backend is not None:
+            from .apple_backend import evaluate_host_rows
+
+            adapted_obs = observations_for_model(
+                obs,
+                source_version,
+                model_observation_version(model, source_version),
+                model_encoder_generation(model),
+            )
+            return evaluate_host_rows(backend, adapted_obs, masks)
         with torch.no_grad():
             logits, values = evaluate_model(model, obs)
         return (
@@ -725,6 +744,14 @@ def route_leaf_evaluations(
                 model_observation_version(model, source_version),
                 model_encoder_generation(model),
             )
+            backend = host_backend_for(model)
+            if backend is not None:
+                from .apple_backend import evaluate_host_rows
+
+                logits_out[indices], values_out[indices] = evaluate_host_rows(
+                    backend, adapted_obs, masks[indices]
+                )
+                continue
             obs_tensor = torch.as_tensor(adapted_obs, dtype=torch.float32, device=device)
             mask_tensor = torch.as_tensor(masks[indices], dtype=torch.bool, device=device)
             logits, values = model.evaluate(obs_tensor, mask_tensor)
