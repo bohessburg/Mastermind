@@ -3438,3 +3438,71 @@ gate 0.444 (rejected). Measurements, the reverted tail fix and the open
 questions are in `docs/benchmarks.md` ("One full generation on the M1 Max")
 and `docs/handoff-2026-11-14.md`. These runs are not part of c31's lineage;
 their files are under `checkpoints/campaign31_mac/attempt3/` and `attempt4/`.
+
+## Mac tests 3-5 and the self-play/gate speed work (2026-11-14/15, local)
+
+- Test 3, two-player engine, no wave cap: 71.0 min (self-play ~45, gate 26), gate 0.467 against c31 gen 27.
+- fp16 serving is not the cause of the low Mac gates: gen 27 at MLX fp16 against itself at fp32 scored 0.511 +- 0.009 over 800 games (394-376-30).
+- Gate through MLX fp32 (`gate_backend`, `gate_fp16`, ddc24ad): moves identical to PyTorch fp32 over 50,861 decisions; 200-game gate 279 s against 361-401 s. MLX fp16 was 298 s, no faster, so the gate stays fp32.
+- Test 4, box anchor schedule (0.5 decaying to 0.1 by gen 20): 71.7 min (self-play 51, gate 19.4), gate **0.500** (389-389-22) against 0.444 and 0.467 at a flat 0.1. An empty buffer needs the heavier anchor.
+- The test 4 tail was one scripted-opponent game searching one leaf at a time: `selfplay.cpp` forced scripted games to a single leaf in flight. Fixed in b9204a6 (a lone scripted game goes from 1.0 to about 6.8 rows per batch). `tail_leaves_in_flight` 8 equals `leaves_in_flight` 8, so the tail boost does nothing; 16 was tried and put back to 8 because of the c29 leaf-parity result (16 in flight flattens targets).
+- Generation cut-off (`selfplay.generation_cutoff_fraction`, 304906b): training starts when 99% of games are in; the rest finish on the same models during training and the gate and join the next generation's replay. Trainer `PAUSE` file holds the next generation (for battery waits).
+- Gate worker processes (`gate_workers`, 85d47ef): no gain on the Mac. 200-game gate: 308 s with 1 worker, 288 s with 2, 358 s with 4, identical 95-95-10 every time. The Mac gate is bound by per-batch GPU cost, not CPU search.
+
+## c32 on the box (started 2026-11-15 09:37 UTC)
+
+New vast box 188.151.73.109:32944: RTX 5090, 92 cores (cgroup), 483 GiB limit, 32 GB disk, no persistent volume. torch 2.14.1+cu132 installed by hand. Repo shipped as a bundle at 304906b, Release build; ctest 201 of 202 (MCTS-beats-RandomBot takes 13.6 s against its 10 s limit and passes when run directly), 92 Python training tests pass. Supervisor program `dominion-c32`. Checkpoints, metrics and the supervisor log are pulled every 10 minutes to the Hetzner box (`/opt/dz/c32_backup/`, cron `/opt/dz/c32_pull.sh`) and after every generation to `checkpoints/remote/campaign32/` on the Mac.
+
+Config `configs/run_c32.json`: c31 continued from c31 best gen 27 with an empty buffer. Changes against c31: human anchor on the finalized level-1 corpus `exports/tuples_dgames_level1` (2,469,977 rows, 698,790 effective policy rows under the skill weighting, against 402,912 for `tuples_all_40plus`); anchor 0.5 decaying to 0.1 by gen 20; 99% generation cut-off; scripted games at the normal 8 leaves in flight. Considered and not used: restarting from `bc_a_40plus` (c31 gens 25 and 30 already beat c29's best) and a 45+-only anchor (the BC learning curve found no benefit from level 50+ data, and the skill weighting already favours the top games).
+
+| Gen | Gate vs gen 27 | W-L-T | Lower bound | Result | Minutes | Held-out policy CE | Held-out value r2 |
+|---|---|---|---|---|---|---|---|
+| 1 | 0.4963 | 385-391-24 | 0.481 | rejected | 35.7 | 0.705 | 0.671 |
+| 2 | 0.5069 | 396-385-19 | 0.491 | rejected | 35.4 | 0.720 | 0.669 |
+| 3 | 0.4594 | 352-417-31 | 0.445 | rejected | 35.5 | 0.735 | 0.671 |
+| 4 | 0.5056 | 390-381-29 | 0.491 | rejected | 38.8 | 0.724 | 0.673 |
+| 5 | 0.4900 | 383-399-18 | 0.475 | rejected | 36.2 | 0.727 | 0.643 |
+| 6 | 0.4963 | 387-393-20 | 0.481 | rejected | 28.4 | 0.726 | 0.678 |
+
+- Self-play takes about 13 minutes (c31: 18-21); the server reads 200-235k evals/s (c31: about 155k). Every generation cut off at 1014 of 1024 games and the 10 late games were collected in 0.1 s at the next generation's start.
+- The gate took 21-23 minutes (c31: about 17). It runs the search for all 800 games in the trainer's main thread: one core at 100%, GPU at 12%, and this box's single-thread speed is about 27% below c31's.
+- Gen 4's gate took about 26 minutes because a gate timing test shared the GPU with it.
+
+Gate workers deployed at 12:03 UTC (6f56f23, `gate_workers` 8): stopped right after gen 4's checkpoint, fast-forwarded the box repo (Python and config only, no rebuild), restarted; resumed from `gen_0004.pt` with its replay buffer, losing only gen 4's 10 late games. Timed beforehand on the box, gen 27 against itself over 800 games: about 14 minutes with 8 workers against about 23 with one, while sharing the GPU with c32's own gate. GPU use reached 91%: 8 processes means 8 CUDA contexts taking turns. Gen 5 still ran the single-process gate: on resume the trainer takes most settings from the checkpoint's saved config and copies only a whitelist from the requested one, and `gate_workers` (also `gate_backend`, `gate_fp16`, `max_concurrent_games`, `generation_cutoff_fraction`) was not on it. Fixed in 6f0fe12 with a regression test; deployed 12:40 UTC right after gen 5's checkpoint, resumed from `gen_0005.pt`. Gen 6 is the first with 8 gate workers: gate 13 minutes (single process: 21-23), GPU 89%, generation 28.4 minutes. Next levers if needed: one shared GPU evaluator process for the gate workers (as self-play's inference server does), or CUDA MPS (installed on the box).
+
+### Plan: toward the 95th percentile without a bigger network (2026-11-15)
+
+Status: i_claudius is at level 47.1, the 75th percentile; the 95th is 53.6, the 99th 59.1. This needs a clearly stronger bot, not tuning. Evidence on network size is mixed. For it not being the limit: train and held-out losses are nearly equal, and c20 concluded the ceiling was data, not capacity. Against (corrected 2026-11-15, from the steps ablation's held-out rows): on c32's own data the search targets' entropy is 0.607 while gen 27's held-out policy cross-entropy is 0.719, a gap of about 0.11 nats, not the few hundredths first stated (that used c29's target entropy). The network does not reproduce its search targets closely, so capacity is a live question. An offline capacity check (current net against a 2x wider net on a frozen replay plus the anchor corpus, compared on held-out loss) would settle it without box time.
+
+Ideas, cheapest first:
+
+1. **More search in the arena (no training).** The arena bot plays at 400 sims over 2 determinizations, less than self-play's 1024. Test gen 27 at 400 against gen 27 at 1600 and 3200 with the same hidden-information handling, a few hundred games each. If 1600 wins clearly, raise the arena budget; the cost is think time per move.
+2. **Arena loss review.** gen 27 has 302 rated games (177-122-1). Classify the losses by where they turned, by opening and by kingdom, as the gen 45 review did (it found the Militia bug and the big-money gap).
+3. **Honest self-play (`determinize per_decision`).** Self-play search is clairvoyant: it sees hidden cards, including its own deck order, so the policy learns from searches that peeked while the arena bot and the gate cannot. It was planned for c31 and dropped before launch (it turns tree reuse off; its only runs, c20-c23, predate the November audit fixes). Self-play now takes about 13 minutes, so the cost is much easier to afford. Run a short trial for cost and stability first.
+4. **Better value targets.** Held-out value r2 is about 0.67 and value guides the search. `root_value_blend` is 0 (pure game outcome, noisy with shuffles); try 0.25-0.5.
+5. **More games or deeper search per generation (second-order).** 2048 games per generation now costs about 13 extra minutes and gives each candidate more varied data. Deeper self-play search gives better but fewer targets; c31's 512 -> 1024 change was bundled with three others and is unattributed. Searching deeply on a random subset of moves and cheaply on the rest (playout cap randomization) gets more value data for the same compute; it needs code.
+
+Suggested order: the arena sims test, then the loss review, then a c33 with honest self-play, a small root value blend and probably 2048 games, after a short cheap trial.
+
+c32 stopped by hand at 13:20 UTC on 2026-11-15 during gen 7 self-play (Jack: cut c32 for the train-steps ablation). Final: gens 1-6 all rejected against c31 gen 27 (mean gate 0.492); best stays c31 gen 27. Supervisor program `dominion-c32` set to autostart=false. Plan: c33 = c32 plus whatever the train-steps ablation supports; c34 adds honest self-play.
+
+Other notes from the same day:
+- Observation layout still has 48 pile slots (`OBS_MAX_PILES`) although the engine has 32 piles (`MAX_PILES`), so old checkpoints load; the extra slots are always empty.
+- Scripted-bot games (5% big money, 5% engine) are for opponent diversity; the candidate wins 99 of 102 every generation, so they teach little now. Candidate for c33: harder scripted opponents or a smaller share, watching the arena record against big-money players.
+- A 2M-parameter network is probably enough for base plus one or two expansions (about 50-80 kingdom cards); the full pool likely needs 5-10x the size and much more data. Watch held-out loss pulling away from the target-entropy floor as cards are added.
+
+### Train-steps ablation (2026-11-15 13:23-14:12 UTC, box, `/root/steps_ablation.py`)
+
+Each arm: c31 gen 27 weights with a fresh optimizer, c32 config at generation 7 (lr 1.38e-4, anchor weight 0.374), trained on c32's full 1M-row replay with 40,000 of gen 6's rows held out, then gated against gen 27 (800 games, 8 workers, the same boards for every arm). Gen 27 itself on the held-out rows: value r2 0.678, policy cross-entropy 0.719, output entropy 0.713; the search targets' own entropy is 0.607.
+
+| Arm | Steps | lr | Train value loss | Held-out value r2 | Held-out policy CE | Output entropy | Gate vs gen 27 | W-L-T |
+|---|---|---|---|---|---|---|---|---|
+| a80 | 80 | 1x | 0.153 | 0.685 | 0.729 | 0.729 | 0.486 +- 0.016 | 375-397-28 |
+| a160 | 160 | 1x | 0.150 | 0.687 | 0.727 | 0.704 | 0.494 +- 0.015 | 382-391-27 |
+| a240 | 240 | 1x | 0.149 | 0.692 | 0.728 | 0.719 | 0.485 +- 0.015 | 375-399-26 |
+| a160h | 160 | 0.5x | 0.150 | 0.691 | 0.723 | 0.702 | 0.483 +- 0.015 | 375-402-23 |
+| a80, anchor 0.1 | 80 | 1x | 0.150 | 0.688 | 0.722 | 0.727 | 0.478 +- 0.016 | 367-402-31 |
+
+- No arm beats gen 27 or the others: all four gates are 0.483-0.494, inside one standard error of each other. Step count is not the lever.
+- No value overfitting up to 240 steps: held-out r2 rises slightly (0.685 -> 0.692) and train and held-out value loss stay within 0.001.
+- Every trained arm predicts the held-out search targets worse than gen 27 itself (cross-entropy 0.723-0.729 against 0.719), and the output entropy stays 0.10-0.12 above the targets'. Training at this anchor weight moves the policy away from the targets it is given. The anchor weight was tested as the cause and ruled out: 80 steps at anchor 0.1 (last row) gated 0.478, no better than 0.374, and its held-out cross-entropy (0.722) is still above gen 27's. Neither step count, learning rate nor anchor weight moves the gate: training gen 27 further on its own self-play data does not improve it under this recipe. c33 as defined (c32 plus what this test supports) would be c32 unchanged.
