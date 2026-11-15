@@ -149,11 +149,16 @@ def test_signed_policy_weight_curve_boundaries_and_deviation_discount() -> None:
     assert policy_weight_for_rating(39.0) == pytest.approx(POLICY_WEIGHT_EPSILON)
     assert policy_weight_for_rating(40.0) == pytest.approx(POLICY_WEIGHT_EPSILON)
     assert policy_weight_for_rating(45.0) == pytest.approx(0.51)
-    assert policy_weight_for_rating(50.0) == pytest.approx(3.0)
+    # Continuous at 50: the expert weight ramps from 1.0 at 50 to 3.0 at 55.
+    assert policy_weight_for_rating(49.99) == pytest.approx(policy_weight_for_rating(50.0), abs=1e-3)
+    assert policy_weight_for_rating(50.0) == pytest.approx(1.0)
+    assert policy_weight_for_rating(52.5) == pytest.approx(2.0)
+    assert policy_weight_for_rating(55.0) == pytest.approx(3.0)
+    assert policy_weight_for_rating(60.0) == pytest.approx(3.0)
     assert policy_weight_for_rating(None) == pytest.approx(POLICY_WEIGHT_EPSILON)
     # Native Glicko deviation 0.5 is the observed sidecar scale ceiling and therefore
     # invokes the documented 0.5 confidence floor.
-    assert policy_weight_for_rating(50.0, deviation=0.5) == pytest.approx(1.5)
+    assert policy_weight_for_rating(55.0, deviation=0.5) == pytest.approx(1.5)
     assert policy_weight_for_rating(45.0, deviation=0.25) == pytest.approx(0.255)
 
 
@@ -191,7 +196,7 @@ def test_skill_weighted_loader_joins_manifest_player_ids_by_acting_seat(tmp_path
             {
                 "first": {
                     "101": {"level": 39.0, "deviation": 0.0},
-                    "102": {"level": 50.0, "deviation": 0.375},
+                    "102": {"level": 55.0, "deviation": 0.375},
                 },
                 "second": {
                     "201": {"rating": 45.0, "deviation": 0.0},

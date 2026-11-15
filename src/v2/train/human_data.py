@@ -28,7 +28,12 @@ DEFAULT_RATINGS_SIDECAR = Path("data/dominion_games/ratings/game_ratings.json")
 POLICY_WEIGHT_EPSILON = 0.02
 POLICY_WEIGHT_RAMP_START = 40.0
 POLICY_WEIGHT_RAMP_END = 50.0
+# Above RAMP_END the weight keeps rising, from 1.0 to POLICY_WEIGHT_EXPERT at
+# EXPERT_RAMP_END, then holds. The curve used to jump from 1.0 to 3.0 at
+# exactly level 50 (2026-11-15: replaced; ratings carry about +-0.7 of noise,
+# so a 49.9 and a 50.1 player are indistinguishable).
 POLICY_WEIGHT_EXPERT = 3.0
+POLICY_WEIGHT_EXPERT_RAMP_END = 55.0
 RATING_DEVIATION_THRESHOLD = 0.5
 
 RATING_BAND_UNRATED = "unrated_or_missing"
@@ -402,7 +407,8 @@ def policy_weight_for_rating(level: float | None, deviation: float | None = None
         )
         weight = POLICY_WEIGHT_EPSILON + progress * (1.0 - POLICY_WEIGHT_EPSILON)
     else:
-        weight = POLICY_WEIGHT_EXPERT
+        progress = min(1.0, (level - POLICY_WEIGHT_RAMP_END) / (POLICY_WEIGHT_EXPERT_RAMP_END - POLICY_WEIGHT_RAMP_END))
+        weight = 1.0 + progress * (POLICY_WEIGHT_EXPERT - 1.0)
 
     if deviation is None or not math.isfinite(deviation):
         return float(weight)
