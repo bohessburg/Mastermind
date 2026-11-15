@@ -1204,7 +1204,6 @@ std::uint32_t SelfPlayRunner::collect_leaves(std::uint32_t max_batch) noexcept {
         const bool resume_search = game.pending != 0U && game.search_active;
         if (game.pending != 0U
             && (!resume_search
-                || scripted_mode(game.slot.scripted_bot)
                 || game.pending >= leaves_in_flight_cap(game)
                 || game.sims_started >= game.sims_target)) {
             ++idle;

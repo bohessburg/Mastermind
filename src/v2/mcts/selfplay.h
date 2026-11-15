@@ -114,7 +114,8 @@ struct SelfPlayConfig {
     // NN evaluations a single game may have in flight at once (virtual loss
     // spreads them over the tree). 1 = historical one-leaf-per-game. Deep-
     // slice games (slot sims_override > 0) use deep_leaves_in_flight when
-    // positive. Scripted games always keep one.
+    // positive. Scripted games use the same caps: the scripted side's tree
+    // leaves resolve inline, only the network side's leaves wait in flight.
     std::uint8_t leaves_in_flight = 1;
     std::uint8_t deep_leaves_in_flight = 0;
     // Generation-tail boost: once this runner has <= tail_games_threshold
