@@ -10,13 +10,14 @@ heterogeneous slot-manifest runner for their full assigned quota.
 from __future__ import annotations
 
 import copy
+import math
 import multiprocessing as mp
 import os
 import queue
 import random
 import time
 import traceback
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, Callable
 
 import numpy as np
@@ -1340,6 +1341,161 @@ def _worker_main(
             shared_views.close()
 
 
+@dataclass
+class _GenerationCollection:
+    """Records and per-worker completions of one generation's self-play.
+
+    A cut-off generation stays open in ParallelSelfPlayPool._carried until its
+    late games arrive at the start of the next generation.
+    """
+
+    generation: int
+    quotas: list[int]
+    expected_games: int
+    expected_league_games: int | None
+    expected_scripted_games: int | None
+    expected_deep_games: int | None
+    stats: SelfPlayStats = field(default_factory=SelfPlayStats)
+    received_by_worker: list[int] = field(default_factory=list)
+    completed: set[int] = field(default_factory=set)
+    league_games: int = 0
+    seat_model_evals: dict[tuple[int, int], int] = field(default_factory=dict)
+    _early_stats: SelfPlayStats = field(default_factory=SelfPlayStats)
+    _early_league_games: int = 0
+
+    def __post_init__(self) -> None:
+        if not self.received_by_worker:
+            self.received_by_worker = [0 for _ in self.quotas]
+
+    @property
+    def complete(self) -> bool:
+        return len(self.completed) == len(self.quotas)
+
+    def handle(self, message: tuple[Any, ...], replay: Any) -> bool:
+        """Apply one worker message; True when it carried game records."""
+        stats = self.stats
+        kind, worker_index, message_generation, payload = message
+        if kind == "error":
+            raise RuntimeError(f"self-play worker {worker_index} failed:\n{payload}")
+        if message_generation != self.generation:
+            raise RuntimeError("received a self-play result for the wrong generation")
+        if kind == "records":
+            games, positions = add_packed_records(replay, payload)
+            self.received_by_worker[worker_index] += games
+            stats.games += games
+            stats.positions += positions
+            return True
+        if kind != "done":
+            raise RuntimeError(f"unknown self-play worker message: {kind}")
+        if worker_index in self.completed:
+            raise RuntimeError("self-play worker sent duplicate completion")
+        (
+            worker_games,
+            worker_positions,
+            leaves,
+            nn_evals,
+            wall,
+            inference,
+            plumbing,
+            worker_fast_path_batches,
+            worker_split_batches,
+            worker_scripted_games,
+            worker_scripted_wins,
+            worker_scripted_by_kind,
+            worker_deep_games,
+            worker_deep_positions,
+            worker_league_games,
+            worker_league_by_opponent,
+            worker_route_audit,
+            worker_opening_template_games,
+            worker_opening_template_vs_unconstrained_games,
+            worker_opening_template_vs_unconstrained_wins,
+            worker_cards_trashed,
+            worker_unconstrained_buy_counts,
+            worker_truncated_games,
+        ) = payload
+        if self.received_by_worker[worker_index] != self.quotas[worker_index]:
+            raise RuntimeError("self-play worker completed before delivering its full game quota")
+        if worker_games != self.quotas[worker_index]:
+            raise RuntimeError("self-play worker reported an incorrect game quota")
+        # Positions and games were counted as records arrived; timing work
+        # is summed across workers for the existing detailed metrics.
+        if worker_positions < 0:
+            raise RuntimeError("self-play worker reported invalid positions")
+        stats.leaves += leaves
+        stats.nn_evals += nn_evals
+        stats.wall_time += wall
+        stats.inference_time += inference
+        stats.plumbing_time += plumbing
+        stats.routed_fast_path_batches += worker_fast_path_batches
+        stats.routed_split_batches += worker_split_batches
+        stats.scripted_games += worker_scripted_games
+        stats.scripted_wins += worker_scripted_wins
+        stats.deep_games += worker_deep_games
+        stats.deep_positions += worker_deep_positions
+        stats.cards_trashed += worker_cards_trashed
+        stats.truncated_games += int(worker_truncated_games)
+        for index in range(7):
+            stats.opening_template_games[index] += int(worker_opening_template_games[index])
+            stats.opening_template_vs_unconstrained_games[index] += int(
+                worker_opening_template_vs_unconstrained_games[index]
+            )
+            stats.opening_template_vs_unconstrained_wins[index] += int(
+                worker_opening_template_vs_unconstrained_wins[index]
+            )
+        for index in range(4):
+            stats.unconstrained_buy_counts[index] += int(worker_unconstrained_buy_counts[index])
+        for scripted_kind, (games, wins) in worker_scripted_by_kind.items():
+            previous_games, previous_wins = stats.scripted_by_kind.get(scripted_kind, (0, 0))
+            stats.scripted_by_kind[scripted_kind] = (previous_games + games, previous_wins + wins)
+        for opponent, (games, wins) in worker_league_by_opponent.items():
+            previous_games, previous_wins = stats.league_by_opponent.get(opponent, (0, 0))
+            stats.league_by_opponent[opponent] = (previous_games + games, previous_wins + wins)
+        self.league_games += worker_league_games
+        for key, count in worker_route_audit.items():
+            normalized = (int(key[0]), int(key[1]))
+            self.seat_model_evals[normalized] = self.seat_model_evals.get(normalized, 0) + int(count)
+        self.completed.add(worker_index)
+        return False
+
+    def split_off(self) -> tuple[SelfPlayStats, int, dict[tuple[int, int], int]]:
+        """Hand over everything collected so far and keep counting from zero.
+
+        A cut-off generation reports its early games now and only its late
+        games later; verify() still checks the generation's combined totals.
+        """
+        taken = (self.stats, self.league_games, self.seat_model_evals)
+        _accumulate_stats(self._early_stats, self.stats)
+        self._early_league_games += self.league_games
+        self.stats = SelfPlayStats()
+        self.league_games = 0
+        self.seat_model_evals = {}
+        return taken
+
+    def verify(self) -> None:
+        stats = SelfPlayStats()
+        _accumulate_stats(stats, self._early_stats)
+        _accumulate_stats(stats, self.stats)
+        league_games = self._early_league_games + self.league_games
+        if stats.games != self.expected_games:
+            raise RuntimeError(f"parallel self-play collected {stats.games} games, expected {self.expected_games}")
+        if self.expected_league_games is not None and league_games != self.expected_league_games:
+            raise RuntimeError(
+                f"parallel league self-play collected {league_games} league games, "
+                f"expected {self.expected_league_games}"
+            )
+        if self.expected_scripted_games is not None and stats.scripted_games != self.expected_scripted_games:
+            raise RuntimeError(
+                f"parallel scripted self-play collected {stats.scripted_games} scripted games, "
+                f"expected {self.expected_scripted_games}"
+            )
+        if self.expected_deep_games is not None and stats.deep_games != self.expected_deep_games:
+            raise RuntimeError(
+                f"parallel deep self-play collected {stats.deep_games} deep games, "
+                f"expected {self.expected_deep_games}"
+            )
+
+
 class ParallelSelfPlayPool:
     """A persistent spawn-process pool that synchronizes weights per generation."""
 
@@ -1350,6 +1506,7 @@ class ParallelSelfPlayPool:
         if server_mode != (inference_server is not None):
             raise ValueError("shared server self-play requires exactly one inference server")
         self.inference_server = inference_server
+        self._carried: _GenerationCollection | None = None
         worker_server_routes = [
             inference_server.endpoints_for_worker(index)
             if inference_server is not None
@@ -1380,6 +1537,37 @@ class ParallelSelfPlayPool:
         for process in self.processes:
             process.start()
 
+    def _next_message(self) -> tuple[Any, ...] | None:
+        """One worker message, or None after a quiet second of liveness checks."""
+        try:
+            return self.result_queue.get(timeout=1.0)
+        except queue.Empty:
+            if self.inference_server is not None:
+                self.inference_server.ensure_alive()
+            failed = [process.name for process in self.processes if process.exitcode not in (None, 0)]
+            if failed:
+                raise RuntimeError(f"self-play worker exited unexpectedly: {', '.join(failed)}")
+            return None
+
+    def _finish_carried(self, replay: Any) -> _GenerationCollection | None:
+        """Wait for a cut-off generation's late games and add them to the replay."""
+        carried = self._carried
+        if carried is None:
+            return None
+        waited = time.perf_counter()
+        while not carried.complete:
+            message = self._next_message()
+            if message is not None:
+                carried.handle(message, replay)
+        carried.verify()
+        self._carried = None
+        print(
+            f"gen {carried.generation} late games done: {carried.stats.games} more, "
+            f"waited {time.perf_counter() - waited:.1f}s",
+            flush=True,
+        )
+        return carried
+
     def generate(
         self,
         model: torch.nn.Module,
@@ -1391,6 +1579,10 @@ class ParallelSelfPlayPool:
         progress_callback: Callable[[int, int], None] | None = None,
     ) -> ParallelSelfPlayResult:
         effective_selfplay = self.config.selfplay if selfplay_config is None else selfplay_config
+        start = time.perf_counter()
+        # Late games from a cut-off generation must finish before the server
+        # swaps model tables or workers take new commands.
+        carried = self._finish_carried(replay)
         worker_model_payloads = model_state_payloads
         if self.inference_server is not None:
             self.inference_server.ensure_alive()
@@ -1456,136 +1648,62 @@ class ParallelSelfPlayPool:
                 )
             )
 
-        stats = SelfPlayStats()
-        received_by_worker = [0 for _ in self.quotas]
-        league_games = 0
-        seat_model_evals: dict[tuple[int, int], int] = {}
-        completed: set[int] = set()
-        start = time.perf_counter()
+        expected = self.config.selfplay.games_per_generation
+        collection = _GenerationCollection(
+            generation=int(generation),
+            quotas=list(self.quotas),
+            expected_games=expected,
+            expected_league_games=(
+                sum(segment.n_games for segment in segments if segment.is_league) if segments is not None else None
+            ),
+            expected_scripted_games=(
+                sum(segment.n_games for segment in segments if segment.is_scripted) if segments is not None else None
+            ),
+            expected_deep_games=(
+                sum(segment.n_games for segment in segments if segment.sims_override > 0)
+                if segments is not None
+                else None
+            ),
+        )
+        fraction = float(self.config.selfplay.generation_cutoff_fraction)
+        cutoff_games = expected if fraction >= 1.0 else max(1, math.ceil(fraction * expected))
         if progress_callback is not None:
-            progress_callback(stats.games, stats.positions)
-        while len(completed) < len(self.quotas):
-            try:
-                message = self.result_queue.get(timeout=1.0)
-            except queue.Empty:
-                if self.inference_server is not None:
-                    self.inference_server.ensure_alive()
-                failed = [process.name for process in self.processes if process.exitcode not in (None, 0)]
-                if failed:
-                    raise RuntimeError(f"self-play worker exited unexpectedly: {', '.join(failed)}")
+            progress_callback(collection.stats.games, collection.stats.positions)
+        # Cut off only while games are still outstanding; once every record is
+        # in, the workers' completion messages follow at once.
+        while not collection.complete and not (cutoff_games <= collection.stats.games < expected):
+            message = self._next_message()
+            if message is None:
                 if progress_callback is not None:
-                    progress_callback(stats.games, stats.positions)
+                    progress_callback(collection.stats.games, collection.stats.positions)
                 continue
-
-            kind, worker_index, message_generation, payload = message
-            if kind == "error":
-                raise RuntimeError(f"self-play worker {worker_index} failed:\n{payload}")
-            if message_generation != generation:
-                raise RuntimeError("received a self-play result for the wrong generation")
-            if kind == "records":
-                games, positions = add_packed_records(replay, payload)
-                received_by_worker[worker_index] += games
-                stats.games += games
-                stats.positions += positions
+            if collection.handle(message, replay) and progress_callback is not None:
                 # Records are the established worker-to-trainer transport, so
                 # this incremental count adds no worker IPC on the hot path.
-                if progress_callback is not None:
-                    progress_callback(stats.games, stats.positions)
-                continue
-            if kind != "done":
-                raise RuntimeError(f"unknown self-play worker message: {kind}")
-            if worker_index in completed:
-                raise RuntimeError("self-play worker sent duplicate completion")
-            (
-                worker_games,
-                worker_positions,
-                leaves,
-                nn_evals,
-                wall,
-                inference,
-                plumbing,
-                worker_fast_path_batches,
-                worker_split_batches,
-                worker_scripted_games,
-                worker_scripted_wins,
-                worker_scripted_by_kind,
-                worker_deep_games,
-                worker_deep_positions,
-                worker_league_games,
-                worker_league_by_opponent,
-                worker_route_audit,
-                worker_opening_template_games,
-                worker_opening_template_vs_unconstrained_games,
-                worker_opening_template_vs_unconstrained_wins,
-                worker_cards_trashed,
-                worker_unconstrained_buy_counts,
-                worker_truncated_games,
-            ) = payload
-            if received_by_worker[worker_index] != self.quotas[worker_index]:
-                raise RuntimeError("self-play worker completed before delivering its full game quota")
-            if worker_games != self.quotas[worker_index]:
-                raise RuntimeError("self-play worker reported an incorrect game quota")
-            # Positions and games were counted as records arrived; timing work
-            # is summed across workers for the existing detailed metrics.
-            if worker_positions < 0:
-                raise RuntimeError("self-play worker reported invalid positions")
-            stats.leaves += leaves
-            stats.nn_evals += nn_evals
-            stats.wall_time += wall
-            stats.inference_time += inference
-            stats.plumbing_time += plumbing
-            stats.routed_fast_path_batches += worker_fast_path_batches
-            stats.routed_split_batches += worker_split_batches
-            stats.scripted_games += worker_scripted_games
-            stats.scripted_wins += worker_scripted_wins
-            stats.deep_games += worker_deep_games
-            stats.deep_positions += worker_deep_positions
-            stats.cards_trashed += worker_cards_trashed
-            stats.truncated_games += int(worker_truncated_games)
-            for index in range(7):
-                stats.opening_template_games[index] += int(worker_opening_template_games[index])
-                stats.opening_template_vs_unconstrained_games[index] += int(
-                    worker_opening_template_vs_unconstrained_games[index]
-                )
-                stats.opening_template_vs_unconstrained_wins[index] += int(
-                    worker_opening_template_vs_unconstrained_wins[index]
-                )
-            for index in range(4):
-                stats.unconstrained_buy_counts[index] += int(worker_unconstrained_buy_counts[index])
-            for kind, (games, wins) in worker_scripted_by_kind.items():
-                previous_games, previous_wins = stats.scripted_by_kind.get(kind, (0, 0))
-                stats.scripted_by_kind[kind] = (previous_games + games, previous_wins + wins)
-            for opponent, (games, wins) in worker_league_by_opponent.items():
-                previous_games, previous_wins = stats.league_by_opponent.get(opponent, (0, 0))
-                stats.league_by_opponent[opponent] = (previous_games + games, previous_wins + wins)
-            league_games += worker_league_games
-            for key, count in worker_route_audit.items():
-                normalized = (int(key[0]), int(key[1]))
-                seat_model_evals[normalized] = seat_model_evals.get(normalized, 0) + int(count)
-            completed.add(worker_index)
+                progress_callback(collection.stats.games, collection.stats.positions)
 
-        expected = self.config.selfplay.games_per_generation
-        if stats.games != expected:
-            raise RuntimeError(f"parallel self-play collected {stats.games} games, expected {expected}")
-        if segments is not None:
-            expected_league_games = sum(segment.n_games for segment in segments if segment.is_league)
-            if league_games != expected_league_games:
-                raise RuntimeError(
-                    f"parallel league self-play collected {league_games} league games, "
-                    f"expected {expected_league_games}"
-                )
-            expected_scripted_games = sum(segment.n_games for segment in segments if segment.is_scripted)
-            if stats.scripted_games != expected_scripted_games:
-                raise RuntimeError(
-                    f"parallel scripted self-play collected {stats.scripted_games} scripted games, "
-                    f"expected {expected_scripted_games}"
-                )
-            expected_deep_games = sum(segment.n_games for segment in segments if segment.sims_override > 0)
-            if stats.deep_games != expected_deep_games:
-                raise RuntimeError(
-                    f"parallel deep self-play collected {stats.deep_games} deep games, "
-                    f"expected {expected_deep_games}"
-                )
+        if collection.complete:
+            collection.verify()
+        else:
+            self._carried = collection
+            print(
+                f"gen {generation} self-play cut-off: {collection.stats.games}/{expected} games in, "
+                f"{expected - collection.stats.games} finish in the background on the same models",
+                flush=True,
+            )
+        own_stats, league_games, own_evals = collection.split_off()
+        seat_model_evals = dict(own_evals)
+        stats = SelfPlayStats()
+        if carried is not None:
+            # The previous generation's late games were added to the replay
+            # first, so they sit immediately before this generation's rows and
+            # belong to the same inserted range for SIL refresh and held-out.
+            late_stats, late_league_games, late_evals = carried.split_off()
+            _accumulate_stats(stats, late_stats)
+            league_games += late_league_games
+            for key, count in late_evals.items():
+                seat_model_evals[key] = seat_model_evals.get(key, 0) + count
+        _accumulate_stats(stats, own_stats)
         if self.inference_server is not None:
             self.inference_server.ensure_alive()
         return ParallelSelfPlayResult(

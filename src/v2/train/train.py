@@ -1222,6 +1222,27 @@ def anchor_batches_for_generation(
     return batches
 
 
+def wait_while_paused(checkpoint_dir: Path, generation: int) -> None:
+    """Hold before a generation while <checkpoint_dir>/PAUSE exists.
+
+    Operators (e.g. a battery watch) create the file to pause between
+    generations without stopping the trainer, so in-memory state such as
+    cut-off games still finishing in the workers survives the pause.
+    """
+    flag = checkpoint_dir / "PAUSE"
+    if not flag.exists():
+        return
+    started = last = time.perf_counter()
+    print(f"gen {generation} paused before self-play: remove {flag} to continue", flush=True)
+    while flag.exists():
+        time.sleep(5.0)
+        now = time.perf_counter()
+        if now - last >= 300.0:
+            last = now
+            print(f"gen {generation} still paused ({(now - started) / 60:.0f} min)", flush=True)
+    print(f"gen {generation} resumed after {(time.perf_counter() - started) / 60:.1f} min", flush=True)
+
+
 def run_training(config: TrainConfig, resume: str | None = None, profile: bool = False) -> dict[str, Any]:
     requested = config
     if not isinstance(config.init_weights, str):
@@ -1463,6 +1484,7 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
         if config.parallel_workers > 1:
             pool = ParallelSelfPlayPool(config, inference_server)
         for generation in range(start_generation + 1, start_generation + generations + 1):
+            wait_while_paused(Path(config.checkpoint_dir), generation)
             gen_start = time.perf_counter()
             progress.transition(
                 generation,

@@ -102,6 +102,7 @@
     "leaves_min_sims_per_leaf": 32,
     "tail_games_threshold": 2,
     "tail_leaves_in_flight": 8,
+    "generation_cutoff_fraction": 0.99,
     "root_value_blend": 0.25,
     "fpu_reduction": 0.2,
     "scaled_terminal_values": true,

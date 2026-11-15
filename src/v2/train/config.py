@@ -96,6 +96,11 @@ class SelfPlayConfig:
     # A game's search tree is allocated when its runner is built (about 85 MB
     # a game at c31's settings), so 1,024 games need 88 GB without a cap.
     max_concurrent_games: int = 0
+    # Generation cut-off: once this fraction of the generation's games has
+    # arrived, training starts while the unfinished games keep running on the
+    # same models; their records join the replay at the next generation's
+    # start (one generation stale at most). 1.0 = wait for every game.
+    generation_cutoff_fraction: float = 1.0
     # Value target = (1 - b) * outcome + b * search root value (per position).
     root_value_blend: float = 0.0
     # Search options; defaults reproduce legacy behavior.
@@ -537,6 +542,9 @@ def validate_selfplay_max_turns_config(config: SelfPlayConfig) -> None:
         value = getattr(config, name)
         if not isinstance(value, int) or isinstance(value, bool) or not 0 <= value <= upper:
             raise ValueError(f"selfplay.{name} must be an integer between 0 and {upper}")
+    cutoff = config.generation_cutoff_fraction
+    if isinstance(cutoff, bool) or not isinstance(cutoff, (int, float)) or not 0.5 <= float(cutoff) <= 1.0:
+        raise ValueError("selfplay.generation_cutoff_fraction must be a number in [0.5, 1]")
     blend = config.root_value_blend
     if isinstance(blend, bool) or not isinstance(blend, (int, float)) or not 0.0 <= float(blend) <= 1.0:
         raise ValueError("selfplay.root_value_blend must be a number in [0, 1]")
