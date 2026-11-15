@@ -1,6 +1,7 @@
 """Level-1 BC seeds against bc_a with search: 800-game paired gate, c32 gate settings, 8 workers."""
 
 import json
+import sys
 import time
 from pathlib import Path
 
@@ -22,7 +23,7 @@ def main() -> None:
     device = torch.device("cuda")
     done = {json.loads(line)["arm"] for line in OUT.read_text().splitlines()} if OUT.exists() else set()
     bca, _ = load_best_checkpoint(cfg, device, "checkpoints/campaign25/bc_a.pt")
-    for arm in ("A", "B"):
+    for arm in (sys.argv[1:] or ["A", "B"]):
         if arm in done:
             continue
         candidate, _ = load_best_checkpoint(cfg, device, f"checkpoints/bc_level1_{arm}/bc_f100.pt")

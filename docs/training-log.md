@@ -3478,7 +3478,7 @@ Ideas, cheapest first:
 
 1. **More search in the arena (no training).** The arena bot plays at 400 sims over 2 determinizations, less than self-play's 1024. Test gen 27 at 400 against gen 27 at 1600 and 3200 with the same hidden-information handling, a few hundred games each. If 1600 wins clearly, raise the arena budget; the cost is think time per move.
 2. **Arena loss review.** gen 27 has 302 rated games (177-122-1). Classify the losses by where they turned, by opening and by kingdom, as the gen 45 review did (it found the Militia bug and the big-money gap).
-3. **Honest self-play (`determinize per_decision`).** Self-play search is clairvoyant: it sees hidden cards, including its own deck order, so the policy learns from searches that peeked while the arena bot and the gate cannot. It was planned for c31 and dropped before launch (it turns tree reuse off; its only runs, c20-c23, predate the November audit fixes). Self-play now takes about 13 minutes, so the cost is much easier to afford. Run a short trial for cost and stability first.
+3. **Honest self-play (`determinize per_decision`).** Self-play search is clairvoyant: it sees hidden cards, including its own deck order, so the policy learns from searches that peeked while the arena bot and the gate cannot. It was planned for c31 and dropped before launch (it turns tree reuse off; its only runs, c20-c23, predate the November audit fixes). Measured cost on the c32 box (trial, 2026-11-15): self-play about 19.5 minutes against 13 (+50%), but the generation only 31.2 minutes against 28.4 (+10%). Only self-play slows: the gate already searches honestly, training is under a minute, and the 99% cut-off, the scripted-game fix and the faster server absorb most of the lost tree reuse. About 46 generations a day against 51, so 10 generations of c33 is roughly a 5-hour test. Cost, the main reason it was dropped from c31, is no longer a real objection. The same trial showed the clairvoyance gap directly: gen 27's search wins 80 of 102 scripted-bot games when it cannot see hidden cards, against 99 of 102 when it can. Caveat: game length, and so the cost, may shift as the network trains on honest data.
 4. **Better value targets.** Held-out value r2 is about 0.67 and value guides the search. `root_value_blend` is 0 (pure game outcome, noisy with shuffles); try 0.25-0.5.
 5. **More games or deeper search per generation (second-order).** 2048 games per generation now costs about 13 extra minutes and gives each candidate more varied data. Deeper self-play search gives better but fewer targets; c31's 512 -> 1024 change was bundled with three others and is unattributed. Searching deeply on a random subset of moves and cheaply on the rest (playout cap randomization) gets more value data for the same compute; it needs code.
 
@@ -3506,3 +3506,29 @@ Each arm: c31 gen 27 weights with a fresh optimizer, c32 config at generation 7 
 - No arm beats gen 27 or the others: all four gates are 0.483-0.494, inside one standard error of each other. Step count is not the lever.
 - No value overfitting up to 240 steps: held-out r2 rises slightly (0.685 -> 0.692) and train and held-out value loss stay within 0.001.
 - Every trained arm predicts the held-out search targets worse than gen 27 itself (cross-entropy 0.723-0.729 against 0.719), and the output entropy stays 0.10-0.12 above the targets'. Training at this anchor weight moves the policy away from the targets it is given. The anchor weight was tested as the cause and ruled out: 80 steps at anchor 0.1 (last row) gated 0.478, no better than 0.374, and its held-out cross-entropy (0.722) is still above gen 27's. Neither step count, learning rate nor anchor weight moves the gate: training gen 27 further on its own self-play data does not improve it under this recipe. c33 as defined (c32 plus what this test supports) would be c32 unchanged.
+
+### Honest self-play trial (2026-11-15 14:43-15:15 UTC, `configs/run_c33_trial.json`)
+
+One generation of c33 (c32 with `determinize per_decision`, tree reuse off) from c31 gen 27 with an empty buffer, against c32 gen 1 under the same start and anchor (different seed).
+
+| | c32 gen 1 (clairvoyant) | Honest trial gen 1 |
+|---|---|---|
+| Self-play to the 99% cut-off | ~12-13 min | ~19.5 min |
+| Generation | 35.7 min (1-worker gate) | 31.2 min (8-worker gate, 11 min) |
+| Server | 235k evals/s | 296k evals/s |
+| Gate vs gen 27 | 0.496 (385-391-24) | 0.491 (379-394-27), lower bound 0.476, rejected |
+| Held-out value r2 | 0.671 | 0.657 |
+| Held-out policy cross-entropy | 0.705 | 0.793 |
+| Policy loss / entropy | 0.715 / 0.709 | 0.799 / 0.785 |
+| Scripted wins, big money / engine | 49 / 50 of 51 each | 36 / 44 of 51 each |
+
+- Honest self-play costs about 1.5x the self-play time; a full honest generation with the 8-worker gate is about 31 minutes (c32: 28).
+- One empty-buffer gate cannot show a benefit; it matches c32 gen 1 within noise.
+- Without seeing hidden cards, gen 27's search wins far fewer games against the scripted bots (80 of 102 against 99 of 102). Part of what the clairvoyant self-play reports as dominance of big money is the search seeing the cards.
+- The higher held-out policy cross-entropy is gen 27's clairvoyant-trained policy meeting honest targets; that gap is what training on honest data should close.
+
+Next: the train-steps arms (`configs/run_c32_s160.json`, `_s240`, `_s160h`, 6 generations each, driver `scripts/box/arms_driver.sh` under supervisor `dominion-arms`, started 15:15 UTC), then 2000-game ladders of each arm's gen 6 candidate and c32 gen 6 against gen 27 (`scripts/box/ladder.py`). c32's gens 1-6 are the 80-step arm: same seed and generator, so the self-play games match until an arm gets an accept. Honest self-play (c33) after that.
+
+### Skill-weight curve made continuous (2026-11-15, c19e5ba)
+
+Jack: "That discontinuity is bad". The policy weight rose from 0.02 at level 40 to 1.0 just below 50, then jumped to 3.0 at exactly 50. It now keeps rising from 1.0 at 50 to 3.0 at 55 and holds (`POLICY_WEIGHT_EXPERT_RAMP_END`). Most 50+ players sit at 50-52, so the 50+ share of policy weight falls from about half to 23%; effective policy rows are 580,619 on the level-1 corpus (was 698,790) and 336,122 on `tuples_all_40plus/train` (was 402,912). Applies to every future skill-weighted load (BC and the training anchor). Not deployed to the box's main checkout while the train-steps arms run, so they stay on c32's curve. The level-1 BC comparison was restarted under the new curve from the separate checkout `/root/gatetest` at 15:52 UTC; note it now differs from `bc_a` in both corpus and curve. Open: the c32 arms and c31/c32 runs used the old curve, so c33 (BC init under the new curve plus honest self-play) changes the anchor weighting too.

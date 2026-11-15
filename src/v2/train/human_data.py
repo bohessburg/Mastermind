@@ -236,6 +236,7 @@ def load_human_tuples(
     seat_index: int | None = None,
     skill_weighting: bool = False,
     ratings_sidecar: str | Path = DEFAULT_RATINGS_SIDECAR,
+    policy_ramp_start: float = POLICY_WEIGHT_RAMP_START,
 ) -> HumanTupleDataset:
     """Load manifest-declared tuple shards and optionally filter their rows.
 
@@ -359,6 +360,7 @@ def load_human_tuples(
             filtered["game_index"],
             filtered["seat_index"],
             ratings_sidecar,
+            policy_ramp_start=policy_ramp_start,
         )
     return HumanTupleDataset(
         obs=filtered["obs"].astype(np.float32, copy=False),
@@ -390,8 +392,17 @@ def rating_band_for_level(level: float | None) -> str:
     return RATING_BAND_EXPERT
 
 
-def policy_weight_for_rating(level: float | None, deviation: float | None = None) -> float:
-    """Return the signed c22 policy-only teaching weight for one player."""
+def policy_weight_for_rating(
+    level: float | None,
+    deviation: float | None = None,
+    *,
+    ramp_start: float = POLICY_WEIGHT_RAMP_START,
+) -> float:
+    """Return the signed c22 policy-only teaching weight for one player.
+
+    ``ramp_start`` moves where the 40-50 ramp begins (below it a player is
+    value-only); the reporting bands keep their fixed 40/50 boundaries.
+    """
 
     band = rating_band_for_level(level)
     if band == RATING_BAND_UNRATED:
@@ -399,11 +410,13 @@ def policy_weight_for_rating(level: float | None, deviation: float | None = None
         # invitation to invent a confidence discount below the signed epsilon.
         return POLICY_WEIGHT_EPSILON
     assert level is not None
-    if band == RATING_BAND_LOW:
+    if not POLICY_WEIGHT_RAMP_START <= float(ramp_start) < POLICY_WEIGHT_RAMP_END:
+        raise ValueError("policy ramp_start must be in [40, 50)")
+    if band == RATING_BAND_LOW or level < ramp_start:
         weight = POLICY_WEIGHT_EPSILON
     elif band == RATING_BAND_RAMP:
-        progress = (level - POLICY_WEIGHT_RAMP_START) / (
-            POLICY_WEIGHT_RAMP_END - POLICY_WEIGHT_RAMP_START
+        progress = (level - ramp_start) / (
+            POLICY_WEIGHT_RAMP_END - ramp_start
         )
         weight = POLICY_WEIGHT_EPSILON + progress * (1.0 - POLICY_WEIGHT_EPSILON)
     else:
@@ -421,6 +434,8 @@ def _load_policy_weights(
     game_indices: np.ndarray,
     seat_indices: np.ndarray,
     ratings_sidecar: str | Path,
+    *,
+    policy_ramp_start: float = POLICY_WEIGHT_RAMP_START,
 ) -> tuple[np.ndarray, np.ndarray]:
     ratings_path = Path(ratings_sidecar)
     try:
@@ -452,7 +467,10 @@ def _load_policy_weights(
                 game_ratings = sidecar.get(game_id)
                 entry = game_ratings.get(str(player_ids[key[1]])) if isinstance(game_ratings, dict) else None
                 level, deviation = _rating_entry_level_and_deviation(entry)
-            assignment = (policy_weight_for_rating(level, deviation), rating_band_for_level(level))
+            assignment = (
+                policy_weight_for_rating(level, deviation, ramp_start=policy_ramp_start),
+                rating_band_for_level(level),
+            )
             assignments[key] = assignment
         weights[row], bands[row] = assignment
     return np.ascontiguousarray(weights), np.ascontiguousarray(bands)

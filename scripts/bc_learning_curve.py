@@ -143,6 +143,7 @@ def main() -> int:
     parser.add_argument("--report-dir", type=Path, default=Path("bench/bc_curve"))
     parser.add_argument("--smoke", action="store_true", help="50 steps per arm, to test the plumbing")
     parser.add_argument("--seed", type=int, default=None, help="override the recipe's training seed")
+    parser.add_argument("--ramp-start", type=float, default=40.0, help="level where the policy-weight ramp starts")
     args = parser.parse_args()
     arms = [arm for arm in args.arms.split(",") if arm]
     for arm in arms:
@@ -152,8 +153,8 @@ def main() -> int:
     device = select_device(args.device)
     started = time.time()
     print(f"bc_curve loading train={args.train_tuples} val={args.val_tuples} device={device}", flush=True)
-    train = load_human_tuples(args.train_tuples, value_scheme="margin", skill_weighting=True)
-    val = load_human_tuples(args.val_tuples, value_scheme="margin", skill_weighting=True)
+    train = load_human_tuples(args.train_tuples, value_scheme="margin", skill_weighting=True, policy_ramp_start=args.ramp_start)
+    val = load_human_tuples(args.val_tuples, value_scheme="margin", skill_weighting=True, policy_ramp_start=args.ramp_start)
     print(f"bc_curve loaded {len(train)} train / {len(val)} val rows in {time.time() - started:.0f}s", flush=True)
 
     # The arm runner reads these from an argparse namespace.

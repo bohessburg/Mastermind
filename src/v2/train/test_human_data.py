@@ -156,6 +156,12 @@ def test_signed_policy_weight_curve_boundaries_and_deviation_discount() -> None:
     assert policy_weight_for_rating(55.0) == pytest.approx(3.0)
     assert policy_weight_for_rating(60.0) == pytest.approx(3.0)
     assert policy_weight_for_rating(None) == pytest.approx(POLICY_WEIGHT_EPSILON)
+    # The ramp can start later: below it a player is value-only; 50+ is unchanged.
+    assert policy_weight_for_rating(44.9, ramp_start=45.0) == pytest.approx(POLICY_WEIGHT_EPSILON)
+    assert policy_weight_for_rating(47.5, ramp_start=45.0) == pytest.approx(0.51)
+    assert policy_weight_for_rating(52.5, ramp_start=45.0) == pytest.approx(2.0)
+    with pytest.raises(ValueError, match="ramp_start"):
+        policy_weight_for_rating(47.0, ramp_start=50.0)
     # Native Glicko deviation 0.5 is the observed sidecar scale ceiling and therefore
     # invokes the documented 0.5 confidence floor.
     assert policy_weight_for_rating(55.0, deviation=0.5) == pytest.approx(1.5)
