@@ -13,6 +13,8 @@ from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
 
+from src.v2.arena.protocol.frames import Reader, Writer
+from src.v2.arena.protocol.parser import ArenaParser
 from scripts.dgames_collect import (
     CLIENT_HEARTBEAT,
     CREDENTIALED_RELOGIN_WINDOW_SECONDS,
@@ -32,11 +34,14 @@ from scripts.dgames_collect import (
     CollectorStats,
     DgamesCredentials,
     DominionCollector,
+    PendingJoin,
+    RATING_GATE_MAX_FRAMES,
     ParkedLoginAction,
     SessionExpired,
     SessionHandshakeTracker,
     TableSummary,
     _load_dgames_credentials,
+    _metagame_manifest_fields,
     _is_sensitive_record,
     _parked_login_action,
     _parse_args,
@@ -561,6 +566,100 @@ class CredentialSourceTest(unittest.TestCase):
         self.assertEqual(indexed.username, "fleet-user")
         self.assertEqual(indexed.password, "fleet-password")
         self.assertIsNone(missing_indexed)
+
+
+class RatingGateTest(unittest.TestCase):
+    """The rating floor waits for METAGAME_INFO, then joins or leaves."""
+
+    def _collector(self, floor: float | None = 47.0) -> DominionCollector:
+        collector = object.__new__(DominionCollector)
+        collector.args = SimpleNamespace(min_top_rating=floor, join_delay=0.0)
+        collector.pump = SimpleNamespace(parser=SimpleNamespace(player_levels_by_game={}))
+        collector.stats = SimpleNamespace(skipped_low_rating=0)
+        collector.joined = []
+        collector.left = []
+        collector._remember_rejected_game = lambda game_id: None
+        collector._remember_rejected_table = lambda table: None
+        collector._release_table_claim = lambda: None
+        collector._schedule_leave = collector.left.append
+        collector._decide_pending_join = lambda pending, full_state: collector.joined.append(full_state.game_id)
+        collector.pending = PendingJoin(
+            table=SimpleNamespace(table_id=7),
+            started_monotonic=0.0,
+            deadline_monotonic=60.0,
+            deferred_full_state=SimpleNamespace(game_id=99),
+        )
+        return collector
+
+    def _step(self, collector: DominionCollector) -> None:
+        with redirect_stdout(StringIO()):
+            collector._decide_rating_gate(collector.pending)
+
+    def test_waits_for_levels_then_joins_when_one_player_is_above_the_floor(self) -> None:
+        collector = self._collector()
+        self._step(collector)
+        self.assertEqual(collector.joined, [])
+        self.assertIsNotNone(collector.pending)
+        collector.pump.parser.player_levels_by_game[99] = {1: 41.0, 2: 47.5}
+        self._step(collector)
+        self.assertEqual(collector.joined, [99])
+        self.assertEqual(collector.left, [])
+
+    def test_leaves_when_no_player_is_above_the_floor(self) -> None:
+        collector = self._collector()
+        collector.pump.parser.player_levels_by_game[99] = {1: 47.0, 2: 45.4}
+        self._step(collector)
+        self.assertEqual(collector.joined, [])
+        self.assertIsNone(collector.pending)
+        self.assertEqual(collector.left, [7])
+        self.assertEqual(collector.stats.skipped_low_rating, 1)
+
+    def test_leaves_when_the_levels_never_arrive(self) -> None:
+        collector = self._collector()
+        for _ in range(RATING_GATE_MAX_FRAMES + 1):
+            self._step(collector)
+        self.assertIsNone(collector.pending)
+        self.assertEqual(collector.left, [7])
+
+    def test_manifest_fields_carry_pool_level_and_ratings(self) -> None:
+        parser = SimpleNamespace(
+            player_levels_by_game={5: {11: 47.5, 12: 40.0}},
+            metagame_by_game={5: (True, 10)},
+        )
+        fields = _metagame_manifest_fields(parser, 5, {11: "a", 12: "b"})
+        self.assertEqual(fields["card_pool_level"], 10)
+        self.assertTrue(fields["rated_game"])
+        self.assertEqual(fields["top_rating"], 47.5)
+        self.assertEqual(
+            fields["player_ratings"],
+            [
+                {"player_id": 11, "player_name": "a", "rating": 47.5},
+                {"player_id": 12, "player_name": "b", "rating": 40.0},
+            ],
+        )
+        missing = _metagame_manifest_fields(parser, 6, {})
+        self.assertEqual(set(missing), set(fields))
+        self.assertTrue(all(value is None for value in missing.values()))
+
+    def test_parser_records_player_levels_from_metagame_info(self) -> None:
+        payload = (
+            Writer()
+            .u64(185934510)
+            .boolean(False)
+            .s32(1)
+            .u32(2)
+            .s32(1722017)
+            .f64(47.12)
+            .s32(1623101)
+            .f64(45.44)
+            .u32(0)
+            .s32(4)
+            .build()
+        )
+        parser = ArenaParser()
+        parser._read_metagame_info(Reader(payload))
+        self.assertEqual(parser.player_levels_by_game, {185934510: {1722017: 47.12, 1623101: 45.44}})
+        self.assertEqual(parser.metagame_by_game, {185934510: (False, 1)})
 
 
 if __name__ == "__main__":

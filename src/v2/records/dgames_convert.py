@@ -21,6 +21,7 @@ import argparse
 import gzip
 import hashlib
 import json
+import os
 import sys
 from collections import Counter, defaultdict
 from collections.abc import Iterable, Sequence
@@ -573,6 +574,10 @@ class _ShardAccumulator:
         self._rows = []
 
 
+# Arena bot accounts: their decisions are never training data.
+EXCLUDED_PLAYER_NAMES = frozenset({"i_claudius"})
+
+
 def convert_dgames_corpus(
     raw_root: Path | str = DEFAULT_RAW_ROOT,
     *,
@@ -598,6 +603,7 @@ def convert_dgames_corpus(
     deck_checked_games = 0
     deck_matched_games = 0
     observed_resource_buy_rows = 0
+    excluded_bot_rows = 0
     visibility_grades: Counter[str] = Counter()
     initial_visibility_grades: Counter[str] = Counter()
     decision_type_counts: Counter[str] = Counter()
@@ -710,6 +716,9 @@ def convert_dgames_corpus(
         game_index = len(games)
         per_seat_exported = [0 for _ in converted.outcome.seats]
         for row in converted.rows:
+            if converted.outcome.seats[row.seat_index].player_name.casefold() in EXCLUDED_PLAYER_NAMES:
+                excluded_bot_rows += 1
+                continue
             accumulator.append(row, converted.outcome, game_index)
             per_seat_exported[row.seat_index] += 1
             decision_type_counts[row.decision_type] += 1
@@ -866,6 +875,7 @@ def convert_dgames_corpus(
             "initial_visibility_grades": dict(sorted(initial_visibility_grades.items())),
             "recovered_skip_counts": dict(sorted(recovered_skip_counts.items())),
             "observed_resource_buy_rows": observed_resource_buy_rows,
+            "excluded_bot_rows": excluded_bot_rows,
             "skipped_incomplete": sum(entry.category == "incomplete_capture" for entry in quarantined),
             "quarantined": len(quarantined),
             "final_deck_checked_games": deck_checked_games,
@@ -4320,7 +4330,10 @@ def _counter_total(counter: CounterInt) -> int:
 
 
 def _sample_seed(game_id: str, log_index: int, seat: int) -> int:
+    salt = os.environ.get("DGAMES_SAMPLE_SALT", "")
     payload = f"{SOURCE_TAG}|{game_id}|{log_index}|{seat}".encode("utf-8")
+    if salt:
+        payload += f"|{salt}".encode("utf-8")
     return int.from_bytes(hashlib.blake2b(payload, digest_size=8).digest(), "big")
 
 

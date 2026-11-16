@@ -218,3 +218,44 @@ def test_host_does_not_ready_when_a_spectator_joins_an_open_seat() -> None:
     with pytest.raises(LobbyError, match="nobody joined"):
         asyncio.run(fsm.queue_next_game())
     assert HOST_READY_SELECTOR not in page.clicks
+
+
+def test_host_retries_a_homepage_that_never_rendered() -> None:
+    clock = _Clock()
+    page = _HostPage(clock, join_at=0.0)
+    page.screen = "blank"
+    reloads: list[float] = []
+
+    async def reload(**_kwargs: object) -> None:
+        reloads.append(clock())
+        # Only the reload after the first full homepage timeout recovers.
+        if len(reloads) == 2:
+            page.screen = "lobby"
+
+    page.reload = reload  # type: ignore[attr-defined]
+    fsm = _fsm(page, clock)
+
+    resumed = asyncio.run(fsm.queue_next_game())
+
+    assert resumed is False
+    assert fsm.state is LobbyState.IN_GAME
+    assert len(reloads) == 2
+    assert fsm.touches  # type: ignore[attr-defined]
+
+
+def test_host_gives_up_after_repeated_homepage_failures() -> None:
+    clock = _Clock()
+    page = _HostPage(clock, join_at=0.0)
+    page.screen = "blank"
+    reloads: list[float] = []
+
+    async def reload(**_kwargs: object) -> None:
+        reloads.append(clock())
+
+    page.reload = reload  # type: ignore[attr-defined]
+    fsm = _fsm(page, clock)
+
+    with pytest.raises(LobbyError, match="homepage"):
+        asyncio.run(fsm.queue_next_game())
+    # One in-page reload per homepage attempt plus one between retries.
+    assert len(reloads) >= 2

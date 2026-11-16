@@ -132,6 +132,8 @@ MAX_TRACKED_GAME_STARTS = 64
 MAX_REMEMBERED_TABLES = 4_096
 MAX_REJECTED_GAME_IDS = 4_096
 MAX_PENDING_JOIN_BUFFER_BYTES = 32 * 1024 * 1024
+# Frames to wait after fullGameState for the METAGAME_INFO log dump.
+RATING_GATE_MAX_FRAMES = 20
 # Client->server messages that can carry a password, session id, or login code,
 # plus the recovery-only active-session cleanup request.
 # NOTE: 44 is the client HEARTBEAT and carries no payload -- it must NOT be in
@@ -285,6 +287,9 @@ class PendingJoin:
     raw_records: list[dict[str, Any]] = field(default_factory=list)
     raw_bytes: int = 0
     game_start: GameStart | None = None
+    # Set while the rating filter waits for the log dump that follows fullGameState.
+    deferred_full_state: FullState | None = None
+    deferred_frames: int = 0
 
 
 @dataclass
@@ -313,6 +318,7 @@ class CollectorStats:
     tables_probed: int = 0
     base_only_tables_probed: int = 0
     skipped_non_base: int = 0
+    skipped_low_rating: int = 0
     skipped_duplicates: int = 0
     captured_started: int = 0
     captured_completed: int = 0
@@ -818,6 +824,30 @@ class LivePump:
                 on_notice(notice)
 
 
+
+def _metagame_manifest_fields(
+    parser: Any, game_id: int, player_names_by_id: dict[int, str]
+) -> dict[str, object]:
+    """Card pool level and per-player displayed ratings from METAGAME_INFO.
+
+    Every key is present, as ``None`` when the log dump has not been seen,
+    so the manifests stay uniformly searchable.
+    """
+    levels = getattr(parser, "player_levels_by_game", {}).get(game_id)
+    metagame = getattr(parser, "metagame_by_game", {}).get(game_id)
+    return {
+        "card_pool_level": None if metagame is None else metagame[1],
+        "rated_game": None if metagame is None else metagame[0],
+        "player_ratings": None
+        if levels is None
+        else [
+            {"player_id": player_id, "player_name": player_names_by_id.get(player_id), "rating": rating}
+            for player_id, rating in levels.items()
+        ],
+        "top_rating": None if not levels else max(levels.values()),
+    }
+
+
 def _load_base_names(path: Path) -> frozenset[str]:
     try:
         document = json.loads(path.read_text(encoding="utf-8"))
@@ -1313,6 +1343,7 @@ class DominionCollector:
                     "captured_started": self.stats.captured_started,
                     "tables_probed": self.stats.tables_probed,
                     "skipped_non_base": self.stats.skipped_non_base,
+                    "skipped_low_rating": self.stats.skipped_low_rating,
                     "joins_attempted": self.stats.joins_attempted,
                     "claim_attempts": self.stats.claim_attempts(),
                     "claim_contentions": self.stats.claim_contentions(),
@@ -2272,8 +2303,46 @@ class DominionCollector:
             if isinstance(event, GameStart):
                 pending.game_start = event
             elif isinstance(event, FullState):
-                self._decide_pending_join(pending, event)
+                if self.args.min_top_rating is None:
+                    self._decide_pending_join(pending, event)
+                    return
+                pending.deferred_full_state = event
+                pending.deferred_frames = 0
+        if self.pending is pending and pending.deferred_full_state is not None:
+            self._decide_rating_gate(pending)
+
+    def _decide_rating_gate(self, pending: PendingJoin) -> None:
+        """Join only games where some player's displayed rating exceeds the floor.
+
+        Ratings arrive in the METAGAME_INFO entry of the historical log dump
+        that immediately follows fullGameState, so the decision waits for it.
+        """
+        full_state = pending.deferred_full_state
+        assert full_state is not None
+        levels = self._pump.parser.player_levels_by_game.get(full_state.game_id)
+        if levels is None:
+            pending.deferred_frames += 1
+            if pending.deferred_frames <= RATING_GATE_MAX_FRAMES:
                 return
+            reason = "no player ratings in the log dump"
+        elif max(levels.values(), default=float("-inf")) > self.args.min_top_rating:
+            pending.deferred_full_state = None
+            self._decide_pending_join(pending, full_state)
+            return
+        else:
+            shown = ", ".join(f"{level:.1f}" for level in sorted(levels.values(), reverse=True))
+            reason = f"top rating not above {self.args.min_top_rating:g} ({shown})"
+        self._remember_rejected_game(full_state.game_id)
+        self._remember_rejected_table(pending.table)
+        self.stats.skipped_low_rating += 1
+        print(
+            f"skipping table {pending.table.table_id}, game {full_state.game_id}: {reason}",
+            flush=True,
+        )
+        self.pending = None
+        self._release_table_claim()
+        self.next_join_allowed_monotonic = time.monotonic() + self.args.join_delay
+        self._schedule_leave(pending.table.table_id)
 
     def _decide_pending_join(self, pending: PendingJoin, full_state: FullState) -> None:
         """Perform the mandatory join-then-decide filter and game-id claim."""
@@ -2367,6 +2436,7 @@ class DominionCollector:
             "capture_status": "incomplete",
             "incomplete_reason": "capture in progress",
         }
+        manifest.update(_metagame_manifest_fields(self._pump.parser, full_state.game_id, player_names_by_id))
         if self.args.no_base_filter:
             # ``card_type_names`` is the fullGameState-observed kingdom/card
             # population even if a GameStart record was unavailable.
@@ -2506,6 +2576,10 @@ class DominionCollector:
             self.snapshot_received_monotonic = None
             self._send_lobby_request(force=True)
             return
+        if self.pump is not None:
+            active.manifest.update(
+                _metagame_manifest_fields(self.pump.parser, active.game_id, active.player_names_by_id)
+            )
         active.manifest.update(
             {
                 "outcome": outcome,
@@ -2785,6 +2859,7 @@ def _summary_document(
         "base_only_tables_probed": stats.base_only_tables_probed,
         "base_only_rate_among_probed_tables": stats.base_only_probe_rate(),
         "skipped_non_base": stats.skipped_non_base,
+        "skipped_low_rating": stats.skipped_low_rating,
         "skipped_duplicate_game_id": stats.skipped_duplicates,
         "base_captures_started": stats.captured_started,
         "base_captures_completed": stats.captured_completed,
@@ -3350,6 +3425,12 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--no-base-filter",
         action="store_true",
         help="capture every observed kingdom while retaining kingdom details in the manifest",
+    )
+    parser.add_argument(
+        "--min-top-rating",
+        type=float,
+        default=None,
+        help="join only games where at least one player's displayed rating is above this value",
     )
     parser.add_argument(
         "--self-test",

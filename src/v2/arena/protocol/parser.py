@@ -312,6 +312,10 @@ class ArenaParser:
         self.game_id: int | None = None
         self.player_ids: tuple[int, ...] = ()
         self.player_names_by_id: dict[int, str] = {}
+        # game id -> {player id: displayed rating}, from the log's METAGAME_INFO.
+        self.player_levels_by_game: dict[int, dict[int, float]] = {}
+        # game id -> (rated, card pool level 1-10), from the same METAGAME_INFO.
+        self.metagame_by_game: dict[int, tuple[bool, int]] = {}
         self.card_by_instance: dict[int, str] = {}
         self.zone_owner: dict[int, int] = {}
         self.zone_type: dict[int, int] = {}
@@ -1233,6 +1237,8 @@ class ArenaParser:
         level_map = reader.array(lambda: (reader.s32(), reader.f64()))
         changed = reader.array(lambda: (reader.s32(), reader.u32_array()))
         timer_preset = reader.s32()
+        self.player_levels_by_game[game_id] = {player_id: level for player_id, level in level_map}
+        self.metagame_by_game[game_id] = (rated, card_pool_level)
         return game_id, rated, card_pool_level, level_map, changed, timer_preset
 
     def _argument_player(

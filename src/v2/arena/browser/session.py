@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 import re
@@ -78,6 +79,7 @@ class ArenaSession:
                 headless=self.headless,
             )
             await self.context.expose_function("__arenaFrame", self._receive_frame)
+            await self._maybe_block_assets()
             # This must precede page creation/navigation.  It intentionally
             # matches ArenaRecorder's capture installation exactly.
             await self.context.add_init_script(path=str(HOOK_PATH))
@@ -87,6 +89,31 @@ class ArenaSession:
             await self.stop()
             raise
         return self.run_dir
+
+    async def _maybe_block_assets(self) -> None:
+        """Abort image/media/font requests for profiles named in the env var.
+
+        Experiment to shrink renderer memory: frames arrive over the WebSocket, so
+        the visuals are not needed. Enabled per profile directory name, e.g.
+        DGAMES_BLOCK_ASSETS_PROFILES=account-4.
+        """
+        names = {n.strip() for n in os.environ.get("DGAMES_BLOCK_ASSETS_PROFILES", "").split(",")}
+        if self.profile_dir.name not in names or self.context is None:
+            return
+        blocked_types = {"image", "media", "font"}
+        counter = {"n": 0}
+
+        async def handler(route: Any) -> None:
+            if route.request.resource_type in blocked_types:
+                counter["n"] += 1
+                if counter["n"] in (1, 10, 100) or counter["n"] % 1000 == 0:
+                    print(f"[assets] {self.profile_dir.name} blocked {counter['n']} requests", flush=True)
+                await route.abort()
+            else:
+                await route.continue_()
+
+        await self.context.route("**/*", handler)
+        print(f"[assets] {self.profile_dir.name} blocking {sorted(blocked_types)}", flush=True)
 
     async def stop(self) -> None:
         """Close browser resources and wake an event pump awaiting input."""

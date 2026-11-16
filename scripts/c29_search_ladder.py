@@ -65,6 +65,9 @@ def main() -> None:
     parser.add_argument("--b", default=None, help="checkpoint for side B (default: same as A)")
     parser.add_argument("--a-sims", type=parse_sims, default=128)
     parser.add_argument("--b-sims", type=parse_sims, default=128)
+    parser.add_argument("--a-chance", choices=("off", "truncate", "resample"), default=None,
+                        help="side A's handling of hidden-card reveals (default: the config's chance_mode)")
+    parser.add_argument("--b-chance", choices=("off", "truncate", "resample"), default=None)
     parser.add_argument("--a-zero-value", action="store_true")
     parser.add_argument("--b-zero-value", action="store_true")
     parser.add_argument("--pairs", type=int, default=200, help="boards; each is played twice")
@@ -80,6 +83,9 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=20261110)
     parser.add_argument("--config", default="configs/run_c28.json")
     parser.add_argument("--device", default="auto")
+    parser.add_argument("--backend", choices=("torch", "mlx"), default="torch",
+                        help="mlx serves the network through the Apple host backend (the Mac gate's gate_backend)")
+    parser.add_argument("--fp16", action="store_true", help="half-precision host backend")
     parser.add_argument("--out", default="bench/c29_ladder")
     args = parser.parse_args()
 
@@ -110,14 +116,25 @@ def main() -> None:
         match_config.leaves_in_flight = int(args.leaves_in_flight)
         match_config.tail_leaves_in_flight = 0
     print(
-        f"[{args.tag}] device={device} pairs={args.pairs} chunk={args.chunk} "
-        f"A={args.a} sims={args.a_sims} zero_v={args.a_zero_value} | "
-        f"B={b_path} sims={args.b_sims} zero_v={args.b_zero_value} | "
+        f"[{args.tag}] device={device} backend={args.backend}{' fp16' if args.fp16 else ''} pairs={args.pairs} chunk={args.chunk} "
+        f"A={args.a} sims={args.a_sims} chance={args.a_chance} zero_v={args.a_zero_value} | "
+        f"B={b_path} sims={args.b_sims} chance={args.b_chance} zero_v={args.b_zero_value} | "
         f"determinize={match_config.determinize} cross_route={cross_route} "
         f"tree_reuse={tree_reuse} opening_temp={opening_temp} "
         f"leaves_in_flight={match_config.leaves_in_flight} (min sims/leaf {match_config.leaves_min_sims_per_leaf})",
         flush=True,
     )
+
+    host_backends = None
+    if args.backend != "torch" or args.fp16:
+        if device.type != "mps":
+            parser.error("--backend mlx / --fp16 need the mps device")
+        from src.v2.train.apple_backend import build_host_backend
+
+        host_backends = {}
+        for model in (model_a, model_b):
+            if id(model) not in host_backends:
+                host_backends[id(model)] = build_host_backend(model, device, args.backend, half=args.fp16)
 
     started = time.time()
 
@@ -150,10 +167,13 @@ def main() -> None:
         device=device,
         sims_a=0 if tree_reuse else args.a_sims,
         sims_b=0 if tree_reuse else args.b_sims,
+        chance_a=args.a_chance,
+        chance_b=args.b_chance,
         independent_search=not cross_route,
         chunk=args.chunk,
         progress=heartbeat,
         tick=tick,
+        host_backends=host_backends,
     )
     summary = match.summary()
     result = {
@@ -162,6 +182,8 @@ def main() -> None:
         "b": b_path,
         "a_sims": args.a_sims,
         "b_sims": args.b_sims,
+        "a_chance": args.a_chance,
+        "b_chance": args.b_chance,
         "a_zero_value": args.a_zero_value,
         "b_zero_value": args.b_zero_value,
         "determinize": match_config.determinize,

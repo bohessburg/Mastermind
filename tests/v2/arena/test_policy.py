@@ -165,3 +165,30 @@ def test_arena_search_hands_the_terminal_scale_to_the_native_searcher(
     assert bool(game.legal_mask()[action])
     assert seen[0]["terminal_margin_scale"] == 20.0
     assert seen[0]["terminal_margin_alpha"] == 0.25
+
+
+def test_nnmcts_cap_holds_when_the_searcher_yields_no_leaves(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A searcher that never finishes and never offers a leaf must not spin past the cap."""
+    from src.v2.arena.bot import policy as policy_module
+
+    policy = load_policy(_checkpoint(tmp_path))
+
+    class _EmptySearcher:
+        def __init__(self, *_args, **_kwargs) -> None:
+            pass
+
+        def done(self) -> bool:
+            return False
+
+        def collect_leaves(self):
+            return np.zeros((0, 1), dtype=np.float32), np.zeros((0, 1), dtype=np.bool_)
+
+    monkeypatch.setattr(policy_module.dz, "DecisionSearcher", _EmptySearcher)
+    kingdom = ["Village", "Smithy", "Market", "Festival", "Laboratory", "Cellar", "Chapel", "Militia", "Witch", "Moat"]
+    game = dz.new_game(dz.Setup(players=2, kingdom=kingdom), 5)
+    seat = int(game.current_decision()["player"])
+    action = policy_module.choose_nnmcts_action(game, seat, policy, sims=4, determinizations=1, wall_clock_cap=0.05)
+    assert bool(game.legal_mask()[action])

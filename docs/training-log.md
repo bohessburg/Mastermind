@@ -3474,13 +3474,47 @@ Gate workers deployed at 12:03 UTC (6f56f23, `gate_workers` 8): stopped right af
 
 Status: i_claudius is at level 47.1, the 75th percentile; the 95th is 53.6, the 99th 59.1. This needs a clearly stronger bot, not tuning. Evidence on network size is mixed. For it not being the limit: train and held-out losses are nearly equal, and c20 concluded the ceiling was data, not capacity. Against (corrected 2026-11-15, from the steps ablation's held-out rows): on c32's own data the search targets' entropy is 0.607 while gen 27's held-out policy cross-entropy is 0.719, a gap of about 0.11 nats, not the few hundredths first stated (that used c29's target entropy). The network does not reproduce its search targets closely, so capacity is a live question. An offline capacity check (current net against a 2x wider net on a frozen replay plus the anchor corpus, compared on held-out loss) would settle it without box time.
 
+**>>> TOP PRIORITY (Jack, 2026-11-15): search past hidden-information reveals is wasted. Next major focus. <<<**
+
+The MCTS tree has no chance nodes: every search runs in one fixed world (the real state in clairvoyant self-play, one sampled world in honest self-play, the gate and the arena's 2 worlds), so every draw from an unseen pile and every reshuffle has one fixed outcome inside the tree. Any path past the first reveal (usually the end-of-turn draw of the next hand, also mid-turn draws such as Smithy or Laboratory, and reshuffles) plans against that one random outcome. Consequences: visits spent beyond the first reveal are wasted on fictional futures; policy targets carry that noise and favour moves that only pay off with the right draws; in clairvoyant self-play the tree knows the real next hand and real shuffles, so buy decisions were partly trained on cards nobody could know (a candidate cause of honest search winning only 80 of 102 scripted games against 99 clairvoyant).
+
+Proposed change (Jack's idea): stop each simulation at the first reveal, scoring that node with the value network, which is trained to average over hidden cards; spend the sims over several sampled worlds so the opponent's hidden hand is averaged over too. The principled form is information-set MCTS (a fresh world per simulation over one tree keyed by what the player can see); truncation plus several worlds captures most of it with a smaller change. Costs: more weight on the value network (held-out r2 about 0.67); no lookahead across turns except through the value network; a core search change that needs careful tests.
+
+Test plan, in order (huge change, so measured before it touches training):
+1. Measure: instrument one search to report the fraction of visits that land past the first reveal and the depth profile. If most visits already stay inside the current turn, the gain is smaller than it looks.
+2. Implement truncation at the first reveal (detect draws from an unseen pile and reshuffles at the engine's draw/shuffle choke points) with unit tests, plus multi-world self-play (the self-play runner currently hard-codes one world).
+3. Play strength with no training: gen 27 with truncated, multi-world search against gen 27 with today's search at the same sims (2000-game paired match).
+4. Only if it wins: a training campaign with it, compared on the fixed ladder against c33 (honest self-play alone), not on gate accepts.
+
+Step 1 result (2026-11-15, box, ca7632f `DZ_REVEAL_STATS`, `scripts/reveal_stats.py`): c31 gen 27, c32 self-play settings (1024 sims), 16 games, first 2000 batches (about 205k simulations each, so early and mid game only). A reveal is any deck shrinking (a draw from an unseen pile) or the state RNG advancing (a shuffle).
+
+| Search | Sims ending past the first reveal | Mean leaf depth | Mean depth of the first reveal | Leaves in the current turn / 1 / 2 / 3+ turns ahead | Buy-decision roots: past the reveal |
+|---|---|---|---|---|---|
+| Clairvoyant (c31/c32 self-play) | 99.4% | 12.7 | 1.9 | 1.0% / 20.2% / 37.0% / 41.8% | 99.9% (71% of sims) |
+| Honest, 1 world (c33 trial) | 96.3% | 10.9 | 1.9 | 5.6% / 28.9% / 33.8% / 31.8% | 99.9% (67% of sims) |
+
+Almost all search effort lands past a reveal, and the first reveal comes about two steps after the root: treasures are auto-played, so a buy ends the turn and the end-of-turn draw follows at once. Under truncation a buy decision becomes close to a one-step value-network comparison of the post-buy positions; within-turn action sequencing keeps its search. Two designs to compare in step 3: hard truncation at the first reveal (cheap; most of the 1024 sims would no longer be needed) and resampling at each reveal (every simulation that passes a draw or shuffle samples fresh hidden cards, so tree statistics average over draws while keeping lookahead, as information-set MCTS does).
+
+
+Step 2 (2026-11-16, uncommitted): `MctsChanceMode` in `src/v2/mcts/tree.h` (`selfplay.chance_mode`: off / truncate / resample; per-seat override `seat_chance_mode`; `--a-chance/--b-chance` in `scripts/c29_search_ladder.py`). A child whose transition reveals hidden cards (`mcts_transition_reveals`: any deck shrank or the shuffle RNG advanced) is a chance child and is never expanded. Truncate: one network evaluation, later visits back up the stored value with no network call. Resample: each visit re-determinizes the parent for the root player, re-applies the action and evaluates the fresh outcome, so the child's mean averages over draws. Unit tests `[chance]` in `tests/v2/test_mcts.cpp`. Step 3 started 01:00 UTC on the box (`/root/revealwork`): gen 27 truncate vs off and resample vs off, 1000 boards x 2 seats each, `per_decision`, 128 sims, `bench/chance/`.
+
+Step 3 results (gen 27 vs itself, 1000 boards x 2 seats, honest, 128 sims each side, no training):
+
+| A (chance handling) | vs B (today's search) | Score (paired SE) | Elo | Network evals, both sides | Wall |
+|---|---|---|---|---|---|
+| truncate | off | 0.466 +- 0.009 (901-1037-62) | -24 | 34.3M | 18 min |
+| resample | off | 0.480 +- 0.010 (928-1007-65) | -14 | 59.1M | 28 min |
+
+Both lose at equal simulation counts: truncate by 3.6 SE, resample by 2 SE. Truncate needs far fewer network calls (the off side of each match uses about 29.5M, so the truncate side used roughly 5M, about a sixth), because once every chance child at a buy root is evaluated the remaining simulations are free re-backups. Reading: with today's network, lookahead through one sampled future still beats the value head's one-step judgment; the single-world deep lines carry real information even though their draws are fictional. Caveats: gen 27's policy and value were trained on deep clairvoyant search targets, not on truncated search; 128 sims only (self-play uses 1024, where the off search goes deeper); and the comparison is at equal sims, not equal compute. Not yet tested: truncation at the second reveal (keeps the next turn's play), and resample with continued expansion below chance nodes (open-loop, ISMCTS-style).
+
 Ideas, cheapest first:
 
-1. **More search in the arena (no training).** The arena bot plays at 400 sims over 2 determinizations, less than self-play's 1024. Test gen 27 at 400 against gen 27 at 1600 and 3200 with the same hidden-information handling, a few hundred games each. If 1600 wins clearly, raise the arena budget; the cost is think time per move.
+1. **More search in the arena (no training).** The arena bot plays at 400 sims over 2 determinizations, less than self-play's 1024. Test gen 27 at 400 against gen 27 at 1600 and 3200 with the same hidden-information handling, a few hundred games each. If 1600 wins clearly, raise the arena budget; the cost is think time per move. **Done 2026-11-15 (see "Search budget under honest play" below): honest search is worth about +86 Elo over the raw policy and all of it is in by 100 sims; 200, 400 and 1024 sims add nothing measurable. More arena sims will not help; the arena could run at 100-200.**
 2. **Arena loss review.** gen 27 has 302 rated games (177-122-1). Classify the losses by where they turned, by opening and by kingdom, as the gen 45 review did (it found the Militia bug and the big-money gap).
 3. **Honest self-play (`determinize per_decision`).** Self-play search is clairvoyant: it sees hidden cards, including its own deck order, so the policy learns from searches that peeked while the arena bot and the gate cannot. It was planned for c31 and dropped before launch (it turns tree reuse off; its only runs, c20-c23, predate the November audit fixes). Measured cost on the c32 box (trial, 2026-11-15): self-play about 19.5 minutes against 13 (+50%), but the generation only 31.2 minutes against 28.4 (+10%). Only self-play slows: the gate already searches honestly, training is under a minute, and the 99% cut-off, the scripted-game fix and the faster server absorb most of the lost tree reuse. About 46 generations a day against 51, so 10 generations of c33 is roughly a 5-hour test. Cost, the main reason it was dropped from c31, is no longer a real objection. The same trial showed the clairvoyance gap directly: gen 27's search wins 80 of 102 scripted-bot games when it cannot see hidden cards, against 99 of 102 when it can. Caveat: game length, and so the cost, may shift as the network trains on honest data.
 4. **Better value targets.** Held-out value r2 is about 0.67 and value guides the search. `root_value_blend` is 0 (pure game outcome, noisy with shuffles); try 0.25-0.5.
 5. **More games or deeper search per generation (second-order).** 2048 games per generation now costs about 13 extra minutes and gives each candidate more varied data. Deeper self-play search gives better but fewer targets; c31's 512 -> 1024 change was bundled with three others and is unattributed. Searching deeply on a random subset of moves and cheaply on the rest (playout cap randomization) gets more value data for the same compute; it needs code.
+6. **Multi-world honest search in the native runner (code; added 2026-11-15).** `SelfPlayRunner`'s honest modes (`determinize per_decision` / `per_turn`) sample one hidden-information world per search; only the Python `DecisionSearcher` (the arena bot: 2 worlds, sims split between them) and the scripted scaffold (`scaffold_determinizations`) average several. So honest self-play, the gate and the search ladder all search a single sampled world, and the ladder's honest results describe a 1-world search, not the arena's 2-world one. Adding a K-world root aggregate to the native runner (sims split across K worlds, as `DecisionSearcher` does; tree reuse off for K > 1) would let honest self-play and gates search several worlds at self-play speed. Tested 2026-11-15/16 and **not worth doing**: 8 vs 2 worlds lost at 256 total sims (-31 Elo) and tied at 1024 (8 x 128 vs 2 x 512, -5 Elo), so a K-world native search would not beat one or two worlds. The honest-search ceiling is the determinization method (see "Search budget under honest play"); an information-set search is the structural alternative if search, not the network, is to carry hidden-information play.
 
 Suggested order: the arena sims test, then the loss review, then a c33 with honest self-play, a small root value blend and probably 2048 games, after a short cheap trial.
 
@@ -3529,6 +3563,73 @@ One generation of c33 (c32 with `determinize per_decision`, tree reuse off) from
 
 Next: the train-steps arms (`configs/run_c32_s160.json`, `_s240`, `_s160h`, 6 generations each, driver `scripts/box/arms_driver.sh` under supervisor `dominion-arms`, started 15:15 UTC), then 2000-game ladders of each arm's gen 6 candidate and c32 gen 6 against gen 27 (`scripts/box/ladder.py`). c32's gens 1-6 are the 80-step arm: same seed and generator, so the self-play games match until an arm gets an accept. Honest self-play (c33) after that.
 
+**Train-steps arms, 6 generations each (gate against gen 27, 800 games; all rejected):**
+
+| Gen | 80 steps (c32) | 160 steps | 240 steps |
+|---|---|---|---|
+| 1 | 0.496 | 0.468 | 0.481 |
+| 2 | 0.507 | 0.506 | 0.467 |
+| 3 | 0.459 | 0.449 | 0.484 |
+| 4 | 0.506 | 0.509 | 0.480 |
+| 5 | 0.490 | 0.497 | 0.470 |
+| 6 | 0.496 | 0.481 | 0.443 |
+| Mean | 0.492 | 0.485 | 0.471 |
+
+The 240-step arm is lowest in 4 of 6 generations and ends at 0.443; its training value loss falls 0.138 -> 0.120 (160-step arm: 0.140 -> 0.138) while training policy loss rises 0.717 -> 0.737, consistent with memorizing the buffer's value targets (about 2.1 samples per position). More steps per generation does not help at this learning rate; 160 is no better than 80. Half-learning-rate 160-step arm (`s160h`, 21:08-23:35 UTC): 0.494, 0.484, 0.456, then gen 4 **accepted** 0.529 (lower bound 0.515), the first accept since c31 gen 27; gens 5-6 against gen 4: 0.514, 0.489. Its training value loss stays higher (0.143-0.151), i.e. less memorization. One accept out of 24 arm-generations is weak evidence on its own, so the 2000-game ladders against gen 27 decide: gen 6 of each arm (`scripts/box/ladder.py`, started 23:35 UTC) plus s160h gen 4 (`/root/ladder_g4.sh`, queued after).
+
+Ladders, gen 6 of each arm against gen 27, 2000 games, same boards: s80 (c32) 0.511 +- 0.009 (989-945-66), s160 0.497 +- 0.010, s240 0.464 +- 0.010 (897-1043-60), s160h 0.520 +- 0.010 (1005-925-70). 240 steps is clearly worse (about -5 points against s80, 3.5 SE); s160h is the best but within one SE of s80.
+s160h gen 4 (the accepted candidate), same boards: 0.5025 +- 0.009 (972-962-66), so its 0.529 gate was noise. Conclusion: 80 steps, 160 steps and 160 steps at half lr are indistinguishable after 6 generations (all within 0.50-0.52 of gen 27); 240 steps is worse. Keep c32's 80 steps x full lr for c33. Jack chose s160h instead ("Do 160h"): c33 uses 160 steps at half lr.
+
+**c33 launched 2026-11-16 ~01:10 UTC** (supervisor `dominion-c33`, box main checkout fast-forwarded to ca7632f, smooth skill curve live): `configs/run_c33.json` = c32 + honest self-play + s160h recipe (160 steps, lr 7e-5, min_lr 2.5e-5), init BC R40B with its final 24k-step value head (Jack: keep it rather than refit), empty buffer.
+
+| Gen | Gate | vs | Wall (min) | Policy | Value | Entropy | Held-out value R2 | engine3 (100) |
+|---|---|---|---|---|---|---|---|---|
+| 1 | 0.605 acc | R40B | 29.4 | 0.811 | 0.166 | 0.727 | 0.605 | 70.7% |
+| 2 | 0.518 acc | 1 | 27.9 | 0.799 | 0.159 | 0.754 | 0.596 | 75.0% |
+| 3 | 0.499 | 2 | 28.1 | 0.798 | 0.157 | 0.761 | 0.636 | |
+| 4 | 0.491 | 2 | 28.2 | 0.797 | 0.154 | 0.765 | 0.645 | |
+| 5 | 0.543 acc | 2 | 26.7 | 0.797 | 0.154 | 0.769 | 0.627 | 74.0% |
+| 6 | 0.483 | 5 | 28.7 | 0.792 | 0.155 | 0.767 | 0.637 | |
+| 7 | 0.488 | 5 | 29.0 | 0.789 | 0.154 | 0.770 | 0.661 | |
+| 8 | 0.496 | 5 | 27.2 | 0.787 | 0.153 | 0.769 | 0.644 | |
+| 9 | 0.521 acc | 5 | 26.8 | 0.784 | 0.152 | 0.768 | 0.674 | 74.0% |
+| 10 | 0.482 | 9 | 30.5 | 0.787 | 0.152 | 0.773 | 0.640 | |
+
+Self-play is about 30% slower than c32's clairvoyant self-play (about 3,800 vs 5,000 games/hr, about 16 vs 12 min), offset by a gate about 3 min faster, so generations match c32 (about 28 min). Gen 10 checkpoint ladder: **c33 gen 9 vs c31 gen 27, 0.516 +- 0.010 (993-929-78)**, same boards as the train-steps ladders (c32 gen 6 0.511, s160h gen 6 0.520). Ten generations from BC with honest self-play matched and slightly passed the c31 line's best, which took 27 generations plus c30's and c29's before it.
+
 ### Skill-weight curve made continuous (2026-11-15, c19e5ba)
 
 Jack: "That discontinuity is bad". The policy weight rose from 0.02 at level 40 to 1.0 just below 50, then jumped to 3.0 at exactly 50. It now keeps rising from 1.0 at 50 to 3.0 at 55 and holds (`POLICY_WEIGHT_EXPERT_RAMP_END`). Most 50+ players sit at 50-52, so the 50+ share of policy weight falls from about half to 23%; effective policy rows are 580,619 on the level-1 corpus (was 698,790) and 336,122 on `tuples_all_40plus/train` (was 402,912). Applies to every future skill-weighted load (BC and the training anchor). Not deployed to the box's main checkout while the train-steps arms run, so they stay on c32's curve. The level-1 BC comparison was restarted under the new curve from the separate checkout `/root/gatetest` at 15:52 UTC; note it now differs from `bc_a` in both corpus and curve. Open: the c32 arms and c31/c32 runs used the old curve, so c33 (BC init under the new curve plus honest self-play) changes the anchor weighting too.
+
+### Level-1 BC, first pass: undertrained (2026-11-15)
+
+Two seeds of the bc_a recipe on the level-1 corpus (smooth curve) disagreed by 14 points against engine3 raw policy (2000 games, box): seed A 33.3%, seed B 18.9%; `bc_a` 30.9%, `bc_f100` 24.8% on the same boards. Seed A against `bc_a` with search (800 games): 0.499 +- 0.017 (378-379-43). Cause: early stopping on the total validation loss with patience 3 x 250 steps; the policy half was still falling about 0.01 per 500 steps (0.737 at 1k steps, 0.601 at 7k) while the flat, noisy value half tripped the stop at 7,250 (A) and 6,750 (B) steps, about 1.5 passes over 2.4M rows, at a constant learning rate. Fixed recipe (5980198, scripts only): stop on validation policy loss, patience 6 x 500 steps, cosine lr decay to 2% over 24k steps (`--select-on policy --lr-decay`). Rerun as `scripts/box/bc_fixed_job.sh`: ramp starting at 40 and at 45 (`--ramp-start`, new loader option `policy_ramp_start`), two seeds each, same evals. The first-pass ramp-45 job was cancelled before it started. Note that `bc_a` itself was trained with the old stopping rule, so it is probably undertrained too.
+
+**Fixed-recipe results (box, finished 19:55 UTC).** All four arms ran the full 24,000 steps (none early-stopped).
+
+| Arm | Ramp start | Seed | Val policy loss | Val accuracy (all / 50+) | Raw policy vs engine3 (2000) | Search vs `bc_a` (800) |
+|---|---|---|---|---|---|---|
+| R40A | 40 | 20261108 | 0.534 | 80.1% / 81.6% | 38.0% | 0.591 +- 0.018 (456-310-34) |
+| R40B | 40 | 20261109 | 0.551 | 80.1% / 81.7% | 38.4% | 0.613 +- 0.017 (480-300-20) |
+| R45A | 45 | 20261108 | 0.552 | 79.5% / 80.9% | 38.1% | 0.586 +- 0.017 (459-321-20) |
+| R45B | 45 | 20261109 | 0.564 | 79.6% / 81.4% | 38.7% | 0.597 +- 0.017 (468-313-19) |
+
+Reference on the same boards: `bc_a` 30.9%, `bc_f100` 24.8%, first-pass seeds 33.3% / 18.9%. The seed spread collapsed from 14 points to under 1, so the first-pass disagreement was undertraining. Every fixed arm beats `bc_a` by about 0.59-0.61 with search. Ramp 45 is no better than ramp 40 (mean 0.592 vs 0.602, within noise); keep 40. Policy-weighted val losses are not comparable across ramp starts (different weights). Value head: R40A's val value loss bottomed at about 0.327 near 12k steps and ended at 0.346, so the end-of-training value head is mildly overfit; the search match uses it and still wins.
+
+### Search budget under honest play (2026-11-15, local M1 Max)
+
+c31 gen 27 against itself with different budgets: `scripts/c29_search_ladder.py`, greedy, fresh trees, each side's tree scored only by its own network, `determinize per_decision` (one sampled world per search; the arena bot uses two, see plan item 6), 200 random base kingdoms each played in both seat orders (4 shards of 50 boards, seeds 20261115 + 1000 i, `--config configs/run_c31.json`). Results in `bench/c29_ladder/c31g27_*_honest_s*.json`.
+
+| Matchup | Games | Bigger budget W-L-T | Score (95%) | Elo |
+|---|---|---|---|---|
+| 400 sims vs raw policy | 400 | 246-149-5 | 0.621 +- 0.044 | +86 (+54 to +119) |
+| 400 vs 100 sims | 400 | 192-196-12 | 0.495 +- 0.043 | -3 |
+| 400 vs 200 sims | 400 | 197-186-17 | 0.514 +- 0.040 | +10 |
+| 1024 vs 400 sims | 400 | 190-197-13 | 0.491 +- 0.040 | -6 |
+
+- Honest search is worth about +86 Elo over the raw policy, and all of it is in by 100 sims; ten times the search adds nothing measurable. KataGo-style scaling (gains with every doubling into the thousands of visits) does not hold here. Likely causes, untested: each search believes one sampled world (fixed future draws), so more sims sharpen the plan for that world rather than cut hidden-information error; shuffles cap useful lookahead, leaving long-term judgement to a value head with r2 about 0.67; and a sharp prior keeps most visits on its first choice.
+- Arena consequence: the live switch to 1024 sims (12:42 UTC) buys nothing; 100-200 sims would play as well and move 5-10x faster.
+- Speed: one ladder process is search-bound (about 110% CPU, 22k evals/s with PyTorch MPS; the in-process MLX host backend was slower here, 16.7k, cause not established). Four processes on separate seeds reach about 42k evals/s together, about the Mac's self-play rate. `--backend mlx` / `--fp16` options were added to the ladder.
+- Clairvoyant control (20:25-20:39 UTC, same boards, `determinize off`): 1024 vs 100 sims went 277-113-10 over 400 games, **0.705 +- 0.041, about +152 Elo** (shards 0.670-0.735). With the true position, ten times the search is worth +150 Elo; honestly (one sampled world) the same step is worth nothing. The plateau is the hidden-information handling, not search depth itself. It also sizes the self-play/arena mismatch: c31/c32 self-play targets come from 1024-sim clairvoyant search, a depth benefit no honest player can use (plan items 3 and 6).
+- Sampled worlds (21:34-21:55 UTC, `scripts/worlds_duel.py`: batched `DecisionSearcher`, 4 processes x 50 games in flight, 200 random base boards x 2 seats, about 21 minutes for 400 games): **8 worlds vs 2 at 256 total sims (32 vs 128 sims per world) went 176-212-12, 0.455 +- 0.038, about -31 Elo** (`bench/worlds/w8_vs_w2_256.jsonl`). At a fixed small budget, more worlds dilute each world below the ~100 sims honest search needs, and that costs more than the extra sampling gains. Equal arena budget (2026-11-16 00:41-01:47 UTC, same boards, beside the live arena): **8 x 128 vs 2 x 512 (both 1024 sims) went 189-195-16, 0.492 +- 0.039, about -5 Elo** (`bench/worlds/w8_vs_w2_1024.jsonl`). More sampled worlds do not help at either budget, and neither does more depth per world: averaging more determinized searches does not remove what each one gets wrong (each plans as if it knew the hidden cards, then one move is chosen for all of them: strategy fusion). With the clairvoyant +152 Elo above, the honest-search ceiling is the determinization method itself. Levers that address it: training under hidden information (honest self-play, plan item 3) and a search that keeps one tree over the information set (ISMCTS-style), not more sims or worlds. Arena: 200-400 sims over 2 worlds should play as well as 1024.
+- The arena's exact search (2026-11-16 06:10-07:10 UTC, `scripts/worlds_duel.py --a-worlds 2 --b-worlds 2 --a-sims 1024 --b-sims 400`): **2 x 1024 vs 2 x 400 went 200-190-10, 0.512 +- 0.041, about +9 Elo** (`bench/worlds/w2_1024_vs_400.jsonl`). The 1-world ladder result holds for the arena's 2-world setup. Yet in the live arena gen 27 scored 0.724 over 76 games at 1024 sims against 0.593 over 301 at 400 (same mean opponent level, 44.4; about 2.2 SE apart). Open: whether deeper search gains against humans what it cannot gain against itself, or the gap is variance and time-of-day mix. Settle it in the arena (more 1024 games, or alternating 400/1024 blocks).

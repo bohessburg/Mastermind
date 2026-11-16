@@ -98,6 +98,9 @@ class LeaderboardEntry:
     converted_skill: float
     converted_deviation: float
     game_count: int
+    # Unnamed block of int32s the client appends to every row (see
+    # LEADERBOARD_TRAILING_INTS); kept verbatim so no wire field is dropped.
+    trailing_ints: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -146,12 +149,20 @@ def _read_nonnegative_count(reader: Reader, *, label: str, minimum_item_bytes: i
     return count
 
 
+# Since at least 2026-11-09 every leaderboard row ends with twelve further int32
+# values after ``gameCount``.  Their meaning is unknown; a payload that parses
+# exactly to its last byte with this width (12,525 rows across four rating
+# types, ranks 1..N) confirmed the count.
+LEADERBOARD_TRAILING_INTS = 12
+
+
 def decode_leaderboard_payload(payload: bytes) -> tuple[LeaderboardEntry, ...]:
     """Decode current inbound message 25, including all rating-type buckets.
 
     The client reads an enum-to-object map rather than the obsolete four-field
     ``RankedPlayer`` shape.  Each wire row is ``NamedId, rank, seven doubles,
-    gameCount``; the displayed rating/trend are ``level`` and ``levelChange``.
+    gameCount`` followed by ``LEADERBOARD_TRAILING_INTS`` int32 values; the
+    displayed rating/trend are ``level`` and ``levelChange``.
     """
 
     reader = Reader(payload)
@@ -167,8 +178,9 @@ def decode_leaderboard_payload(payload: bytes) -> tuple[LeaderboardEntry, ...]:
     entries: list[LeaderboardEntry] = []
     seen_types: set[int] = set()
     # NamedId is at least eight bytes (int + empty string length), followed by
-    # rank, seven doubles, and gameCount: 8 + 4 + 56 + 4 = 72 bytes.
-    minimum_entry_bytes = 72
+    # rank, seven doubles, gameCount, and the trailing ints:
+    # 8 + 4 + 56 + 4 + 4 * LEADERBOARD_TRAILING_INTS bytes.
+    minimum_entry_bytes = 72 + 4 * LEADERBOARD_TRAILING_INTS
     for _ in range(type_count):
         rating_type_ordinal = reader.s32()
         if not 0 <= rating_type_ordinal < len(RATING_TYPE_NAMES):
@@ -194,6 +206,7 @@ def decode_leaderboard_payload(payload: bytes) -> tuple[LeaderboardEntry, ...]:
             converted_skill = reader.f64()
             converted_deviation = reader.f64()
             game_count = reader.s32()
+            trailing_ints = tuple(reader.s32() for _ in range(LEADERBOARD_TRAILING_INTS))
             entries.append(
                 LeaderboardEntry(
                     player_id=player_id,
@@ -208,6 +221,7 @@ def decode_leaderboard_payload(payload: bytes) -> tuple[LeaderboardEntry, ...]:
                     converted_skill=converted_skill,
                     converted_deviation=converted_deviation,
                     game_count=game_count,
+                    trailing_ints=trailing_ints,
                 )
             )
     reader.finish()
@@ -233,6 +247,7 @@ def observation_documents(response: LeaderboardResponse) -> tuple[dict[str, obje
             "converted_skill": entry.converted_skill,
             "converted_deviation": entry.converted_deviation,
             "game_count": entry.game_count,
+            "trailing_ints": list(entry.trailing_ints),
         }
         for entry in response.entries
     )
@@ -320,6 +335,13 @@ class RatingsPoller(DominionCollector):
         try:
             entries = decode_leaderboard_payload(frame.payload)
         except ProtocolError as error:
+            # Only the public leaderboard message is saved, never other traffic.
+            dump = Path(self.args.ratings_root) / "runs" / "bad_leaderboard_payload.bin"
+            try:
+                dump.parent.mkdir(parents=True, exist_ok=True)
+                dump.write_bytes(frame.payload)
+            except OSError:
+                pass
             raise RecoverPage(f"malformed leaderboard response: {error}") from error
         self._pending_leaderboard = LeaderboardResponse(
             observed_at_utc=_utc_now(),

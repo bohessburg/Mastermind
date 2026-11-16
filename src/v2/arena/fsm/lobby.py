@@ -181,6 +181,8 @@ HOST_SELF_READY_SELECTOR = (
 )
 _PLAYERS_TITLE_PATTERN = re.compile(r"Players \((?P<seated>\d+)/(?P<seats>\d+)\)")
 _HOST_PLAYERS_NEEDED = 2
+_HOST_HOMEPAGE_RETRY_SECONDS = 60.0
+_HOST_HOMEPAGE_MAX_RETRIES = 3
 
 _RETURN_TO_HOMEPAGE = object()
 
@@ -342,8 +344,31 @@ class LobbyFSM:
         off, because the client's Ready is a toggle.
         """
         self._require_state(LobbyState.HOMEPAGE)
+        homepage_failures = 0
         while True:
-            entry = await self._wait_for_homepage_start_search_or_game()
+            try:
+                entry = await self._wait_for_homepage_start_search_or_game()
+            except LobbyError as error:
+                # A hosting session runs indefinitely, so a homepage that never
+                # rendered is retried in place instead of exiting the process.
+                # A logged-out page whose Login stays disabled does not recover
+                # by reloading (live 2026-11-15); after a few tries, exit so the
+                # supervisor relaunches a fresh browser.
+                homepage_failures += 1
+                if homepage_failures >= _HOST_HOMEPAGE_MAX_RETRIES:
+                    raise
+                LOGGER.warning("host: %s; retrying in %.0fs", error, _HOST_HOMEPAGE_RETRY_SECONDS)
+                if self.keepalive is not None:
+                    self.keepalive()
+                await self.sleep(_HOST_HOMEPAGE_RETRY_SECONDS)
+                self._login_seen_at = None
+                self._login_submitted_at = None
+                self._login_submits = 0
+                try:
+                    await self._reload_homepage("host homepage retry")
+                except LobbyError as reload_error:
+                    LOGGER.warning("host: %s", reload_error)
+                continue
             if entry is None:
                 LOGGER.info("host: retained in-play board at %.3f", self.clock())
                 self._transition(LobbyState.IN_GAME)

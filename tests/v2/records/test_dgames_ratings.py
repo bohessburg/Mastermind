@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import pytest
 
+from pathlib import Path
+
 from scripts.dgames_ratings import (
     LEADERBOARD,
+    LEADERBOARD_TRAILING_INTS,
     LeaderboardEntry,
     decode_leaderboard_payload,
     encode_leaderboard_request,
@@ -33,11 +36,14 @@ def _write_entry(
     converted_skill: float = 6.2,
     converted_deviation: float = 0.4,
     game_count: int = 42,
+    trailing: tuple[int, ...] = tuple(range(1, LEADERBOARD_TRAILING_INTS + 1)),
 ) -> None:
     writer.s32(player_id).string(name).s32(rank)
     writer.f64(level).f64(level_change)
     writer.f64(skill).f64(deviation).f64(volatility)
     writer.f64(converted_skill).f64(converted_deviation).s32(game_count)
+    for value in trailing:
+        writer.s32(value)
 
 
 def _observation(
@@ -140,9 +146,33 @@ def test_current_leaderboard_payload_decoder_handles_typed_map_and_full_rows() -
         converted_skill=6.6,
         converted_deviation=0.1,
         game_count=99,
+        trailing_ints=tuple(range(1, LEADERBOARD_TRAILING_INTS + 1)),
     )
     assert decoded[1].player_name == "Bob"
     assert decoded[2].rating == 5.9
+
+
+def test_leaderboard_row_without_the_trailing_int_block_fails_loudly() -> None:
+    """A layout that drifts again must raise, never append misparsed rows."""
+
+    writer = Writer().s32(1).s32(0).s32(2)
+    _write_entry(writer, player_id=1, name="Alice", rank=1, level=6.4, level_change=0.2, trailing=())
+    _write_entry(writer, player_id=2, name="Bob", rank=2, level=6.1, level_change=-0.1, trailing=())
+    with pytest.raises(ProtocolError):
+        decode_leaderboard_payload(writer.build())
+
+
+CAPTURED_PAYLOAD = Path("data/dominion_games/ratings/runs/bad_leaderboard_payload.bin")
+
+
+@pytest.mark.skipif(not CAPTURED_PAYLOAD.exists(), reason="no captured leaderboard payload on this machine")
+def test_captured_real_leaderboard_payload_decodes_to_the_last_byte() -> None:
+    entries = decode_leaderboard_payload(CAPTURED_PAYLOAD.read_bytes())
+    assert len(entries) > 1000
+    two_player = [e for e in entries if e.rating_type == "RATINGS_2P"]
+    assert [e.rank for e in two_player[:5]] == [1, 2, 3, 4, 5]
+    assert all(0.0 <= e.rating < 100.0 for e in entries)
+    assert all(len(e.trailing_ints) == LEADERBOARD_TRAILING_INTS for e in entries)
 
 
 def test_leaderboard_request_has_current_type_count_flag_order() -> None:

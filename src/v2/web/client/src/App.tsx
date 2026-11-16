@@ -708,7 +708,6 @@ function GameOverOverlay({
 function JoinScreen({ onJoin }: { onJoin: (credentials: Credentials) => void }) {
   const [sessionId, setSessionId] = useState('');
   const [seatToken, setSeatToken] = useState('');
-  const [mode, setMode] = useState<'human-bot' | 'human-nnmcts'>('human-bot');
   const [kingdomMode, setKingdomMode] = useState<'preset' | 'random'>('preset');
   const [seed, setSeed] = useState('2026');
   const [created, setCreated] = useState<CreatedSession | undefined>();
@@ -716,8 +715,7 @@ function JoinScreen({ onJoin }: { onJoin: (credentials: Credentials) => void }) 
 
   async function createSession() {
     setError(undefined);
-    const seats: SeatKind[] =
-      mode === 'human-bot' ? ['human', 'bot:engine3'] : ['human', 'bot:nnmcts'];
+    const seats: SeatKind[] = ['human', 'bot:nnmcts'];
     const response = await fetch('/api/session', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -747,18 +745,6 @@ function JoinScreen({ onJoin }: { onJoin: (credentials: Credentials) => void }) 
       <section className="join-panel">
         <h1>DominionZero v2</h1>
         <div className="create-row">
-          <label>
-            Seat config
-            <select
-              value={mode}
-              onChange={(event) =>
-                setMode(event.target.value as 'human-bot' | 'human-nnmcts')
-              }
-            >
-              <option value="human-bot">Human vs EngineBot (scripted)</option>
-              <option value="human-nnmcts">Human vs neural net + search</option>
-            </select>
-          </label>
           <label>
             Kingdom
             <select

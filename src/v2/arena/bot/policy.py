@@ -277,6 +277,11 @@ def choose_nnmcts_action(
     while not searcher.done():
         obs, masks = searcher.collect_leaves()
         if obs.shape[0] == 0:
+            # A searcher that is not done but has no leaf to evaluate spun here
+            # for 28 minutes on 2026-11-16 (game 185997292, a buy with 10
+            # Estates discarded); the cap must hold on this path too.
+            if wall_clock_cap is not None and time.monotonic() - started_at >= wall_clock_cap:
+                return _first_legal_action(game)
             continue
         with torch.no_grad():
             logits, values = policy.evaluate(
