@@ -14,7 +14,7 @@ import re
 from abc import ABC, abstractmethod
 from collections import Counter
 from dataclasses import dataclass
-from itertools import permutations, product
+from itertools import permutations
 from typing import Any, Awaitable, Callable, Iterable, Sequence
 
 import dominion_v2_py as dz
@@ -1737,6 +1737,11 @@ def _option_index(action: int) -> int:
     return action - int(dz.A_OPTION_BASE)
 
 
+# Enough alternatives for any recorded answer in practice, without the
+# combinatorial blow-up of identical copies.
+_MAX_CARD_ASSIGNMENTS = 1024
+
+
 def _card_assignments(
     actions: tuple[int, ...],
     offered: tuple[str, ...],
@@ -1757,13 +1762,39 @@ def _card_assignments(
             )
         choices.append(matching)
 
-    assignments = tuple(
-        candidate
-        for candidate in product(*choices)
-        if len(set(candidate)) == len(candidate)
-    )
-    if not assignments:
+    # Every action of one definition matches the same copies, so an injective
+    # assignment exists exactly when no definition is asked for more copies
+    # than are offered.  Check that by counting, then walk the assignments in
+    # product order (the first one is the same as before) and stop at a cap:
+    # filtering the full product enumerated 12**12 candidates for a 12-Copper
+    # autoplay and hung the live bot (games 185997292, 186003425).
+    demand: dict[tuple[int, ...], int] = {}
+    for matching in choices:
+        demand[matching] = demand.get(matching, 0) + 1
+    if any(count > len(matching) for matching, count in demand.items()):
         raise ActionMappingError("card actions reuse an unavailable offered copy")
+    assignments: list[tuple[int, ...]] = []
+    used: set[int] = set()
+    current: list[int] = []
+
+    def extend(position: int) -> None:
+        if len(assignments) >= _MAX_CARD_ASSIGNMENTS:
+            return
+        if position == len(choices):
+            assignments.append(tuple(current))
+            return
+        for index in choices[position]:
+            if index in used:
+                continue
+            used.add(index)
+            current.append(index)
+            extend(position + 1)
+            current.pop()
+            used.discard(index)
+            if len(assignments) >= _MAX_CARD_ASSIGNMENTS:
+                return
+
+    extend(0)
     return _unique(assignments)
 
 

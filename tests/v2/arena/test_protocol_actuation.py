@@ -184,3 +184,27 @@ def test_militia_question_50_is_one_protocol_frame_without_dom_actuation() -> No
         .bytes(encode_answer(50, (3, 4), auto_played=False))
         .build()
     ]
+
+
+def test_buy_phase_autoplay_of_many_identical_treasures_maps_quickly() -> None:
+    """Twelve Coppers used to enumerate 12**12 assignments and hang the live bot."""
+    import time
+
+    from src.v2.arena.actuate import clicks
+
+    treasures = ("1:0:Copper",) * 2 + ("1:0:Silver",) * 2 + ("1:0:Copper",) * 10
+    offered = ("0:Copper", "0:Silver", "0:Province", *treasures, "2:AUTOPLAY_TREASURES")
+    decision = PendingDecisionSnapshot(
+        question_index=311,
+        decision_type="COMPLEX_OR",
+        question_id="GAME_BUY_PHASE",
+        offered=offered,
+        minimum=0,
+        maximum=3,
+        association=None,
+    )
+    actions = tuple(int(dz.A_PLAY_BASE) + clicks._offered_def(value) for value in treasures)
+    started = time.monotonic()
+    answers = possible_answer_indices(actions, decision)
+    assert time.monotonic() - started < 1.0
+    assert answers == ((2, 0),)
