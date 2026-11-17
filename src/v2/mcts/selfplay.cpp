@@ -948,7 +948,20 @@ SelfPlayRunner::SelfPlayRunner(const SelfPlayConfig& config)
     if (!(config_.temp_final >= 0.0F) || !std::isfinite(config_.temp_final)) {
         throw std::invalid_argument("SelfPlayConfig.temp_final must be finite and non-negative");
     }
-    const bool per_seat_sims = config_.seat_sims[0] != 0U || config_.seat_sims[1] != 0U;
+    if (config_.worlds > 64U || config_.seat_worlds[0] > 64U || config_.seat_worlds[1] > 64U) {
+        throw std::invalid_argument("SelfPlayConfig.worlds / seat_worlds must be at most 64");
+    }
+    if ((config_.worlds > 1U || config_.seat_worlds[0] > 1U || config_.seat_worlds[1] > 1U)
+        && (config_.determinize == SelfPlayDeterminizeMode::Off || config_.tree_reuse)) {
+        throw std::invalid_argument("SelfPlayConfig.worlds > 1 needs determinize on and tree_reuse off");
+    }
+    if (static_cast<std::uint8_t>(config_.chance_mode) > static_cast<std::uint8_t>(MctsChanceMode::Resample)
+        || config_.seat_chance_mode[0] > 3U || config_.seat_chance_mode[1] > 3U) {
+        throw std::invalid_argument("SelfPlayConfig.chance_mode / seat_chance_mode is invalid");
+    }
+    const bool per_seat_sims = config_.seat_sims[0] != 0U || config_.seat_sims[1] != 0U
+        || config_.seat_chance_mode[0] != 0U || config_.seat_chance_mode[1] != 0U
+        || config_.seat_worlds[0] != 0U || config_.seat_worlds[1] != 0U;
     if (config_.tree_reuse && (per_seat_sims || config_.independent_search)) {
         // A retained subtree carries the previous mover's search effort (and,
         // with two models, the other model's evaluations) into this seat's
@@ -1064,6 +1077,7 @@ SelfPlayRunner::SelfPlayRunner(const SelfPlayConfig& config)
     mcts_config_.forced_playouts = config_.forced_playouts;
     mcts_config_.forced_playouts_k = config_.forced_playouts_k;
     mcts_config_.fpu_reduction = config_.fpu_reduction;
+    mcts_config_.chance_mode = config_.chance_mode;
     if (config_.scaled_terminal_values
         && config_.value_target != SelfPlayValueTarget::Outcome) {
         mcts_config_.terminal_margin_scale = config_.margin_scale;
@@ -1378,7 +1392,7 @@ std::uint32_t SelfPlayRunner::collect_leaves(std::uint32_t max_batch) noexcept {
             ? game.search_player
             : leaf.player;
         pending.model_id = route_seat == 0U ? game.slot.seat0_model_id : game.slot.seat1_model_id;
-        pending.root = leaf.node == 0U;
+        pending.root = game.mcts.is_root(leaf.node);
         leaf_players_[pending_count_] = leaf.player;
         leaf_route_seats_[pending_count_] = route_seat;
         leaf_model_ids_[pending_count_] = pending.model_id;
@@ -1510,7 +1524,7 @@ SelfPlaySearchStats SelfPlayRunner::search_stats(std::uint32_t index) const noex
     stats.sims_target = game.sims_target;
     stats.sims_started = game.sims_started;
     stats.sims_completed = game.sims_completed;
-    stats.root_visits = game.mcts.node_count() == 0U ? 0U : game.mcts.node(0U).visits;
+    stats.root_visits = game.mcts.node_count() == 0U ? 0U : game.mcts.root_total_visits();
     stats.search_active = game.search_active;
     return stats;
 }
@@ -1582,13 +1596,25 @@ void SelfPlayRunner::start_search(GameSlot& game) noexcept {
         const std::uint32_t seat = player < MAX_PLAYERS ? config_.seat_sims[player] : 0U;
         game.mcts.set_sims_per_move(seat != 0U ? seat : base);
     }
+    {
+        const std::uint8_t seat_mode = player < MAX_PLAYERS ? config_.seat_chance_mode[player] : 0U;
+        game.mcts.set_chance_mode(seat_mode != 0U
+            ? static_cast<MctsChanceMode>(seat_mode - 1U)
+            : config_.chance_mode);
+    }
     bool reused = false;
     if (config_.determinize != SelfPlayDeterminizeMode::Off) {
         // Search only in a freshly sampled world.  The live state remains the
         // source of records and receives the selected root action below.
-        GameState sampled = game.state;
-        determinize(
-            sampled,
+        // Tree reuse was disabled at construction: a retained child would
+        // encode a prior sampled world and cannot be hash-checked against the
+        // real state's hidden zones. Several worlds (SelfPlayConfig.worlds)
+        // split this search's simulations; world 0 is the single-world sample.
+        const std::uint8_t seat_worlds = player < MAX_PLAYERS ? config_.seat_worlds[player] : 0U;
+        const std::uint32_t worlds = seat_worlds != 0U ? seat_worlds : (config_.worlds == 0U ? 1U : config_.worlds);
+        game.mcts.reset_worlds(
+            game.state,
+            worlds,
             player,
             selfplay_determinization_seed(
                 game.seed,
@@ -1596,10 +1622,6 @@ void SelfPlayRunner::start_search(GameSlot& game) noexcept {
                 game.move_index,
                 game.state.turn_counter,
                 config_.determinize));
-        // Tree reuse was disabled at construction: a retained child would
-        // encode a prior sampled world and cannot be hash-checked against the
-        // real state's hidden zones.
-        game.mcts.reset(sampled, player);
     } else {
         reused = config_.tree_reuse
             && game.mcts.adopt_retained_root(game.state, player);
@@ -1973,29 +1995,36 @@ void selfplay_pruned_root_visit_policy(
         return;
     }
 
-    const MctsNode& root = search.node(0U);
-    if (root.first_child == MCTS_NULL) {
+    if (search.node(0U).first_child == MCTS_NULL) {
         return;
     }
     const Action best_action = search.best_root_action();
-    const std::uint32_t total_visits = root.visits;
+    // Forced-playout quotas are per root: with several worlds each root ran
+    // its own forced playouts against its own visit total.
+    const std::uint32_t worlds = search.world_count();
+    float retained_by_action[ACTION_SPACE_SIZE]{};
     double retained_sum = 0.0;
-    for (std::uint32_t child_index = root.first_child; child_index != MCTS_NULL;
-         child_index = search.node(child_index).next_sibling) {
-        const MctsNode& child = search.node(child_index);
-        std::uint32_t retained = child.visits;
-        if (child.action_from_parent != best_action) {
-            // Recompute rather than incrementally track quotas. Because root
-            // visits only grow, this final quota can slightly exceed what was
-            // actually forced during search; that upper-bound approximation is
-            // simpler and matches the spirit of KataGo's published rule.
-            const std::uint32_t forced = mcts_forced_playout_visits(
-                child.prior,
-                total_visits,
-                forced_playouts_k);
-            retained = child.visits > forced ? child.visits - forced : 0U;
+    for (std::uint32_t r = 0; r < worlds && r < search.node_count(); ++r) {
+        const MctsNode& root = search.node(r);
+        const std::uint32_t total_visits = root.visits;
+        for (std::uint32_t child_index = root.first_child; child_index != MCTS_NULL;
+             child_index = search.node(child_index).next_sibling) {
+            const MctsNode& child = search.node(child_index);
+            std::uint32_t retained = child.visits;
+            if (child.action_from_parent != best_action) {
+                // Recompute rather than incrementally track quotas. Because root
+                // visits only grow, this final quota can slightly exceed what was
+                // actually forced during search; that upper-bound approximation is
+                // simpler and matches the spirit of KataGo's published rule.
+                const std::uint32_t forced = mcts_forced_playout_visits(
+                    child.prior,
+                    total_visits,
+                    forced_playouts_k);
+                retained = child.visits > forced ? child.visits - forced : 0U;
+            }
+            retained_by_action[child.action_from_parent] += static_cast<float>(retained);
+            retained_sum += static_cast<double>(retained);
         }
-        retained_sum += static_cast<double>(retained);
     }
     if (retained_sum <= 0.0) {
         // The raw-policy fallback above is already normalized when no child
@@ -2004,18 +2033,11 @@ void selfplay_pruned_root_visit_policy(
     }
 
     const float scale = static_cast<float>(1.0 / retained_sum);
-    for (std::uint32_t child_index = root.first_child; child_index != MCTS_NULL;
+    const MctsNode& root0 = search.node(0U);
+    for (std::uint32_t child_index = root0.first_child; child_index != MCTS_NULL;
          child_index = search.node(child_index).next_sibling) {
-        const MctsNode& child = search.node(child_index);
-        std::uint32_t retained = child.visits;
-        if (child.action_from_parent != best_action) {
-            const std::uint32_t forced = mcts_forced_playout_visits(
-                child.prior,
-                total_visits,
-                forced_playouts_k);
-            retained = child.visits > forced ? child.visits - forced : 0U;
-        }
-        out[child.action_from_parent] = static_cast<float>(retained) * scale;
+        const Action action = search.node(child_index).action_from_parent;
+        out[action] = retained_by_action[action] * scale;
     }
 }
 

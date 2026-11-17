@@ -1,0 +1,39 @@
+[c31g27_1024_vs_400_honest_s0] device=mps backend=torch pairs=50 chunk=50 A=checkpoints/remote/campaign31/gen_0027.pt sims=1024 zero_v=False | B=checkpoints/remote/campaign31/gen_0027.pt sims=400 zero_v=False | determinize=per_decision cross_route=False tree_reuse=False opening_temp=False leaves_in_flight=8 (min sims/leaf 32)
+[c31g27_1024_vs_400_honest_s0] .. 0/100 games  8596 evals/s  30s
+[c31g27_1024_vs_400_honest_s0] .. 0/100 games  9868 evals/s  60s
+[c31g27_1024_vs_400_honest_s0] .. 0/100 games  10299 evals/s  90s
+[c31g27_1024_vs_400_honest_s0] .. 0/100 games  10521 evals/s  120s
+[c31g27_1024_vs_400_honest_s0] .. 0/100 games  10664 evals/s  150s
+[c31g27_1024_vs_400_honest_s0] .. 0/100 games  10746 evals/s  180s
+[c31g27_1024_vs_400_honest_s0] .. 0/100 games  10832 evals/s  210s
+[c31g27_1024_vs_400_honest_s0] .. 2/100 games  10904 evals/s  240s
+[c31g27_1024_vs_400_honest_s0] .. 3/100 games  10945 evals/s  270s
+[c31g27_1024_vs_400_honest_s0] .. 5/100 games  11009 evals/s  300s
+[c31g27_1024_vs_400_honest_s0] .. 7/100 games  11046 evals/s  330s
+[c31g27_1024_vs_400_honest_s0] .. 13/100 games  11028 evals/s  360s
+[c31g27_1024_vs_400_honest_s0] .. 24/100 games  10896 evals/s  390s
+[c31g27_1024_vs_400_honest_s0] .. 31/100 games  10752 evals/s  420s
+[c31g27_1024_vs_400_honest_s0] .. 40/100 games  10478 evals/s  450s
+[c31g27_1024_vs_400_honest_s0] .. 47/100 games  10042 evals/s  480s
+[c31g27_1024_vs_400_honest_s0] .. 49/100 games  9533 evals/s  510s
+[c31g27_1024_vs_400_honest_s0] .. 50/100 games  9174 evals/s  540s
+[c31g27_1024_vs_400_honest_s0] .. 50/100 games  9449 evals/s  570s
+[c31g27_1024_vs_400_honest_s0] .. 50/100 games  9551 evals/s  600s
+[c31g27_1024_vs_400_honest_s0] .. 50/100 games  9639 evals/s  630s
+[c31g27_1024_vs_400_honest_s0] .. 50/100 games  9710 evals/s  660s
+[c31g27_1024_vs_400_honest_s0] .. 51/100 games  9774 evals/s  690s
+[c31g27_1024_vs_400_honest_s0] .. 51/100 games  9830 evals/s  720s
+[c31g27_1024_vs_400_honest_s0] .. 51/100 games  9888 evals/s  750s
+[c31g27_1024_vs_400_honest_s0] .. 55/100 games  9936 evals/s  780s
+[c31g27_1024_vs_400_honest_s0] .. 58/100 games  9967 evals/s  810s
+[c31g27_1024_vs_400_honest_s0] .. 63/100 games  9985 evals/s  840s
+[c31g27_1024_vs_400_honest_s0] .. 66/100 games  9981 evals/s  870s
+[c31g27_1024_vs_400_honest_s0] .. 74/100 games  9956 evals/s  900s
+[c31g27_1024_vs_400_honest_s0] .. 81/100 games  9906 evals/s  930s
+[c31g27_1024_vs_400_honest_s0] .. 85/100 games  9826 evals/s  960s
+[c31g27_1024_vs_400_honest_s0] .. 89/100 games  9724 evals/s  990s
+[c31g27_1024_vs_400_honest_s0] .. 95/100 games  9571 evals/s  1020s
+[c31g27_1024_vs_400_honest_s0] .. 98/100 games  9380 evals/s  1050s
+[c31g27_1024_vs_400_honest_s0] .. 99/100 games  9152 evals/s  1080s
+[c31g27_1024_vs_400_honest_s0] 50/50 pairs  A 48W-51L-1T score=0.485±0.043  332 games/hr  9133 evals/s  1083s
+[c31g27_1024_vs_400_honest_s0] DONE A 48W-51L-1T score=0.485 ci95=[0.401,0.569] elo=-10 seat0=0.595 non_greedy=0.0% turns=33.5 trunc=0 1083.0s

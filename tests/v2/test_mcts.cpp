@@ -2,6 +2,7 @@
 #include "v2/mcts/selfplay.h"
 
 #include "v2/core/actions.h"
+#include "v2/core/determinize.h"
 #include "v2/core/game.h"
 #include "v2/core/score.h"
 #include "v2/core/setup.h"
@@ -11,6 +12,7 @@
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdint>
@@ -1170,4 +1172,292 @@ TEST_CASE("v2 MCTS child after an attack is owned by the defender", "[v2][mcts][
         }
     }
     REQUIRE(found);
+}
+
+namespace {
+
+struct ChanceSearchCounts {
+    std::uint32_t evaluations = 0;
+    std::uint32_t free_backups = 0;
+};
+
+// Drives an external-evaluation search with uniform priors and a fixed value,
+// counting network evaluations versus simulations finished without one.
+ChanceSearchCounts run_chance_search(
+    Mcts& search,
+    std::uint32_t simulations,
+    Xoshiro256pp& rng,
+    std::uint64_t* chance_hashes = nullptr,
+    std::uint32_t* chance_hash_count = nullptr,
+    std::uint32_t chance_node = MCTS_NULL) {
+    ChanceSearchCounts counts{};
+    for (std::uint32_t simulation = 0U; simulation < simulations; ++simulation) {
+        MctsPendingLeaf leaf{};
+        if (!search.collect_external_leaf(leaf)) {
+            REQUIRE_FALSE(leaf.collided);
+            ++counts.free_backups;
+            continue;
+        }
+        if (chance_hashes != nullptr && leaf.node == chance_node) {
+            chance_hashes[(*chance_hash_count)++] = mcts_state_hash(search.state_for(leaf.state_index));
+        }
+        ++counts.evaluations;
+        search.provide_external_evaluation(leaf, 0.1F, nullptr, rng);
+    }
+    return counts;
+}
+
+[[nodiscard]] MctsConfig chance_config(MctsChanceMode mode) {
+    MctsConfig config{};
+    config.sims_per_move = 400U;
+    config.determinizations = 1U;
+    config.max_tree_nodes = 8192U;
+    config.rollout_policy = MctsRolloutPolicy::External;
+    config.prune_treasure_plays = true;
+    config.chance_mode = mode;
+    return config;
+}
+
+} // namespace
+
+TEST_CASE("v2 MCTS transition reveal detection", "[v2][mcts][chance]") {
+    GameState state = Game::new_game(Setup{}, 77U);
+    // Play the opening turn to its end; some step along it must draw the
+    // next hand (deck shrinks) and steps before it must not.
+    bool saw_reveal = false;
+    const std::uint16_t turn = state.turn_counter;
+    std::uint16_t guard = 0;
+    while (state.turn_counter == turn && guard++ < 200U) {
+        ActionMask legal{};
+        REQUIRE(Game::legal_actions(state, legal) > 0);
+        Action action = legal.nth_set(0U);
+        if (legal.test(A_PASS)) {
+            action = A_PASS;
+        }
+        GameState next = state;
+        (void)Game::step(next, action);
+        const bool reveals = mcts_transition_reveals(state, next);
+        if (next.turn_counter != turn) {
+            REQUIRE(reveals);  // cleanup draws five cards
+        }
+        saw_reveal = saw_reveal || reveals;
+        state = next;
+    }
+    REQUIRE(saw_reveal);
+    REQUIRE_FALSE(mcts_transition_reveals(state, state));
+}
+
+TEST_CASE("v2 MCTS chance mode off marks no chance children", "[v2][mcts][chance]") {
+    Mcts search(chance_config(MctsChanceMode::Off));
+    search.reset(Game::new_game(Setup{}, 91U), 0U);
+    Xoshiro256pp rng = Xoshiro256pp::seeded(5U);
+    const ChanceSearchCounts counts = run_chance_search(search, 400U, rng);
+    for (std::uint32_t i = 0; i < search.node_count(); ++i) {
+        REQUIRE_FALSE(search.node(i).chance);
+    }
+    REQUIRE(counts.evaluations > 0U);
+}
+
+TEST_CASE("v2 MCTS truncate stops every simulation at the first reveal", "[v2][mcts][chance]") {
+    Mcts search(chance_config(MctsChanceMode::Truncate));
+    const GameState root = Game::new_game(Setup{}, 91U);
+    search.reset(root, 0U);
+    Xoshiro256pp rng = Xoshiro256pp::seeded(5U);
+    const ChanceSearchCounts counts = run_chance_search(search, 400U, rng);
+
+    std::uint32_t chance_nodes = 0U;
+    for (std::uint32_t i = 1; i < search.node_count(); ++i) {
+        const MctsNode& node = search.node(i);
+        const MctsNode& parent = search.node(node.parent);
+        // A node's transition is a chance one exactly when it reveals.
+        REQUIRE(node.chance == (!node.terminal
+            && mcts_transition_reveals(search.state_for(parent.state_index), search.state_for(node.state_index))));
+        // Nothing is ever built below a chance child.
+        REQUIRE_FALSE(parent.chance);
+        if (node.chance) {
+            ++chance_nodes;
+            REQUIRE(node.first_child == MCTS_NULL);
+        }
+    }
+    REQUIRE(chance_nodes > 0U);
+    // Revisits of an evaluated chance child back up its stored value with no
+    // network call, and the stored mean is exactly the one evaluation.
+    REQUIRE(counts.free_backups > 0U);
+    REQUIRE(counts.evaluations + counts.free_backups == 400U);
+    for (std::uint32_t i = 1; i < search.node_count(); ++i) {
+        const MctsNode& node = search.node(i);
+        if (node.chance && node.visits > 0U) {
+            REQUIRE(node.value_sum / static_cast<float>(node.visits) == Catch::Approx(0.1F).margin(1e-5));
+        }
+    }
+    REQUIRE(search.total_virtual_loss() == 0.0F);
+}
+
+TEST_CASE("v2 MCTS resample draws a fresh outcome on each chance visit", "[v2][mcts][chance]") {
+    // Find a chance child under Truncate, then search the same root under
+    // Resample and record the evaluated state at that node on every visit.
+    const GameState root = Game::new_game(Setup{}, 91U);
+    Mcts search(chance_config(MctsChanceMode::Resample));
+    search.reset(root, 0U);
+    Xoshiro256pp rng = Xoshiro256pp::seeded(5U);
+    (void)run_chance_search(search, 200U, rng);
+    std::uint32_t target = MCTS_NULL;
+    for (std::uint32_t i = 1; i < search.node_count(); ++i) {
+        if (search.node(i).chance && (target == MCTS_NULL || search.node(i).visits > search.node(target).visits)) {
+            target = i;
+        }
+    }
+    REQUIRE(target != MCTS_NULL);
+    std::uint64_t hashes[600]{};
+    std::uint32_t hash_count = 0U;
+    const ChanceSearchCounts counts = run_chance_search(search, 600U, rng, hashes, &hash_count, target);
+    REQUIRE(counts.free_backups == 0U);  // every chance visit is a fresh evaluation
+    REQUIRE(hash_count >= 3U);
+    std::uint32_t distinct = 0U;
+    for (std::uint32_t i = 0; i < hash_count; ++i) {
+        bool seen = false;
+        for (std::uint32_t j = 0; j < i && !seen; ++j) {
+            seen = hashes[j] == hashes[i];
+        }
+        distinct += seen ? 0U : 1U;
+    }
+    REQUIRE(distinct >= 2U);
+    for (std::uint32_t i = 1; i < search.node_count(); ++i) {
+        if (search.node(i).chance) {
+            REQUIRE(search.node(i).first_child == MCTS_NULL);
+        }
+    }
+    REQUIRE(search.total_virtual_loss() == 0.0F);
+}
+
+namespace {
+
+[[nodiscard]] MctsConfig worlds_config() {
+    MctsConfig config{};
+    config.sims_per_move = 400U;
+    config.determinizations = 1U;
+    config.max_tree_nodes = 8192U;
+    config.rollout_policy = MctsRolloutPolicy::External;
+    config.prune_treasure_plays = true;
+    return config;
+}
+
+// Sequential external search with prior-free uniform expansion and a value
+// that depends on the leaf state, so different worlds back up different values.
+void run_world_search(Mcts& search, std::uint32_t simulations, Xoshiro256pp& rng) {
+    for (std::uint32_t simulation = 0U; simulation < simulations; ++simulation) {
+        MctsPendingLeaf leaf{};
+        if (!search.collect_external_leaf(leaf)) {
+            REQUIRE_FALSE(leaf.collided);
+            continue;
+        }
+        const float value = static_cast<float>(mcts_state_hash(search.state_for(leaf.state_index)) % 1000U) / 1000.0F - 0.5F;
+        search.provide_external_evaluation(leaf, value, nullptr, rng);
+    }
+}
+
+} // namespace
+
+TEST_CASE("v2 MCTS one world matches determinize plus reset", "[v2][mcts][worlds]") {
+    const GameState live = Game::new_game(Setup{}, 314U);
+    Mcts single(worlds_config());
+    GameState sampled = live;
+    determinize(sampled, 0U, 99U);
+    single.reset(sampled, 0U);
+    Mcts worlds(worlds_config());
+    worlds.reset_worlds(live, 1U, 0U, 99U);
+    REQUIRE(worlds.world_count() == 1U);
+    Xoshiro256pp rng_a = Xoshiro256pp::seeded(7U);
+    Xoshiro256pp rng_b = Xoshiro256pp::seeded(7U);
+    run_world_search(single, 300U, rng_a);
+    run_world_search(worlds, 300U, rng_b);
+    float policy_a[ACTION_SPACE_SIZE]{};
+    float policy_b[ACTION_SPACE_SIZE]{};
+    single.root_visit_policy(policy_a, 1.0F);
+    worlds.root_visit_policy(policy_b, 1.0F);
+    for (Action action = 0; action < ACTION_SPACE_SIZE; ++action) {
+        REQUIRE(policy_a[action] == policy_b[action]);
+    }
+    REQUIRE(single.best_root_action() == worlds.best_root_action());
+    REQUIRE(single.node_count() == worlds.node_count());
+}
+
+TEST_CASE("v2 MCTS several worlds split simulations and sum root visits", "[v2][mcts][worlds]") {
+    GameState live = Game::new_game(Setup{}, 2718U);
+    // Search a buy decision a few turns in so hidden zones matter.
+    for (int step = 0; step < 40 && live.phase != static_cast<std::uint8_t>(Phase::Over); ++step) {
+        ActionMask legal{};
+        const int legal_count = Game::legal_actions(live, legal);
+        REQUIRE(legal_count > 0);
+        (void)Game::step(live, legal.nth_set(static_cast<std::uint32_t>(step) % static_cast<std::uint32_t>(legal_count)));
+    }
+    REQUIRE(live.phase != static_cast<std::uint8_t>(Phase::Over));
+    const PlayerId player = current_player(live);
+    constexpr std::uint32_t kWorlds = 4U;
+    constexpr std::uint32_t kSims = 400U;
+    Mcts search(worlds_config());
+    search.reset_worlds(live, kWorlds, player, 1234U);
+    REQUIRE(search.world_count() == kWorlds);
+    // Each world is a different sample of the same public position.
+    std::uint64_t hashes[kWorlds]{};
+    for (std::uint32_t w = 0; w < kWorlds; ++w) {
+        REQUIRE(search.is_root(w));
+        hashes[w] = mcts_state_hash(search.state_for(search.node(w).state_index));
+    }
+    bool any_differ = false;
+    for (std::uint32_t w = 1; w < kWorlds; ++w) {
+        any_differ = any_differ || hashes[w] != hashes[0];
+    }
+    REQUIRE(any_differ);
+    REQUIRE_FALSE(search.is_root(kWorlds));
+
+    Xoshiro256pp rng = Xoshiro256pp::seeded(11U);
+    run_world_search(search, kSims, rng);
+    // Least-loaded scheduling with sequential evaluation splits exactly.
+    for (std::uint32_t w = 0; w < kWorlds; ++w) {
+        REQUIRE(search.node(w).visits == kSims / kWorlds);
+    }
+    REQUIRE(search.root_total_visits() == kSims);
+
+    // Root accessors sum children by action across worlds.
+    std::uint32_t summed[ACTION_SPACE_SIZE]{};
+    for (std::uint32_t w = 0; w < kWorlds; ++w) {
+        for (std::uint32_t c = search.node(w).first_child; c != MCTS_NULL; c = search.node(c).next_sibling) {
+            summed[search.node(c).action_from_parent] += search.node(c).visits;
+        }
+    }
+    std::uint32_t best_visits = 0U;
+    std::uint32_t total_child_visits = 0U;
+    for (Action action = 0; action < ACTION_SPACE_SIZE; ++action) {
+        REQUIRE(search.root_visits_for(action) == summed[action]);
+        best_visits = std::max(best_visits, summed[action]);
+        total_child_visits += summed[action];
+    }
+    REQUIRE(summed[search.best_root_action()] == best_visits);
+    float policy[ACTION_SPACE_SIZE]{};
+    search.root_visit_policy(policy, 1.0F);
+    float policy_sum = 0.0F;
+    for (Action action = 0; action < ACTION_SPACE_SIZE; ++action) {
+        policy_sum += policy[action];
+        if (total_child_visits > 0U) {
+            REQUIRE(policy[action] == Catch::Approx(static_cast<float>(summed[action]) / static_cast<float>(total_child_visits)).margin(1e-5));
+        }
+    }
+    REQUIRE(policy_sum == Catch::Approx(1.0F).margin(1e-4));
+    REQUIRE(search.total_virtual_loss() == 0.0F);
+    // A plain reset returns to one world.
+    search.reset(live, player);
+    REQUIRE(search.world_count() == 1U);
+}
+
+TEST_CASE("v2 selfplay rejects several worlds without honest sampling", "[v2][selfplay][worlds]") {
+    SelfPlayConfig config{};
+    config.n_games = 1U;
+    config.sims_per_move = 8U;
+    config.worlds = 4U;
+    config.determinize = SelfPlayDeterminizeMode::Off;
+    REQUIRE_THROWS_AS(SelfPlayRunner(config), std::invalid_argument);
+    config.determinize = SelfPlayDeterminizeMode::PerDecision;
+    config.tree_reuse = false;
+    REQUIRE_NOTHROW(SelfPlayRunner(config));
 }

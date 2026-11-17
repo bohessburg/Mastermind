@@ -1,0 +1,24 @@
+[bc_128_vs_raw_honest_vlfix] device=mps pairs=50 chunk=100 A=checkpoints/campaign25/bc_a.pt sims=128 zero_v=False | B=checkpoints/campaign25/bc_a.pt sims=2 zero_v=False | determinize=per_decision cross_route=False tree_reuse=False opening_temp=False leaves_in_flight=8 (min sims/leaf 32)
+[bc_128_vs_raw_honest_vlfix] .. 0/100 games  1962 evals/s  30s
+[bc_128_vs_raw_honest_vlfix] .. 0/100 games  2116 evals/s  60s
+[bc_128_vs_raw_honest_vlfix] .. 0/100 games  2175 evals/s  90s
+[bc_128_vs_raw_honest_vlfix] .. 1/100 games  2173 evals/s  120s
+[bc_128_vs_raw_honest_vlfix] .. 2/100 games  2128 evals/s  150s
+[bc_128_vs_raw_honest_vlfix] .. 2/100 games  2104 evals/s  180s
+[bc_128_vs_raw_honest_vlfix] .. 4/100 games  2092 evals/s  210s
+[bc_128_vs_raw_honest_vlfix] .. 9/100 games  2081 evals/s  240s
+[bc_128_vs_raw_honest_vlfix] .. 12/100 games  2069 evals/s  270s
+[bc_128_vs_raw_honest_vlfix] .. 18/100 games  2058 evals/s  300s
+[bc_128_vs_raw_honest_vlfix] .. 24/100 games  2047 evals/s  330s
+[bc_128_vs_raw_honest_vlfix] .. 28/100 games  2034 evals/s  360s
+[bc_128_vs_raw_honest_vlfix] .. 33/100 games  2018 evals/s  390s
+[bc_128_vs_raw_honest_vlfix] .. 37/100 games  1996 evals/s  420s
+[bc_128_vs_raw_honest_vlfix] .. 43/100 games  1964 evals/s  450s
+[bc_128_vs_raw_honest_vlfix] .. 46/100 games  1948 evals/s  480s
+[bc_128_vs_raw_honest_vlfix] .. 49/100 games  1888 evals/s  510s
+[bc_128_vs_raw_honest_vlfix] .. 51/100 games  2105 evals/s  541s
+[bc_128_vs_raw_honest_vlfix] .. 63/100 games  2459 evals/s  571s
+[bc_128_vs_raw_honest_vlfix] .. 86/100 games  2691 evals/s  601s
+[bc_128_vs_raw_honest_vlfix] 50/50 pairs  A 56W-40L-4T score=0.580±0.042  579 games/hr  2684 evals/s  622s
+[bc_128_vs_raw_honest_vlfix] DONE A 56W-40L-4T score=0.580 ci95=[0.498,0.662] elo=+56 seat0=0.530 non_greedy=0.0% turns=44.0 trunc=6 622.0s
+[bc_128_vs_raw_honest_vlfix] raw-policy check side B: 100.00% of moves = prior argmax

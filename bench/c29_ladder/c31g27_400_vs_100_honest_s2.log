@@ -1,0 +1,25 @@
+[c31g27_400_vs_100_honest_s2] device=mps backend=torch pairs=50 chunk=50 A=checkpoints/remote/campaign31/gen_0027.pt sims=400 zero_v=False | B=checkpoints/remote/campaign31/gen_0027.pt sims=100 zero_v=False | determinize=per_decision cross_route=False tree_reuse=False opening_temp=False leaves_in_flight=8 (min sims/leaf 32)
+[c31g27_400_vs_100_honest_s2] .. 0/100 games  7299 evals/s  30s
+[c31g27_400_vs_100_honest_s2] .. 0/100 games  8726 evals/s  60s
+[c31g27_400_vs_100_honest_s2] .. 0/100 games  9202 evals/s  90s
+[c31g27_400_vs_100_honest_s2] .. 2/100 games  9472 evals/s  120s
+[c31g27_400_vs_100_honest_s2] .. 7/100 games  9516 evals/s  150s
+[c31g27_400_vs_100_honest_s2] .. 11/100 games  9502 evals/s  180s
+[c31g27_400_vs_100_honest_s2] .. 18/100 games  9394 evals/s  210s
+[c31g27_400_vs_100_honest_s2] .. 31/100 games  9123 evals/s  240s
+[c31g27_400_vs_100_honest_s2] .. 36/100 games  8820 evals/s  270s
+[c31g27_400_vs_100_honest_s2] .. 46/100 games  8242 evals/s  300s
+[c31g27_400_vs_100_honest_s2] .. 48/100 games  7662 evals/s  330s
+[c31g27_400_vs_100_honest_s2] .. 50/100 games  7138 evals/s  360s
+[c31g27_400_vs_100_honest_s2] .. 50/100 games  7328 evals/s  390s
+[c31g27_400_vs_100_honest_s2] .. 50/100 games  7525 evals/s  420s
+[c31g27_400_vs_100_honest_s2] .. 50/100 games  7720 evals/s  450s
+[c31g27_400_vs_100_honest_s2] .. 53/100 games  7876 evals/s  480s
+[c31g27_400_vs_100_honest_s2] .. 60/100 games  7994 evals/s  510s
+[c31g27_400_vs_100_honest_s2] .. 65/100 games  8085 evals/s  540s
+[c31g27_400_vs_100_honest_s2] .. 79/100 games  8146 evals/s  570s
+[c31g27_400_vs_100_honest_s2] .. 86/100 games  8085 evals/s  600s
+[c31g27_400_vs_100_honest_s2] .. 94/100 games  7907 evals/s  630s
+[c31g27_400_vs_100_honest_s2] .. 98/100 games  7653 evals/s  660s
+[c31g27_400_vs_100_honest_s2] 50/50 pairs  A 47W-50L-3T score=0.485±0.040  532 games/hr  7491 evals/s  676s
+[c31g27_400_vs_100_honest_s2] DONE A 47W-50L-3T score=0.485 ci95=[0.407,0.563] elo=-10 seat0=0.485 non_greedy=0.0% turns=34.2 trunc=0 676.2s

@@ -1,0 +1,3 @@
+[d_g1_openingT] device=mps pairs=32 chunk=32 A=checkpoints/campaign28/gen_0001.pt sims=128 zero_v=False | B=checkpoints/campaign25/bc_a.pt sims=128 zero_v=False | determinize=off cross_route=False tree_reuse=False opening_temp=True
+[d_g1_openingT] 32/32 pairs  A 49W-15L-0T score=0.766±0.055  269 games/hr  2358 evals/s  857s
+[d_g1_openingT] DONE A 49W-15L-0T score=0.766 ci95=[0.658,0.873] elo=+206 seat0=0.516 non_greedy=3.6% turns=59.3 trunc=1 856.7s

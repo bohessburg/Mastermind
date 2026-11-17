@@ -109,6 +109,8 @@ def play_manifest_games(
     device: torch.device,
     game_indices: Sequence[int],
     seat_sims: tuple[int, int] = (0, 0),
+    seat_chance_mode: tuple[int, int] = (0, 0),
+    seat_worlds: tuple[int, int] = (0, 0),
     independent_search: bool = True,
     record_states: bool = False,
     on_finished: Callable[[list[dict]], None] | None = None,
@@ -128,7 +130,8 @@ def play_manifest_games(
     if not indices:
         return [], 0
     runner_config = copy.deepcopy(config)
-    per_seat = any(int(s) > 0 for s in seat_sims)
+    per_seat = (any(int(s) > 0 for s in seat_sims) or any(int(m) > 0 for m in seat_chance_mode)
+                or any(int(w) > 0 for w in seat_worlds))
     if runner_config.tree_reuse and (independent_search or per_seat):
         raise ValueError("independent search and per-seat budgets need tree_reuse off")
     max_sims = max(int(runner_config.sims_per_move), *(int(s) for s in seat_sims))
@@ -143,6 +146,8 @@ def play_manifest_games(
         slot_manifest=[{"game_index": index} for index in indices],
     )
     native.seat_sims = (int(seat_sims[0]), int(seat_sims[1]))
+    native.seat_chance_mode = (int(seat_chance_mode[0]), int(seat_chance_mode[1]))
+    native.seat_worlds = (int(seat_worlds[0]), int(seat_worlds[1]))
     native.independent_search = bool(independent_search)
     native.record_states = bool(record_states)
     runner = dz.SelfPlayRunner(native)
@@ -307,6 +312,17 @@ class PairedMatch:
         return out
 
 
+def _seat_chance_code(mode: str | None) -> int:
+    """Per-seat native override: 0 inherits the config, else MctsChanceMode + 1."""
+    if mode is None:
+        return 0
+    from src.v2.train.config import CHANCE_MODES
+
+    if mode not in CHANCE_MODES:
+        raise ValueError(f"unknown chance mode {mode!r}")
+    return CHANCE_MODES.index(mode) + 1
+
+
 def run_paired_match(
     model_a: torch.nn.Module,
     model_b: torch.nn.Module,
@@ -317,6 +333,11 @@ def run_paired_match(
     device: torch.device,
     sims_a: int = 0,
     sims_b: int = 0,
+    chance_a: str | None = None,
+    chance_b: str | None = None,
+    worlds_a: int = 0,
+    worlds_b: int = 0,
+    first_pair: int = 0,
     independent_search: bool = True,
     chunk: int = 64,
     progress: Callable[[PairedMatch], None] | None = None,
@@ -338,11 +359,16 @@ def run_paired_match(
         raise ValueError("chunk must be positive")
     match = PairedMatch()
     started = time.perf_counter()
-    for first in range(0, int(pairs), int(chunk)):
-        indices = list(range(first, min(first + int(chunk), int(pairs))))
+    # first_pair offsets the board indices so a match can be split across
+    # processes (board i is the same game whichever process plays it).
+    for first in range(int(first_pair), int(first_pair) + int(pairs), int(chunk)):
+        indices = list(range(first, min(first + int(chunk), int(first_pair) + int(pairs))))
         for a_seat in (0, 1):
             seat_models = (model_a, model_b) if a_seat == 0 else (model_b, model_a)
             seat_sims = (int(sims_a), int(sims_b)) if a_seat == 0 else (int(sims_b), int(sims_a))
+            codes = (_seat_chance_code(chance_a), _seat_chance_code(chance_b))
+            seat_chance = codes if a_seat == 0 else (codes[1], codes[0])
+            seat_worlds = (int(worlds_a), int(worlds_b)) if a_seat == 0 else (int(worlds_b), int(worlds_a))
             games_before, evals_before = len(match.turns), match.nn_evals
             records, evals = play_manifest_games(
                 seat_models,
@@ -351,6 +377,8 @@ def run_paired_match(
                 device=device,
                 game_indices=indices,
                 seat_sims=seat_sims,
+                seat_chance_mode=seat_chance,
+                seat_worlds=seat_worlds,
                 independent_search=independent_search,
                 host_backends=host_backends,
                 tick=None if tick is None else (

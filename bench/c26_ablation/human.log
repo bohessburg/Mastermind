@@ -1,0 +1,12 @@
+[human] replay rows 1000000, steps 240
+/root/Mastermind/scripts/c26_ablation.py:82: UserWarning: Converting a tensor with requires_grad=True to a scalar may lead to unexpected behavior.
+Consider using tensor.detach() first. (Triggered internally at /__w/pytorch/pytorch/torch/csrc/autograd/generated/python_variable_methods.cpp:820.)
+  losses = {"anchor_policy_loss": float(pol), "anchor_value_loss": float(val)}
+[human] step 0 {'anchor_policy_loss': 0.5824, 'anchor_value_loss': 0.2577} 1s
+[human] step 40 {'anchor_policy_loss': 0.6627, 'anchor_value_loss': 0.2813} 4s
+[human] step 80 {'anchor_policy_loss': 0.5385, 'anchor_value_loss': 0.284} 8s
+[human] step 120 {'anchor_policy_loss': 0.5708, 'anchor_value_loss': 0.2321} 11s
+[human] step 160 {'anchor_policy_loss': 0.4823, 'anchor_value_loss': 0.2368} 15s
+[human] step 200 {'anchor_policy_loss': 0.5818, 'anchor_value_loss': 0.2699} 18s
+[human] step 239 {'anchor_policy_loss': 0.4197, 'anchor_value_loss': 0.2719} 21s
+[human] GATE 92W-101L-7T win_pct=0.477

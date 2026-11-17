@@ -1,0 +1,39 @@
+[gate_campaign28_gen_0001] device=mps pairs=100 chunk=100 A=checkpoints/campaign28/gen_0001.pt sims=128 zero_v=False | B=checkpoints/campaign25/bc_a.pt sims=128 zero_v=False | determinize=off cross_route=False tree_reuse=False opening_temp=False
+[gate_campaign28_gen_0001] .. 0/200 games  6755 evals/s  30s
+[gate_campaign28_gen_0001] .. 0/200 games  7480 evals/s  60s
+[gate_campaign28_gen_0001] .. 0/200 games  7752 evals/s  90s
+[gate_campaign28_gen_0001] .. 0/200 games  7888 evals/s  120s
+[gate_campaign28_gen_0001] .. 2/200 games  7961 evals/s  150s
+[gate_campaign28_gen_0001] .. 5/200 games  8000 evals/s  180s
+[gate_campaign28_gen_0001] .. 15/200 games  7978 evals/s  210s
+[gate_campaign28_gen_0001] .. 23/200 games  7921 evals/s  240s
+[gate_campaign28_gen_0001] .. 35/200 games  7858 evals/s  270s
+[gate_campaign28_gen_0001] .. 47/200 games  7734 evals/s  300s
+[gate_campaign28_gen_0001] .. 57/200 games  7590 evals/s  330s
+[gate_campaign28_gen_0001] .. 63/200 games  7479 evals/s  360s
+[gate_campaign28_gen_0001] .. 71/200 games  7349 evals/s  390s
+[gate_campaign28_gen_0001] .. 84/200 games  7121 evals/s  420s
+[gate_campaign28_gen_0001] .. 90/200 games  6825 evals/s  450s
+[gate_campaign28_gen_0001] .. 94/200 games  6487 evals/s  480s
+[gate_campaign28_gen_0001] .. 98/200 games  6163 evals/s  510s
+[gate_campaign28_gen_0001] .. 100/200 games  5985 evals/s  540s
+[gate_campaign28_gen_0001] .. 100/200 games  6098 evals/s  570s
+[gate_campaign28_gen_0001] .. 100/200 games  6210 evals/s  600s
+[gate_campaign28_gen_0001] .. 101/200 games  6310 evals/s  630s
+[gate_campaign28_gen_0001] .. 104/200 games  6398 evals/s  660s
+[gate_campaign28_gen_0001] .. 107/200 games  6475 evals/s  690s
+[gate_campaign28_gen_0001] .. 113/200 games  6541 evals/s  720s
+[gate_campaign28_gen_0001] .. 122/200 games  6594 evals/s  750s
+[gate_campaign28_gen_0001] .. 129/200 games  6635 evals/s  780s
+[gate_campaign28_gen_0001] .. 139/200 games  6660 evals/s  810s
+[gate_campaign28_gen_0001] .. 148/200 games  6674 evals/s  841s
+[gate_campaign28_gen_0001] .. 158/200 games  6674 evals/s  871s
+[gate_campaign28_gen_0001] .. 171/200 games  6639 evals/s  901s
+[gate_campaign28_gen_0001] .. 183/200 games  6566 evals/s  931s
+[gate_campaign28_gen_0001] .. 188/200 games  6447 evals/s  961s
+[gate_campaign28_gen_0001] .. 190/200 games  6315 evals/s  991s
+[gate_campaign28_gen_0001] .. 194/200 games  6172 evals/s  1021s
+[gate_campaign28_gen_0001] .. 199/200 games  6017 evals/s  1051s
+[gate_campaign28_gen_0001] .. 199/200 games  5863 evals/s  1081s
+[gate_campaign28_gen_0001] 100/100 pairs  A 162W-32L-6T score=0.825±0.024  665 games/hr  5852 evals/s  1083s
+[gate_campaign28_gen_0001] DONE A 162W-32L-6T score=0.825 ci95=[0.778,0.872] elo=+269 seat0=0.535 non_greedy=0.0% turns=54.5 trunc=4 1082.7s

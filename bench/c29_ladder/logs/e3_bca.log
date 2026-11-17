@@ -1,0 +1,10 @@
+{"checkpoint": "checkpoints/campaign25/bc_a.pt", "device": "mps", "honest": true, "kingdoms": "random", "legacy_shim": false, "parameters": 1969211, "sims": 400}
+25/200 games, nn 13W-12L-0T, 255 games/hr
+50/200 games, nn 30W-20L-0T, 217 games/hr
+75/200 games, nn 45W-30L-0T, 181 games/hr
+100/200 games, nn 54W-46L-0T, 177 games/hr
+125/200 games, nn 63W-62L-0T, 187 games/hr
+150/200 games, nn 77W-73L-0T, 185 games/hr
+175/200 games, nn 88W-87L-0T, 201 games/hr
+opponent,games,wins,losses,ties,truncated,end_province,end_piles,end_trunc,win_pct_excl_ties,games_per_hour
+engine3,200,101,99,0,0,141,59,0,50.50,187.81

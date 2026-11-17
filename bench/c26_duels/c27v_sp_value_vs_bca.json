@@ -1,0 +1,14 @@
+{
+  "tag": "c27v_sp_value_vs_bca",
+  "a": "bench/c27v/c27v_sp_value.pt",
+  "b": "checkpoints/c25_bc_long/bc_a.pt",
+  "a_zero_value": false,
+  "b_zero_value": false,
+  "sims": 128,
+  "games": 200,
+  "wins": 70,
+  "losses": 127,
+  "ties": 3,
+  "a_win_pct": 0.3553299492385787,
+  "wall_s": 1317
+}

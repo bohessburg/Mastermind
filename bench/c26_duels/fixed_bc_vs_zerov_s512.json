@@ -1,0 +1,14 @@
+{
+  "tag": "fixed_bc_vs_zerov_s512",
+  "a": "checkpoints/c25_bc_long/bc_a.pt",
+  "b": "checkpoints/c25_bc_long/bc_a.pt",
+  "a_zero_value": false,
+  "b_zero_value": true,
+  "sims": 512,
+  "games": 200,
+  "wins": 105,
+  "losses": 86,
+  "ties": 9,
+  "a_win_pct": 0.5497382198952879,
+  "wall_s": 1161
+}

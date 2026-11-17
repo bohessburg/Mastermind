@@ -1193,6 +1193,25 @@ struct PyDecisionSearcher {
         return true;
     }
 
+    // (action, visits, visit-weighted mean value) per legal root action,
+    // summed over worlds exactly as best_action sums them.
+    [[nodiscard]] py::list root_stats() const {
+        py::list out;
+        for (int i = 0; i < root_legal_count_; ++i) {
+            const Action action = root_legal_.nth_set(static_cast<std::uint32_t>(i));
+            std::uint32_t visits = 0U;
+            float value = 0.0F;
+            for (const auto& world : worlds_) {
+                const std::uint32_t v = world->mcts.root_visits_for(action);
+                value += world->mcts.root_value_for(action) * static_cast<float>(v);
+                visits += v;
+            }
+            out.append(py::make_tuple(static_cast<int>(action), visits,
+                                      visits == 0U ? 0.0F : value / static_cast<float>(visits)));
+        }
+        return out;
+    }
+
     [[nodiscard]] Action best_action() const noexcept {
         if (!done()) {
             return A_PASS;
@@ -2075,6 +2094,12 @@ PYBIND11_MODULE(dominion_v2_py, module) {
                 throw std::runtime_error("DecisionSearcher is not done");
             }
             return static_cast<std::uint32_t>(searcher.best_action());
+        })
+        .def("root_stats", [](const PyDecisionSearcher& searcher) {
+            if (!searcher.done()) {
+                throw std::runtime_error("DecisionSearcher is not done");
+            }
+            return searcher.root_stats();
         });
 
     py::enum_<ObsVersion>(module, "ObsVersion")
@@ -2095,6 +2120,11 @@ PYBIND11_MODULE(dominion_v2_py, module) {
         .value("Off", SelfPlayDeterminizeMode::Off)
         .value("PerDecision", SelfPlayDeterminizeMode::PerDecision)
         .value("PerTurn", SelfPlayDeterminizeMode::PerTurn);
+
+    py::enum_<MctsChanceMode>(module, "MctsChanceMode")
+        .value("Off", MctsChanceMode::Off)
+        .value("Truncate", MctsChanceMode::Truncate)
+        .value("Resample", MctsChanceMode::Resample);
 
     py::enum_<SelfPlayScriptedBotKind>(module, "SelfPlayScriptedBotKind")
         .value("None_", SelfPlayScriptedBotKind::None)
@@ -2382,6 +2412,26 @@ PYBIND11_MODULE(dominion_v2_py, module) {
             [](SelfPlayConfig& config, const std::pair<std::uint32_t, std::uint32_t>& sims) {
                 config.seat_sims[0] = sims.first;
                 config.seat_sims[1] = sims.second;
+            })
+        .def_readwrite("chance_mode", &SelfPlayConfig::chance_mode)
+        .def_readwrite("worlds", &SelfPlayConfig::worlds)
+        .def_property(
+            "seat_worlds",
+            [](const SelfPlayConfig& config) {
+                return py::make_tuple(config.seat_worlds[0], config.seat_worlds[1]);
+            },
+            [](SelfPlayConfig& config, const std::pair<std::uint8_t, std::uint8_t>& worlds) {
+                config.seat_worlds[0] = worlds.first;
+                config.seat_worlds[1] = worlds.second;
+            })
+        .def_property(
+            "seat_chance_mode",
+            [](const SelfPlayConfig& config) {
+                return py::make_tuple(config.seat_chance_mode[0], config.seat_chance_mode[1]);
+            },
+            [](SelfPlayConfig& config, const std::pair<std::uint8_t, std::uint8_t>& modes) {
+                config.seat_chance_mode[0] = modes.first;
+                config.seat_chance_mode[1] = modes.second;
             })
         .def_readwrite("independent_search", &SelfPlayConfig::independent_search)
         .def_readwrite("record_states", &SelfPlayConfig::record_states)

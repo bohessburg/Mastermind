@@ -1,0 +1,33 @@
+[gate_campaign28_gen_0001_honest] device=mps pairs=50 chunk=100 A=checkpoints/campaign28/gen_0001.pt sims=128 zero_v=False | B=checkpoints/campaign25/bc_a.pt sims=128 zero_v=False | determinize=per_decision cross_route=False tree_reuse=False opening_temp=False leaves_in_flight=8 (min sims/leaf 32)
+[gate_campaign28_gen_0001_honest] .. 0/100 games  3843 evals/s  30s
+[gate_campaign28_gen_0001_honest] .. 0/100 games  4259 evals/s  60s
+[gate_campaign28_gen_0001_honest] .. 1/100 games  4388 evals/s  90s
+[gate_campaign28_gen_0001_honest] .. 2/100 games  4463 evals/s  120s
+[gate_campaign28_gen_0001_honest] .. 5/100 games  4497 evals/s  150s
+[gate_campaign28_gen_0001_honest] .. 11/100 games  4483 evals/s  180s
+[gate_campaign28_gen_0001_honest] .. 18/100 games  4446 evals/s  210s
+[gate_campaign28_gen_0001_honest] .. 23/100 games  4352 evals/s  240s
+[gate_campaign28_gen_0001_honest] .. 31/100 games  4233 evals/s  270s
+[gate_campaign28_gen_0001_honest] .. 37/100 games  4062 evals/s  300s
+[gate_campaign28_gen_0001_honest] .. 42/100 games  3860 evals/s  330s
+[gate_campaign28_gen_0001_honest] .. 47/100 games  3611 evals/s  360s
+[gate_campaign28_gen_0001_honest] .. 48/100 games  3397 evals/s  390s
+[gate_campaign28_gen_0001_honest] .. 49/100 games  3189 evals/s  420s
+[gate_campaign28_gen_0001_honest] .. 49/100 games  3008 evals/s  450s
+[gate_campaign28_gen_0001_honest] .. 50/100 games  3017 evals/s  480s
+[gate_campaign28_gen_0001_honest] .. 50/100 games  3064 evals/s  510s
+[gate_campaign28_gen_0001_honest] .. 50/100 games  3111 evals/s  540s
+[gate_campaign28_gen_0001_honest] .. 50/100 games  3164 evals/s  570s
+[gate_campaign28_gen_0001_honest] .. 53/100 games  3236 evals/s  600s
+[gate_campaign28_gen_0001_honest] .. 56/100 games  3322 evals/s  630s
+[gate_campaign28_gen_0001_honest] .. 63/100 games  3345 evals/s  660s
+[gate_campaign28_gen_0001_honest] .. 67/100 games  3342 evals/s  690s
+[gate_campaign28_gen_0001_honest] .. 73/100 games  3329 evals/s  720s
+[gate_campaign28_gen_0001_honest] .. 78/100 games  3316 evals/s  750s
+[gate_campaign28_gen_0001_honest] .. 83/100 games  3344 evals/s  780s
+[gate_campaign28_gen_0001_honest] .. 92/100 games  3325 evals/s  810s
+[gate_campaign28_gen_0001_honest] .. 95/100 games  3267 evals/s  840s
+[gate_campaign28_gen_0001_honest] .. 98/100 games  3191 evals/s  870s
+[gate_campaign28_gen_0001_honest] .. 99/100 games  3104 evals/s  900s
+[gate_campaign28_gen_0001_honest] 50/50 pairs  A 58W-38L-4T score=0.600±0.045  392 games/hr  3051 evals/s  919s
+[gate_campaign28_gen_0001_honest] DONE A 58W-38L-4T score=0.600 ci95=[0.511,0.689] elo=+70 seat0=0.590 non_greedy=0.0% turns=40.0 trunc=1 919.5s

@@ -1,0 +1,23 @@
+[bigmoney_w1x1024_b0] worlds=1 sims=1024 games=400 first=0 adaptive_per_legal=128
+[bigmoney_w1x1024_b0] 0/400 games 659588 evals
+[bigmoney_w1x1024_b0] 0/400 games 1371824 evals
+[bigmoney_w1x1024_b0] 1/400 games 2108337 evals
+[bigmoney_w1x1024_b0] 7/400 games 2870277 evals
+[bigmoney_w1x1024_b0] 19/400 games 3630768 evals
+[bigmoney_w1x1024_b0] 34/400 games 4440887 evals
+[bigmoney_w1x1024_b0] 48/400 games 5235305 evals
+[bigmoney_w1x1024_b0] 67/400 games 6037725 evals
+[bigmoney_w1x1024_b0] 103/400 games 6880465 evals
+[bigmoney_w1x1024_b0] 129/400 games 7808921 evals
+[bigmoney_w1x1024_b0] 159/400 games 8791611 evals
+[bigmoney_w1x1024_b0] 188/400 games 9777092 evals
+[bigmoney_w1x1024_b0] 237/400 games 10766554 evals
+[bigmoney_w1x1024_b0] 291/400 games 11707862 evals
+[bigmoney_w1x1024_b0] 320/400 games 12544865 evals
+[bigmoney_w1x1024_b0] 357/400 games 13268733 evals
+[bigmoney_w1x1024_b0] 376/400 games 13702274 evals
+[bigmoney_w1x1024_b0] 384/400 games 13968768 evals
+[bigmoney_w1x1024_b0] 392/400 games 14139432 evals
+[bigmoney_w1x1024_b0] 394/400 games 14240821 evals
+[bigmoney_w1x1024_b0] 398/400 games 14330854 evals
+[bigmoney_w1x1024_b0] DONE 348W-45L-7T score=0.879+-0.016 evals/game=35905 1311.3s

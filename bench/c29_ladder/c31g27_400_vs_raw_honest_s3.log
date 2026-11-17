@@ -1,0 +1,21 @@
+[c31g27_400_vs_raw_honest_s3] device=mps backend=torch pairs=50 chunk=50 A=checkpoints/remote/campaign31/gen_0027.pt sims=400 zero_v=False | B=checkpoints/remote/campaign31/gen_0027.pt sims=2 zero_v=False | determinize=per_decision cross_route=False tree_reuse=False opening_temp=False leaves_in_flight=8 (min sims/leaf 32)
+[c31g27_400_vs_raw_honest_s3] .. 0/100 games  8583 evals/s  30s
+[c31g27_400_vs_raw_honest_s3] .. 0/100 games  9736 evals/s  60s
+[c31g27_400_vs_raw_honest_s3] .. 0/100 games  1103 evals/s  572s
+[c31g27_400_vs_raw_honest_s3] .. 0/100 games  1601 evals/s  602s
+[c31g27_400_vs_raw_honest_s3] .. 7/100 games  2053 evals/s  632s
+[c31g27_400_vs_raw_honest_s3] .. 20/100 games  2432 evals/s  662s
+[c31g27_400_vs_raw_honest_s3] .. 33/100 games  2648 evals/s  692s
+[c31g27_400_vs_raw_honest_s3] .. 46/100 games  2731 evals/s  722s
+[c31g27_400_vs_raw_honest_s3] .. 49/100 games  2677 evals/s  752s
+[c31g27_400_vs_raw_honest_s3] .. 49/100 games  2600 evals/s  782s
+[c31g27_400_vs_raw_honest_s3] .. 50/100 games  2520 evals/s  812s
+[c31g27_400_vs_raw_honest_s3] .. 50/100 games  2807 evals/s  842s
+[c31g27_400_vs_raw_honest_s3] .. 51/100 games  3117 evals/s  872s
+[c31g27_400_vs_raw_honest_s3] .. 57/100 games  3424 evals/s  902s
+[c31g27_400_vs_raw_honest_s3] .. 78/100 games  3685 evals/s  932s
+[c31g27_400_vs_raw_honest_s3] .. 92/100 games  3793 evals/s  962s
+[c31g27_400_vs_raw_honest_s3] .. 99/100 games  3770 evals/s  992s
+[c31g27_400_vs_raw_honest_s3] 50/50 pairs  A 65W-35L-0T score=0.650±0.041  355 games/hr  3700 evals/s  1015s
+[c31g27_400_vs_raw_honest_s3] DONE A 65W-35L-0T score=0.650 ci95=[0.570,0.730] elo=+108 seat0=0.550 non_greedy=0.0% turns=34.5 trunc=0 1015.1s
+[c31g27_400_vs_raw_honest_s3] raw-policy check side B: 100.00% of moves = prior argmax

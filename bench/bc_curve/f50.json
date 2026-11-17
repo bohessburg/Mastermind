@@ -1,0 +1,51 @@
+{
+  "arm": "f50",
+  "best_val_loss": 0.9669197687928853,
+  "checkpoint": "checkpoints/bc_curve/bc_f50.pt",
+  "final_train_loss": 0.7931958299152798,
+  "final_val_loss": 0.9669197687928853,
+  "label": "f50",
+  "last_pre_restore_train_loss": 0.7931958299152798,
+  "model": {
+    "arch": "card_transformer",
+    "aux_margin_buckets": 21,
+    "d_model": 192,
+    "derived_features": true,
+    "dropout": 0.0,
+    "embedding_init_std": 0.02,
+    "ffn_multiplier": 4,
+    "final_norm": true,
+    "hidden_sizes": [
+      1024,
+      1024,
+      512
+    ],
+    "input_scale": 1.0,
+    "n_heads": 6,
+    "n_layers": 4,
+    "obs_version": 3
+  },
+  "parameter_count": 1969211,
+  "steps_run": 5750,
+  "train_batch_size": 512,
+  "train_composition": {
+    "expert_seat_games": 644,
+    "expert_share_of_policy_weight": 0.3671661751447186,
+    "expert_tuples": 36263,
+    "games": 4678,
+    "policy_effective_tuples": 202495.6980683012,
+    "tuples": 463423
+  },
+  "train_loss_rows": 463423,
+  "val_loss_rows": 50572,
+  "val_move_accuracy": {
+    "all": 0.7791070157399351,
+    "level_40_to_50": 0.7779691314963376,
+    "level_40_to_50_rows": 45872,
+    "level_50_plus": 0.7841916167664671,
+    "level_50_plus_rows": 4175,
+    "policy_weighted": 0.7803180828886428
+  },
+  "val_policy_accuracy": 0.7791070157399351,
+  "wall_seconds": 919.417684540851
+}

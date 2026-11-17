@@ -1,0 +1,52 @@
+bucket 0-6: 1127 positions, using 400
+bucket 10-12: 14890 positions, using 400
+bucket 13-17: 22436 positions, using 400
+bucket 18-25: 21935 positions, using 400
+bucket 26+: 15823 positions, using 400
+bucket 7-9: 5628 positions, using 400
+1030/38400 searches 923614 evals 15391/s eta 36 min
+2085/38400 searches 1846758 evals 15387/s eta 35 min
+3008/38400 searches 2782548 evals 15456/s eta 35 min
+4069/38400 searches 3701105 evals 15419/s eta 34 min
+5045/38400 searches 4610489 evals 15365/s eta 33 min
+6193/38400 searches 5529838 evals 15357/s eta 31 min
+7215/38400 searches 6448816 evals 15351/s eta 30 min
+8372/38400 searches 7377626 evals 15367/s eta 29 min
+9490/38400 searches 8299640 evals 15367/s eta 27 min
+10638/38400 searches 9218808 evals 15362/s eta 26 min
+11801/38400 searches 10120185 evals 15331/s eta 25 min
+13073/38400 searches 11049650 evals 15344/s eta 23 min
+14110/38400 searches 11955727 evals 15325/s eta 22 min
+15115/38400 searches 12842662 evals 15286/s eta 22 min
+16161/38400 searches 13745214 evals 15269/s eta 21 min
+17125/38400 searches 14657014 evals 15264/s eta 20 min
+18150/38400 searches 15561428 evals 15253/s eta 19 min
+19169/38400 searches 16466356 evals 15243/s eta 18 min
+20154/38400 searches 17378083 evals 15241/s eta 17 min
+21122/38400 searches 18262475 evals 15216/s eta 16 min
+22006/38400 searches 19151829 evals 15197/s eta 16 min
+23149/38400 searches 20046662 evals 15184/s eta 14 min
+24213/38400 searches 20963839 evals 15188/s eta 13 min
+25173/38400 searches 21881997 evals 15193/s eta 13 min
+26142/38400 searches 22776292 evals 15181/s eta 12 min
+27178/38400 searches 23657655 evals 15162/s eta 11 min
+28145/38400 searches 24543787 evals 15147/s eta 10 min
+29141/38400 searches 25451450 evals 15146/s eta 9 min
+30227/38400 searches 26372669 evals 15153/s eta 8 min
+31187/38400 searches 27235206 evals 15127/s eta 7 min
+32320/38400 searches 28176675 evals 15144/s eta 6 min
+33228/38400 searches 29073918 evals 15138/s eta 5 min
+34161/38400 searches 29984796 evals 15140/s eta 4 min
+35090/38400 searches 30875284 evals 15131/s eta 3 min
+36063/38400 searches 31807359 evals 15142/s eta 2 min
+37087/38400 searches 32735659 evals 15151/s eta 1 min
+38249/38400 searches 33705430 evals 15179/s eta 0 min
+DONE 2400 positions 38400 searches 33813656 evals 2235s
+
+bucket   n    flip@1x128  agree/regret  1x128  agree/regret  2x512  agree/regret  8x128  agree/regret 1x1024
+0-6      400       2.0%    98.5% / 0.0003       96.8% / -0.0013       99.2% / 0.0003       94.7% / -0.0014    
+7-9      400       3.2%    97.4% / 0.0008       97.1% / 0.0007       98.9% / 0.0004       93.9% / 0.0015    
+10-12    400       2.6%    97.8% / 0.0012       96.5% / -0.0000       98.6% / 0.0005       93.2% / 0.0037    
+13-17    400       2.8%    97.2% / 0.0011       98.1% / -0.0004       98.4% / 0.0009       93.5% / -0.0000    
+18-25    400       3.5%    97.1% / 0.0013       97.6% / 0.0001       98.8% / 0.0011       94.4% / -0.0004    
+26+      400       2.8%    97.3% / 0.0018       96.9% / 0.0005       98.1% / 0.0013       95.4% / 0.0018    

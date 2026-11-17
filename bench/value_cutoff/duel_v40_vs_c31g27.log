@@ -1,0 +1,54 @@
+10/200 games, a 5W-4L-1T, 98 games/hr
+20/200 games, a 8W-11L-1T, 170 games/hr
+30/200 games, a 12W-17L-1T, 210 games/hr
+40/200 games, a 16W-23L-1T, 245 games/hr
+50/200 games, a 23W-26L-1T, 270 games/hr
+60/200 games, a 27W-32L-1T, 291 games/hr
+70/200 games, a 29W-39L-2T, 298 games/hr
+80/200 games, a 32W-46L-2T, 309 games/hr
+90/200 games, a 37W-51L-2T, 321 games/hr
+100/200 games, a 40W-58L-2T, 334 games/hr
+Traceback (most recent call last):
+  File "/Users/paisho/Projects/Mastermind/src/v2/train/duel.py", line 420, in <module>
+    raise SystemExit(main())
+                     ^^^^^^
+  File "/Users/paisho/Projects/Mastermind/src/v2/train/duel.py", line 391, in main
+    stats, a, b, device = duel_checkpoints(
+                          ^^^^^^^^^^^^^^^^^
+  File "/Users/paisho/Projects/Mastermind/src/v2/train/duel.py", line 347, in duel_checkpoints
+    stats = duel_loaded_checkpoints(
+            ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/paisho/Projects/Mastermind/src/v2/train/duel.py", line 309, in duel_loaded_checkpoints
+    match = run_seat_swapped_match(
+            ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/paisho/Projects/Mastermind/src/v2/train/gating.py", line 1197, in run_seat_swapped_match
+    _, completed = play_routed_games(
+                   ^^^^^^^^^^^^^^^^^^
+  File "/Users/paisho/Projects/Mastermind/src/v2/train/selfplay.py", line 831, in play_routed_games
+    logits_np, values_np = route_leaf_evaluations(
+                           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/paisho/Projects/Mastermind/src/v2/train/selfplay.py", line 757, in route_leaf_evaluations
+    logits, values = model.evaluate(obs_tensor, mask_tensor)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/paisho/Projects/Mastermind/.venv/lib/python3.11/site-packages/torch/utils/_contextlib.py", line 124, in decorate_context
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/paisho/Projects/Mastermind/src/v2/train/card_transformer.py", line 630, in evaluate
+    logits, values = self(obs, n_piles)
+                     ^^^^^^^^^^^^^^^^^^
+  File "/Users/paisho/Projects/Mastermind/.venv/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1778, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/paisho/Projects/Mastermind/.venv/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1789, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/paisho/Projects/Mastermind/src/v2/train/card_transformer.py", line 615, in forward
+    width = self._forward_pile_count(obs) if n_piles is None else n_piles
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/paisho/Projects/Mastermind/src/v2/train/card_transformer.py", line 422, in _forward_pile_count
+    return self.active_pile_count(obs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/paisho/Projects/Mastermind/src/v2/train/card_transformer.py", line 406, in active_pile_count
+    return max(1, int((used.to(torch.long) * positions).max().item()))
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+KeyboardInterrupt

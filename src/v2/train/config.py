@@ -12,6 +12,8 @@ SCRIPTED_OPPONENT_KINDS = frozenset({"bigmoney", "engine", "engine3", "random", 
 VALUE_TARGET_KINDS = frozenset({"outcome", "winloss", "margin", "margin_blend"})
 C_PUCT_SCHEDULES = frozenset({"fixed", "visit_scaled"})
 DETERMINIZE_MODES = frozenset({"off", "per_decision", "per_turn"})
+# Search handling of hidden-card reveals (draws, shuffles); see MctsChanceMode.
+CHANCE_MODES = ("off", "truncate", "resample")
 TEMP_MODES = frozenset({"legacy", "per_seat_buy"})
 OPTIMIZER_KINDS = frozenset({"adamw", "adam"})
 
@@ -144,6 +146,14 @@ class SelfPlayConfig:
     # Honest hidden-information root sampling is opt-in so older campaign
     # configs and checkpoints retain their original search behavior.
     determinize: str = "off"
+    # "off" keeps the historical search; "truncate" stops each simulation at
+    # the first hidden-card reveal (network value there); "resample" also
+    # stops there but draws a fresh outcome on every visit.
+    chance_mode: str = "off"
+    # Hidden-information worlds per search (1 = one sampled world): the
+    # decision's simulations are split across this many sampled worlds and
+    # root visits are summed. Needs determinize on and tree_reuse off.
+    worlds: int = 1
     min_new_sims: int = 64
     expand_top_k: int = 0
     # c18 opening-template curriculum. The train loop turns the schedule
@@ -504,6 +514,12 @@ def validate_determinize_config(config: SelfPlayConfig) -> None:
     if not isinstance(config.determinize, str) or config.determinize.lower() not in DETERMINIZE_MODES:
         allowed = ", ".join(sorted(DETERMINIZE_MODES))
         raise ValueError(f"unknown selfplay determinize mode {config.determinize!r}; expected one of {allowed}")
+    if not isinstance(config.worlds, int) or isinstance(config.worlds, bool) or not 1 <= config.worlds <= 64:
+        raise ValueError(f"selfplay.worlds must be an integer in [1, 64], got {config.worlds!r}")
+    if config.worlds > 1 and (config.determinize.lower() == "off" or config.tree_reuse):
+        raise ValueError("selfplay.worlds > 1 needs determinize on and tree_reuse off")
+    if config.chance_mode not in CHANCE_MODES:
+        raise ValueError(f"unknown selfplay chance_mode {config.chance_mode!r}; expected one of {', '.join(CHANCE_MODES)}")
 
 
 def validate_temperature_config(config: SelfPlayConfig) -> None:

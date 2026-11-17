@@ -1,0 +1,14 @@
+{
+  "tag": "bcpol_c_vs_bca",
+  "a": "checkpoints/c26_bc_pol_c/bc_c.pt",
+  "b": "checkpoints/c25_bc_long/bc_a.pt",
+  "a_zero_value": false,
+  "b_zero_value": false,
+  "sims": 128,
+  "games": 200,
+  "wins": 80,
+  "losses": 118,
+  "ties": 2,
+  "a_win_pct": 0.40404040404040403,
+  "wall_s": 919
+}

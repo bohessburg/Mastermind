@@ -1,0 +1,25 @@
+[c31g27_400_vs_100_honest_s1] device=mps backend=torch pairs=50 chunk=50 A=checkpoints/remote/campaign31/gen_0027.pt sims=400 zero_v=False | B=checkpoints/remote/campaign31/gen_0027.pt sims=100 zero_v=False | determinize=per_decision cross_route=False tree_reuse=False opening_temp=False leaves_in_flight=8 (min sims/leaf 32)
+[c31g27_400_vs_100_honest_s1] .. 0/100 games  7766 evals/s  30s
+[c31g27_400_vs_100_honest_s1] .. 0/100 games  9022 evals/s  60s
+[c31g27_400_vs_100_honest_s1] .. 0/100 games  9329 evals/s  90s
+[c31g27_400_vs_100_honest_s1] .. 1/100 games  9527 evals/s  120s
+[c31g27_400_vs_100_honest_s1] .. 5/100 games  9574 evals/s  150s
+[c31g27_400_vs_100_honest_s1] .. 8/100 games  9559 evals/s  180s
+[c31g27_400_vs_100_honest_s1] .. 19/100 games  9520 evals/s  210s
+[c31g27_400_vs_100_honest_s1] .. 32/100 games  9123 evals/s  240s
+[c31g27_400_vs_100_honest_s1] .. 41/100 games  8648 evals/s  270s
+[c31g27_400_vs_100_honest_s1] .. 49/100 games  8076 evals/s  300s
+[c31g27_400_vs_100_honest_s1] .. 49/100 games  7392 evals/s  330s
+[c31g27_400_vs_100_honest_s1] .. 50/100 games  7130 evals/s  360s
+[c31g27_400_vs_100_honest_s1] .. 50/100 games  7346 evals/s  390s
+[c31g27_400_vs_100_honest_s1] .. 51/100 games  7516 evals/s  420s
+[c31g27_400_vs_100_honest_s1] .. 52/100 games  7673 evals/s  450s
+[c31g27_400_vs_100_honest_s1] .. 55/100 games  7800 evals/s  480s
+[c31g27_400_vs_100_honest_s1] .. 59/100 games  7918 evals/s  510s
+[c31g27_400_vs_100_honest_s1] .. 70/100 games  7980 evals/s  540s
+[c31g27_400_vs_100_honest_s1] .. 79/100 games  8000 evals/s  570s
+[c31g27_400_vs_100_honest_s1] .. 87/100 games  7929 evals/s  600s
+[c31g27_400_vs_100_honest_s1] .. 95/100 games  7753 evals/s  630s
+[c31g27_400_vs_100_honest_s1] .. 99/100 games  7467 evals/s  660s
+[c31g27_400_vs_100_honest_s1] 50/50 pairs  A 48W-48L-4T score=0.500±0.040  545 games/hr  7459 evals/s  661s
+[c31g27_400_vs_100_honest_s1] DONE A 48W-48L-4T score=0.500 ci95=[0.421,0.579] elo=+0 seat0=0.550 non_greedy=0.0% turns=33.8 trunc=0 660.9s

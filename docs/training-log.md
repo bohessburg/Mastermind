@@ -3597,6 +3597,83 @@ s160h gen 4 (the accepted candidate), same boards: 0.5025 +- 0.009 (972-962-66),
 
 Self-play is about 30% slower than c32's clairvoyant self-play (about 3,800 vs 5,000 games/hr, about 16 vs 12 min), offset by a gate about 3 min faster, so generations match c32 (about 28 min). Gen 10 checkpoint ladder: **c33 gen 9 vs c31 gen 27, 0.516 +- 0.010 (993-929-78)**, same boards as the train-steps ladders (c32 gen 6 0.511, s160h gen 6 0.520). Ten generations from BC with honest self-play matched and slightly passed the c31 line's best, which took 27 generations plus c30's and c29's before it.
 
+Gens 11-20: 11 accepted 0.519 (engine3 83%), 12 0.513, 13 0.487, 14 0.503, 15 0.493, 16 0.509, 17 accepted 0.526 vs 11 (engine3 77%), 18 0.511, 19 0.506, 20 0.484. Value loss fell steadily to 0.145; policy loss about 0.79 and entropy about 0.785, flat since gen 14. Gen 20 checkpoint ladder: **c33 gen 17 vs c31 gen 27, 0.5535 +- 0.010 (1072-858-70), about +37 Elo, 5.4 SE**, same boards (gen 9 was 0.516). The first clear improvement over gen 27 by any run; c33 is still climbing.
+
+Gens 21-31: accepted 22 (0.522 vs 17, engine3 83.8%), 25 (0.515 vs 22, engine3 73%), 28 (0.525 vs 25, engine3 74%); others rejected near 0.50. Policy loss and entropy rose gens 25-30 (0.783 -> 0.801, 0.779 -> 0.797) while value loss kept falling (0.141) and held-out R2 reached 0.686. Gen 30 checkpoint ladders vs c31 gen 27 (same boards): **gen 28 0.5825 +- 0.010 (1135-805-60, about +58 Elo)**, gen 22 0.566 +- 0.010 (1101-837-62). Ladder progression gen 9 / 17 / 22 / 28: 0.516 / 0.554 / 0.566 / 0.583; every accept since gen 9 was real progress, including gen 25's thin one.
+
+**c33 generation on the M1 Max (2026-11-16, Jack: "one c33 generation locally as a trial")**: `configs/run_c33_mac.json` (c33 + run_c31_mac hardware settings: MLX fp16 serving, MLX fp32 gate in chunks of 400, 8 workers, single gate process), resumed from a copy of the box's gen 30 state, so it played the box's gen 31 conditions. **83.8 min**: self-play 65.8 min (1014/1024 at the 99% cut-off; 49-51k evals/s GPU-bound for most of it, falling to 16k in the tail), held-out + 160 train steps 1.6 min, gate 15.6 min (800 games vs gen 28: 0.491, box's gen 31 got 0.498). About 3x the box (28 min). Memory peaked at about 58 GB of workers plus 5 GB compressed with about 1 GB free (all 1024 games at once); battery 100% -> 32% on the 20 W charger. Launch scripts `scripts/ops/mac_gen1.sh` / `mac_train.sh` / `mac_mem.sh` now take MAC_CONFIG, MAC_DIR, MAC_INIT, MAC_RESUME, STOP_BELOW.
+
+Gens 31-40: accepted 32 (0.532 vs 28, engine3 77%), 34 (0.531 vs 32, engine3 87%), 39 (0.541 vs 34, engine3 80-18-2); others rejected 0.480-0.500. Box extended overnight (Jack). Policy loss/entropy peaked at 0.801/0.797 (gens 30-32), then eased to about 0.793-0.798. Gen 40 checkpoint ladders vs c31 gen 27 (same boards): **gen 39 0.609 +- 0.010 (1191-755-54, about +77 Elo, z 11)**, gen 34 0.588 +- 0.010 (1147-796-57, +62). Curve gen 9/17/22/28/34/39: +11/+37/+46/+58/+62/+77 Elo.
+
+Gens 41-50: accepted 45 (0.515 vs 39), 46 (0.515 vs 45, engine3 88%), 47 (0.516 vs 46); others rejected 0.463-0.513. Policy loss/entropy fell to 0.778/0.776 (gen 49, lowest since gen 15); value loss rose slightly to about 0.143. Gen 50 checkpoint ladders vs c31 gen 27 (same boards): gen 45 0.609 +- 0.010 (1192-757-51, +77 Elo), gen 47 0.594 +- 0.010 (1162-786-52, +66). Gen 39 and gen 45 are level; the thin accepts 46 and 47 did not add measurable strength, and the ladder has been flat at about +66 to +77 Elo since gen 39. Jack: the arena bot runs about 24/7 on c33 champions and its dominion.games rating rose 47.5 -> 49.3 from c33 play.
+Gen 51 accepted 0.524 vs gen 47; ladder vs c31 gen 27: **gen 51 0.610 +- 0.010 (1192-751-57, +78 Elo)**, level with gens 39 and 45 (0.609). engine3 per accept, main + sentinel runs combined (200 games): gen 1 72.0%, 2 70.5, 5 75.5, 9 75.5, 11 78.2, 17 77.8, 22 83.8, 25 75.0, 28 77.8, 32 81.8, 34 85.5, 39 80.5, 45 83.2, 46 83.8, 47 78.5.
+
+**c33 stopped 03:02 UTC 2026-11-17 by hand after gen 52** (Jack: implement the worlds test, then cut c33 and run it on the box). Final: 52 generations, best gen 51 (ladder +78 Elo vs c31 gen 27), 16 accepts; gen 52 rejected 0.503 vs 51. Weights and replay (gen 52 state) on the Mac (checkpoints/remote/campaign33) and Hetzner.
+
+**Worlds test (started 03:05 UTC):** multi-world search in the native runner (`SelfPlayConfig.worlds` / per-seat `seat_worlds`, `Mcts::reset_worlds`: K roots in one node slab, each a separate hidden-information sample, each external simulation to the least-loaded world, root visits/values/policy summed by action; K=1 is exactly the old determinize + reset; tests `[worlds]`). `selfplay.worlds` config field, `--a-worlds/--b-worlds/--first-pair` in `scripts/c29_search_ladder.py`. Matches: c33 gen 51 with K = 2, 4, 8 worlds vs 1 world, 1024 sims total per side, honest, greedy, fresh trees, 1000 boards x 2 seats each, seed 20261117, 6 board slices per match (18 processes, about 280k evals/s together), `bench/worlds/` in /root/revealwork.
+
+Worlds test results (finished 03:49 UTC, 43 min; copies in `bench/worlds/`):
+
+| A | vs B | Score (paired SE) | W-L-T | Elo | z |
+|---|---|---|---|---|---|
+| 2 worlds x 512 sims | 1 world x 1024 | **0.533 +- 0.010** | 1034-901-65 | **+23** | 3.4 |
+| 4 worlds x 256 sims | 1 world x 1024 | 0.501 +- 0.010 | 972-967-61 | +1 | 0.1 |
+| 8 worlds x 128 sims | 1 world x 1024 | 0.501 +- 0.010 | 969-965-66 | +1 | 0.1 |
+
+Two worlds is a clear gain at 1024 sims; four and eight are no better than one (more averaging over hidden cards, but each tree shallower). The arena already plays 2 worlds (x 400 sims). Candidate for c34: self-play with `selfplay.worlds 2` (and the gate the same way).
+
+**Worlds test 2 (03:58-05:30 UTC, `bench/worlds2/`):** sims scale with worlds. Every match is c33 gen 51 against itself at 1 world x 128 sims, honest (`determinize per_decision`), greedy, fresh trees, 1000 boards x 2 seats, seed 20261118, 3 board slices per match. Single-world controls at the same total sims were added. One slice (w8x128 boards 333-665) ran out of CUDA memory with 18 processes. It was rerun with `--chunk 167` and `expandable_segments`. Several other logs show recovered allocator OOM warnings at startup.
+
+| A (vs 1 world x 128) | Score (paired SE) | W-L-T | Elo | z | Evals per game |
+|---|---|---|---|---|---|
+| 2 worlds x 128 (256 total) | 0.490 +- 0.009 | 945-987-68 | -7 | -1.2 | 38.0k |
+| 4 worlds x 128 (512 total) | 0.489 +- 0.009 | 944-988-68 | -8 | -1.3 | 53.2k |
+| 8 worlds x 128 (1024 total) | 0.486 +- 0.009 | 940-997-63 | -10 | -1.6 | 64.8k |
+| 1 world x 256 | 0.499 +- 0.009 | 954-957-89 | -1 | -0.1 | 37.7k |
+| 1 world x 512 | 0.507 +- 0.009 | 973-945-82 | +5 | +0.7 | 51.8k |
+| 1 world x 1024 | 0.485 +- 0.010 | 935-997-68 | -11 | -1.6 | 63.0k |
+
+None of the six beats 128 sims. Extra search from 2x to 8x, in more worlds or a deeper single tree, buys nothing for this net in honest play. Evals grow far less than the nominal sims: 1.7x from 256 to 1024. The reason is `adaptive_sims_per_legal 128` (floor 128): a decision gets at most 128 sims per legal action, so small decisions are capped in every arm. Test 1 is consistent with this. There, 2 worlds x 512 beat 1 x 1024 by +23, but 1 x 1024 is about -11 against 1 x 128, so 2 x 512 is roughly level with 128 sims. Implications: the worlds-2 c34 candidate has no strength gain behind it at these budgets. Self-play at 1024 sims may not be buying play strength over 128 either. A lower self-play budget is now a candidate (much faster generations), though policy-target quality is not the same thing as greedy play strength, so it needs its own test.
+
+**Worlds test 3 (06:04-06:27 UTC, `bench/worlds3/`):** the same seven search setups against scripted bots instead of self-play. c33 gen 51, honest, greedy, 800 games per arm (game indices 0-799 with seed 20261119; the network seat alternates by index), and every arm plays the same games, so differences against 1 x 128 are paired game by game. Script: `scripts/worlds_scripted.py` (native runner, slot manifest with a scripted seat); merge: `scripts/worlds_scripted_merge.py`.
+
+| Arm | vs engine3 | Diff vs 1x128 (z) | vs bigmoney | Diff vs 1x128 (z) |
+|---|---|---|---|---|
+| 1 world x 128 | 80.8% +- 1.4 | - | 88.3% +- 1.1 | - |
+| 2 worlds x 128 | 81.1% | +0.3 (0.2) | 88.2% | -0.1 (-0.1) |
+| 4 worlds x 128 | 81.3% | +0.4 (0.3) | 88.7% | +0.4 (0.3) |
+| 8 worlds x 128 | 81.7% | +0.9 (0.6) | 87.5% | -0.8 (-0.6) |
+| 1 world x 256 | 78.3% | -2.5 (-1.7) | 86.3% | -2.0 (-1.5) |
+| 1 world x 512 | 78.3% | -2.5 (-1.6) | 88.1% | -0.3 (-0.2) |
+| 1 world x 1024 | 79.0% | -1.8 (-1.1) | 88.3% | -0.1 (-0.1) |
+
+Same picture as against itself: nothing beats 128 sims. More worlds is level with one world; deeper single-world trees are level or slightly worse (all three are below 1 x 128 against engine3, each at z around -1 to -1.7). gen 51's 80.8% vs engine3 matches its gate check (80.5%). The net loses about 12% of games to bigmoney at every budget, so search does not fix those games either; worth looking at directly.
+
+**Thin-deck worlds test (2026-11-17, Mac, `bench/thin/`).** Jack's hypothesis: from the arena, the bot collapses once both decks are thinned small, possibly because the single sampled world matters more with a small deck. Positions: `scripts/arena_positions.py` replays every archived arena game's frames through the live parser, tracker and bridge and keeps each action- and buy-phase question on the bot's turn with 2+ legal moves: 81,839 positions from 1,111 completed games (1,127 at a deck of 6 or fewer from 135 games, 5,628 at 7-9). `scripts/thin_worlds.py` (new `DecisionSearcher.root_stats` binding, built into `build-thin/` so the live arena's `build/` is untouched) runs the arena's searcher with c33 gen 51 on 400 positions per deck-size bucket: 1 world x 128 with 6 seeds, 2 x 512 (the arena's setting), 8 x 128 and 1 x 1024 with 3 seeds each, and a 32 x 256 reference (37 min, 33.8M evals).
+
+| Bot deck size | Move flips across seeds at 1x128 | Agrees with reference: 1x128 / 2x512 / 8x128 / 1x1024 |
+|---|---|---|
+| 0-6 | 2.0% | 98.5% / 96.8% / 99.2% / 94.7% |
+| 7-9 | 3.2% | 97.4% / 97.1% / 98.9% / 93.9% |
+| 10-12 | 2.6% | 97.8% / 96.5% / 98.6% / 93.2% |
+| 13-17 | 2.8% | 97.2% / 98.1% / 98.4% / 93.5% |
+| 18-25 | 3.5% | 97.1% / 97.6% / 98.8% / 94.4% |
+| 26+ | 2.8% | 97.3% / 96.9% / 98.1% / 95.4% |
+
+Regret against the reference is under 0.004 value units everywhere. The sampled world barely changes the bot's phase decisions, and thin decks are the least sensitive bucket: a thin deck is mostly drawn every turn and its contents are fully known. Not covered: in-turn choices (trash targets, Sentry, Library), and the reference uses the same net, so this measures search sensitivity, not whether the net is right.
+
+Value head against actual outcomes (`scripts/thin_value_calibration.py`, `scripts/thin_both_value.py`). Games where both decks are 9 or fewer in turns 1-8: 123 games, 59.8% wins, about the arena average (58%), predicted 63.8%. Where only the bot is thin in turns 1-8: 263 games, 77.0% wins but the value head predicts 87.2%, and 12.9% of positions in those lost games are rated above 0.6 (3.8% otherwise). The bot still at 9 cards or fewer at turns 13-16: 13 games, 25% wins; turn 17+: 2 games, both lost. Reading: no search or worlds effect; what shows is value overconfidence after the bot thins early, and a small set of games where it stays thin too long.
+
+Jack's objection, accepted: the search making the same move in every world is close to built in, since the policy was trained on one-world search targets and 128-sim search mostly follows the policy. The test detects world-sampling *noise*, not a consistent *bias* that one-world training has put into the net. Such a bias would leave flips low, the same-net reference in agreement, and self-play matches level (both sides share it). A concrete candidate: inside a sampled world the search knows its future draws, so precise thin decks look better than they are, which fits the overconfidence above. The same argument applies to the chance-mode tests (truncate -24 Elo, resample about -2 SE), which were run on a net trained on deep clairvoyant targets.
+
+Box 188.151.73.109:32944 expired 07:00 UTC 2026-11-17. All c33 checkpoints (91 files, gen 51 md5 d01b399a...) and every bench result are on the Mac.
+
+### c34 plan: training A/B of search mode (2026-11-17, not started)
+
+Decision (Jack: "what's a bigger impact next focus, this or truncation"): chance-node search (truncate / resample) over more worlds. Reasons: (1) multi-world PIMC averages only at the root; every world's tree still plans through known draws, so the suspected bias survives, while truncate stops at the first reveal and resample re-deals hidden cards on every pass through a reveal (ISMCTS-like); (2) worlds now has three null results (self-play equal compute, scripted bots, thin arena positions); (3) both chance modes were only ever tried on a net not trained for them, and truncate used about a sixth of the network calls. Risk: the one-world deep lines do carry information (that is why truncate lost), and training may not close the gap.
+
+Arms (`configs/run_c34_control.json`, `run_c34_resample.json`, `run_c34_truncate.json`), identical except `selfplay.chance_mode` off / resample / truncate: init c33 gen 51 (`scripts/box/resume.sh configs/run_c34_<arm>.json checkpoints/campaign33/gen_0051.pt`), empty buffer so each arm learns only from its own search's targets, constant lr 7e-5 in every arm (c33's start rate; gen 51 was trained at about 2.7e-5, and 5 gens x 160 steps at that rate would barely move the net; the control arm measures any lr effect), anchor weight 0.1, 5 generations, s160h steps, 1024 self-play sims, paired gate 400 games with force-accept after one stale generation (the final checkpoint of each arm is what gets judged). Judge on: ladder vs gen 51 (2000 games), the thin arena positions (does the 87% predicted vs 77% actual gap shrink; `scripts/thin_value_calibration.py`, `scripts/thin_both_value.py` on `bench/thin/positions.jsonl`, regenerate with `scripts/arena_positions.py`), engine3, and the thinner bot on trasher kingdoms. Optional fourth arm: `selfplay.worlds 4`. Estimate: about 35-40 min per generation, about 9-10 h of box time for three 5-gen arms run in sequence. Side finding to test later: self-play at 128-256 sims instead of 1024 (no measured strength from more sims).
+
 ### Skill-weight curve made continuous (2026-11-15, c19e5ba)
 
 Jack: "That discontinuity is bad". The policy weight rose from 0.02 at level 40 to 1.0 just below 50, then jumped to 3.0 at exactly 50. It now keeps rising from 1.0 at 50 to 3.0 at 55 and holds (`POLICY_WEIGHT_EXPERT_RAMP_END`). Most 50+ players sit at 50-52, so the 50+ share of policy weight falls from about half to 23%; effective policy rows are 580,619 on the level-1 corpus (was 698,790) and 336,122 on `tuples_all_40plus/train` (was 402,912). Applies to every future skill-weighted load (BC and the training anchor). Not deployed to the box's main checkout while the train-steps arms run, so they stay on c32's curve. The level-1 BC comparison was restarted under the new curve from the separate checkout `/root/gatetest` at 15:52 UTC; note it now differs from `bc_a` in both corpus and curve. Open: the c32 arms and c31/c32 runs used the old curve, so c33 (BC init under the new curve plus honest self-play) changes the anchor weighting too.

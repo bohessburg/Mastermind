@@ -1,0 +1,27 @@
+[c31g27_400_vs_200_honest_s3] device=mps backend=torch pairs=50 chunk=50 A=checkpoints/remote/campaign31/gen_0027.pt sims=400 zero_v=False | B=checkpoints/remote/campaign31/gen_0027.pt sims=200 zero_v=False | determinize=per_decision cross_route=False tree_reuse=False opening_temp=False leaves_in_flight=8 (min sims/leaf 32)
+[c31g27_400_vs_200_honest_s3] .. 0/100 games  8523 evals/s  30s
+[c31g27_400_vs_200_honest_s3] .. 0/100 games  9670 evals/s  60s
+[c31g27_400_vs_200_honest_s3] .. 0/100 games  10086 evals/s  90s
+[c31g27_400_vs_200_honest_s3] .. 0/100 games  10299 evals/s  120s
+[c31g27_400_vs_200_honest_s3] .. 1/100 games  10444 evals/s  150s
+[c31g27_400_vs_200_honest_s3] .. 3/100 games  10591 evals/s  180s
+[c31g27_400_vs_200_honest_s3] .. 10/100 games  10587 evals/s  210s
+[c31g27_400_vs_200_honest_s3] .. 27/100 games  10285 evals/s  240s
+[c31g27_400_vs_200_honest_s3] .. 38/100 games  9854 evals/s  270s
+[c31g27_400_vs_200_honest_s3] .. 43/100 games  9313 evals/s  300s
+[c31g27_400_vs_200_honest_s3] .. 45/100 games  8808 evals/s  330s
+[c31g27_400_vs_200_honest_s3] .. 48/100 games  8242 evals/s  360s
+[c31g27_400_vs_200_honest_s3] .. 50/100 games  7756 evals/s  390s
+[c31g27_400_vs_200_honest_s3] .. 50/100 games  8169 evals/s  420s
+[c31g27_400_vs_200_honest_s3] .. 50/100 games  8570 evals/s  450s
+[c31g27_400_vs_200_honest_s3] .. 50/100 games  8815 evals/s  480s
+[c31g27_400_vs_200_honest_s3] .. 51/100 games  8954 evals/s  510s
+[c31g27_400_vs_200_honest_s3] .. 54/100 games  9081 evals/s  540s
+[c31g27_400_vs_200_honest_s3] .. 64/100 games  9143 evals/s  570s
+[c31g27_400_vs_200_honest_s3] .. 76/100 games  9129 evals/s  600s
+[c31g27_400_vs_200_honest_s3] .. 87/100 games  9051 evals/s  630s
+[c31g27_400_vs_200_honest_s3] .. 91/100 games  8875 evals/s  660s
+[c31g27_400_vs_200_honest_s3] .. 95/100 games  8656 evals/s  690s
+[c31g27_400_vs_200_honest_s3] .. 99/100 games  8392 evals/s  720s
+[c31g27_400_vs_200_honest_s3] 50/50 pairs  A 49W-47L-4T score=0.510±0.043  498 games/hr  8366 evals/s  723s
+[c31g27_400_vs_200_honest_s3] DONE A 49W-47L-4T score=0.510 ci95=[0.426,0.594] elo=+7 seat0=0.630 non_greedy=0.0% turns=34.8 trunc=1 722.7s

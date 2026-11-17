@@ -1,0 +1,48 @@
+{
+  "tag": "bca_128",
+  "ckpt": "checkpoints/campaign25/bc_a.pt",
+  "sims": 128,
+  "games": 32,
+  "determinize": "per_decision",
+  "max_turns": 30,
+  "seed": 20261110,
+  "reference": {
+    "decisions": 5940,
+    "entropy": 0.4355107802115188,
+    "top_share": 0.816929133855922
+  },
+  "leaves": {
+    "4": {
+      "matched_decisions": 1228,
+      "identical_games": 3,
+      "same_top_move": 0.9747557003257329,
+      "total_variation": 0.039921516108941776,
+      "sequential_entropy": 0.40532073060284074,
+      "batched_entropy": 0.48476650977873864,
+      "sequential_top_share": 0.8343443023178477,
+      "batched_top_share": 0.8089717615130833,
+      "batched_share_on_sequential_top": 0.806868604260844,
+      "all_decisions": {
+        "decisions": 5880,
+        "entropy": 0.5573064764215038,
+        "top_share": 0.7732002249647147
+      }
+    },
+    "8": {
+      "matched_decisions": 843,
+      "identical_games": 1,
+      "same_top_move": 0.9608540925266904,
+      "total_variation": 0.08630593759328005,
+      "sequential_entropy": 0.4187207878676218,
+      "batched_entropy": 0.6351629219385846,
+      "sequential_top_share": 0.828116681313433,
+      "batched_top_share": 0.767814610514549,
+      "batched_share_on_sequential_top": 0.7639569967875962,
+      "all_decisions": {
+        "decisions": 5812,
+        "entropy": 0.6539743209309228,
+        "top_share": 0.748374256983124
+      }
+    }
+  }
+}

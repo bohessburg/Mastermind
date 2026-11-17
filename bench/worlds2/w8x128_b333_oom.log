@@ -1,0 +1,62 @@
+[w8x128_b333] device=cuda backend=torch pairs=333 chunk=333 A=/root/Mastermind/checkpoints/campaign33/gen_0051.pt sims=1024 chance=None worlds=8 zero_v=False | B=/root/Mastermind/checkpoints/campaign33/gen_0051.pt sims=128 chance=None worlds=1 zero_v=False | boards 333..665 determinize=per_decision cross_route=False tree_reuse=False opening_temp=False leaves_in_flight=8 (min sims/leaf 32)
+[W1117 03:58:18.244669230 CUDACachingAllocator.cpp:3934] memory allocation failed with OOM on device 0 while trying to allocate 111149056 bytes (free: 68222976, total: 33670758400).
+[W1117 03:58:18.268253786 CUDACachingAllocator.cpp:3934] memory allocation failed with OOM on device 0 while trying to allocate 111149056 bytes (free: 87097344, total: 33670758400).
+[W1117 03:58:18.268390604 CUDACachingAllocator.cpp:3934] memory allocation failed with OOM on device 0 while trying to allocate 111149056 bytes (free: 87097344, total: 33670758400).
+Traceback (most recent call last):
+  File "/root/revealwork/scripts/c29_search_ladder.py", line 231, in <module>
+    main()
+  File "/root/revealwork/scripts/c29_search_ladder.py", line 167, in main
+    match = run_paired_match(
+            ^^^^^^^^^^^^^^^^^
+  File "/root/revealwork/src/v2/train/diagnostics.py", line 373, in run_paired_match
+    records, evals = play_manifest_games(
+                     ^^^^^^^^^^^^^^^^^^^^
+  File "/root/revealwork/src/v2/train/diagnostics.py", line 168, in play_manifest_games
+    logits, values = route_leaf_evaluations(
+                     ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/revealwork/src/v2/train/selfplay.py", line 707, in route_leaf_evaluations
+    logits, values = evaluate_model(model, obs)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/revealwork/src/v2/train/selfplay.py", line 686, in evaluate_model
+    return model.evaluate(obs_tensor, mask_tensor)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/revealwork/.venv/lib/python3.12/site-packages/torch/utils/_contextlib.py", line 124, in decorate_context
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/root/revealwork/src/v2/train/card_transformer.py", line 630, in evaluate
+    logits, values = self(obs, n_piles)
+                     ^^^^^^^^^^^^^^^^^^
+  File "/root/revealwork/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1783, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/revealwork/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1794, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/revealwork/src/v2/train/card_transformer.py", line 616, in forward
+    return self.forward_tokenized(self.tokenize(obs, width))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/revealwork/src/v2/train/card_transformer.py", line 592, in forward_tokenized
+    encoded_tokens = self.encode_tokens(tokenized)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/revealwork/src/v2/train/card_transformer.py", line 520, in encode_tokens
+    return self.transformer(tokens, src_key_padding_mask=~valid_tokens)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/revealwork/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1783, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/revealwork/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1794, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/revealwork/.venv/lib/python3.12/site-packages/torch/nn/modules/transformer.py", line 542, in forward
+    output = mod(
+             ^^^^
+  File "/root/revealwork/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1783, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/revealwork/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1794, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/revealwork/.venv/lib/python3.12/site-packages/torch/nn/modules/transformer.py", line 921, in forward
+    return torch._transformer_encoder_layer_fwd(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 106.00 MiB. GPU 0 has a total capacity of 31.36 GiB of which 83.06 MiB is free. Process 224582 has 3.11 GiB memory in use. Process 224588 has 1.37 GiB memory in use. Process 224589 has 2.76 GiB memory in use. Process 224595 has 1.40 GiB memory in use. Process 224592 has 1.70 GiB memory in use. Process 224590 has 1.42 GiB memory in use. Process 224596 has 1.39 GiB memory in use. Process 224580 has 2.98 GiB memory in use. Process 224581 has 2.90 GiB memory in use. Process 224583 has 1.37 GiB memory in use. Process 224586 has 1.37 GiB memory in use. Process 224594 has 1.49 GiB memory in use. Process 224597 has 1.09 GiB memory in use. Process 224585 has 1.37 GiB memory in use. Process 224593 has 1.70 GiB memory in use. Process 224584 has 1.37 GiB memory in use. Including non-PyTorch memory, this process has 1.01 GiB memory in use. Process 224591 has 1.38 GiB memory in use. Of the allocated memory 274.87 MiB is allocated by PyTorch, and 79.13 MiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://docs.pytorch.org/docs/stable/notes/cuda.html#optimizing-memory-usage-with-pytorch-cuda-alloc-conf)

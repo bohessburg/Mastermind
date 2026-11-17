@@ -1,0 +1,14 @@
+{
+  "tag": "c27v_value_anchor_vs_bca",
+  "a": "bench/c27v/c27v_value_anchor.pt",
+  "b": "checkpoints/c25_bc_long/bc_a.pt",
+  "a_zero_value": false,
+  "b_zero_value": false,
+  "sims": 128,
+  "games": 200,
+  "wins": 63,
+  "losses": 133,
+  "ties": 4,
+  "a_win_pct": 0.32142857142857145,
+  "wall_s": 1292
+}

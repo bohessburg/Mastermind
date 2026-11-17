@@ -197,6 +197,17 @@ struct SelfPlayConfig {
     // slot/config budget). Requires tree_reuse off: a retained subtree would
     // hand one seat's search effort to the other.
     std::uint32_t seat_sims[MAX_PLAYERS]{};
+    // Chance handling at hidden-card reveals (see MctsChanceMode). The
+    // per-seat override is 0 = inherit chance_mode, else MctsChanceMode + 1;
+    // like seat_sims it requires tree_reuse off.
+    MctsChanceMode chance_mode = MctsChanceMode::Off;
+    std::uint8_t seat_chance_mode[MAX_PLAYERS]{};
+    // Hidden-information worlds per search: the simulations of one decision
+    // are split across this many independently sampled worlds and the root
+    // visit counts are summed (Mcts::reset_worlds). 1 = one sampled world.
+    // Needs determinize on and tree_reuse off; per-seat override 0 = inherit.
+    std::uint8_t worlds = 1;
+    std::uint8_t seat_worlds[MAX_PLAYERS]{};
     // Route every leaf of a search to the SEARCHING seat's model. The legacy
     // routing sends a leaf to the model of the player deciding AT the leaf,
     // so in a two-model match each side's tree is scored by the opponent's

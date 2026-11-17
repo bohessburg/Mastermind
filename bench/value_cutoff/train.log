@@ -1,0 +1,360 @@
+loading 247 shards, 2469977 rows, obs=1788 legal=357
+  loaded 25/247 shards (250000 rows, 1s)
+  loaded 50/247 shards (500000 rows, 2s)
+  loaded 75/247 shards (750000 rows, 2s)
+  loaded 100/247 shards (1000000 rows, 3s)
+  loaded 125/247 shards (1250000 rows, 4s)
+  loaded 150/247 shards (1500000 rows, 5s)
+  loaded 175/247 shards (1750000 rows, 6s)
+  loaded 200/247 shards (2000000 rows, 6s)
+  loaded 225/247 shards (2250000 rows, 7s)
+  loaded 247/247 shards (2469977 rows, 8s)
+games train/val/test 17755/986/987; policy pool 673009 rows; val all=124665 40plus=75946 45plus=35696 50plus=5420; test all=124589 40plus=77180 45plus=36763 50plus=5448
+arm=v45 value_floor=45.0 value_pool=673009 params=1969211 steps<=20000 device=mps
+/Users/paisho/Projects/Mastermind/.venv/lib/python3.11/site-packages/torch/autograd/graph.py:979: UserWarning: scatter_reduce_mps does not have a deterministic implementation, but you set 'torch.use_deterministic_algorithms(True, warn_only=True)'. You can file an issue at https://github.com/pytorch/pytorch/issues to help us prioritize adding deterministic support for this operation. (Triggered internally at /Users/runner/work/pytorch/pytorch/aten/src/ATen/Context.cpp:190.)
+  return Variable._execution_engine.run_backward(  # Calls into the C++ engine to run the backward pass
+imitation pretrain step=50/50 loss=1.647501 policy=1.217782 value=0.429719
+imitation pretrain step=50/50 loss=1.413906 policy=1.047560 value=0.366346
+imitation pretrain step=50/50 loss=1.301831 policy=0.951286 value=0.350545
+imitation pretrain step=50/50 loss=1.161865 policy=0.818158 value=0.343707
+imitation pretrain step=50/50 loss=1.189818 policy=0.840127 value=0.349691
+eval arm=v45 step=250 val45_policy=0.83628 val45_value=0.38189 val50_value=0.37262 best=1.21817 stale=0 elapsed=28s
+imitation pretrain step=50/50 loss=1.218813 policy=0.874289 value=0.344524
+imitation pretrain step=50/50 loss=1.108460 policy=0.783898 value=0.324562
+imitation pretrain step=50/50 loss=1.148963 policy=0.803107 value=0.345856
+imitation pretrain step=50/50 loss=1.067313 policy=0.747415 value=0.319898
+imitation pretrain step=50/50 loss=1.090697 policy=0.765185 value=0.325512
+eval arm=v45 step=500 val45_policy=0.76238 val45_value=0.39156 val50_value=0.35588 best=1.15394 stale=0 elapsed=56s
+imitation pretrain step=50/50 loss=1.090946 policy=0.774101 value=0.316845
+imitation pretrain step=50/50 loss=1.071841 policy=0.764146 value=0.307696
+imitation pretrain step=50/50 loss=1.000840 policy=0.696555 value=0.304285
+imitation pretrain step=50/50 loss=0.964962 policy=0.634133 value=0.330829
+imitation pretrain step=50/50 loss=1.026323 policy=0.682713 value=0.343610
+eval arm=v45 step=750 val45_policy=0.72642 val45_value=0.36924 val50_value=0.35704 best=1.09566 stale=0 elapsed=83s
+imitation pretrain step=50/50 loss=1.064891 policy=0.741127 value=0.323764
+imitation pretrain step=50/50 loss=1.015619 policy=0.716265 value=0.299354
+imitation pretrain step=50/50 loss=0.971409 policy=0.662820 value=0.308588
+imitation pretrain step=50/50 loss=0.984525 policy=0.661989 value=0.322535
+imitation pretrain step=50/50 loss=0.946786 policy=0.639004 value=0.307783
+eval arm=v45 step=1000 val45_policy=0.70845 val45_value=0.36862 val50_value=0.34585 best=1.07707 stale=0 elapsed=111s
+imitation pretrain step=50/50 loss=0.942103 policy=0.645904 value=0.296199
+imitation pretrain step=50/50 loss=0.870393 policy=0.578289 value=0.292104
+imitation pretrain step=50/50 loss=1.018300 policy=0.699215 value=0.319085
+imitation pretrain step=50/50 loss=0.922853 policy=0.610384 value=0.312469
+imitation pretrain step=50/50 loss=0.933184 policy=0.618644 value=0.314541
+eval arm=v45 step=1250 val45_policy=0.68045 val45_value=0.36191 val50_value=0.34831 best=1.04236 stale=0 elapsed=138s
+imitation pretrain step=50/50 loss=1.000444 policy=0.698224 value=0.302220
+imitation pretrain step=50/50 loss=1.007924 policy=0.693373 value=0.314551
+imitation pretrain step=50/50 loss=0.955385 policy=0.641064 value=0.314320
+imitation pretrain step=50/50 loss=0.901123 policy=0.596830 value=0.304293
+imitation pretrain step=50/50 loss=0.915144 policy=0.607172 value=0.307972
+eval arm=v45 step=1500 val45_policy=0.65991 val45_value=0.37177 val50_value=0.34044 best=1.03169 stale=0 elapsed=165s
+imitation pretrain step=50/50 loss=0.954048 policy=0.654872 value=0.299175
+imitation pretrain step=50/50 loss=0.926518 policy=0.647388 value=0.279130
+imitation pretrain step=50/50 loss=0.946524 policy=0.640564 value=0.305960
+imitation pretrain step=50/50 loss=0.929707 policy=0.640765 value=0.288943
+imitation pretrain step=50/50 loss=0.929354 policy=0.638244 value=0.291110
+eval arm=v45 step=1750 val45_policy=0.65729 val45_value=0.35617 val50_value=0.32770 best=1.01346 stale=0 elapsed=193s
+imitation pretrain step=50/50 loss=0.946219 policy=0.656962 value=0.289257
+imitation pretrain step=50/50 loss=0.936798 policy=0.634852 value=0.301947
+imitation pretrain step=50/50 loss=0.936739 policy=0.644434 value=0.292305
+imitation pretrain step=50/50 loss=0.964917 policy=0.675213 value=0.289703
+imitation pretrain step=50/50 loss=0.874096 policy=0.587248 value=0.286848
+eval arm=v45 step=2000 val45_policy=0.64612 val45_value=0.35683 val50_value=0.34959 best=1.00294 stale=0 elapsed=220s
+imitation pretrain step=50/50 loss=0.842332 policy=0.543476 value=0.298857
+imitation pretrain step=50/50 loss=1.000236 policy=0.698368 value=0.301868
+imitation pretrain step=50/50 loss=0.878537 policy=0.572646 value=0.305891
+imitation pretrain step=50/50 loss=0.917785 policy=0.639188 value=0.278597
+imitation pretrain step=50/50 loss=1.030267 policy=0.730110 value=0.300157
+eval arm=v45 step=2250 val45_policy=0.62801 val45_value=0.36138 val50_value=0.34972 best=0.98939 stale=0 elapsed=248s
+imitation pretrain step=50/50 loss=0.940057 policy=0.657994 value=0.282062
+imitation pretrain step=50/50 loss=0.888416 policy=0.594175 value=0.294241
+imitation pretrain step=50/50 loss=0.955444 policy=0.667037 value=0.288406
+imitation pretrain step=50/50 loss=0.908918 policy=0.599868 value=0.309051
+imitation pretrain step=50/50 loss=0.920704 policy=0.631562 value=0.289142
+eval arm=v45 step=2500 val45_policy=0.62760 val45_value=0.36368 val50_value=0.35005 best=0.98939 stale=1 elapsed=275s
+imitation pretrain step=50/50 loss=0.920778 policy=0.635673 value=0.285104
+imitation pretrain step=50/50 loss=0.970895 policy=0.668770 value=0.302125
+imitation pretrain step=50/50 loss=0.833281 policy=0.535567 value=0.297714
+imitation pretrain step=50/50 loss=0.925360 policy=0.633810 value=0.291550
+imitation pretrain step=50/50 loss=0.809156 policy=0.509612 value=0.299544
+eval arm=v45 step=2750 val45_policy=0.61558 val45_value=0.36124 val50_value=0.35420 best=0.97681 stale=0 elapsed=303s
+imitation pretrain step=50/50 loss=0.836984 policy=0.552966 value=0.284018
+imitation pretrain step=50/50 loss=0.855956 policy=0.566054 value=0.289902
+imitation pretrain step=50/50 loss=0.885897 policy=0.599143 value=0.286754
+imitation pretrain step=50/50 loss=0.816129 policy=0.533348 value=0.282781
+imitation pretrain step=50/50 loss=0.988524 policy=0.679927 value=0.308597
+eval arm=v45 step=3000 val45_policy=0.61077 val45_value=0.36488 val50_value=0.35857 best=0.97565 stale=0 elapsed=330s
+imitation pretrain step=50/50 loss=0.914528 policy=0.633756 value=0.280773
+imitation pretrain step=50/50 loss=0.821409 policy=0.544117 value=0.277291
+imitation pretrain step=50/50 loss=0.928282 policy=0.667190 value=0.261091
+imitation pretrain step=50/50 loss=0.825093 policy=0.529620 value=0.295473
+imitation pretrain step=50/50 loss=0.915233 policy=0.656166 value=0.259068
+eval arm=v45 step=3250 val45_policy=0.60101 val45_value=0.36967 val50_value=0.35670 best=0.97069 stale=0 elapsed=357s
+imitation pretrain step=50/50 loss=0.836981 policy=0.582327 value=0.254654
+imitation pretrain step=50/50 loss=0.828939 policy=0.559480 value=0.269459
+imitation pretrain step=50/50 loss=0.828357 policy=0.572481 value=0.255876
+imitation pretrain step=50/50 loss=0.895927 policy=0.623142 value=0.272785
+imitation pretrain step=50/50 loss=0.866970 policy=0.608466 value=0.258504
+eval arm=v45 step=3500 val45_policy=0.60437 val45_value=0.36559 val50_value=0.37233 best=0.96996 stale=0 elapsed=385s
+imitation pretrain step=50/50 loss=0.890179 policy=0.625653 value=0.264527
+imitation pretrain step=50/50 loss=0.798235 policy=0.521947 value=0.276289
+imitation pretrain step=50/50 loss=0.836044 policy=0.575659 value=0.260386
+imitation pretrain step=50/50 loss=0.903817 policy=0.654712 value=0.249105
+imitation pretrain step=50/50 loss=0.800083 policy=0.538538 value=0.261545
+eval arm=v45 step=3750 val45_policy=0.59938 val45_value=0.36754 val50_value=0.33937 best=0.96692 stale=0 elapsed=412s
+imitation pretrain step=50/50 loss=0.891290 policy=0.634947 value=0.256343
+imitation pretrain step=50/50 loss=0.779673 policy=0.534840 value=0.244833
+imitation pretrain step=50/50 loss=0.805442 policy=0.529018 value=0.276424
+imitation pretrain step=50/50 loss=0.790483 policy=0.549259 value=0.241223
+imitation pretrain step=50/50 loss=0.707619 policy=0.450037 value=0.257582
+eval arm=v45 step=4000 val45_policy=0.59465 val45_value=0.37850 val50_value=0.37761 best=0.96692 stale=1 elapsed=440s
+imitation pretrain step=50/50 loss=0.807523 policy=0.553357 value=0.254166
+imitation pretrain step=50/50 loss=0.790795 policy=0.549617 value=0.241178
+imitation pretrain step=50/50 loss=0.851244 policy=0.573837 value=0.277407
+imitation pretrain step=50/50 loss=0.921329 policy=0.683218 value=0.238111
+imitation pretrain step=50/50 loss=0.807351 policy=0.566730 value=0.240621
+eval arm=v45 step=4250 val45_policy=0.59884 val45_value=0.38854 val50_value=0.36203 best=0.96692 stale=2 elapsed=467s
+imitation pretrain step=50/50 loss=0.863520 policy=0.624514 value=0.239006
+imitation pretrain step=50/50 loss=0.805449 policy=0.557025 value=0.248424
+imitation pretrain step=50/50 loss=0.778821 policy=0.521005 value=0.257815
+imitation pretrain step=50/50 loss=0.809197 policy=0.564473 value=0.244724
+imitation pretrain step=50/50 loss=0.886311 policy=0.647359 value=0.238952
+eval arm=v45 step=4500 val45_policy=0.58874 val45_value=0.38619 val50_value=0.39171 best=0.96692 stale=3 elapsed=495s
+early-stop arm=v45 step=4500
+test arm=v45 all_value=0.34673 40plus_value=0.33933 45plus_value=0.34097 50plus_value=0.39561 45plus_acc=0.7773 50plus_acc=0.7735
+arm=v40 value_floor=40.0 value_pool=1381097 params=1969211 steps<=20000 device=mps
+imitation pretrain step=50/50 loss=1.600678 policy=1.197851 value=0.402826
+imitation pretrain step=50/50 loss=1.439709 policy=1.069990 value=0.369719
+imitation pretrain step=50/50 loss=1.302476 policy=0.946802 value=0.355675
+imitation pretrain step=50/50 loss=1.142946 policy=0.809237 value=0.333709
+imitation pretrain step=50/50 loss=1.165336 policy=0.819272 value=0.346063
+eval arm=v40 step=250 val45_policy=0.83097 val45_value=0.38188 val50_value=0.35352 best=1.21285 stale=0 elapsed=28s
+imitation pretrain step=50/50 loss=1.222454 policy=0.863077 value=0.359376
+imitation pretrain step=50/50 loss=1.147333 policy=0.809114 value=0.338220
+imitation pretrain step=50/50 loss=1.152892 policy=0.805489 value=0.347403
+imitation pretrain step=50/50 loss=1.101747 policy=0.748567 value=0.353180
+imitation pretrain step=50/50 loss=1.128169 policy=0.776258 value=0.351911
+eval arm=v40 step=500 val45_policy=0.76389 val45_value=0.36877 val50_value=0.36055 best=1.13267 stale=0 elapsed=55s
+imitation pretrain step=50/50 loss=1.083057 policy=0.785966 value=0.297091
+imitation pretrain step=50/50 loss=1.078954 policy=0.761022 value=0.317932
+imitation pretrain step=50/50 loss=1.000279 policy=0.697932 value=0.302347
+imitation pretrain step=50/50 loss=0.951345 policy=0.617232 value=0.334113
+imitation pretrain step=50/50 loss=1.025212 policy=0.691360 value=0.333851
+eval arm=v40 step=750 val45_policy=0.73930 val45_value=0.36790 val50_value=0.36736 best=1.10720 stale=0 elapsed=83s
+imitation pretrain step=50/50 loss=1.057929 policy=0.740778 value=0.317151
+imitation pretrain step=50/50 loss=1.026657 policy=0.723234 value=0.303423
+imitation pretrain step=50/50 loss=0.975131 policy=0.663860 value=0.311271
+imitation pretrain step=50/50 loss=0.991659 policy=0.667828 value=0.323832
+imitation pretrain step=50/50 loss=0.947073 policy=0.639360 value=0.307713
+eval arm=v40 step=1000 val45_policy=0.71359 val45_value=0.35608 val50_value=0.35422 best=1.06967 stale=0 elapsed=110s
+imitation pretrain step=50/50 loss=0.975337 policy=0.663747 value=0.311589
+imitation pretrain step=50/50 loss=0.900147 policy=0.573527 value=0.326620
+imitation pretrain step=50/50 loss=1.012920 policy=0.700357 value=0.312563
+imitation pretrain step=50/50 loss=0.942129 policy=0.620331 value=0.321798
+imitation pretrain step=50/50 loss=0.919091 policy=0.608508 value=0.310583
+eval arm=v40 step=1250 val45_policy=0.68054 val45_value=0.35827 val50_value=0.34024 best=1.03881 stale=0 elapsed=138s
+imitation pretrain step=50/50 loss=1.010267 policy=0.706348 value=0.303919
+imitation pretrain step=50/50 loss=1.012786 policy=0.696586 value=0.316200
+imitation pretrain step=50/50 loss=0.975493 policy=0.648775 value=0.326717
+imitation pretrain step=50/50 loss=0.914348 policy=0.591893 value=0.322455
+imitation pretrain step=50/50 loss=0.910698 policy=0.592957 value=0.317741
+eval arm=v40 step=1500 val45_policy=0.66077 val45_value=0.35676 val50_value=0.33613 best=1.01752 stale=0 elapsed=165s
+imitation pretrain step=50/50 loss=0.965277 policy=0.654940 value=0.310337
+imitation pretrain step=50/50 loss=0.936016 policy=0.648234 value=0.287782
+imitation pretrain step=50/50 loss=0.968100 policy=0.645425 value=0.322675
+imitation pretrain step=50/50 loss=0.953736 policy=0.650099 value=0.303637
+imitation pretrain step=50/50 loss=0.908106 policy=0.610471 value=0.297635
+eval arm=v40 step=1750 val45_policy=0.64780 val45_value=0.35322 val50_value=0.32782 best=1.00102 stale=0 elapsed=193s
+imitation pretrain step=50/50 loss=0.964367 policy=0.661425 value=0.302942
+imitation pretrain step=50/50 loss=0.919293 policy=0.606404 value=0.312889
+imitation pretrain step=50/50 loss=0.960839 policy=0.651001 value=0.309838
+imitation pretrain step=50/50 loss=0.990485 policy=0.665079 value=0.325406
+imitation pretrain step=50/50 loss=0.895016 policy=0.564982 value=0.330034
+eval arm=v40 step=2000 val45_policy=0.63690 val45_value=0.34991 val50_value=0.34198 best=0.98680 stale=0 elapsed=220s
+imitation pretrain step=50/50 loss=0.845591 policy=0.548706 value=0.296885
+imitation pretrain step=50/50 loss=1.002810 policy=0.701367 value=0.301443
+imitation pretrain step=50/50 loss=0.898621 policy=0.581929 value=0.316692
+imitation pretrain step=50/50 loss=0.945027 policy=0.636060 value=0.308967
+imitation pretrain step=50/50 loss=1.060097 policy=0.727937 value=0.332161
+eval arm=v40 step=2250 val45_policy=0.62252 val45_value=0.35534 val50_value=0.34218 best=0.97786 stale=0 elapsed=248s
+imitation pretrain step=50/50 loss=0.959085 policy=0.652315 value=0.306770
+imitation pretrain step=50/50 loss=0.899725 policy=0.599135 value=0.300590
+imitation pretrain step=50/50 loss=0.968021 policy=0.670441 value=0.297580
+imitation pretrain step=50/50 loss=0.931562 policy=0.608826 value=0.322737
+imitation pretrain step=50/50 loss=0.903653 policy=0.597328 value=0.306325
+eval arm=v40 step=2500 val45_policy=0.62065 val45_value=0.35049 val50_value=0.34701 best=0.97114 stale=0 elapsed=275s
+imitation pretrain step=50/50 loss=0.923676 policy=0.629183 value=0.294493
+imitation pretrain step=50/50 loss=0.995270 policy=0.671519 value=0.323751
+imitation pretrain step=50/50 loss=0.850024 policy=0.543061 value=0.306962
+imitation pretrain step=50/50 loss=0.953802 policy=0.646545 value=0.307257
+imitation pretrain step=50/50 loss=0.836625 policy=0.516608 value=0.320017
+eval arm=v40 step=2750 val45_policy=0.62586 val45_value=0.35561 val50_value=0.34341 best=0.97114 stale=1 elapsed=303s
+imitation pretrain step=50/50 loss=0.851282 policy=0.551611 value=0.299671
+imitation pretrain step=50/50 loss=0.891509 policy=0.565536 value=0.325973
+imitation pretrain step=50/50 loss=0.905872 policy=0.614141 value=0.291731
+imitation pretrain step=50/50 loss=0.829843 policy=0.514517 value=0.315325
+imitation pretrain step=50/50 loss=0.998216 policy=0.683525 value=0.314691
+eval arm=v40 step=3000 val45_policy=0.60998 val45_value=0.35329 val50_value=0.36000 best=0.96326 stale=0 elapsed=330s
+imitation pretrain step=50/50 loss=0.927569 policy=0.624769 value=0.302799
+imitation pretrain step=50/50 loss=0.820717 policy=0.538539 value=0.282178
+imitation pretrain step=50/50 loss=0.941139 policy=0.666040 value=0.275099
+imitation pretrain step=50/50 loss=0.815672 policy=0.525622 value=0.290050
+imitation pretrain step=50/50 loss=0.925700 policy=0.639357 value=0.286343
+eval arm=v40 step=3250 val45_policy=0.60748 val45_value=0.35299 val50_value=0.34805 best=0.96047 stale=0 elapsed=358s
+imitation pretrain step=50/50 loss=0.879345 policy=0.593337 value=0.286008
+imitation pretrain step=50/50 loss=0.873546 policy=0.567503 value=0.306042
+imitation pretrain step=50/50 loss=0.882128 policy=0.577125 value=0.305003
+imitation pretrain step=50/50 loss=0.923693 policy=0.617838 value=0.305855
+imitation pretrain step=50/50 loss=0.915987 policy=0.609618 value=0.306370
+eval arm=v40 step=3500 val45_policy=0.60032 val45_value=0.34708 val50_value=0.35609 best=0.94739 stale=0 elapsed=385s
+imitation pretrain step=50/50 loss=0.924637 policy=0.642135 value=0.282503
+imitation pretrain step=50/50 loss=0.818483 policy=0.518165 value=0.300318
+imitation pretrain step=50/50 loss=0.878820 policy=0.578577 value=0.300243
+imitation pretrain step=50/50 loss=0.932540 policy=0.651244 value=0.281295
+imitation pretrain step=50/50 loss=0.815479 policy=0.534663 value=0.280816
+eval arm=v40 step=3750 val45_policy=0.60134 val45_value=0.34954 val50_value=0.33334 best=0.94739 stale=1 elapsed=413s
+imitation pretrain step=50/50 loss=0.925906 policy=0.660840 value=0.265066
+imitation pretrain step=50/50 loss=0.841732 policy=0.545529 value=0.296203
+imitation pretrain step=50/50 loss=0.837499 policy=0.535134 value=0.302366
+imitation pretrain step=50/50 loss=0.849376 policy=0.561387 value=0.287988
+imitation pretrain step=50/50 loss=0.738549 policy=0.461008 value=0.277541
+eval arm=v40 step=4000 val45_policy=0.58979 val45_value=0.35413 val50_value=0.34390 best=0.94392 stale=0 elapsed=441s
+imitation pretrain step=50/50 loss=0.876375 policy=0.567622 value=0.308753
+imitation pretrain step=50/50 loss=0.829680 policy=0.530304 value=0.299376
+imitation pretrain step=50/50 loss=0.862676 policy=0.555521 value=0.307155
+imitation pretrain step=50/50 loss=0.988347 policy=0.686700 value=0.301647
+imitation pretrain step=50/50 loss=0.853120 policy=0.561153 value=0.291967
+eval arm=v40 step=4250 val45_policy=0.59350 val45_value=0.35715 val50_value=0.34441 best=0.94392 stale=1 elapsed=468s
+imitation pretrain step=50/50 loss=0.879827 policy=0.606955 value=0.272873
+imitation pretrain step=50/50 loss=0.854288 policy=0.569361 value=0.284928
+imitation pretrain step=50/50 loss=0.808738 policy=0.519060 value=0.289678
+imitation pretrain step=50/50 loss=0.824026 policy=0.557822 value=0.266204
+imitation pretrain step=50/50 loss=0.909929 policy=0.638798 value=0.271131
+eval arm=v40 step=4500 val45_policy=0.58034 val45_value=0.35880 val50_value=0.36338 best=0.93914 stale=0 elapsed=496s
+imitation pretrain step=50/50 loss=0.805741 policy=0.506200 value=0.299541
+imitation pretrain step=50/50 loss=0.906841 policy=0.621234 value=0.285606
+imitation pretrain step=50/50 loss=0.856881 policy=0.587806 value=0.269076
+imitation pretrain step=50/50 loss=0.826798 policy=0.548743 value=0.278055
+imitation pretrain step=50/50 loss=0.779371 policy=0.514152 value=0.265219
+eval arm=v40 step=4750 val45_policy=0.58706 val45_value=0.35518 val50_value=0.34780 best=0.93914 stale=1 elapsed=524s
+imitation pretrain step=50/50 loss=0.752069 policy=0.477904 value=0.274165
+imitation pretrain step=50/50 loss=0.831283 policy=0.545857 value=0.285427
+imitation pretrain step=50/50 loss=0.816469 policy=0.545581 value=0.270888
+imitation pretrain step=50/50 loss=0.758979 policy=0.487961 value=0.271018
+imitation pretrain step=50/50 loss=0.808309 policy=0.506538 value=0.301771
+eval arm=v40 step=5000 val45_policy=0.57901 val45_value=0.36189 val50_value=0.35554 best=0.93914 stale=2 elapsed=551s
+imitation pretrain step=50/50 loss=0.926904 policy=0.626598 value=0.300306
+imitation pretrain step=50/50 loss=0.838118 policy=0.561223 value=0.276895
+imitation pretrain step=50/50 loss=0.752496 policy=0.474811 value=0.277685
+imitation pretrain step=50/50 loss=0.796717 policy=0.529547 value=0.267170
+imitation pretrain step=50/50 loss=0.794479 policy=0.507508 value=0.286971
+eval arm=v40 step=5250 val45_policy=0.58300 val45_value=0.36271 val50_value=0.36274 best=0.93914 stale=3 elapsed=579s
+early-stop arm=v40 step=5250
+test arm=v40 all_value=0.31806 40plus_value=0.32014 45plus_value=0.33196 50plus_value=0.38610 45plus_acc=0.7837 50plus_acc=0.7854
+arm=vall value_floor=None value_pool=2220723 params=1969211 steps<=20000 device=mps
+imitation pretrain step=50/50 loss=1.666617 policy=1.226975 value=0.439642
+imitation pretrain step=50/50 loss=1.422709 policy=1.045194 value=0.377515
+imitation pretrain step=50/50 loss=1.305511 policy=0.949708 value=0.355803
+imitation pretrain step=50/50 loss=1.165598 policy=0.807888 value=0.357710
+imitation pretrain step=50/50 loss=1.162836 policy=0.821510 value=0.341326
+eval arm=vall step=250 val45_policy=0.84110 val45_value=0.38241 val50_value=0.36644 best=1.22351 stale=0 elapsed=28s
+imitation pretrain step=50/50 loss=1.221160 policy=0.866882 value=0.354278
+imitation pretrain step=50/50 loss=1.149028 policy=0.806872 value=0.342156
+imitation pretrain step=50/50 loss=1.140534 policy=0.801803 value=0.338730
+imitation pretrain step=50/50 loss=1.073369 policy=0.739229 value=0.334140
+imitation pretrain step=50/50 loss=1.111554 policy=0.762050 value=0.349504
+eval arm=vall step=500 val45_policy=0.76715 val45_value=0.36817 val50_value=0.35790 best=1.13531 stale=0 elapsed=55s
+imitation pretrain step=50/50 loss=1.102878 policy=0.775973 value=0.326905
+imitation pretrain step=50/50 loss=1.078764 policy=0.772345 value=0.306420
+imitation pretrain step=50/50 loss=1.015205 policy=0.696615 value=0.318590
+imitation pretrain step=50/50 loss=0.946571 policy=0.626399 value=0.320172
+imitation pretrain step=50/50 loss=1.016509 policy=0.679297 value=0.337212
+eval arm=vall step=750 val45_policy=0.73257 val45_value=0.36535 val50_value=0.36822 best=1.09792 stale=0 elapsed=83s
+imitation pretrain step=50/50 loss=1.098397 policy=0.741207 value=0.357191
+imitation pretrain step=50/50 loss=1.062870 policy=0.738062 value=0.324809
+imitation pretrain step=50/50 loss=1.051785 policy=0.722481 value=0.329304
+imitation pretrain step=50/50 loss=0.986992 policy=0.658050 value=0.328942
+imitation pretrain step=50/50 loss=0.956556 policy=0.636153 value=0.320404
+eval arm=vall step=1000 val45_policy=0.71302 val45_value=0.35696 val50_value=0.35278 best=1.06998 stale=0 elapsed=110s
+imitation pretrain step=50/50 loss=0.979326 policy=0.678533 value=0.300793
+imitation pretrain step=50/50 loss=0.902586 policy=0.591195 value=0.311392
+imitation pretrain step=50/50 loss=1.005868 policy=0.693944 value=0.311924
+imitation pretrain step=50/50 loss=0.934461 policy=0.595785 value=0.338676
+imitation pretrain step=50/50 loss=0.956615 policy=0.624305 value=0.332310
+eval arm=vall step=1250 val45_policy=0.68459 val45_value=0.35933 val50_value=0.35365 best=1.04393 stale=0 elapsed=138s
+imitation pretrain step=50/50 loss=1.012701 policy=0.706276 value=0.306425
+imitation pretrain step=50/50 loss=1.041717 policy=0.705712 value=0.336006
+imitation pretrain step=50/50 loss=0.967732 policy=0.635941 value=0.331791
+imitation pretrain step=50/50 loss=0.915081 policy=0.596973 value=0.318107
+imitation pretrain step=50/50 loss=0.941032 policy=0.612309 value=0.328723
+eval arm=vall step=1500 val45_policy=0.65998 val45_value=0.36924 val50_value=0.34327 best=1.02921 stale=0 elapsed=166s
+imitation pretrain step=50/50 loss=0.977222 policy=0.658486 value=0.318736
+imitation pretrain step=50/50 loss=0.947948 policy=0.645202 value=0.302746
+imitation pretrain step=50/50 loss=0.951020 policy=0.634953 value=0.316067
+imitation pretrain step=50/50 loss=0.960282 policy=0.650779 value=0.309503
+imitation pretrain step=50/50 loss=0.949668 policy=0.629013 value=0.320655
+eval arm=vall step=1750 val45_policy=0.65094 val45_value=0.35093 val50_value=0.34119 best=1.00187 stale=0 elapsed=193s
+imitation pretrain step=50/50 loss=0.995586 policy=0.663685 value=0.331901
+imitation pretrain step=50/50 loss=0.927920 policy=0.618633 value=0.309287
+imitation pretrain step=50/50 loss=0.975532 policy=0.664630 value=0.310902
+imitation pretrain step=50/50 loss=0.996899 policy=0.685928 value=0.310971
+imitation pretrain step=50/50 loss=0.897470 policy=0.577581 value=0.319889
+eval arm=vall step=2000 val45_policy=0.64071 val45_value=0.35311 val50_value=0.34937 best=0.99382 stale=0 elapsed=221s
+imitation pretrain step=50/50 loss=0.851024 policy=0.532966 value=0.318058
+imitation pretrain step=50/50 loss=0.990486 policy=0.686905 value=0.303581
+imitation pretrain step=50/50 loss=0.854080 policy=0.555008 value=0.299072
+imitation pretrain step=50/50 loss=0.958820 policy=0.645928 value=0.312891
+imitation pretrain step=50/50 loss=1.053741 policy=0.713043 value=0.340698
+eval arm=vall step=2250 val45_policy=0.62306 val45_value=0.35146 val50_value=0.34339 best=0.97451 stale=0 elapsed=249s
+imitation pretrain step=50/50 loss=0.970481 policy=0.670268 value=0.300214
+imitation pretrain step=50/50 loss=0.917319 policy=0.591692 value=0.325627
+imitation pretrain step=50/50 loss=0.984349 policy=0.678649 value=0.305701
+imitation pretrain step=50/50 loss=0.940364 policy=0.615741 value=0.324623
+imitation pretrain step=50/50 loss=0.913281 policy=0.611361 value=0.301920
+eval arm=vall step=2500 val45_policy=0.62380 val45_value=0.35498 val50_value=0.33888 best=0.97451 stale=1 elapsed=276s
+imitation pretrain step=50/50 loss=0.937377 policy=0.629816 value=0.307561
+imitation pretrain step=50/50 loss=0.967659 policy=0.652794 value=0.314865
+imitation pretrain step=50/50 loss=0.847489 policy=0.538493 value=0.308996
+imitation pretrain step=50/50 loss=0.969175 policy=0.662981 value=0.306194
+imitation pretrain step=50/50 loss=0.818660 policy=0.506961 value=0.311699
+eval arm=vall step=2750 val45_policy=0.61618 val45_value=0.35930 val50_value=0.34991 best=0.97451 stale=2 elapsed=304s
+imitation pretrain step=50/50 loss=0.877144 policy=0.564030 value=0.313115
+imitation pretrain step=50/50 loss=0.896161 policy=0.569821 value=0.326340
+imitation pretrain step=50/50 loss=0.909565 policy=0.605972 value=0.303593
+imitation pretrain step=50/50 loss=0.827370 policy=0.523673 value=0.303696
+imitation pretrain step=50/50 loss=1.045730 policy=0.724922 value=0.320808
+eval arm=vall step=3000 val45_policy=0.61686 val45_value=0.35229 val50_value=0.35337 best=0.96915 stale=0 elapsed=331s
+imitation pretrain step=50/50 loss=0.913047 policy=0.591889 value=0.321158
+imitation pretrain step=50/50 loss=0.831770 policy=0.547147 value=0.284623
+imitation pretrain step=50/50 loss=0.964587 policy=0.678319 value=0.286269
+imitation pretrain step=50/50 loss=0.877220 policy=0.554857 value=0.322362
+imitation pretrain step=50/50 loss=0.937079 policy=0.648007 value=0.289071
+eval arm=vall step=3250 val45_policy=0.60303 val45_value=0.34815 val50_value=0.34583 best=0.95118 stale=0 elapsed=359s
+imitation pretrain step=50/50 loss=0.901758 policy=0.596088 value=0.305670
+imitation pretrain step=50/50 loss=0.877463 policy=0.572998 value=0.304465
+imitation pretrain step=50/50 loss=0.888842 policy=0.585509 value=0.303333
+imitation pretrain step=50/50 loss=0.912422 policy=0.622144 value=0.290279
+imitation pretrain step=50/50 loss=0.929671 policy=0.621422 value=0.308249
+eval arm=vall step=3500 val45_policy=0.60226 val45_value=0.34438 val50_value=0.33906 best=0.94664 stale=0 elapsed=387s
+imitation pretrain step=50/50 loss=0.933174 policy=0.648617 value=0.284557
+imitation pretrain step=50/50 loss=0.833228 policy=0.533531 value=0.299696
+imitation pretrain step=50/50 loss=0.885018 policy=0.596611 value=0.288407
+imitation pretrain step=50/50 loss=0.951422 policy=0.655071 value=0.296351
+imitation pretrain step=50/50 loss=0.796438 policy=0.519802 value=0.276636
+eval arm=vall step=3750 val45_policy=0.60379 val45_value=0.35375 val50_value=0.34857 best=0.94664 stale=1 elapsed=414s
+imitation pretrain step=50/50 loss=0.931863 policy=0.640502 value=0.291361
+imitation pretrain step=50/50 loss=0.859382 policy=0.558085 value=0.301297
+imitation pretrain step=50/50 loss=0.824131 policy=0.530986 value=0.293145
+imitation pretrain step=50/50 loss=0.860062 policy=0.571038 value=0.289024
+imitation pretrain step=50/50 loss=0.756165 policy=0.477486 value=0.278679
+eval arm=vall step=4000 val45_policy=0.59452 val45_value=0.35434 val50_value=0.34253 best=0.94664 stale=2 elapsed=442s
+imitation pretrain step=50/50 loss=0.866873 policy=0.558986 value=0.307887
+imitation pretrain step=50/50 loss=0.857863 policy=0.550525 value=0.307337
+imitation pretrain step=50/50 loss=0.853537 policy=0.562215 value=0.291322
+imitation pretrain step=50/50 loss=0.995853 policy=0.682149 value=0.313705
+imitation pretrain step=50/50 loss=0.858388 policy=0.579795 value=0.278593
+eval arm=vall step=4250 val45_policy=0.59824 val45_value=0.35016 val50_value=0.34497 best=0.94664 stale=3 elapsed=469s
+early-stop arm=vall step=4250
+test arm=vall all_value=0.31162 40plus_value=0.31078 45plus_value=0.31927 50plus_value=0.37293 45plus_acc=0.7778 50plus_acc=0.7718
+report bench/value_cutoff/report.json

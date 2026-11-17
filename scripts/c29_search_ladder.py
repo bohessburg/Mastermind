@@ -68,6 +68,11 @@ def main() -> None:
     parser.add_argument("--a-chance", choices=("off", "truncate", "resample"), default=None,
                         help="side A's handling of hidden-card reveals (default: the config's chance_mode)")
     parser.add_argument("--b-chance", choices=("off", "truncate", "resample"), default=None)
+    parser.add_argument("--a-worlds", type=int, default=0,
+                        help="side A's hidden-information worlds per search, splitting its sims (0 = the config's, 1 world)")
+    parser.add_argument("--b-worlds", type=int, default=0)
+    parser.add_argument("--first-pair", type=int, default=0,
+                        help="first board index; with --pairs, splits one match across processes")
     parser.add_argument("--a-zero-value", action="store_true")
     parser.add_argument("--b-zero-value", action="store_true")
     parser.add_argument("--pairs", type=int, default=200, help="boards; each is played twice")
@@ -117,8 +122,9 @@ def main() -> None:
         match_config.tail_leaves_in_flight = 0
     print(
         f"[{args.tag}] device={device} backend={args.backend}{' fp16' if args.fp16 else ''} pairs={args.pairs} chunk={args.chunk} "
-        f"A={args.a} sims={args.a_sims} chance={args.a_chance} zero_v={args.a_zero_value} | "
-        f"B={b_path} sims={args.b_sims} chance={args.b_chance} zero_v={args.b_zero_value} | "
+        f"A={args.a} sims={args.a_sims} chance={args.a_chance} worlds={args.a_worlds} zero_v={args.a_zero_value} | "
+        f"B={b_path} sims={args.b_sims} chance={args.b_chance} worlds={args.b_worlds} zero_v={args.b_zero_value} | "
+        f"boards {args.first_pair}..{args.first_pair + args.pairs - 1} "
         f"determinize={match_config.determinize} cross_route={cross_route} "
         f"tree_reuse={tree_reuse} opening_temp={opening_temp} "
         f"leaves_in_flight={match_config.leaves_in_flight} (min sims/leaf {match_config.leaves_min_sims_per_leaf})",
@@ -169,6 +175,9 @@ def main() -> None:
         sims_b=0 if tree_reuse else args.b_sims,
         chance_a=args.a_chance,
         chance_b=args.b_chance,
+        worlds_a=args.a_worlds,
+        worlds_b=args.b_worlds,
+        first_pair=args.first_pair,
         independent_search=not cross_route,
         chunk=args.chunk,
         progress=heartbeat,
@@ -184,6 +193,9 @@ def main() -> None:
         "b_sims": args.b_sims,
         "a_chance": args.a_chance,
         "b_chance": args.b_chance,
+        "a_worlds": args.a_worlds,
+        "b_worlds": args.b_worlds,
+        "first_pair": args.first_pair,
         "a_zero_value": args.a_zero_value,
         "b_zero_value": args.b_zero_value,
         "determinize": match_config.determinize,

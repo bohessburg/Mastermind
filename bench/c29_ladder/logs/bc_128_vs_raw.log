@@ -1,0 +1,32 @@
+[bc_128_vs_raw] device=mps pairs=100 chunk=100 A=checkpoints/campaign25/bc_a.pt sims=128 zero_v=False | B=checkpoints/campaign25/bc_a.pt sims=2 zero_v=False | determinize=off cross_route=False tree_reuse=False opening_temp=False
+[bc_128_vs_raw] .. 0/200 games  3147 evals/s  30s
+[bc_128_vs_raw] .. 0/200 games  3273 evals/s  60s
+[bc_128_vs_raw] .. 0/200 games  3374 evals/s  90s
+[bc_128_vs_raw] .. 0/200 games  3421 evals/s  120s
+[bc_128_vs_raw] .. 1/200 games  3447 evals/s  150s
+[bc_128_vs_raw] .. 4/200 games  3463 evals/s  180s
+[bc_128_vs_raw] .. 7/200 games  3472 evals/s  210s
+[bc_128_vs_raw] .. 14/200 games  3473 evals/s  240s
+[bc_128_vs_raw] .. 23/200 games  3463 evals/s  270s
+[bc_128_vs_raw] .. 34/200 games  3458 evals/s  300s
+[bc_128_vs_raw] .. 43/200 games  3446 evals/s  330s
+[bc_128_vs_raw] .. 65/200 games  3440 evals/s  360s
+[bc_128_vs_raw] .. 80/200 games  3433 evals/s  390s
+[bc_128_vs_raw] .. 96/200 games  3400 evals/s  420s
+[bc_128_vs_raw] .. 100/200 games  3288 evals/s  450s
+[bc_128_vs_raw] .. 100/200 games  3312 evals/s  480s
+[bc_128_vs_raw] .. 100/200 games  3326 evals/s  510s
+[bc_128_vs_raw] .. 100/200 games  3339 evals/s  540s
+[bc_128_vs_raw] .. 100/200 games  3350 evals/s  571s
+[bc_128_vs_raw] .. 104/200 games  3357 evals/s  601s
+[bc_128_vs_raw] .. 110/200 games  3363 evals/s  631s
+[bc_128_vs_raw] .. 120/200 games  3368 evals/s  661s
+[bc_128_vs_raw] .. 133/200 games  3373 evals/s  691s
+[bc_128_vs_raw] .. 142/200 games  3374 evals/s  721s
+[bc_128_vs_raw] .. 156/200 games  3373 evals/s  751s
+[bc_128_vs_raw] .. 168/200 games  3371 evals/s  781s
+[bc_128_vs_raw] .. 179/200 games  3367 evals/s  811s
+[bc_128_vs_raw] .. 198/200 games  3337 evals/s  841s
+[bc_128_vs_raw] 100/100 pairs  A 28W-168L-4T score=0.150±0.028  845 games/hr  3302 evals/s  852s
+[bc_128_vs_raw] DONE A 28W-168L-4T score=0.150 ci95=[0.094,0.206] elo=-301 seat0=0.520 non_greedy=0.0% turns=50.3 trunc=17 851.6s
+[bc_128_vs_raw] raw-policy check side B: 100.00% of moves = prior argmax

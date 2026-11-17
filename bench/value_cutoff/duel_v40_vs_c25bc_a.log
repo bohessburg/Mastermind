@@ -1,0 +1,224 @@
+10/200 games, a 4W-5L-1T, 97 games/hr
+20/200 games, a 9W-9L-2T, 172 games/hr
+30/200 games, a 15W-13L-2T, 226 games/hr
+40/200 games, a 22W-16L-2T, 242 games/hr
+50/200 games, a 28W-20L-2T, 249 games/hr
+60/200 games, a 35W-23L-2T, 277 games/hr
+70/200 games, a 38W-29L-3T, 300 games/hr
+80/200 games, a 42W-33L-5T, 329 games/hr
+90/200 games, a 47W-38L-5T, 310 games/hr
+100/200 games, a 54W-41L-5T, 325 games/hr
+110/200 games, a 59W-46L-5T, 275 games/hr
+120/200 games, a 62W-53L-5T, 279 games/hr
+130/200 games, a 65W-60L-5T, 286 games/hr
+140/200 games, a 70W-65L-5T, 291 games/hr
+150/200 games, a 73W-72L-5T, 299 games/hr
+160/200 games, a 77W-78L-5T, 301 games/hr
+170/200 games, a 82W-83L-5T, 303 games/hr
+180/200 games, a 87W-88L-5T, 310 games/hr
+190/200 games, a 91W-94L-5T, 314 games/hr
+200/200 games, a 95W-98L-7T, 320 games/hr
+{"a": {"arch": "card_transformer", "checkpoint": "checkpoints/value_cutoff/bc_v40.pt", "obs_version": 3}, "b": {"arch": "card_transformer", "checkpoint": "checkpoints/campaign25/bc_a.pt", "obs_version": 3}, "device": "mps", "honest": true, "legacy_shim": false, "sims": 128}
+games,wins_a,wins_b,ties,truncated,end_province,end_piles,win_pct_a_excl_ties,games_per_hour
+200,95,98,7,81,56,63,49.22,320.24
+pg,index,a_seat,turns,result
+pg,0,0,35,L
+pg,1,0,43,L
+pg,2,0,47,L
+pg,3,0,46,W
+pg,4,0,33,L
+pg,5,0,38,W
+pg,6,0,26,W
+pg,7,0,56,L
+pg,8,0,34,W
+pg,9,0,41,T
+pg,10,0,27,L
+pg,11,0,30,W
+pg,12,0,56,L
+pg,13,0,41,W
+pg,14,0,42,W
+pg,15,0,32,W
+pg,16,0,39,T
+pg,17,0,45,L
+pg,18,0,41,L
+pg,19,0,48,W
+pg,20,0,34,L
+pg,21,0,34,W
+pg,22,0,36,W
+pg,23,0,40,W
+pg,24,0,33,L
+pg,25,0,40,W
+pg,26,0,52,W
+pg,27,0,45,L
+pg,28,0,34,W
+pg,29,0,41,L
+pg,30,0,34,L
+pg,31,0,40,W
+pg,32,0,27,L
+pg,33,0,45,L
+pg,34,0,32,W
+pg,35,0,28,W
+pg,36,0,42,W
+pg,37,0,30,W
+pg,38,0,34,W
+pg,39,0,48,W
+pg,40,0,44,W
+pg,41,0,38,W
+pg,42,0,48,W
+pg,43,0,33,L
+pg,44,0,27,L
+pg,45,0,45,L
+pg,46,0,34,W
+pg,47,0,36,W
+pg,48,0,26,W
+pg,49,0,35,L
+pg,50,0,32,W
+pg,51,0,66,W
+pg,52,0,33,L
+pg,53,0,32,W
+pg,54,0,45,L
+pg,55,0,28,W
+pg,56,0,60,W
+pg,57,0,40,W
+pg,58,0,35,L
+pg,59,0,30,W
+pg,60,0,47,L
+pg,61,0,199,T
+pg,62,0,47,L
+pg,63,0,49,L
+pg,64,0,37,L
+pg,65,0,36,W
+pg,66,0,41,L
+pg,67,0,38,W
+pg,68,0,42,W
+pg,69,0,37,L
+pg,70,0,49,T
+pg,71,0,33,L
+pg,72,0,31,L
+pg,73,0,39,L
+pg,74,0,62,W
+pg,75,0,37,T
+pg,76,0,43,L
+pg,77,0,46,W
+pg,78,0,42,W
+pg,79,0,40,W
+pg,80,0,32,W
+pg,81,0,49,W
+pg,82,0,45,L
+pg,83,0,44,W
+pg,84,0,49,L
+pg,85,0,57,L
+pg,86,0,35,L
+pg,87,0,47,L
+pg,88,0,52,W
+pg,89,0,40,W
+pg,90,0,64,W
+pg,91,0,43,L
+pg,92,0,32,W
+pg,93,0,45,L
+pg,94,0,44,W
+pg,95,0,46,W
+pg,96,0,34,W
+pg,97,0,37,L
+pg,98,0,36,W
+pg,99,0,30,W
+pg,100,1,27,W
+pg,101,1,39,W
+pg,102,1,33,W
+pg,103,1,47,L
+pg,104,1,31,W
+pg,105,1,46,L
+pg,106,1,43,W
+pg,107,1,32,L
+pg,108,1,52,L
+pg,109,1,40,L
+pg,110,1,46,L
+pg,111,1,38,L
+pg,112,1,45,W
+pg,113,1,60,L
+pg,114,1,30,L
+pg,115,1,47,W
+pg,116,1,38,L
+pg,117,1,36,W
+pg,118,1,36,L
+pg,119,1,56,L
+pg,120,1,54,L
+pg,121,1,24,L
+pg,122,1,31,W
+pg,123,1,41,W
+pg,124,1,34,L
+pg,125,1,40,L
+pg,126,1,22,L
+pg,127,1,40,L
+pg,128,1,27,W
+pg,129,1,46,L
+pg,130,1,50,W
+pg,131,1,36,L
+pg,132,1,49,L
+pg,133,1,26,W
+pg,134,1,41,W
+pg,135,1,48,L
+pg,136,1,37,W
+pg,137,1,42,L
+pg,138,1,38,L
+pg,139,1,31,W
+pg,140,1,40,L
+pg,141,1,52,L
+pg,142,1,36,L
+pg,143,1,46,L
+pg,144,1,35,W
+pg,145,1,56,L
+pg,146,1,58,L
+pg,147,1,44,L
+pg,148,1,33,W
+pg,149,1,49,W
+pg,150,1,44,L
+pg,151,1,29,L
+pg,152,1,46,L
+pg,153,1,32,L
+pg,154,1,52,W
+pg,155,1,40,L
+pg,156,1,32,L
+pg,157,1,52,W
+pg,158,1,49,W
+pg,159,1,27,W
+pg,160,1,35,W
+pg,161,1,26,L
+pg,162,1,28,L
+pg,163,1,41,W
+pg,164,1,44,L
+pg,165,1,97,W
+pg,166,1,57,L
+pg,167,1,45,W
+pg,168,1,53,W
+pg,169,1,42,L
+pg,170,1,26,L
+pg,171,1,51,L
+pg,172,1,48,L
+pg,173,1,37,W
+pg,174,1,36,L
+pg,175,1,41,W
+pg,176,1,35,W
+pg,177,1,31,W
+pg,178,1,40,L
+pg,179,1,27,W
+pg,180,1,41,W
+pg,181,1,26,L
+pg,182,1,68,L
+pg,183,1,25,W
+pg,184,1,123,W
+pg,185,1,39,L
+pg,186,1,50,L
+pg,187,1,46,W
+pg,188,1,42,L
+pg,189,1,48,L
+pg,190,1,45,W
+pg,191,1,48,W
+pg,192,1,40,L
+pg,193,1,199,T
+pg,194,1,49,W
+pg,195,1,49,L
+pg,196,1,46,W
+pg,197,1,40,L
+pg,198,1,199,T
+pg,199,1,44,L

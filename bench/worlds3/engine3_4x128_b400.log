@@ -1,0 +1,24 @@
+[engine3_w4x128_b400] worlds=4 sims=512 games=400 first=400 adaptive_per_legal=128
+[engine3_w4x128_b400] 0/400 games 819003 evals
+[engine3_w4x128_b400] 3/400 games 1624337 evals
+[engine3_w4x128_b400] 7/400 games 2441015 evals
+[engine3_w4x128_b400] 26/400 games 3257972 evals
+[engine3_w4x128_b400] 47/400 games 4132996 evals
+[engine3_w4x128_b400] 69/400 games 5011877 evals
+[engine3_w4x128_b400] 90/400 games 5878610 evals
+[engine3_w4x128_b400] 118/400 games 6766629 evals
+[engine3_w4x128_b400] 167/400 games 7723350 evals
+[engine3_w4x128_b400] 194/400 games 8639521 evals
+[engine3_w4x128_b400] 237/400 games 9591031 evals
+[engine3_w4x128_b400] 288/400 games 10473020 evals
+[engine3_w4x128_b400] 323/400 games 11243430 evals
+[engine3_w4x128_b400] 358/400 games 11973695 evals
+[engine3_w4x128_b400] 382/400 games 12334778 evals
+[engine3_w4x128_b400] 387/400 games 12507341 evals
+[engine3_w4x128_b400] 390/400 games 12632540 evals
+[engine3_w4x128_b400] 394/400 games 12716087 evals
+[engine3_w4x128_b400] 398/400 games 12771153 evals
+[engine3_w4x128_b400] 399/400 games 12789984 evals
+[engine3_w4x128_b400] 399/400 games 12809146 evals
+[engine3_w4x128_b400] 399/400 games 12847025 evals
+[engine3_w4x128_b400] DONE 323W-74L-3T score=0.811+-0.020 evals/game=32232 1372.1s

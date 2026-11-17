@@ -12,6 +12,7 @@
 #include <cstddef>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <limits>
 #include <stdexcept>
 
@@ -1280,6 +1281,7 @@ void Mcts::reset(const GameState& root, PlayerId perspective) noexcept {
     clear_retained_root();
     root_dirichlet_noise_active_ = false;
     node_count_ = 0;
+    root_count_ = 1U;
     exhausted_ = false;
     root_perspective_ = perspective;
     expansion_rng_ = Xoshiro256pp::seeded(
@@ -1298,6 +1300,64 @@ void Mcts::reset(const GameState& root, PlayerId perspective) noexcept {
     root_node.terminal = terminal_state(root);
 }
 
+void Mcts::reset_worlds(
+    const GameState& live,
+    std::uint32_t count,
+    PlayerId perspective,
+    std::uint64_t base_seed) noexcept {
+    if (count <= 1U) {
+        GameState sampled = live;
+        determinize(sampled, perspective, base_seed);
+        reset(sampled, perspective);
+        return;
+    }
+    clear_retained_root();
+    root_dirichlet_noise_active_ = false;
+    node_count_ = 0;
+    exhausted_ = false;
+    root_perspective_ = perspective;
+    const std::uint32_t worlds = std::min({count, capacity_, 64U});
+    for (std::uint32_t w = 0; w < worlds; ++w) {
+        const std::uint32_t index = allocate_node();
+        assert(index == w);
+        (void)index;
+        GameState& sampled = states_[w];
+        sampled = live;
+        determinize(sampled, perspective, base_seed + 0x9E37'79B9'7F4A'7C15ULL * static_cast<std::uint64_t>(w));
+        MctsNode& root_node = nodes_[w];
+        root_node.state_index = w;
+        root_node.player = terminal_state(sampled) ? perspective : player_to_move(sampled);
+        root_node.terminal = terminal_state(sampled);
+    }
+    root_count_ = worlds;
+    expansion_rng_ = Xoshiro256pp::seeded(
+        config_.rollout_seed ^ mcts_state_hash(states_[0]) ^ 0xE7A1'0F5E'BADC'0DEULL);
+}
+
+std::uint32_t Mcts::root_total_visits() const noexcept {
+    std::uint32_t total = 0U;
+    for (std::uint32_t r = 0; r < root_count_ && r < node_count_; ++r) {
+        total += nodes_[r].visits;
+    }
+    return total;
+}
+
+void Mcts::root_action_stats(std::uint32_t* visits, float* value_sums) const noexcept {
+    for (Action action = 0; action < ACTION_SPACE_SIZE; ++action) {
+        visits[action] = 0U;
+        value_sums[action] = 0.0F;
+    }
+    for (std::uint32_t r = 0; r < root_count_ && r < node_count_; ++r) {
+        const MctsNode& root = nodes_[r];
+        for (std::uint32_t child_index = root.first_child; child_index != MCTS_NULL;
+             child_index = nodes_[child_index].next_sibling) {
+            const MctsNode& child = nodes_[child_index];
+            visits[child.action_from_parent] += child.visits;
+            value_sums[child.action_from_parent] += child_value_for_parent(root, child) * static_cast<float>(child.visits);
+        }
+    }
+}
+
 std::uint32_t Mcts::new_simulation_target(bool adopted_root) const noexcept {
     if (!adopted_root || node_count_ == 0U) {
         return config_.sims_per_move;
@@ -1312,7 +1372,8 @@ std::uint32_t Mcts::new_simulation_target(bool adopted_root) const noexcept {
 
 bool Mcts::retain_root_child(Action action, std::uint64_t post_action_hash) noexcept {
     clear_retained_root();
-    if (!config_.tree_reuse || safe_determinizations(config_) != 1U || node_count_ == 0U) {
+    if (!config_.tree_reuse || safe_determinizations(config_) != 1U || node_count_ == 0U
+        || root_count_ != 1U) {
         return false;
     }
 
@@ -1371,32 +1432,33 @@ void Mcts::set_root_priors(const float* priors) noexcept {
     if (priors == nullptr || node_count_ == 0U) {
         return;
     }
-
-    float sum = 0.0F;
-    std::uint32_t count = 0U;
-    for (std::uint32_t child_index = nodes_[0].first_child; child_index != MCTS_NULL;
-         child_index = nodes_[child_index].next_sibling) {
-        MctsNode& child = nodes_[child_index];
-        const float prior = priors[child.action_from_parent];
-        child.prior = std::isfinite(prior) && prior > 0.0F ? prior : 0.0F;
-        sum += child.prior;
-        ++count;
-    }
-    if (count == 0U) {
-        return;
-    }
-    if (sum <= 0.0F) {
-        const float uniform = 1.0F / static_cast<float>(count);
-        for (std::uint32_t child_index = nodes_[0].first_child; child_index != MCTS_NULL;
+    for (std::uint32_t r = 0; r < root_count_ && r < node_count_; ++r) {
+        float sum = 0.0F;
+        std::uint32_t count = 0U;
+        for (std::uint32_t child_index = nodes_[r].first_child; child_index != MCTS_NULL;
              child_index = nodes_[child_index].next_sibling) {
-            nodes_[child_index].prior = uniform;
+            MctsNode& child = nodes_[child_index];
+            const float prior = priors[child.action_from_parent];
+            child.prior = std::isfinite(prior) && prior > 0.0F ? prior : 0.0F;
+            sum += child.prior;
+            ++count;
         }
-        return;
-    }
-    const float inv_sum = 1.0F / sum;
-    for (std::uint32_t child_index = nodes_[0].first_child; child_index != MCTS_NULL;
-         child_index = nodes_[child_index].next_sibling) {
-        nodes_[child_index].prior *= inv_sum;
+        if (count == 0U) {
+            continue;
+        }
+        if (sum <= 0.0F) {
+            const float uniform = 1.0F / static_cast<float>(count);
+            for (std::uint32_t child_index = nodes_[r].first_child; child_index != MCTS_NULL;
+                 child_index = nodes_[child_index].next_sibling) {
+                nodes_[child_index].prior = uniform;
+            }
+            continue;
+        }
+        const float inv_sum = 1.0F / sum;
+        for (std::uint32_t child_index = nodes_[r].first_child; child_index != MCTS_NULL;
+             child_index = nodes_[child_index].next_sibling) {
+            nodes_[child_index].prior *= inv_sum;
+        }
     }
 }
 
@@ -1473,6 +1535,25 @@ Action Mcts::best_root_action() const noexcept {
     if (node_count_ == 0U) {
         return A_PASS;
     }
+    if (root_count_ > 1U) {
+        std::uint32_t visits[ACTION_SPACE_SIZE];
+        float value_sums[ACTION_SPACE_SIZE];
+        root_action_stats(visits, value_sums);
+        Action best = A_PASS;
+        std::uint32_t best_visits = 0;
+        float best_value = -2.0F;
+        for (std::uint32_t child_index = nodes_[0].first_child; child_index != MCTS_NULL;
+             child_index = nodes_[child_index].next_sibling) {
+            const Action action = nodes_[child_index].action_from_parent;
+            const float value = visits[action] == 0U ? 0.0F : value_sums[action] / static_cast<float>(visits[action]);
+            if (visits[action] > best_visits || (visits[action] == best_visits && value > best_value)) {
+                best = action;
+                best_visits = visits[action];
+                best_value = value;
+            }
+        }
+        return best;
+    }
 
     const MctsNode& root = nodes_[0];
     Action best = A_PASS;
@@ -1495,6 +1576,18 @@ std::uint32_t Mcts::root_visits_for(Action action) const noexcept {
     if (node_count_ == 0U) {
         return 0U;
     }
+    if (root_count_ > 1U) {
+        std::uint32_t total = 0U;
+        for (std::uint32_t r = 0; r < root_count_; ++r) {
+            for (std::uint32_t child_index = nodes_[r].first_child; child_index != MCTS_NULL;
+                 child_index = nodes_[child_index].next_sibling) {
+                if (nodes_[child_index].action_from_parent == action) {
+                    total += nodes_[child_index].visits;
+                }
+            }
+        }
+        return total;
+    }
     for (std::uint32_t child_index = nodes_[0].first_child; child_index != MCTS_NULL;
          child_index = nodes_[child_index].next_sibling) {
         if (nodes_[child_index].action_from_parent == action) {
@@ -1507,6 +1600,12 @@ std::uint32_t Mcts::root_visits_for(Action action) const noexcept {
 float Mcts::root_value_for(Action action) const noexcept {
     if (node_count_ == 0U) {
         return 0.0F;
+    }
+    if (root_count_ > 1U) {
+        std::uint32_t visits[ACTION_SPACE_SIZE];
+        float value_sums[ACTION_SPACE_SIZE];
+        root_action_stats(visits, value_sums);
+        return visits[action] == 0U ? 0.0F : value_sums[action] / static_cast<float>(visits[action]);
     }
     const MctsNode& root = nodes_[0];
     for (std::uint32_t child_index = root.first_child; child_index != MCTS_NULL;
@@ -1523,6 +1622,15 @@ float Mcts::root_mean_value() const noexcept {
     if (node_count_ == 0U || nodes_[0].visits == 0U) {
         return 0.0F;
     }
+    if (root_count_ > 1U) {
+        float sum = 0.0F;
+        std::uint32_t visits = 0U;
+        for (std::uint32_t r = 0; r < root_count_; ++r) {
+            sum += nodes_[r].value_sum;
+            visits += nodes_[r].visits;
+        }
+        return visits == 0U ? 0.0F : std::clamp(sum / static_cast<float>(visits), -1.0F, 1.0F);
+    }
     const float value = nodes_[0].value_sum / static_cast<float>(nodes_[0].visits);
     return std::clamp(value, -1.0F, 1.0F);
 }
@@ -1537,8 +1645,44 @@ bool Mcts::collect_external_leaf(MctsPendingLeaf& leaf) noexcept {
     if (node_count_ == 0U) {
         return false;
     }
+    if (root_count_ <= 1U) {
+        return collect_from_root(0U, leaf);
+    }
+    // Least-loaded world first (visits plus in-flight leaves); a world whose
+    // descent collides with an in-flight evaluation yields to the next one.
+    bool tried[256]{};
+    for (std::uint32_t attempt = 0; attempt < root_count_; ++attempt) {
+        std::uint32_t pick = MCTS_NULL;
+        float pick_load = 0.0F;
+        for (std::uint32_t r = 0; r < root_count_; ++r) {
+            if (tried[r]) {
+                continue;
+            }
+            const float load = static_cast<float>(nodes_[r].visits) + nodes_[r].virtual_loss;
+            if (pick == MCTS_NULL || load < pick_load) {
+                pick = r;
+                pick_load = load;
+            }
+        }
+        if (pick == MCTS_NULL) {
+            break;
+        }
+        tried[pick] = true;
+        if (collect_from_root(pick, leaf)) {
+            return true;
+        }
+        if (!leaf.collided) {
+            return false;  // completed without an evaluation (terminal backup)
+        }
+    }
+    leaf = MctsPendingLeaf{};
+    leaf.collided = true;
+    return false;
+}
 
-    std::uint32_t node_index = 0U;
+bool Mcts::collect_from_root(std::uint32_t root, MctsPendingLeaf& leaf) noexcept {
+    leaf = MctsPendingLeaf{};
+    std::uint32_t node_index = root;
     std::uint32_t path[MCTS_MAX_PATH]{};
     std::uint8_t depth = 0;
     path[depth++] = node_index;
@@ -1554,6 +1698,34 @@ bool Mcts::collect_external_leaf(MctsPendingLeaf& leaf) noexcept {
     }
 
     MctsNode& node = nodes_[node_index];
+    if (node.chance && !is_root(node_index) && !node.terminal
+        && config_.chance_mode != MctsChanceMode::Off) {
+        if (node.virtual_loss > 0.0F) {
+            // One evaluation of this chance child is already in flight.
+            leaf.collided = true;
+            return false;
+        }
+        if (config_.chance_mode == MctsChanceMode::Truncate && node.expanded && node.visits > 0U) {
+            // Truncated: reuse the stored network value; no evaluation.
+            backpropagate_value(path, depth, node.player, node.value_sum / static_cast<float>(node.visits));
+            return false;
+        }
+        if (config_.chance_mode == MctsChanceMode::Resample) {
+            // Fresh hidden zones for the pre-reveal parent, then the same
+            // action: this visit sees a new draw/shuffle outcome.
+            const MctsNode& parent = nodes_[node.parent];
+            GameState sampled = states_[parent.state_index];
+            determinize(sampled, root_perspective_, expansion_rng_.next());
+            ActionMask sampled_legal{};
+            (void)Game::legal_actions(sampled, sampled_legal);
+            if (sampled_legal.test(node.action_from_parent)) {
+                (void)Game::step(sampled, node.action_from_parent);
+                if (!terminal_state(sampled) && player_to_move(sampled) == node.player) {
+                    states_[node.state_index] = sampled;
+                }
+            }
+        }
+    }
     const GameState& state = states_[node.state_index];
     if (node.terminal || terminal_state(state)) {
         node.terminal = true;
@@ -1622,7 +1794,13 @@ void Mcts::provide_external_evaluation(
     }
 
     MctsNode& node = nodes_[leaf.node];
-    if (!node.expanded && !node.terminal) {
+    if (node.chance && !is_root(leaf.node) && config_.chance_mode != MctsChanceMode::Off) {
+        // Chance children are leaves: never expanded. Truncate marks the
+        // stored value as available; Resample re-evaluates every visit.
+        if (config_.chance_mode == MctsChanceMode::Truncate) {
+            node.expanded = true;
+        }
+    } else if (!node.expanded && !node.terminal) {
         (void)expand_with_priors(leaf.node, priors, rng);
     }
     apply_virtual_loss(leaf.path, leaf.depth, -1.0F);
@@ -1648,6 +1826,38 @@ void Mcts::root_visit_policy(float* out, float temperature) const noexcept {
     }
     if (temperature <= 0.0F) {
         out[best_root_action()] = 1.0F;
+        return;
+    }
+    if (root_count_ > 1U) {
+        std::uint32_t visits[ACTION_SPACE_SIZE];
+        float value_sums[ACTION_SPACE_SIZE];
+        root_action_stats(visits, value_sums);
+        const double inv_temp_worlds = 1.0 / static_cast<double>(temperature);
+        double total = 0.0;
+        std::uint32_t count = 0U;
+        for (std::uint32_t child_index = root.first_child; child_index != MCTS_NULL;
+             child_index = nodes_[child_index].next_sibling) {
+            const Action action = nodes_[child_index].action_from_parent;
+            const double weight = visits[action] == 0U
+                ? 0.0
+                : std::pow(static_cast<double>(visits[action]), inv_temp_worlds);
+            out[action] = static_cast<float>(weight);
+            total += weight;
+            ++count;
+        }
+        if (total <= 0.0) {
+            const float uniform = count == 0U ? 1.0F : 1.0F / static_cast<float>(count);
+            for (std::uint32_t child_index = root.first_child; child_index != MCTS_NULL;
+                 child_index = nodes_[child_index].next_sibling) {
+                out[nodes_[child_index].action_from_parent] = uniform;
+            }
+            return;
+        }
+        const float scale_worlds = static_cast<float>(1.0 / total);
+        for (std::uint32_t child_index = root.first_child; child_index != MCTS_NULL;
+             child_index = nodes_[child_index].next_sibling) {
+            out[nodes_[child_index].action_from_parent] *= scale_worlds;
+        }
         return;
     }
 
@@ -1769,6 +1979,7 @@ bool Mcts::compact_subtree_to_root(
     }
 
     nodes_[0].action_from_parent = A_PASS;
+    nodes_[0].chance = false;
     // This child was expanded under non-root rules. Re-evaluate it as the
     // next search root so its existing subtree is retained but any missing
     // legal root children are restored at full width.
@@ -1957,7 +2168,7 @@ bool Mcts::expand_with_priors(
         }
     }
 
-    ActionMask retained = node_index == 0U || !priors_consistent
+    ActionMask retained = is_root(node_index) || !priors_consistent
         ? legal
         : mcts_top_k_actions(
             legal,
@@ -2018,6 +2229,8 @@ bool Mcts::expand_with_priors(
         child.terminal = done || terminal_state(child_state);
         child.player = next_player_for_child(child_state, node.player);
         child.prior = raw_prior / prior_sum;
+        child.chance = config_.chance_mode != MctsChanceMode::Off && !child.terminal
+            && mcts_transition_reveals(states_[node.state_index], child_state);
 
         if (previous_child == MCTS_NULL) {
             node.first_child = child_index;
@@ -2033,7 +2246,7 @@ bool Mcts::expand_with_priors(
 
 std::uint32_t Mcts::select_child(std::uint32_t node_index) const noexcept {
     const MctsNode& node = nodes_[node_index];
-    if (node_index == 0U && config_.forced_playouts && root_dirichlet_noise_active_) {
+    if (is_root(node_index) && config_.forced_playouts && root_dirichlet_noise_active_) {
         std::uint32_t forced_child = MCTS_NULL;
         std::uint32_t greatest_deficit = 0U;
         for (std::uint32_t child_index = node.first_child; child_index != MCTS_NULL;
@@ -2205,6 +2418,18 @@ PlayerId Mcts::next_player_for_child(const GameState& child_state, PlayerId pare
     }
     const PlayerId player = player_to_move(child_state);
     return player < child_state.num_players ? player : root_perspective_;
+}
+
+bool mcts_transition_reveals(const GameState& before, const GameState& after) noexcept {
+    if (std::memcmp(&before.rng, &after.rng, sizeof(after.rng)) != 0) {
+        return true;
+    }
+    for (PlayerId p = 0; p < after.num_players; ++p) {
+        if (after.players[p].deck.size < before.players[p].deck.size) {
+            return true;
+        }
+    }
+    return false;
 }
 
 float mcts_terminal_value(const GameState& state, PlayerId player) noexcept {

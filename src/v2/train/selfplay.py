@@ -281,6 +281,15 @@ def _determinize_mode(mode: str):
     raise ValueError(f"unknown selfplay determinize mode: {mode}")
 
 
+def chance_mode_enum(mode: str):
+    """Native MctsChanceMode for a config string ("off", "truncate", "resample")."""
+    modes = {"off": dz.MctsChanceMode.Off, "truncate": dz.MctsChanceMode.Truncate,
+             "resample": dz.MctsChanceMode.Resample}
+    if mode not in modes:
+        raise ValueError(f"unknown chance_mode: {mode}")
+    return modes[mode]
+
+
 def _manifest_value(descriptor: object, name: str, default: Any) -> Any:
     if isinstance(descriptor, Mapping):
         return descriptor.get(name, default)
@@ -470,6 +479,8 @@ def make_runner_config(
         opening_turn_window=config.opening_turn_window,
         template_weights=list(config.template_weights),
     )
+    runner_config.chance_mode = chance_mode_enum(getattr(config, "chance_mode", "off"))
+    runner_config.worlds = int(getattr(config, "worlds", 1))
     if native_slots:
         runner_config.n_games = len(native_slots)
         runner_config.slot_manifest = native_slots

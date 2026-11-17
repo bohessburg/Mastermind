@@ -1,0 +1,10 @@
+{"checkpoint": "checkpoints/campaign28/gen_0006.pt", "device": "mps", "honest": true, "kingdoms": "random", "legacy_shim": false, "parameters": 1969211, "sims": 400}
+25/200 games, nn 7W-18L-0T, 442 games/hr
+50/200 games, nn 18W-32L-0T, 470 games/hr
+75/200 games, nn 31W-44L-0T, 363 games/hr
+100/200 games, nn 43W-57L-0T, 323 games/hr
+125/200 games, nn 52W-73L-0T, 294 games/hr
+150/200 games, nn 57W-93L-0T, 280 games/hr
+175/200 games, nn 64W-111L-0T, 288 games/hr
+opponent,games,wins,losses,ties,truncated,end_province,end_piles,end_trunc,win_pct_excl_ties,games_per_hour
+engine3,200,76,124,0,0,151,49,0,38.00,197.95

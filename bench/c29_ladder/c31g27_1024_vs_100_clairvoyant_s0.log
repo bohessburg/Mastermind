@@ -1,0 +1,29 @@
+[c31g27_1024_vs_100_clairvoyant_s0] device=mps backend=torch pairs=50 chunk=50 A=checkpoints/remote/campaign31/gen_0027.pt sims=1024 zero_v=False | B=checkpoints/remote/campaign31/gen_0027.pt sims=100 zero_v=False | determinize=off cross_route=False tree_reuse=False opening_temp=False leaves_in_flight=8 (min sims/leaf 32)
+[c31g27_1024_vs_100_clairvoyant_s0] .. 0/100 games  8329 evals/s  30s
+[c31g27_1024_vs_100_clairvoyant_s0] .. 0/100 games  9412 evals/s  60s
+[c31g27_1024_vs_100_clairvoyant_s0] .. 0/100 games  9848 evals/s  90s
+[c31g27_1024_vs_100_clairvoyant_s0] .. 0/100 games  10083 evals/s  120s
+[c31g27_1024_vs_100_clairvoyant_s0] .. 1/100 games  10222 evals/s  150s
+[c31g27_1024_vs_100_clairvoyant_s0] .. 1/100 games  10327 evals/s  180s
+[c31g27_1024_vs_100_clairvoyant_s0] .. 5/100 games  10378 evals/s  210s
+[c31g27_1024_vs_100_clairvoyant_s0] .. 11/100 games  10374 evals/s  240s
+[c31g27_1024_vs_100_clairvoyant_s0] .. 20/100 games  10225 evals/s  270s
+[c31g27_1024_vs_100_clairvoyant_s0] .. 29/100 games  9979 evals/s  300s
+[c31g27_1024_vs_100_clairvoyant_s0] .. 37/100 games  9667 evals/s  330s
+[c31g27_1024_vs_100_clairvoyant_s0] .. 41/100 games  9269 evals/s  360s
+[c31g27_1024_vs_100_clairvoyant_s0] .. 47/100 games  8816 evals/s  390s
+[c31g27_1024_vs_100_clairvoyant_s0] .. 49/100 games  8285 evals/s  420s
+[c31g27_1024_vs_100_clairvoyant_s0] .. 50/100 games  8099 evals/s  450s
+[c31g27_1024_vs_100_clairvoyant_s0] .. 50/100 games  8349 evals/s  480s
+[c31g27_1024_vs_100_clairvoyant_s0] .. 50/100 games  8478 evals/s  510s
+[c31g27_1024_vs_100_clairvoyant_s0] .. 50/100 games  8591 evals/s  540s
+[c31g27_1024_vs_100_clairvoyant_s0] .. 51/100 games  8704 evals/s  570s
+[c31g27_1024_vs_100_clairvoyant_s0] .. 52/100 games  8800 evals/s  600s
+[c31g27_1024_vs_100_clairvoyant_s0] .. 53/100 games  8880 evals/s  630s
+[c31g27_1024_vs_100_clairvoyant_s0] .. 61/100 games  8946 evals/s  660s
+[c31g27_1024_vs_100_clairvoyant_s0] .. 70/100 games  8971 evals/s  690s
+[c31g27_1024_vs_100_clairvoyant_s0] .. 82/100 games  8933 evals/s  720s
+[c31g27_1024_vs_100_clairvoyant_s0] .. 89/100 games  8842 evals/s  750s
+[c31g27_1024_vs_100_clairvoyant_s0] .. 98/100 games  8622 evals/s  780s
+[c31g27_1024_vs_100_clairvoyant_s0] 50/50 pairs  A 69W-29L-2T score=0.700±0.040  458 games/hr  8563 evals/s  786s
+[c31g27_1024_vs_100_clairvoyant_s0] DONE A 69W-29L-2T score=0.700 ci95=[0.622,0.778] elo=+147 seat0=0.580 non_greedy=0.0% turns=31.7 trunc=0 786.4s

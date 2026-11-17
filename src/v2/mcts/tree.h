@@ -30,6 +30,21 @@ enum class MctsCPuctSchedule : std::uint8_t {
     VisitScaled,
 };
 
+// Chance handling at hidden-information reveals (a draw or a shuffle). The
+// tree has no chance nodes, so a path past a reveal plans against one fixed
+// sampled outcome. A "chance" child is one whose transition from its parent
+// revealed hidden cards (mcts_transition_reveals). Off keeps the historical
+// search. Truncate evaluates a chance child once with the external network
+// and never expands it; later visits back up that stored value. Resample
+// re-samples the hidden zones of the parent state (for the root player),
+// re-applies the action, and evaluates the fresh outcome on every visit, so
+// the child's mean value averages over draws; it is never expanded either.
+enum class MctsChanceMode : std::uint8_t {
+    Off,
+    Truncate,
+    Resample,
+};
+
 struct MctsConfig {
     std::uint32_t sims_per_move = 100;
     float c_puct = 1.25F;
@@ -68,6 +83,8 @@ struct MctsConfig {
     // is trained on: sign * (alpha + (1-alpha) * (0.5 + 0.5*min(|m|,s)/s)).
     float terminal_margin_scale = 0.0F;
     float terminal_margin_alpha = 0.0F;
+    // External-evaluation searches only (collect/provide_external_*).
+    MctsChanceMode chance_mode = MctsChanceMode::Off;
 };
 
 static_assert(std::is_trivially_copyable_v<MctsConfig>);
@@ -106,6 +123,9 @@ struct MctsNode {
     float virtual_loss = 0.0F;
     bool expanded = false;
     bool terminal = false;
+    // Transition from the parent revealed hidden cards; set only when the
+    // tree's chance_mode is not Off (see MctsChanceMode).
+    bool chance = false;
 };
 
 inline constexpr std::uint8_t MCTS_MAX_PATH = 96;
@@ -136,7 +156,28 @@ public:
     // Lets a reusable scratch tree switch between opening and endgame budgets
     // without reallocating its fixed node/state buffers.
     void set_sims_per_move(std::uint32_t sims_per_move) noexcept { config_.sims_per_move = sims_per_move; }
+    // Per-search chance handling (per-seat comparisons). Takes effect for
+    // children created after the call; set it before reset().
+    void set_chance_mode(MctsChanceMode mode) noexcept { config_.chance_mode = mode; }
+    [[nodiscard]] MctsChanceMode chance_mode() const noexcept { return config_.chance_mode; }
     void reset(const GameState& root, PlayerId perspective) noexcept;
+    // Multi-world search (external evaluation only): node indices
+    // 0..count-1 are independent roots, each a copy of `live` with its hidden
+    // zones re-sampled for `perspective` (world w uses seed
+    // base_seed + w * 0x9E3779B97F4A7C15, so world 0 is exactly the
+    // single-world sample for base_seed). Each external simulation goes to
+    // the least-loaded world; every root accessor below (visits, values,
+    // visit policy, best action, priors) aggregates the K roots by action.
+    // count == 1 is identical to determinize + reset. Tree reuse is disabled.
+    void reset_worlds(
+        const GameState& live,
+        std::uint32_t count,
+        PlayerId perspective,
+        std::uint64_t base_seed) noexcept;
+    [[nodiscard]] std::uint32_t world_count() const noexcept { return root_count_; }
+    [[nodiscard]] bool is_root(std::uint32_t node) const noexcept { return node < root_count_; }
+    // Sum of root visits across worlds (node(0).visits for one world).
+    [[nodiscard]] std::uint32_t root_total_visits() const noexcept;
     void run_simulations(std::uint32_t simulations, Xoshiro256pp& rng) noexcept;
 
     // Retain one selected root child until the runner knows whether its
@@ -173,6 +214,9 @@ public:
     [[nodiscard]] float root_mean_value() const noexcept;
     [[nodiscard]] const GameState& state_for(std::uint32_t state_index) const noexcept;
     [[nodiscard]] bool collect_external_leaf(MctsPendingLeaf& leaf) noexcept;
+    // Per-action root statistics summed over worlds: visits and the
+    // visit-weighted value from the root player's perspective.
+    void root_action_stats(std::uint32_t* visits, float* value_sums) const noexcept;
     void provide_external_evaluation(
         const MctsPendingLeaf& leaf,
         float value,
@@ -188,6 +232,7 @@ public:
 
 private:
     [[nodiscard]] std::uint32_t allocate_node() noexcept;
+    [[nodiscard]] bool collect_from_root(std::uint32_t root, MctsPendingLeaf& leaf) noexcept;
     [[nodiscard]] bool compact_subtree_to_root(
         std::uint32_t retained_root,
         PlayerId perspective) noexcept;
@@ -216,6 +261,7 @@ private:
     std::unique_ptr<std::uint32_t[]> remap_;
     std::uint32_t capacity_ = 0;
     std::uint32_t node_count_ = 0;
+    std::uint32_t root_count_ = 1;
     PlayerId root_perspective_ = 0;
     bool exhausted_ = false;
     std::uint32_t retained_root_ = MCTS_NULL;
@@ -229,6 +275,9 @@ private:
 };
 
 [[nodiscard]] std::uint64_t mcts_state_hash(const GameState& state) noexcept;
+// True when stepping `before` into `after` revealed hidden cards: any
+// player's deck shrank (a draw, reveal, or look) or the shuffle RNG advanced.
+[[nodiscard]] bool mcts_transition_reveals(const GameState& before, const GameState& after) noexcept;
 // Return the top (k - 1) legal actions by prior plus one uniformly selected
 // action from the excluded remainder. Invalid inputs fall back to the full
 // legal mask, preserving a selectable legal action.

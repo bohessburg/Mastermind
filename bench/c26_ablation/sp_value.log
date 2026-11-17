@@ -1,0 +1,12 @@
+[sp_value] replay rows 1000000, steps 240
+/root/Mastermind/scripts/c26_ablation.py:95: UserWarning: Converting a tensor with requires_grad=True to a scalar may lead to unexpected behavior.
+Consider using tensor.detach() first. (Triggered internally at /__w/pytorch/pytorch/torch/csrc/autograd/generated/python_variable_methods.cpp:820.)
+  losses = {"value_loss": float(loss)}
+[sp_value] step 0 {'value_loss': 0.2157} 1s
+[sp_value] step 40 {'value_loss': 0.1289} 9s
+[sp_value] step 80 {'value_loss': 0.1246} 18s
+[sp_value] step 120 {'value_loss': 0.1155} 25s
+[sp_value] step 160 {'value_loss': 0.1193} 33s
+[sp_value] step 200 {'value_loss': 0.1164} 40s
+[sp_value] step 239 {'value_loss': 0.117} 47s
+[sp_value] GATE 92W-102L-6T win_pct=0.474
