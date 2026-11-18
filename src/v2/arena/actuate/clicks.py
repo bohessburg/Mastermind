@@ -363,6 +363,11 @@ class Actuator(ABC):
         del request
         return False
 
+    async def grant_undo_request(self, request: UndoRequest) -> bool:
+        """Grant an opponent undo, returning whether it was sent."""
+        del request
+        return False
+
     async def claim_timeout_offer(self, offer: TimeoutOffer) -> bool:
         """Force-end an eligible opponent, returning whether it was actuated."""
         del offer
@@ -379,6 +384,7 @@ class MockActuator(Actuator):
         self.replay = replay
         self.gestures: list[ClientGesture] = []
         self.undo_denials: list[UndoRequest] = []
+        self.undo_grants: list[UndoRequest] = []
         self.timeout_claims: list[TimeoutOffer] = []
         self.stopped = False
 
@@ -405,6 +411,12 @@ class MockActuator(Actuator):
         if self.stopped:
             return False
         self.undo_denials.append(request)
+        return True
+
+    async def grant_undo_request(self, request: UndoRequest) -> bool:
+        if self.stopped:
+            return False
+        self.undo_grants.append(request)
         return True
 
     async def claim_timeout_offer(self, offer: TimeoutOffer) -> bool:

@@ -8,8 +8,10 @@ from ..protocol.events import TimeoutOffer, UndoRequest
 from ..protocol.messages import (
     ANSWER_QUESTION,
     TIMEOUT_REQUEST,
+    UNDO_GRANT,
     encode_answer,
     encode_timeout_request,
+    encode_undo_reply,
 )
 from ..shadow.tracker import PendingDecisionSnapshot
 from .clicks import (
@@ -70,6 +72,17 @@ class ProtocolActuator(Actuator):
         if self.modal_actuator is None:
             return False
         return await self.modal_actuator.deny_undo_request(request)
+
+    async def grant_undo_request(self, request: UndoRequest) -> bool:
+        """Send the recorded grant body; a failed send leaves the caller to deny."""
+        try:
+            await self.send_frame(
+                UNDO_GRANT,
+                encode_undo_reply(request.requester_seat, request.decision_index),
+            )
+        except Exception:
+            return False
+        return True
 
     async def claim_timeout_offer(self, offer: TimeoutOffer) -> bool:
         """Use the bundle's stateless timeout request without touching the DOM."""

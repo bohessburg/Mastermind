@@ -1398,3 +1398,26 @@ from its own archive. The failure classes found and closed, in order:
   torch's OpenMP threads at import (predates the arena stream; hung runs from
   July 10/14 observed). Workaround: `OMP_NUM_THREADS=1` when running
   `src/v2/web/server/test_server.py`.
+
+- **Safe undo grants (2026-11-18).** `undo.grant_safe` (on in
+  `configs/arena_c29.json`) grants an opponent undo when nothing after the
+  target decision revealed a card or involved us; everything else is still
+  denied. The rule is `src/v2/arena/undo_policy.py`: no Draw, Reveal, Shuffle,
+  PileReorder, TurnStart, Attack, FullState or PendingDecision after the
+  target, every resolved decision is the requester's, and every card move is
+  the requester's and leaves a public zone (hand, in-play, discard, supply,
+  trash, or set-aside), never a deck. An undo of the last buy asked after
+  cleanup drew the next hand is denied too, since the requester has seen that
+  hand (Jack, after first allowing it). The classification runs when the
+  reply is due, so an answer we sent during the delay counts. A target
+  decision missing
+  from the retained history (cleared at every resync) is denied. Replies wait
+  `undo.reply_delay_seconds` (1.0) and are dropped if the request is
+  cancelled first. The grant is message 41 with
+  `[requester-seat:s32][decision-index:s32]`, the body of the one recorded
+  grant (game 181368463) and of all 208 recorded declines (message 42); the
+  rewound FullState then takes the existing signalled-undo resync path. Over
+  the 61 distinct archived opponent requests (57 games), classified at
+  request time, the rule grants 32 and denies 29 (11 drew a card, 10 crossed
+  the cleanup shuffle, 3 asked us a question, 2 attacked, 1 resolved one of
+  our decisions, 1 took a card off the deck, 1 revealed one).

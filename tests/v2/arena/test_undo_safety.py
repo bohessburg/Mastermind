@@ -446,3 +446,57 @@ def test_archive_loop_survives_an_unrequested_treasure_rewind(
         "unrequested FullState reseeded game 181415316" in record.getMessage()
         for record in caplog.records
     ) == 1
+
+
+def test_archive_loop_grants_the_safe_undo_and_denies_the_rest(
+    tmp_path: Path,
+) -> None:
+    """Game 181368463's (0, 39) undo only took back a Workshop play."""
+    events = parse_recording(_undo_archive_or_skip()).events
+    actuator = MockActuator(replay=True)
+
+    results = asyncio.run(
+        run_game_loop(
+            events,
+            actuator=actuator,
+            decision_provider=_ResetCountingProvider(events),
+            archive_factory=lambda game_id: GameArchive(tmp_path, game_id=game_id),
+            grant_safe_undo=True,
+        )
+    )
+
+    assert all(result.completed for result in results)
+    assert sum(result.undo_resyncs for result in results) == 1
+    assert [(r.requester_seat, r.decision_index) for r in actuator.undo_grants] == [(0, 39)]
+    assert (0, 39) not in [(r.requester_seat, r.decision_index) for r in actuator.undo_denials]
+
+
+def test_undo_reply_waits_for_the_delay_in_replay_time() -> None:
+    from src.v2.arena.fsm.game import _indexed_events, _PendingUndoReply, _UndoReplyDue
+
+    request = UndoRequest(requester_seat=0, decision_index=7, timestamp_ms=1_000)
+    pending = [
+        _PendingUndoReply(
+            request=request,
+            grant=True,
+            reason="test",
+            deadline_at=0.0,
+            deadline_timestamp_ms=2_000,
+        )
+    ]
+    source = [
+        UnknownFrame(direction="in", msg_type=99, raw=b"", sequence=None, timestamp_ms=1_500),
+        UnknownFrame(direction="in", msg_type=99, raw=b"", sequence=None, timestamp_ms=2_100),
+    ]
+
+    async def collect() -> list[GameEvent]:
+        seen = []
+        async for _, event in _indexed_events(source, undo_reply=lambda: pending[0] if pending else None):
+            seen.append(event)
+            if isinstance(event, _UndoReplyDue):
+                pending.clear()
+        return seen
+
+    seen = asyncio.run(collect())
+    assert [type(event).__name__ for event in seen] == ["UnknownFrame", "_UndoReplyDue", "UnknownFrame"]
+    assert seen[1].timestamp_ms == 2_000

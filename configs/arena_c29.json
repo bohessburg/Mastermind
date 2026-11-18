@@ -14,7 +14,9 @@
     "max_seconds": 0.0
   },
   "undo": {
-    "auto_deny": true
+    "auto_deny": true,
+    "grant_safe": true,
+    "reply_delay_seconds": 1.0
   },
   "timeout": {
     "claim_grace_seconds": 30

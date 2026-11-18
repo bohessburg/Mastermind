@@ -7,7 +7,7 @@ import inspect
 import logging
 import random
 import time
-from collections import Counter
+from collections import Counter, deque
 from collections.abc import AsyncIterable, AsyncIterator, Iterable
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -56,10 +56,12 @@ from ..protocol.events import (
     Trash,
     TurnStart,
     UndoRequest,
+    UndoResolved,
     UndoResync,
     UnknownFrame,
     ZoneTransfer,
 )
+from ..undo_policy import classify_undo_request
 from ..shadow.bridge import BridgeError, game_from_snapshot, set_deck_order
 from ..shadow.tracker import (
     PendingDecisionSnapshot,
@@ -71,6 +73,7 @@ from ..shadow.tracker import (
 
 LOGGER = logging.getLogger(__name__)
 MAX_AUTOPLAY_ATTEMPTS = 2
+_UNDO_HISTORY_EVENTS = 4096
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -167,6 +170,9 @@ class _ActiveGame:
     pending_plan: DecisionPlan | None = None
     pending_events: list[GameEvent] = field(default_factory=list)
     timeout_offer: _PendingTimeoutOffer | None = None
+    undo_reply: _PendingUndoReply | None = None
+    # Events since the game start or the last resync, for the undo policy.
+    history: deque[GameEvent] = field(default_factory=lambda: deque(maxlen=_UNDO_HISTORY_EVENTS))
     opponent_owes_attack_response: bool = False
     archive: GameArchive | None = None
 
@@ -196,6 +202,17 @@ class _PendingTimeoutOffer:
 
 
 @dataclass(frozen=True, kw_only=True)
+class _PendingUndoReply:
+    """One opponent undo request answered after the reply delay."""
+
+    request: UndoRequest
+    grant: bool
+    reason: str
+    deadline_at: float
+    deadline_timestamp_ms: int | None
+
+
+@dataclass(frozen=True, kw_only=True)
 class _WatchdogStall(GameEvent):
     """Internal sentinel produced instead of waiting forever for an event."""
 
@@ -209,6 +226,14 @@ class _TimeoutOfferGraceExpired(GameEvent):
     """Internal sentinel emitted after an unresolved offer's grace period."""
 
     player_seat: int
+    decision_index: int
+
+
+@dataclass(frozen=True, kw_only=True)
+class _UndoReplyDue(GameEvent):
+    """Internal sentinel emitted when a pending undo reply's delay is over."""
+
+    requester_seat: int
     decision_index: int
 
 
@@ -801,6 +826,8 @@ async def run_game_loop(
     archive_factory: Callable[[int | None], GameArchive] | None = None,
     max_games: int | None = None,
     auto_deny_undo: bool = True,
+    grant_safe_undo: bool = False,
+    undo_reply_delay_seconds: float = 1.0,
     timeout_offer_grace_seconds: float = 30.0,
     stall_watchdog_seconds: float | None = None,
     opponent_response_watchdog_seconds: float = 600.0,
@@ -836,6 +863,8 @@ async def run_game_loop(
         raise ValueError("watchdog poll interval must be positive")
     if not auto_deny_undo:
         raise ValueError("undo auto-deny is the only supported arena behavior")
+    if undo_reply_delay_seconds < 0:
+        raise ValueError("undo reply delay must be non-negative")
     rng = random_source or random.Random()
     tracker = Tracker()
     active: _ActiveGame | None = None
@@ -989,6 +1018,9 @@ async def run_game_loop(
         timeout_offer=lambda: (
             active.timeout_offer if active is not None else None
         ),
+        undo_reply=lambda: (
+            active.undo_reply if active is not None else None
+        ),
         clock=clock,
         sleep=sleep,
         watchdog_poll_seconds=watchdog_poll_seconds,
@@ -1027,6 +1059,29 @@ async def run_game_loop(
                             timeout_offer_grace_seconds,
                         )
                 continue
+            if isinstance(event, _UndoReplyDue):
+                reply = active.undo_reply if active is not None else None
+                if (
+                    reply is not None
+                    and reply.request.requester_seat == event.requester_seat
+                    and reply.request.decision_index == event.decision_index
+                ):
+                    # Clear first, as for timeout claims, so a reentrant frame
+                    # cannot produce a second reply while the send awaits.
+                    active.undo_reply = None
+                    if grant_safe_undo:
+                        # Classify now, not at the request: an answer we sent
+                        # while the reply waited must count.
+                        verdict = classify_undo_request(
+                            tuple(active.history),
+                            reply.request.requester_seat,
+                            reply.request.decision_index,
+                        )
+                        reply = replace(
+                            reply, grant=verdict.grant, reason=verdict.reason
+                        )
+                    await _send_undo_reply(actuator, reply)
+                continue
             tracker.consume(event)
             undo_resync = tracker.last_undo_resync
             if active is not None:
@@ -1039,6 +1094,7 @@ async def run_game_loop(
                 elif isinstance(event, (PendingDecision, TurnStart)):
                     active.opponent_owes_attack_response = False
                 active.pending_events.append(event)
+                active.history.append(event)
                 if active.archive is not None:
                     active.archive.append_event(frame_index, event)
                 if (
@@ -1071,6 +1127,9 @@ async def run_game_loop(
                 active.pending_snapshot = None
                 active.pending_plan = None
                 active.pending_events.clear()
+                # Rewound events must not vouch for a later undo request.
+                active.history.clear()
+                active.undo_reply = None
                 active.undo_resyncs += 1
                 reset_provider = getattr(
                     decision_provider,
@@ -1198,16 +1257,30 @@ async def run_game_loop(
                     snapshot.our_seat is not None
                     and event.requester_seat != snapshot.our_seat
                 ):
-                    denied = await actuator.deny_undo_request(event)
-                    if not denied:
-                        LOGGER.error(
-                            "AUTO-DENY did not click a control for opponent "
-                            "seat %d decision %d; continuing safely while the "
-                            "server request times out",
-                            event.requester_seat,
-                            event.decision_index,
-                        )
+                    # Classified when the reply is due; see _UndoReplyDue.
+                    active.undo_reply = _PendingUndoReply(
+                        request=event,
+                        grant=False,
+                        reason="granting is disabled",
+                        deadline_at=clock() + undo_reply_delay_seconds,
+                        deadline_timestamp_ms=(
+                            None
+                            if event.timestamp_ms is None
+                            else event.timestamp_ms
+                            + round(undo_reply_delay_seconds * 1_000)
+                        ),
+                    )
                 continue
+
+            if (
+                isinstance(event, UndoResolved)
+                and active.undo_reply is not None
+                and event.decision_index
+                == active.undo_reply.request.decision_index
+            ):
+                # Withdrawn before our reply; answering it now could only
+                # confuse the server.
+                active.undo_reply = None
 
             if (
                 isinstance(event, UnknownFrame)
@@ -1623,11 +1696,93 @@ async def run_game_loop(
     return tuple(results)
 
 
+async def _send_undo_reply(actuator: Actuator, reply: _PendingUndoReply) -> None:
+    """Grant a safe undo or deny it; a grant that cannot be sent is denied."""
+    request = reply.request
+    if reply.grant:
+        if await actuator.grant_undo_request(request):
+            LOGGER.warning(
+                "GRANTED undo request from seat %d at decision %d: %s",
+                request.requester_seat,
+                request.decision_index,
+                reply.reason,
+            )
+            return
+        LOGGER.error(
+            "UNDO GRANT not sent for seat %d decision %d; denying instead",
+            request.requester_seat,
+            request.decision_index,
+        )
+    else:
+        LOGGER.warning(
+            "Denying undo request from seat %d at decision %d: %s",
+            request.requester_seat,
+            request.decision_index,
+            reply.reason,
+        )
+    denied = await actuator.deny_undo_request(request)
+    if not denied:
+        LOGGER.error(
+            "AUTO-DENY did not click a control for opponent "
+            "seat %d decision %d; continuing safely while the "
+            "server request times out",
+            request.requester_seat,
+            request.decision_index,
+        )
+
+
+def _due_deadline_events(
+    pending_timeout: _PendingTimeoutOffer | None,
+    pending_undo: _PendingUndoReply | None,
+    *,
+    now: float | None = None,
+    before: GameEvent | None = None,
+) -> list[GameEvent]:
+    """Sentinels for deadlines due now (live) or before ``before`` (replay).
+
+    With neither bound, every pending deadline is due (end of a replay).
+    """
+    due: list[GameEvent] = []
+    for pending in (pending_timeout, pending_undo):
+        if pending is None:
+            continue
+        if now is not None:
+            ready = now >= pending.deadline_at
+        elif before is not None:
+            ready = (
+                pending.deadline_timestamp_ms is not None
+                and before.timestamp_ms is not None
+                and before.timestamp_ms >= pending.deadline_timestamp_ms
+            )
+        else:
+            ready = True
+        if not ready:
+            continue
+        if isinstance(pending, _PendingTimeoutOffer):
+            due.append(
+                _TimeoutOfferGraceExpired(
+                    player_seat=pending.offer.player_seat,
+                    decision_index=pending.offer.decision_index,
+                    timestamp_ms=pending.deadline_timestamp_ms,
+                )
+            )
+        else:
+            due.append(
+                _UndoReplyDue(
+                    requester_seat=pending.request.requester_seat,
+                    decision_index=pending.request.decision_index,
+                    timestamp_ms=pending.deadline_timestamp_ms,
+                )
+            )
+    return due
+
+
 async def _indexed_events(
     events: Iterable[GameEvent] | AsyncIterable[GameEvent],
     *,
     stall_limit: Callable[[], float | None] | None = None,
     timeout_offer: Callable[[], _PendingTimeoutOffer | None] | None = None,
+    undo_reply: Callable[[], _PendingUndoReply | None] | None = None,
     clock: Callable[[], float] = time.monotonic,
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     watchdog_poll_seconds: float = 0.25,
@@ -1645,15 +1800,10 @@ async def _indexed_events(
                 pending_timeout = (
                     timeout_offer() if timeout_offer is not None else None
                 )
-                if (
-                    pending_timeout is not None
-                    and now >= pending_timeout.deadline_at
-                ):
-                    yield index, _TimeoutOfferGraceExpired(
-                        player_seat=pending_timeout.offer.player_seat,
-                        decision_index=pending_timeout.offer.decision_index,
-                        timestamp_ms=pending_timeout.deadline_timestamp_ms,
-                    )
+                pending_undo = undo_reply() if undo_reply is not None else None
+                due = _due_deadline_events(pending_timeout, pending_undo, now=now)
+                if due:
+                    yield index, due[0]
                     continue
 
                 silent_seconds: float | None = None
@@ -1673,6 +1823,8 @@ async def _indexed_events(
                 waits = [watchdog_poll_seconds]
                 if pending_timeout is not None:
                     waits.append(pending_timeout.deadline_at - now)
+                if pending_undo is not None:
+                    waits.append(pending_undo.deadline_at - now)
                 if silent_seconds is not None and limit is not None:
                     waits.append(limit - silent_seconds)
                 poll_task = asyncio.create_task(sleep(min(waits)))
@@ -1700,39 +1852,25 @@ async def _indexed_events(
     for index, event in enumerate(events):
         next_index = index + 1
         while True:
-            pending_timeout = (
-                timeout_offer() if timeout_offer is not None else None
+            due = _due_deadline_events(
+                timeout_offer() if timeout_offer is not None else None,
+                undo_reply() if undo_reply is not None else None,
+                before=event,
             )
-            if not _timeout_offer_is_due_before_event(pending_timeout, event):
+            if not due:
                 break
-            assert pending_timeout is not None
-            yield index, _TimeoutOfferGraceExpired(
-                player_seat=pending_timeout.offer.player_seat,
-                decision_index=pending_timeout.offer.decision_index,
-                timestamp_ms=pending_timeout.deadline_timestamp_ms,
-            )
+            yield index, due[0]
         yield index, event
 
-    pending_timeout = timeout_offer() if timeout_offer is not None else None
-    if pending_timeout is not None:
-        yield next_index, _TimeoutOfferGraceExpired(
-            player_seat=pending_timeout.offer.player_seat,
-            decision_index=pending_timeout.offer.decision_index,
-            timestamp_ms=pending_timeout.deadline_timestamp_ms,
+    # At most one sentinel per kind of deadline once the replay is over.
+    for _ in range(2):
+        due = _due_deadline_events(
+            timeout_offer() if timeout_offer is not None else None,
+            undo_reply() if undo_reply is not None else None,
         )
-
-
-def _timeout_offer_is_due_before_event(
-    pending_timeout: _PendingTimeoutOffer | None,
-    event: GameEvent,
-) -> bool:
-    """Replay timeout grace from recorded frame timestamps when available."""
-    return (
-        pending_timeout is not None
-        and pending_timeout.deadline_timestamp_ms is not None
-        and event.timestamp_ms is not None
-        and event.timestamp_ms >= pending_timeout.deadline_timestamp_ms
-    )
+        if not due:
+            break
+        yield next_index, due[0]
 
 
 def _timeout_offer_was_cancelled(

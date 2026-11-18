@@ -180,6 +180,8 @@ async def _run_dry(config: ArenaConfig) -> int:
                     ledger_path=run_dir / "record.jsonl",
                 ),
                 auto_deny_undo=config.undo.auto_deny,
+                grant_safe_undo=config.undo.grant_safe,
+                undo_reply_delay_seconds=config.undo.reply_delay_seconds,
                 timeout_offer_grace_seconds=(
                     config.timeout.claim_grace_seconds
                 ),
@@ -402,6 +404,8 @@ async def _run_live(
                         archive_factory=archive_factory,
                         max_games=1,
                         auto_deny_undo=config.undo.auto_deny,
+                        grant_safe_undo=config.undo.grant_safe,
+                        undo_reply_delay_seconds=config.undo.reply_delay_seconds,
                         timeout_offer_grace_seconds=(
                             config.timeout.claim_grace_seconds
                         ),

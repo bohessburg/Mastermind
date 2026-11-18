@@ -6,6 +6,10 @@ Arms (all share the policy data; only the value data differs):
   v45  value from rows whose mover is rated 45+
   v40  value from rows whose mover is rated 40+
   vall value from every row, unrated included
+  v40nr   v40, but no value rows from games that ended in a resignation
+  v40nrp  v40nr, and no policy rows from resigned games either
+
+The resignation arms also get test slices that leave resigned games out.
 
 Every optimizer step draws 512 policy rows from the 45+ training pool (same
 seed, so every arm sees the same policy rows in the same order) plus 512
@@ -59,7 +63,9 @@ POLICY_FLOOR = 45.0
 VALUE_ONLY_WEIGHT = 1.0e-6
 HALF_BATCH = 512
 SPLIT_SEED = 20261115
-ARM_FLOORS: dict[str, float | None] = {"v45": 45.0, "v40": 40.0, "vall": None}
+ARM_FLOORS: dict[str, float | None] = {"v45": 45.0, "v40": 40.0, "vall": None, "v40nr": 40.0, "v40nrp": 40.0}
+# Arms that drop resigned games: (from the value pool, from the policy pool).
+ARM_DROP_RESIGNED: dict[str, tuple[bool, bool]] = {"v40nr": (True, False), "v40nrp": (True, True)}
 
 
 def load_corpus(tuple_dir: Path, smoke: bool) -> dict[str, Any]:
@@ -179,7 +185,7 @@ def slice_metrics(model, arrays: HumanArrays, data, slices: dict[str, np.ndarray
             continue
         metrics = evaluate_human(model, arrays, rows, 1024, device)
         result[name] = {"rows": int(len(rows)), "value_mse": metrics.value, "policy": metrics.policy}
-        if name in ("45plus", "50plus"):
+        if name in ("45plus", "50plus", "45plus_nr", "50plus_nr"):
             result[name]["accuracy"] = accuracy(model, data, rows, device)
     return result
 
@@ -212,6 +218,8 @@ def main() -> int:
     split[order[cut_test:]] = 2
     row_split = split[data["game_index"]]
     rated = ~np.isnan(level)
+    resigned_game = np.array([any(game["outcome"].get("resigned") or ()) for game in data["manifest"]["games"]], dtype=np.bool_)
+    played_out = ~resigned_game[data["game_index"]]
     above = lambda floor: rated & (np.nan_to_num(level, nan=-1.0) >= floor)
 
     def rows(mask: np.ndarray) -> np.ndarray:
@@ -219,12 +227,15 @@ def main() -> int:
 
     train = row_split == 0
     policy_pool = rows(train & above(POLICY_FLOOR))
+    played_out_policy_pool = rows(train & above(POLICY_FLOOR) & played_out)
     eval_slices = {
         part: {
             "all": rows(row_split == code),
             "40plus": rows((row_split == code) & above(40.0)),
             "45plus": rows((row_split == code) & above(45.0)),
             "50plus": rows((row_split == code) & above(50.0)),
+            "45plus_nr": rows((row_split == code) & above(45.0) & played_out),
+            "50plus_nr": rows((row_split == code) & above(50.0) & played_out),
         }
         for part, code in (("val", 1), ("test", 2))
     }
@@ -247,18 +258,21 @@ def main() -> int:
     args.report.parent.mkdir(parents=True, exist_ok=True)
     for arm in arms:
         floor = ARM_FLOORS[arm]
-        value_pool = rows(train & (above(floor) if floor is not None else np.ones_like(train)))
+        drop_value, drop_policy = ARM_DROP_RESIGNED.get(arm, (False, False))
+        value_mask = train & (above(floor) if floor is not None else np.ones_like(train))
+        value_pool = rows(value_mask & played_out if drop_value else value_mask)
+        arm_policy_pool = played_out_policy_pool if drop_policy else policy_pool
         config = bc._prepare_config(config_args, bc.ARMS["a"])
         if obs_size_for_config(config) != data["obs"].shape[1]:
             raise ValueError("tuple observation width does not match the model config")
         seed_everything(int(config.seed), deterministic=True)
         model = build_model(config.model, obs_size_for_config(config), int(dz.ACTION_SPACE_SIZE)).to(device)
         optimizer = torch.optim.AdamW(model.parameters(), lr=config.optim.lr, weight_decay=config.optim.weight_decay)
-        batches = MixedBatches(data, weight, policy_pool, value_pool, int(config.seed))
+        batches = MixedBatches(data, weight, arm_policy_pool, value_pool, int(config.seed))
         total_steps = 50 if args.smoke else int(args.steps)
         eval_every = 25 if args.smoke else int(args.eval_every)
         print(
-            f"arm={arm} value_floor={floor} value_pool={len(value_pool)} params={count_parameters(model)} "
+            f"arm={arm} value_floor={floor} value_pool={len(value_pool)} policy_pool={len(arm_policy_pool)} params={count_parameters(model)} "
             f"steps<={total_steps} device={device}",
             flush=True,
         )
@@ -293,7 +307,7 @@ def main() -> int:
         args.output_dir.mkdir(parents=True, exist_ok=True)
         torch.save(checkpoint, args.output_dir / f"bc_{arm}.pt")
         report["arms"][arm] = {
-            "value_floor": floor, "value_pool_rows": int(len(value_pool)), "steps_run": steps_run,
+            "value_floor": floor, "value_pool_rows": int(len(value_pool)), "policy_pool_rows": int(len(arm_policy_pool)), "steps_run": steps_run,
             "best_val": best, "best_step": min(history, key=lambda h: h["val45_policy"] + h["val45_value"])["step"],
             "wall_seconds": time.monotonic() - started, "test": test, "history": history,
         }

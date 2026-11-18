@@ -43,6 +43,10 @@ class UndoConfig:
     """Safety policy for metagame undo requests."""
 
     auto_deny: bool = True
+    # Grant requests whose rewound events revealed nothing (undo_policy.py).
+    grant_safe: bool = False
+    # Pause before answering, so a reply never looks instantaneous.
+    reply_delay_seconds: float = 1.0
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -172,6 +176,10 @@ class ArenaConfig:
             ),
             undo=UndoConfig(
                 auto_deny=_boolean(undo_raw, "auto_deny", default=True),
+                grant_safe=_boolean(undo_raw, "grant_safe", default=False),
+                reply_delay_seconds=float(
+                    undo_raw.get("reply_delay_seconds", 1.0)
+                ),
             ),
             timeout=TimeoutConfig(
                 claim_grace_seconds=float(
@@ -227,8 +235,11 @@ class ArenaConfig:
             )
         if not self.undo.auto_deny:
             raise ValueError(
-                "undo.auto_deny must be true; granting undo is unsupported"
+                "undo.auto_deny must be true; use undo.grant_safe to grant "
+                "requests that reveal nothing"
             )
+        if self.undo.reply_delay_seconds < 0:
+            raise ValueError("undo reply delay must be non-negative")
         if self.timeout.claim_grace_seconds < 0:
             raise ValueError("timeout claim grace must be non-negative")
         for name, value in (

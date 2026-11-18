@@ -1,0 +1,16 @@
+{
+  "arm": "combo",
+  "tag": "combo_p3",
+  "sharpen": 3.0,
+  "human_weight": 1.0,
+  "run": "/root/c28snap",
+  "lr": 0.0002,
+  "steps": 240,
+  "wins": 85,
+  "losses": 109,
+  "ties": 6,
+  "win_pct": 0.4381443298969072,
+  "gate_s": 2127,
+  "gate_games": 200,
+  "gate_sims": 128
+}

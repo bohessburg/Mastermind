@@ -80,7 +80,6 @@ class ArenaSession:
             )
             await self.context.expose_function("__arenaFrame", self._receive_frame)
             await self._maybe_block_assets()
-            await self._maybe_block_ws_hosts()
             # This must precede page creation/navigation.  It intentionally
             # matches ArenaRecorder's capture installation exactly.
             await self.context.add_init_script(path=str(HOOK_PATH))
@@ -115,29 +114,6 @@ class ArenaSession:
 
         await self.context.route("**/*", handler)
         print(f"[assets] {self.profile_dir.name} blocking {sorted(blocked_types)}", flush=True)
-
-    async def _maybe_block_ws_hosts(self) -> None:
-        """Refuse WebSocket connections to the hosts named in ARENA_BLOCK_WS_HOSTS.
-
-        The client probes both game servers and opens its login socket on the
-        one that answers first with an "available" reply.  On 2026-11-16/17
-        every login that went to prod-dominion-beta got no reply at all on the
-        login socket (Login stays disabled), while alpha logged in within two
-        seconds.  Refusing beta's sockets makes the probe fail there, so the
-        client picks alpha.  e.g. ARENA_BLOCK_WS_HOSTS=prod-dominion-beta
-        """
-        hosts = [h.strip() for h in os.environ.get("ARENA_BLOCK_WS_HOSTS", "").split(",") if h.strip()]
-        if not hosts or self.context is None:
-            return
-
-        async def refuse(ws: Any) -> None:
-            print(f"[ws] refused {ws.url}", flush=True)
-            await ws.close(code=1013, reason="blocked by ARENA_BLOCK_WS_HOSTS")
-
-        for host in hosts:
-            await self.context.route_web_socket(f"**://{host}*/**", refuse)
-            await self.context.route_web_socket(f"**://{host}*", refuse)
-        print(f"[ws] blocking WebSocket hosts {hosts}", flush=True)
 
     async def stop(self) -> None:
         """Close browser resources and wake an event pump awaiting input."""
