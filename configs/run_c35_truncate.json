@@ -1,0 +1,174 @@
+{
+  "_comment": "Campaign 35 arm 'truncate' (2026-11-18, Jack). Training A/B of search mode, rerun of c34 from scratch: c34 (from c33 gen 51, empty buffer, 400-game gate with forced accepts) drifted below gen 51 in both finished arms and was cut. c35 = c33 exactly (BC R40B init, honest self-play, s160h, 800-game paired gate, anchor schedule) except: 6 generations (about 1.2M positions, so the 1M replay buffer fills during gen 5), constant lr 7e-5 (c33's rate over its first 6 gens; cosine over 6 gens would decay too fast), no deep slice (deep_slice_fraction 0), and selfplay.chance_mode = truncate. Launch: scripts/box/resume.sh configs/run_c35_truncate.json checkpoints/remote/bc_level1_R40B/bc_f100.pt. Judge on: ladder between the arms' final checkpoints and vs c33 gen 6, engine3, thin arena positions.",
+  "seed": 20261116,
+  "generations": 6,
+  "init_weights": "",
+  "device": "auto",
+  "parallel_workers": 64,
+  "server_selfplay": true,
+  "checkpoint_dir": "checkpoints/campaign35_truncate",
+  "metrics_csv": "checkpoints/campaign35_truncate/metrics.csv",
+  "league_pool_size": 16,
+  "league_seed_checkpoints": [
+    "checkpoints/remote/campaign29/gen_0010.pt",
+    "checkpoints/remote/campaign29/gen_0025.pt",
+    "checkpoints/remote/campaign29/gen_0035.pt"
+  ],
+  "league_self_every": 10,
+  "league_schedule": [
+    [
+      1,
+      0.1
+    ]
+  ],
+  "league_opponents_per_gen": 3,
+  "scripted_opponents": {
+    "bigmoney": 0.05,
+    "engine": 0.05
+  },
+  "scripted_opponent_schedule": {},
+  "kingdom_curriculum": [],
+  "model": {
+    "arch": "card_transformer",
+    "obs_version": 3,
+    "d_model": 192,
+    "n_layers": 4,
+    "n_heads": 6,
+    "ffn_multiplier": 4,
+    "dropout": 0.0,
+    "aux_margin_buckets": 21,
+    "derived_features": true,
+    "final_norm": true,
+    "embedding_init_std": 0.02
+  },
+  "aux_margin_weight": 0.3,
+  "imitation": {
+    "human_tuples": "exports/tuples_dgames_level1",
+    "skill_weighting": true,
+    "pretrain_steps": 0,
+    "pretrain_batch_size": 512,
+    "anchor_weight": 0.5,
+    "anchor_weight_schedule": [
+      [
+        1,
+        0.5
+      ],
+      [
+        20,
+        0.1
+      ]
+    ],
+    "anchor_batch_size": 512,
+    "anchor_awr_beta": 0.0,
+    "anchor_value_weight": 1.0
+  },
+  "server_compile": true,
+  "server_autocast_bf16": true,
+  "server_trim_piles": 17,
+  "server_batch_buckets": [
+    128,
+    256,
+    512,
+    1024,
+    2048,
+    4096
+  ],
+  "selfplay": {
+    "n_games": 16,
+    "sims_per_move": 1024,
+    "games_per_generation": 1024,
+    "max_batch": 4096,
+    "c_puct": 1.25,
+    "dirichlet_alpha": 0.3,
+    "dirichlet_frac": 0.25,
+    "determinize": "per_decision",
+    "tree_reuse": false,
+    "forced_playouts": true,
+    "forced_playouts_k": 2.0,
+    "expand_top_k": 8,
+    "temp_mode": "per_seat_buy",
+    "temp_buy_turns": 6,
+    "temp_action_plies": 10,
+    "temp_effect_plies": 6,
+    "kingdom_mode": "random",
+    "max_recorded_moves": 512,
+    "max_tree_nodes": 8192,
+    "auto_play_treasures": true,
+    "prune_treasure_plays": true,
+    "value_target": "margin",
+    "margin_scale": 20.0,
+    "obs_version": 3,
+    "opening_templates_enabled": false,
+    "max_turns": 100,
+    "deep_slice_fraction": 0.0,
+    "deep_slice_sims": 4096,
+    "adjudicate_truncation": true,
+    "leaves_in_flight": 8,
+    "deep_leaves_in_flight": 32,
+    "leaves_min_sims_per_leaf": 32,
+    "tail_games_threshold": 2,
+    "tail_leaves_in_flight": 8,
+    "generation_cutoff_fraction": 0.99,
+    "root_value_blend": 0.25,
+    "fpu_reduction": 0.2,
+    "scaled_terminal_values": true,
+    "dirichlet_alpha_total": 10.0,
+    "sample_from_pruned_policy": true,
+    "adaptive_sims_per_legal": 128,
+    "adaptive_sims_floor": 128,
+    "deep_max_tree_nodes": 32768,
+    "chance_mode": "truncate"
+  },
+  "replay": {
+    "capacity": 1000000,
+    "sil_weight": 0.0
+  },
+  "optim": {
+    "optimizer": "adamw",
+    "lr": 7e-05,
+    "lr_schedule": "constant",
+    "min_lr": 7e-05,
+    "weight_decay": 0.03,
+    "batch_size": 2048,
+    "train_steps_per_generation": 160,
+    "value_loss_weight": 0.25
+  },
+  "eval": {
+    "eval_every_n_generations": 0,
+    "eval_on_accept": true,
+    "eval_games": 100,
+    "eval_sims": 400,
+    "eval_opponent": "engine3",
+    "eval_honest": true,
+    "eval_kingdoms": "random",
+    "eval_n_games": 128,
+    "eval_max_batch": 4096,
+    "eval_sentinels": [
+      {
+        "opponent": "engine3",
+        "games": 100
+      }
+    ],
+    "eval_workers": 24,
+    "eval_async": true
+  },
+  "server_response_timeout_s": 900.0,
+  "server_shards": 2,
+  "server_gpu_ids": [],
+  "gate_mode": "paired",
+  "gate_games": 800,
+  "gate_sims": 128,
+  "gate_threshold": 0.5,
+  "gate_ci_z": 1.0,
+  "gate_determinize": "per_decision",
+  "gate_chunk": 200,
+  "gate_third_party_opponent": "",
+  "gate_third_party_games": 200,
+  "gate_third_party_sims": 400,
+  "gate_third_party_margin": 0.05,
+  "gate_third_party_background": true,
+  "gate_force_accept_every": 0,
+  "gate_warmup_generations": 0,
+  "stop_after_rejections": 10,
+  "gate_workers": 8
+}

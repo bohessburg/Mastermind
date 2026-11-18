@@ -101,6 +101,44 @@ def match_selfplay_config(
     return config
 
 
+def make_manifest_runner(
+    config: SelfPlayConfig,
+    *,
+    seed: int,
+    game_indices: Sequence[int],
+    seat_sims: tuple[int, int] = (0, 0),
+    seat_chance_mode: tuple[int, int] = (0, 0),
+    seat_worlds: tuple[int, int] = (0, 0),
+    independent_search: bool = True,
+    record_states: bool = False,
+) -> Any:
+    """Native runner that plays each listed game index once (see ``play_manifest_games``).
+
+    ``config`` is modified in place (tree size), so pass a copy.
+    """
+    per_seat = (any(int(s) > 0 for s in seat_sims) or any(int(m) > 0 for m in seat_chance_mode)
+                or any(int(w) > 0 for w in seat_worlds))
+    if config.tree_reuse and (independent_search or per_seat):
+        raise ValueError("independent search and per-seat budgets need tree_reuse off")
+    max_sims = max(int(config.sims_per_move), *(int(s) for s in seat_sims))
+    if not config.tree_reuse:
+        # Each node owns a 16 KB GameState and is allocated eagerly; a fresh
+        # tree needs about one node per simulation, so the training-sized slab
+        # (sized for reuse) would only waste memory per concurrent game.
+        config.max_tree_nodes = 2 * max_sims + 64
+    native = make_runner_config(
+        config,
+        seed,
+        slot_manifest=[{"game_index": int(index)} for index in game_indices],
+    )
+    native.seat_sims = (int(seat_sims[0]), int(seat_sims[1]))
+    native.seat_chance_mode = (int(seat_chance_mode[0]), int(seat_chance_mode[1]))
+    native.seat_worlds = (int(seat_worlds[0]), int(seat_worlds[1]))
+    native.independent_search = bool(independent_search)
+    native.record_states = bool(record_states)
+    return dz.SelfPlayRunner(native)
+
+
 def play_manifest_games(
     seat_models: Sequence[torch.nn.Module],
     config: SelfPlayConfig,
@@ -130,27 +168,16 @@ def play_manifest_games(
     if not indices:
         return [], 0
     runner_config = copy.deepcopy(config)
-    per_seat = (any(int(s) > 0 for s in seat_sims) or any(int(m) > 0 for m in seat_chance_mode)
-                or any(int(w) > 0 for w in seat_worlds))
-    if runner_config.tree_reuse and (independent_search or per_seat):
-        raise ValueError("independent search and per-seat budgets need tree_reuse off")
-    max_sims = max(int(runner_config.sims_per_move), *(int(s) for s in seat_sims))
-    if not runner_config.tree_reuse:
-        # Each node owns a 16 KB GameState and is allocated eagerly; a fresh
-        # tree needs about one node per simulation, so the training-sized slab
-        # (sized for reuse) would only waste memory per concurrent game.
-        runner_config.max_tree_nodes = 2 * max_sims + 64
-    native = make_runner_config(
+    runner = make_manifest_runner(
         runner_config,
-        seed,
-        slot_manifest=[{"game_index": index} for index in indices],
+        seed=seed,
+        game_indices=indices,
+        seat_sims=seat_sims,
+        seat_chance_mode=seat_chance_mode,
+        seat_worlds=seat_worlds,
+        independent_search=independent_search,
+        record_states=record_states,
     )
-    native.seat_sims = (int(seat_sims[0]), int(seat_sims[1]))
-    native.seat_chance_mode = (int(seat_chance_mode[0]), int(seat_chance_mode[1]))
-    native.seat_worlds = (int(seat_worlds[0]), int(seat_worlds[1]))
-    native.independent_search = bool(independent_search)
-    native.record_states = bool(record_states)
-    runner = dz.SelfPlayRunner(native)
     for model in seat_models:
         model.eval()
     same = seat_models[0] is seat_models[1]

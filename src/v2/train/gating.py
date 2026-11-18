@@ -1625,6 +1625,183 @@ def gate_board_slices(pairs: int, workers: int) -> list[list[int]]:
     return slices
 
 
+def _gate_server_slice_worker(
+    worker_index: int,
+    endpoints: Any,
+    endpoint_index: int,
+    match_config: Any,
+    seed: int,
+    indices: list[int],
+    result_queue: Any,
+    progress_queue: Any,
+) -> None:
+    """Play one slice of gate boards from both seats, leaves to the gate server.
+
+    Model 0 is the candidate (side A) and model 1 the best. Both seat
+    orientations run at once in two runners, so the slice keeps twice as many
+    games in flight as the local path.
+    """
+    import traceback
+
+    try:
+        import numpy as np
+
+        from .diagnostics import greedy_stats, make_manifest_runner
+        from .workers import _evaluate_manifest_server_groups, _server_evaluator
+
+        torch.set_num_threads(1)
+        evaluate, views = _server_evaluator(endpoints, endpoint_index)
+        limit = int(endpoints.request_batch_size)
+        runners = {
+            a_seat: make_manifest_runner(
+                copy.deepcopy(match_config), seed=int(seed), game_indices=indices, independent_search=True
+            )
+            for a_seat in (0, 1)
+        }
+        # a_seat 0: seat 0 is A (model 0); a_seat 1: seat 1 is A.
+        seat_model_ids = {0: np.array([0, 1], dtype=np.uint32), 1: np.array([1, 0], dtype=np.uint32)}
+        records: dict[int, list[dict[str, Any]]] = {0: [], 1: []}
+        non_greedy = decisions = evals = 0
+        last = 0.0
+
+        def take(a_seat: int, finished: list[dict[str, Any]]) -> None:
+            nonlocal non_greedy, decisions
+            if not finished:
+                return
+            greedy = greedy_stats(finished)
+            non_greedy += int(greedy["non_greedy"])
+            decisions += int(greedy["decisions"])
+            records[a_seat].extend(
+                {
+                    "game_index": int(record["game_index"]),
+                    "winner": record.get("winner"),
+                    "turn_counter": int(record["turn_counter"]),
+                    "truncated": bool(record["truncated"]),
+                }
+                for record in finished
+            )
+
+        while any(len(records[a_seat]) < len(indices) for a_seat in (0, 1)):
+            for a_seat, runner in runners.items():
+                if len(records[a_seat]) >= len(indices):
+                    continue
+                obs, masks = runner.collect_leaves(limit)
+                batch = int(obs.shape[0])
+                if batch == 0:
+                    finished = runner.finished_games()
+                    if not finished:
+                        raise RuntimeError("gate runner stalled before finishing every game")
+                    take(a_seat, finished)
+                    continue
+                route = np.asarray(runner.leaf_route_seats(), dtype=np.intp)
+                if route.shape != (batch,):
+                    raise RuntimeError("gate runner returned misaligned leaf seats")
+                logits, values = _evaluate_manifest_server_groups(
+                    evaluate, obs, masks, seat_model_ids[a_seat][route]
+                )
+                runner.provide_evaluations(values, logits)
+                evals += batch
+                take(a_seat, runner.finished_games())
+            now = time.perf_counter()
+            if now - last >= 5.0:
+                last = now
+                progress_queue.put((worker_index, len(records[0]) + len(records[1]), evals))
+        progress_queue.put((worker_index, len(records[0]) + len(records[1]), evals))
+        if views is not None:
+            views.close()
+        result_queue.put(
+            (
+                "result",
+                worker_index,
+                {
+                    "seat0": records[0],
+                    "seat1": records[1],
+                    "non_greedy": non_greedy,
+                    "decisions": decisions,
+                    "nn_evals": evals,
+                },
+            )
+        )
+    except BaseException:  # noqa: BLE001 - reported to the parent
+        result_queue.put(("error", worker_index, traceback.format_exc()))
+
+
+def _run_gate_slices_on_server(
+    model_a: torch.nn.Module,
+    model_b: torch.nn.Module,
+    match_config: Any,
+    *,
+    slices: list[list[int]],
+    seed: int,
+    config: TrainConfig,
+    on_progress: Callable[[dict[int, tuple[int, int]]], None],
+) -> list[dict[str, Any]]:
+    """Run gate slices in spawned workers against a dedicated two-model server."""
+    import multiprocessing as mp
+    import queue as queue_module
+
+    from .inference_server import InferenceServer
+    from .workers import _model_routing_config, _serialize_cpu_state_dict
+
+    server_config = copy.deepcopy(config)
+    server_config.server_shards = max(1, min(int(config.server_shards), len(slices)))
+    context = mp.get_context("spawn")
+    result_queue = context.Queue()
+    progress_queue = context.Queue()
+    latest: dict[int, tuple[int, int]] = {}
+    results: dict[int, dict[str, Any]] = {}
+    processes: list[Any] = []
+    with InferenceServer(server_config, len(slices)) as server:
+        server.sync_models(
+            [
+                (_serialize_cpu_state_dict(model), _model_routing_config(model, config.model))
+                for model in (model_a, model_b)
+            ],
+            1,
+        )
+        try:
+            for index, board_slice in enumerate(slices):
+                endpoints, endpoint_index = server.endpoints_for_worker(index)
+                process = context.Process(
+                    target=_gate_server_slice_worker,
+                    args=(index, endpoints, endpoint_index, match_config, int(seed), board_slice,
+                          result_queue, progress_queue),
+                    name=f"dominion-gate-{index}",
+                )
+                process.start()
+                processes.append(process)
+            while len(results) < len(slices):
+                try:
+                    kind, index, payload = result_queue.get(timeout=1.0)
+                except queue_module.Empty:
+                    server.ensure_alive()
+                    for index, process in enumerate(processes):
+                        if index not in results and not process.is_alive() and process.exitcode not in (None, 0):
+                            raise RuntimeError(f"gate worker {index} exited with code {process.exitcode}")
+                else:
+                    if kind == "error":
+                        raise RuntimeError(f"gate worker {index} failed:\n{payload}")
+                    results[int(index)] = payload
+                server.drain_telemetry()
+                while True:
+                    try:
+                        worker_index, games, evals = progress_queue.get_nowait()
+                    except queue_module.Empty:
+                        break
+                    latest[int(worker_index)] = (int(games), int(evals))
+                if latest:
+                    on_progress(latest)
+        finally:
+            for process in processes:
+                if process.is_alive():
+                    process.terminate()
+            for process in processes:
+                process.join(timeout=10)
+    result_queue.close()
+    progress_queue.close()
+    return [results[index] for index in range(len(slices))]
+
+
 def run_parallel_paired_match(
     model_a: torch.nn.Module,
     model_b: torch.nn.Module,
@@ -1649,14 +1826,20 @@ def run_parallel_paired_match(
     import multiprocessing as mp
     import queue as queue_module
 
-    from .diagnostics import PairedMatch, _score_for
-
     slices = gate_board_slices(pairs, workers)
+    started = time.perf_counter()
+    if bool(getattr(config, "gate_server", False)):
+        def on_progress(latest: dict[int, tuple[int, int]]) -> None:
+            if tick is not None:
+                tick(sum(g for g, _ in latest.values()), sum(e for _, e in latest.values()))
+
+        results = _run_gate_slices_on_server(
+            model_a, model_b, match_config, slices=slices, seed=seed, config=config, on_progress=on_progress
+        )
+        return _assemble_paired_match(slices, results, started)
     payloads = (_gate_model_payload(model_a), _gate_model_payload(model_b))
     context = mp.get_context("spawn")
     progress_queue = context.Queue()
-    match = PairedMatch()
-    started = time.perf_counter()
     latest: dict[int, tuple[int, int]] = {}
     with concurrent.futures.ProcessPoolExecutor(
         max_workers=len(slices),
@@ -1686,6 +1869,14 @@ def run_parallel_paired_match(
                 tick(sum(g for g, _ in latest.values()), sum(e for _, e in latest.values()))
         results = [future.result() for future in futures]
     progress_queue.close()
+    return _assemble_paired_match(slices, results, started)
+
+
+def _assemble_paired_match(slices: list[list[int]], results: list[dict[str, Any]], started: float) -> Any:
+    """Reassemble per-slice gate results in board order (pairs each board's two games)."""
+    from .diagnostics import PairedMatch, _score_for
+
+    match = PairedMatch()
     for board_slice, result in zip(slices, results, strict=True):
         seat0 = sorted(result["seat0"], key=lambda record: record["game_index"])
         seat1 = sorted(result["seat1"], key=lambda record: record["game_index"])

@@ -106,3 +106,28 @@ def test_resume_follows_the_requested_gate_workers(monkeypatch, tmp_path: Path) 
     resumed.selfplay.generation_cutoff_fraction = 0.75
     run_training(resumed, resume=str(Path(first.checkpoint_dir) / "gen_0001.pt"))
     assert calls == [2]
+
+
+def test_server_gate_plays_the_same_games_as_the_serial_loop(tmp_path: Path) -> None:
+    cfg, device, candidate, best = _two_models(tmp_path)
+    cfg.gate_server = True
+    cfg.server_device = "cpu"
+    cfg.server_compile = False
+    cfg.server_autocast_bf16 = False
+    cfg.server_shards = 2
+    validate_gate_config(cfg)
+    match_config = match_selfplay_config(cfg.selfplay, sims=int(cfg.gate_sims), determinize=cfg.gate_determinize or None)
+    pairs, seed = int(cfg.gate_games) // 2, gate_match_seed(cfg, 1)
+    serial = run_paired_match(
+        candidate, best, match_config, pairs=pairs, seed=seed, device=device,
+        independent_search=True, chunk=int(cfg.gate_chunk),
+    )
+    ticks: list[tuple[int, int]] = []
+    served = run_parallel_paired_match(
+        candidate, best, match_config, pairs=pairs, seed=seed, device=device,
+        workers=3, chunk=int(cfg.gate_chunk), config=cfg, tick=lambda g, e: ticks.append((g, e)),
+    )
+    assert served.a_as_seat0 == serial.a_as_seat0
+    assert served.a_as_seat1 == serial.a_as_seat1
+    assert served.turns and sorted(served.turns) == sorted(serial.turns)
+    assert served.nn_evals > 0 and ticks

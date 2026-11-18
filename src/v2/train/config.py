@@ -408,6 +408,11 @@ class TrainConfig:
     # are seeded by board, so the split does not change which games are
     # played. 1 = the original single-process loop (one CPU core).
     gate_workers: int = 1
+    # Paired mode with gate_workers > 1: gate workers send their leaves to a
+    # dedicated multi-model inference server (candidate = model 0, best =
+    # model 1) instead of each running both models on its own small batches.
+    # Same games and the same decisions up to batch-composition rounding.
+    gate_server: bool = False
     gate_backend: str = "torch"
     gate_fp16: bool = False
     # Paired mode: a candidate that passes the head-to-head must also not
@@ -896,6 +901,8 @@ def validate_gate_config(config: TrainConfig) -> None:
     workers = config.gate_workers
     if not isinstance(workers, int) or isinstance(workers, bool) or not 1 <= workers <= 64:
         raise ValueError("gate_workers must be an integer between 1 and 64")
+    if not isinstance(config.gate_server, bool):
+        raise ValueError("gate_server must be a boolean")
     if config.gate_backend not in ("torch", "mlx"):
         raise ValueError(f"gate_backend must be 'torch' or 'mlx', got {config.gate_backend!r}")
     if not isinstance(config.gate_fp16, bool):
