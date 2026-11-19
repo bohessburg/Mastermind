@@ -1,0 +1,53 @@
+{
+  "_comment": "Campaign 9: Campaign-6 recipe with sequential BigMoney and EngineBot scripted-opponent curricula.",
+  "seed": 20260717,
+  "generations": 100,
+  "device": "auto",
+  "parallel_workers": 8,
+  "worker_device": "cuda",
+  "gate_games": 0,
+  "checkpoint_dir": "/workspace/checkpoints/campaign9",
+  "metrics_csv": "/workspace/checkpoints/campaign9/metrics.csv",
+  "scripted_opponent_schedule": {
+    "bigmoney": [[5, 0.0], [6, 0.01], [25, 0.20]],
+    "engine": [[10, 0.0], [11, 0.01], [30, 0.20]]
+  },
+  "model": {
+    "hidden_sizes": [1536, 1536, 768]
+  },
+  "selfplay": {
+    "n_games": 128,
+    "sims_per_move": 256,
+    "games_per_generation": 1024,
+    "max_batch": 4096,
+    "c_puct": 1.25,
+    "dirichlet_alpha": 0.3,
+    "dirichlet_frac": 0.25,
+    "temp_moves": 12,
+    "kingdom_mode": "random",
+    "max_recorded_moves": 512,
+    "max_tree_nodes": 4096,
+    "auto_play_treasures": true,
+    "prune_treasure_plays": true
+  },
+  "optim": {
+    "lr": 0.0002,
+    "lr_schedule": "cosine",
+    "min_lr": 0.00005,
+    "weight_decay": 0.0001,
+    "batch_size": 2048,
+    "train_steps_per_generation": 750
+  },
+  "replay": {
+    "capacity": 2000000
+  },
+  "eval": {
+    "eval_every_n_generations": 5,
+    "eval_games": 200,
+    "eval_sims": 400,
+    "eval_opponent": "engine",
+    "eval_kingdoms": "random",
+    "eval_n_games": 128,
+    "eval_max_batch": 4096
+  }
+}

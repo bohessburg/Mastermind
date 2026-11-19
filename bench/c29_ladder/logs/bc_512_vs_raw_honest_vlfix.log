@@ -1,0 +1,52 @@
+[bc_512_vs_raw_honest_vlfix] device=mps pairs=50 chunk=100 A=checkpoints/campaign25/bc_a.pt sims=512 zero_v=False | B=checkpoints/campaign25/bc_a.pt sims=2 zero_v=False | determinize=per_decision cross_route=False tree_reuse=False opening_temp=False leaves_in_flight=8 (min sims/leaf 32)
+[bc_512_vs_raw_honest_vlfix] .. 0/100 games  1311 evals/s  30s
+[bc_512_vs_raw_honest_vlfix] .. 0/100 games  1313 evals/s  60s
+[bc_512_vs_raw_honest_vlfix] .. 0/100 games  1340 evals/s  90s
+[bc_512_vs_raw_honest_vlfix] .. 0/100 games  1369 evals/s  120s
+[bc_512_vs_raw_honest_vlfix] .. 0/100 games  1390 evals/s  150s
+[bc_512_vs_raw_honest_vlfix] .. 0/100 games  1404 evals/s  181s
+[bc_512_vs_raw_honest_vlfix] .. 0/100 games  1416 evals/s  211s
+[bc_512_vs_raw_honest_vlfix] .. 0/100 games  1425 evals/s  241s
+[bc_512_vs_raw_honest_vlfix] .. 0/100 games  1426 evals/s  271s
+[bc_512_vs_raw_honest_vlfix] .. 0/100 games  1435 evals/s  301s
+[bc_512_vs_raw_honest_vlfix] .. 1/100 games  1438 evals/s  331s
+[bc_512_vs_raw_honest_vlfix] .. 1/100 games  1443 evals/s  361s
+[bc_512_vs_raw_honest_vlfix] .. 1/100 games  1448 evals/s  391s
+[bc_512_vs_raw_honest_vlfix] .. 2/100 games  1453 evals/s  421s
+[bc_512_vs_raw_honest_vlfix] .. 2/100 games  1456 evals/s  451s
+[bc_512_vs_raw_honest_vlfix] .. 4/100 games  1462 evals/s  482s
+[bc_512_vs_raw_honest_vlfix] .. 5/100 games  1468 evals/s  512s
+[bc_512_vs_raw_honest_vlfix] .. 8/100 games  1477 evals/s  542s
+[bc_512_vs_raw_honest_vlfix] .. 9/100 games  1487 evals/s  572s
+[bc_512_vs_raw_honest_vlfix] .. 10/100 games  1501 evals/s  602s
+[bc_512_vs_raw_honest_vlfix] .. 10/100 games  1517 evals/s  632s
+[bc_512_vs_raw_honest_vlfix] .. 14/100 games  1538 evals/s  662s
+[bc_512_vs_raw_honest_vlfix] .. 14/100 games  1553 evals/s  692s
+[bc_512_vs_raw_honest_vlfix] .. 17/100 games  1572 evals/s  722s
+[bc_512_vs_raw_honest_vlfix] .. 20/100 games  1589 evals/s  752s
+[bc_512_vs_raw_honest_vlfix] .. 23/100 games  1604 evals/s  782s
+[bc_512_vs_raw_honest_vlfix] .. 26/100 games  1620 evals/s  812s
+[bc_512_vs_raw_honest_vlfix] .. 29/100 games  1638 evals/s  842s
+[bc_512_vs_raw_honest_vlfix] .. 33/100 games  1657 evals/s  872s
+[bc_512_vs_raw_honest_vlfix] .. 39/100 games  1681 evals/s  902s
+[bc_512_vs_raw_honest_vlfix] .. 40/100 games  1674 evals/s  932s
+[bc_512_vs_raw_honest_vlfix] .. 40/100 games  1663 evals/s  962s
+[bc_512_vs_raw_honest_vlfix] .. 41/100 games  1653 evals/s  992s
+[bc_512_vs_raw_honest_vlfix] .. 46/100 games  1636 evals/s  1022s
+[bc_512_vs_raw_honest_vlfix] .. 47/100 games  1612 evals/s  1053s
+[bc_512_vs_raw_honest_vlfix] .. 49/100 games  1585 evals/s  1083s
+[bc_512_vs_raw_honest_vlfix] .. 50/100 games  1559 evals/s  1113s
+[bc_512_vs_raw_honest_vlfix] .. 50/100 games  1579 evals/s  1143s
+[bc_512_vs_raw_honest_vlfix] .. 50/100 games  1603 evals/s  1173s
+[bc_512_vs_raw_honest_vlfix] .. 50/100 games  1724 evals/s  1203s
+[bc_512_vs_raw_honest_vlfix] .. 53/100 games  1881 evals/s  1233s
+[bc_512_vs_raw_honest_vlfix] .. 62/100 games  2034 evals/s  1263s
+[bc_512_vs_raw_honest_vlfix] .. 66/100 games  2060 evals/s  1293s
+[bc_512_vs_raw_honest_vlfix] .. 70/100 games  2106 evals/s  1323s
+[bc_512_vs_raw_honest_vlfix] .. 84/100 games  2202 evals/s  1353s
+[bc_512_vs_raw_honest_vlfix] .. 93/100 games  2239 evals/s  1383s
+[bc_512_vs_raw_honest_vlfix] .. 98/100 games  2229 evals/s  1413s
+[bc_512_vs_raw_honest_vlfix] .. 99/100 games  2197 evals/s  1443s
+[bc_512_vs_raw_honest_vlfix] 50/50 pairs  A 59W-35L-6T score=0.620±0.045  248 games/hr  2186 evals/s  1452s
+[bc_512_vs_raw_honest_vlfix] DONE A 59W-35L-6T score=0.620 ci95=[0.531,0.709] elo=+85 seat0=0.460 non_greedy=0.0% turns=43.7 trunc=7 1452.2s
+[bc_512_vs_raw_honest_vlfix] raw-policy check side B: 100.00% of moves = prior argmax

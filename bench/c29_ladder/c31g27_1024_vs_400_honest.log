@@ -1,0 +1,7 @@
+[c31g27_1024_vs_400_honest] device=mps backend=mlx pairs=200 chunk=200 A=checkpoints/remote/campaign31/gen_0027.pt sims=1024 zero_v=False | B=checkpoints/remote/campaign31/gen_0027.pt sims=400 zero_v=False | determinize=per_decision cross_route=False tree_reuse=False opening_temp=False leaves_in_flight=8 (min sims/leaf 32)
+[c31g27_1024_vs_400_honest] .. 0/400 games  16199 evals/s  30s
+[c31g27_1024_vs_400_honest] .. 0/400 games  16283 evals/s  60s
+[c31g27_1024_vs_400_honest] .. 0/400 games  16423 evals/s  90s
+[c31g27_1024_vs_400_honest] .. 0/400 games  16560 evals/s  120s
+[c31g27_1024_vs_400_honest] .. 0/400 games  16691 evals/s  150s
+[c31g27_1024_vs_400_honest] .. 0/400 games  16789 evals/s  180s

@@ -1,0 +1,12 @@
+[combo] replay rows 1000000, steps 240
+/root/Mastermind/scripts/c26_ablation.py:116: UserWarning: Converting a tensor with requires_grad=True to a scalar may lead to unexpected behavior.
+Consider using tensor.detach() first. (Triggered internally at /__w/pytorch/pytorch/torch/csrc/autograd/generated/python_variable_methods.cpp:820.)
+  losses = {"policy_loss": float(sp_pol), "value_loss": float(sp_val),
+[combo] step 0 {'policy_loss': 1.3591, 'value_loss': 0.2069, 'anchor_policy_loss': 0.5824, 'anchor_value_loss': 0.2577} 1s
+[combo] step 40 {'policy_loss': 0.9549, 'value_loss': 0.1596, 'anchor_policy_loss': 0.6376, 'anchor_value_loss': 0.294} 16s
+[combo] step 80 {'policy_loss': 0.9409, 'value_loss': 0.1529, 'anchor_policy_loss': 0.5446, 'anchor_value_loss': 0.2852} 32s
+[combo] step 120 {'policy_loss': 0.9328, 'value_loss': 0.158, 'anchor_policy_loss': 0.5838, 'anchor_value_loss': 0.2381} 48s
+[combo] step 160 {'policy_loss': 0.9307, 'value_loss': 0.1472, 'anchor_policy_loss': 0.4802, 'anchor_value_loss': 0.245} 64s
+[combo] step 200 {'policy_loss': 0.9249, 'value_loss': 0.1461, 'anchor_policy_loss': 0.5922, 'anchor_value_loss': 0.2748} 75s
+[combo] step 239 {'policy_loss': 0.9105, 'value_loss': 0.1443, 'anchor_policy_loss': 0.4336, 'anchor_value_loss': 0.2711} 84s
+[combo] GATE 85W-109L-6T win_pct=0.438

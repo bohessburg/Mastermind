@@ -1,0 +1,26 @@
+[c31g27_400_vs_200_honest_s1] device=mps backend=torch pairs=50 chunk=50 A=checkpoints/remote/campaign31/gen_0027.pt sims=400 zero_v=False | B=checkpoints/remote/campaign31/gen_0027.pt sims=200 zero_v=False | determinize=per_decision cross_route=False tree_reuse=False opening_temp=False leaves_in_flight=8 (min sims/leaf 32)
+[c31g27_400_vs_200_honest_s1] .. 0/100 games  8549 evals/s  30s
+[c31g27_400_vs_200_honest_s1] .. 0/100 games  9738 evals/s  60s
+[c31g27_400_vs_200_honest_s1] .. 1/100 games  10156 evals/s  90s
+[c31g27_400_vs_200_honest_s1] .. 1/100 games  10341 evals/s  120s
+[c31g27_400_vs_200_honest_s1] .. 2/100 games  10446 evals/s  150s
+[c31g27_400_vs_200_honest_s1] .. 5/100 games  10474 evals/s  180s
+[c31g27_400_vs_200_honest_s1] .. 9/100 games  10453 evals/s  210s
+[c31g27_400_vs_200_honest_s1] .. 23/100 games  10295 evals/s  240s
+[c31g27_400_vs_200_honest_s1] .. 29/100 games  10099 evals/s  270s
+[c31g27_400_vs_200_honest_s1] .. 38/100 games  9805 evals/s  300s
+[c31g27_400_vs_200_honest_s1] .. 48/100 games  9226 evals/s  330s
+[c31g27_400_vs_200_honest_s1] .. 49/100 games  8555 evals/s  360s
+[c31g27_400_vs_200_honest_s1] .. 50/100 games  8214 evals/s  390s
+[c31g27_400_vs_200_honest_s1] .. 50/100 games  8465 evals/s  420s
+[c31g27_400_vs_200_honest_s1] .. 51/100 games  8705 evals/s  450s
+[c31g27_400_vs_200_honest_s1] .. 51/100 games  8888 evals/s  480s
+[c31g27_400_vs_200_honest_s1] .. 53/100 games  9029 evals/s  510s
+[c31g27_400_vs_200_honest_s1] .. 56/100 games  9135 evals/s  540s
+[c31g27_400_vs_200_honest_s1] .. 62/100 games  9223 evals/s  570s
+[c31g27_400_vs_200_honest_s1] .. 75/100 games  9254 evals/s  600s
+[c31g27_400_vs_200_honest_s1] .. 87/100 games  9211 evals/s  630s
+[c31g27_400_vs_200_honest_s1] .. 94/100 games  9049 evals/s  660s
+[c31g27_400_vs_200_honest_s1] .. 97/100 games  8820 evals/s  690s
+[c31g27_400_vs_200_honest_s1] 50/50 pairs  A 56W-39L-5T score=0.585±0.043  503 games/hr  8546 evals/s  716s
+[c31g27_400_vs_200_honest_s1] DONE A 56W-39L-5T score=0.585 ci95=[0.501,0.669] elo=+60 seat0=0.595 non_greedy=0.0% turns=33.5 trunc=0 715.7s

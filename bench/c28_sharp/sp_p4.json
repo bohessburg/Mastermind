@@ -1,0 +1,16 @@
+{
+  "arm": "sp_policy",
+  "tag": "sp_p4",
+  "sharpen": 4.0,
+  "human_weight": 1.0,
+  "run": "/root/c28snap",
+  "lr": 0.0002,
+  "steps": 240,
+  "wins": 86,
+  "losses": 109,
+  "ties": 5,
+  "win_pct": 0.441025641025641,
+  "gate_s": 2389,
+  "gate_games": 200,
+  "gate_sims": 128
+}

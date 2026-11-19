@@ -294,3 +294,71 @@ Cards most correlated with Engine wins:
 | Witch | -24.1% | Curses are devastating to BigMoney |
 | Militia | -17.7% | Discard-to-3 cripples $8 Province hands |
 | All others | <-1% | Only attacks meaningfully beat BigMoney |
+
+---
+
+## EngineBot v3 (2026-07-13)
+
+Fully scripted successor to EngineBot (v2). Lives in `src/v2/bots/scripted.cpp`
+(all scripted bots were extracted there; `drivers/bots.h` re-exports).
+`BotKind::EngineV3`, TUI name `engine3`, eval opponent `engine3` (and the
+drivers v2 bot as `engine2`) in `src/v2/train/evaluate.py`.
+
+### Architecture
+
+Four kingdom-selected modes plus a shared endgame overlay:
+
+- **ENGINE** — chapel + real Village + draw (+ Witch support): thin hard,
+  contest Witch, village/terminal balance, capacity-driven burst greening
+  (turn-15 failsafe). 71-74% vs v2 on engine boards.
+- **BMX** — improved BM+X: exploits v2's build freeze (v2 never buys another
+  action after its turn 5) by re-arming through turn 9; up to 3 Witch/Militia;
+  opponent-aware Moat/Sentry curse defense.
+- **RUSH** — Gardens+Workshop boards: one Workshop gaining Gardens inside a
+  money race (literal pile-out rushes measured 10-22% and were rejected).
+- **PURE_BM** — fallback, wiki-optimized rules.
+
+Endgame overlay (all modes): last-province win-or-tie rule, no game-ending
+buy that ends tied or losing (three-pile aware, VP-of-purchase aware), duchy
+dance windows, opponent deck reading (full-state money density) for
+race-vs-dance decisions. Seat-aware: P2 greens/dances on different
+thresholds; P2 Militia cap 4.
+
+### Results (10k-game duels, random 10-of-26 kingdoms, seat-swapped;
+seat-adjusted win% counts ties as losses — a perfect clone scores ~44-46%)
+
+| Matchup | Seat-adj | Decided-game share | W/L/T |
+|---------|---------|-------------------|-------|
+| v3 vs v2 | 49.32% | 50.7% | 4932/4799/269 |
+| v3 vs BigMoney | 74.10% | 76.1% | 7410/2333/257 |
+| v2 vs BigMoney | 74.16% | 77.7% | 7416/2131/453 |
+
+NN cross-check (campaign13 gen_0065, 400 games, 400 sims, random kingdoms):
+gen_0065 wins 85.6% vs the legacy eval chart bot, 67.7% vs BigMoney, but only
+35.4% vs drivers v2 (`engine2`) and 32.8% vs v3 (`engine3`). The historical
+"~89% vs EngineBot" eval rows were measured against the far weaker chart bot.
+
+Tuning trajectory vs v2 (seat-adjusted): 31.7 → 39.3 (endgame overlay fixes)
+→ 44.9 (engine mode) → 49.1 (build-freeze exploit) → 50.65 (P2/tie tuning)
+→ 49.3 (rounds 5-6 traded ~1.3 aggregate points for archetype scaffolding:
+ThinEngine/FatHybrid/LabStack classes, Sentry bought on sight, build-scoped
+endgame overlay — the foundation for closing the human gap on no-attack
+boards, where conversion vs BigMoney is still 54-65% against a human-level
+~90%; the Witch-engine boards already convert at 89%).
+Remaining known gaps: no-trasher hybrid and Sentry/Lab board conversion
+(payload/+buy timing — see trace notes in the session logs), P2 seat
+(41-43% vs ~58% as P1), pure-money mirrors structurally tie-bound.
+
+### Duel harness
+
+`v2_botduel` (Release): multithreaded seat-swapped duels with per-card
+win-delta table. ~170k games/sec for scripted pairs.
+
+```sh
+./build/v2_botduel --a engine3 --b engine --games 10000 --seed 4242
+./build/v2_botduel --a engine3 --b bm --games 4000 --cards "Witch,Smithy,Market,Moneylender,Poacher,Vassal,Harbinger,Bureaucrat,Mine,Gardens"
+```
+
+Gate tests in `tests/v2/test_bots.cpp`: v3 ≥44% wins and within 40 wins of v2
+on a fixed 1000-game seed; >70% vs BigMoney; >90% vs Random; legality across
+all decision kinds.

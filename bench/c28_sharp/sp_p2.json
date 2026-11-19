@@ -1,0 +1,16 @@
+{
+  "arm": "sp_policy",
+  "tag": "sp_p2",
+  "sharpen": 2.0,
+  "human_weight": 1.0,
+  "run": "/root/c28snap",
+  "lr": 0.0002,
+  "steps": 240,
+  "wins": 82,
+  "losses": 112,
+  "ties": 6,
+  "win_pct": 0.422680412371134,
+  "gate_s": 2429,
+  "gate_games": 200,
+  "gate_sims": 128
+}

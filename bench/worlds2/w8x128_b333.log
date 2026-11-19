@@ -1,0 +1,50 @@
+[w8x128_b333] device=cuda backend=torch pairs=333 chunk=167 A=/root/Mastermind/checkpoints/campaign33/gen_0051.pt sims=1024 chance=None worlds=8 zero_v=False | B=/root/Mastermind/checkpoints/campaign33/gen_0051.pt sims=128 chance=None worlds=1 zero_v=False | boards 333..665 determinize=per_decision cross_route=False tree_reuse=False opening_temp=False leaves_in_flight=8 (min sims/leaf 32)
+[w8x128_b333] .. 0/666 games  22578 evals/s  30s
+[w8x128_b333] .. 0/666 games  24549 evals/s  60s
+[w8x128_b333] .. 1/666 games  25958 evals/s  90s
+[w8x128_b333] .. 2/666 games  27016 evals/s  120s
+[w8x128_b333] .. 4/666 games  27904 evals/s  150s
+[w8x128_b333] .. 8/666 games  28502 evals/s  180s
+[w8x128_b333] .. 14/666 games  29055 evals/s  210s
+[w8x128_b333] .. 27/666 games  29596 evals/s  240s
+[w8x128_b333] .. 56/666 games  29934 evals/s  270s
+[w8x128_b333] .. 81/666 games  30085 evals/s  300s
+[w8x128_b333] .. 113/666 games  29960 evals/s  330s
+[w8x128_b333] .. 148/666 games  29316 evals/s  360s
+[w8x128_b333] .. 159/666 games  27819 evals/s  390s
+[w8x128_b333] .. 167/666 games  26152 evals/s  420s
+[w8x128_b333] .. 167/666 games  27234 evals/s  450s
+[w8x128_b333] .. 169/666 games  28280 evals/s  480s
+[w8x128_b333] .. 173/666 games  29197 evals/s  510s
+[w8x128_b333] .. 178/666 games  29933 evals/s  540s
+[w8x128_b333] .. 192/666 games  30558 evals/s  570s
+[w8x128_b333] .. 218/666 games  30990 evals/s  600s
+[w8x128_b333] .. 252/666 games  31206 evals/s  630s
+[w8x128_b333] .. 291/666 games  31123 evals/s  660s
+[w8x128_b333] .. 326/666 games  30419 evals/s  690s
+[w8x128_b333] .. 332/666 games  29320 evals/s  720s
+[w8x128_b333] .. 333/666 games  28202 evals/s  750s
+[w8x128_b333] 167/333 pairs  A 164W-161L-9T score=0.504±0.023  1602 games/hr  28187 evals/s  751s
+[w8x128_b333] .. 334/666 games  28662 evals/s  780s
+[w8x128_b333] .. 334/666 games  29250 evals/s  810s
+[w8x128_b333] .. 334/666 games  29780 evals/s  840s
+[w8x128_b333] .. 341/666 games  30252 evals/s  870s
+[w8x128_b333] .. 355/666 games  30650 evals/s  900s
+[w8x128_b333] .. 375/666 games  30967 evals/s  930s
+[w8x128_b333] .. 409/666 games  31141 evals/s  960s
+[w8x128_b333] .. 444/666 games  31150 evals/s  990s
+[w8x128_b333] .. 480/666 games  30951 evals/s  1020s
+[w8x128_b333] .. 496/666 games  30327 evals/s  1050s
+[w8x128_b333] .. 499/666 games  29527 evals/s  1080s
+[w8x128_b333] .. 500/666 games  29570 evals/s  1110s
+[w8x128_b333] .. 500/666 games  29945 evals/s  1140s
+[w8x128_b333] .. 501/666 games  30292 evals/s  1170s
+[w8x128_b333] .. 507/666 games  30614 evals/s  1200s
+[w8x128_b333] .. 517/666 games  30906 evals/s  1230s
+[w8x128_b333] .. 546/666 games  31115 evals/s  1260s
+[w8x128_b333] .. 571/666 games  31250 evals/s  1290s
+[w8x128_b333] .. 609/666 games  31270 evals/s  1320s
+[w8x128_b333] .. 638/666 games  31138 evals/s  1350s
+[w8x128_b333] .. 660/666 games  30735 evals/s  1380s
+[w8x128_b333] 333/333 pairs  A 329W-316L-21T score=0[w8x128_b333] 333/333 pairs  A 329W-316L-21T score=0.510±0.016  1670 games/hr  29567 evals/s  1436s
+[w8x128_b333] DONE A 329W-316L-21T score=0.510 ci95=[0.479,0.541] elo=+7 seat0=0.586 non_greedy=0.0% turns=33.4 trunc=0 1435.9s

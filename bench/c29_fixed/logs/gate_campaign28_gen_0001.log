@@ -1,0 +1,31 @@
+[gate_campaign28_gen_0001] device=mps pairs=50 chunk=100 A=checkpoints/campaign28/gen_0001.pt sims=128 zero_v=False | B=checkpoints/campaign25/bc_a.pt sims=128 zero_v=False | determinize=off cross_route=False tree_reuse=False opening_temp=False leaves_in_flight=8 (min sims/leaf 32)
+[gate_campaign28_gen_0001] .. 0/100 games  3865 evals/s  30s
+[gate_campaign28_gen_0001] .. 0/100 games  4206 evals/s  60s
+[gate_campaign28_gen_0001] .. 0/100 games  4342 evals/s  90s
+[gate_campaign28_gen_0001] .. 0/100 games  4406 evals/s  120s
+[gate_campaign28_gen_0001] .. 5/100 games  4437 evals/s  150s
+[gate_campaign28_gen_0001] .. 10/100 games  4401 evals/s  180s
+[gate_campaign28_gen_0001] .. 15/100 games  4346 evals/s  210s
+[gate_campaign28_gen_0001] .. 20/100 games  4307 evals/s  240s
+[gate_campaign28_gen_0001] .. 26/100 games  4239 evals/s  270s
+[gate_campaign28_gen_0001] .. 38/100 games  4081 evals/s  300s
+[gate_campaign28_gen_0001] .. 44/100 games  3858 evals/s  330s
+[gate_campaign28_gen_0001] .. 47/100 games  3628 evals/s  360s
+[gate_campaign28_gen_0001] .. 49/100 games  3392 evals/s  390s
+[gate_campaign28_gen_0001] .. 49/100 games  3181 evals/s  420s
+[gate_campaign28_gen_0001] .. 49/100 games  2999 evals/s  450s
+[gate_campaign28_gen_0001] .. 50/100 games  3011 evals/s  480s
+[gate_campaign28_gen_0001] .. 50/100 games  3113 evals/s  510s
+[gate_campaign28_gen_0001] .. 50/100 games  3207 evals/s  540s
+[gate_campaign28_gen_0001] .. 50/100 games  3300 evals/s  570s
+[gate_campaign28_gen_0001] .. 55/100 games  3388 evals/s  600s
+[gate_campaign28_gen_0001] .. 58/100 games  3474 evals/s  630s
+[gate_campaign28_gen_0001] .. 65/100 games  3511 evals/s  660s
+[gate_campaign28_gen_0001] .. 73/100 games  3521 evals/s  690s
+[gate_campaign28_gen_0001] .. 78/100 games  3506 evals/s  720s
+[gate_campaign28_gen_0001] .. 84/100 games  3479 evals/s  750s
+[gate_campaign28_gen_0001] .. 91/100 games  3432 evals/s  780s
+[gate_campaign28_gen_0001] .. 96/100 games  3357 evals/s  810s
+[gate_campaign28_gen_0001] .. 99/100 games  3262 evals/s  840s
+[gate_campaign28_gen_0001] 50/50 pairs  A 60W-37L-3T score=0.615±0.044  428 games/hr  3262 evals/s  841s
+[gate_campaign28_gen_0001] DONE A 60W-37L-3T score=0.615 ci95=[0.528,0.702] elo=+81 seat0=0.515 non_greedy=0.0% turns=39.5 trunc=1 840.6s

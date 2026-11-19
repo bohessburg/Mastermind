@@ -1,0 +1,136 @@
+{
+  "_comment": "Campaign 15: card-token transformer (CardTokenNet) from scratch on the proven c14 recipe — margin targets, obs v2, ancestor league (mixed-arch: c13/c14 MLP seeds), engine-forcing curriculum, tree reuse + guarded top-k, compiled bf16 bucketed inference.",
+  "seed": 20260713,
+  "generations": 100,
+  "device": "auto",
+  "parallel_workers": 8,
+  "worker_device": "cuda",
+  "gate_games": 0,
+  "checkpoint_dir": "checkpoints/campaign15",
+  "metrics_csv": "checkpoints/campaign15/metrics.csv",
+  "league_pool_size": 16,
+  "league_seed_checkpoints": [
+    "checkpoints/campaign13/gen_0010.pt",
+    "checkpoints/campaign13/gen_0025.pt",
+    "checkpoints/campaign13/gen_0040.pt",
+    "checkpoints/campaign13/gen_0050.pt",
+    "checkpoints/campaign13/gen_0060.pt",
+    "checkpoints/campaign13/gen_0065.pt",
+    "checkpoints/campaign13/gen_0080.pt",
+    "checkpoints/campaign13/gen_0096.pt",
+    "checkpoints/campaign14/gen_0020.pt",
+    "checkpoints/campaign14/gen_0030.pt",
+    "checkpoints/campaign14/gen_0038.pt"
+  ],
+  "league_self_every": 10,
+  "league_schedule": [
+    [1, 0.10],
+    [10, 0.25],
+    [30, 0.30]
+  ],
+  "league_opponents_per_gen": 3,
+  "scripted_opponent_schedule": {},
+  "kingdom_curriculum": [
+    {
+      "generations": [1, 15],
+      "mode": "pool",
+      "pool": [
+        "Village",
+        "Smithy",
+        "Laboratory",
+        "Market",
+        "Festival",
+        "Cellar",
+        "Chapel",
+        "Moat",
+        "Council Room",
+        "Throne Room",
+        "Harbinger",
+        "Vassal"
+      ],
+      "pool_fraction": 0.6
+    },
+    {
+      "generations": [16, 40],
+      "mode": "pool",
+      "pool": [
+        "Village",
+        "Smithy",
+        "Laboratory",
+        "Market",
+        "Festival",
+        "Cellar",
+        "Chapel",
+        "Moat",
+        "Council Room",
+        "Throne Room",
+        "Harbinger",
+        "Vassal"
+      ],
+      "pool_fraction": 0.3
+    },
+    {
+      "generations": [41, 100],
+      "mode": "random"
+    }
+  ],
+  "model": {
+    "arch": "card_transformer",
+    "d_model": 192,
+    "n_layers": 3,
+    "n_heads": 4,
+    "ffn_multiplier": 4,
+    "dropout": 0.0
+  },
+  "server_compile": true,
+  "server_autocast_bf16": true,
+  "server_batch_buckets": [128, 256, 512, 1024, 2048, 4096],
+  "selfplay": {
+    "n_games": 128,
+    "sims_per_move": 512,
+    "games_per_generation": 1024,
+    "deep_slice_fraction": 0.05,
+    "deep_slice_sims": 4096,
+    "max_batch": 4096,
+    "c_puct": 1.25,
+    "dirichlet_alpha": 0.3,
+    "dirichlet_frac": 0.25,
+    "temp_moves": 20,
+    "kingdom_mode": "random",
+    "max_recorded_moves": 512,
+    "max_tree_nodes": 4096,
+    "auto_play_treasures": true,
+    "prune_treasure_plays": true,
+    "value_target": "margin",
+    "margin_scale": 20.0,
+    "obs_version": 2,
+    "scaffold_sims": 192,
+    "scaffold_determinizations": 1,
+    "scripted_threads": 2,
+    "tree_reuse": true,
+    "expand_top_k": 8
+  },
+  "optim": {
+    "lr": 0.0002,
+    "lr_schedule": "cosine",
+    "min_lr": 5e-05,
+    "weight_decay": 0.0001,
+    "batch_size": 2048,
+    "train_steps_per_generation": 750
+  },
+  "replay": {
+    "capacity": 2000000
+  },
+  "eval": {
+    "eval_every_n_generations": 5,
+    "eval_games": 200,
+    "eval_sims": 400,
+    "eval_opponent": "engine",
+    "eval_kingdoms": "random",
+    "eval_n_games": 128,
+    "eval_max_batch": 4096,
+    "eval_sentinels": [
+      {"opponent": "bigmoney", "games": 100}
+    ]
+  }
+}

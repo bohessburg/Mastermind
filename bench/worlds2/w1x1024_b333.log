@@ -1,0 +1,88 @@
+[w1x1024_b333] device=cuda backend=torch pairs=333 chunk=333 A=/root/Mastermind/checkpoints/campaign33/gen_0051.pt sims=1024 chance=None worlds=1 zero_v=False | B=/root/Mastermind/checkpoints/campaign33/gen_0051.pt sims=128 chance=None worlds=1 zero_v=False | boards 333..665 determinize=per_decision cross_route=False tree_reuse=False opening_temp=False leaves_in_flight=8 (min sims/leaf 32)
+[W1117 03:58:21.795809636 CUDACachingAllocator.cpp:3934] memory allocation failed with OOM on device 0 while trying to allocate 104857600 bytes (free: 48627712, total: 33670758400).
+[W1117 03:58:21.343687734 CUDACachingAllocator.cpp:3934] memory allocation failed with OOM on device 0 while trying to allocate 117440512 bytes (free: 71696384, total: 33670758400).
+[W1117 03:58:22.286788704 CUDACachingAllocator.cpp:3934] memory allocation failed with OOM on device 0 while trying to allocate 134217728 bytes (free: 119930880, total: 33670758400).
+[W1117 03:58:24.595528976 CUDACachingAllocator.cpp:3934] memory allocation failed with OOM on device 0 while trying to allocate 142606336 bytes (free: 128319488, total: 33670758400).
+[W1117 03:58:24.928510543 CUDACachingAllocator.cpp:3934] memory allocation failed with OOM on device 0 while trying to allocate 144703488 bytes (free: 128319488, total: 33670758400).
+[W1117 03:58:26.753832997 CUDACachingAllocator.cpp:3934] memory allocation failed with OOM on device 0 while trying to allocate 146800640 bytes (free: 42336256, total: 33670758400).
+[W1117 03:58:26.780333549 CUDACachingAllocator.cpp:3934] memory allocation failed with OOM on device 0 while trying to allocate 146800640 bytes (free: 142999552, total: 33670758400).
+[w1x1024_b333] .. 0/666 games  10571 evals/s  30s
+[w1x1024_b333] .. 0/666 games  13350 evals/s  60s
+[w1x1024_b333] .. 0/666 games  14717 evals/s  90s
+[w1x1024_b333] .. 0/666 games  15398 evals/s  120s
+[w1x1024_b333] .. 0/666 games  15841 evals/s  150s
+[w1x1024_b333] .. 0/666 games  16216 evals/s  180s
+[w1x1024_b333] .. 0/666 games  16395 evals/s  210s
+[w1x1024_b333] .. 0/666 games  16564 evals/s  240s
+[w1x1024_b333] .. 0/666 games  16677 evals/s  270s
+[w1x1024_b333] .. 1/666 games  16851 evals/s  300s
+[w1x1024_b333] .. 3/666 games  16986 evals/s  330s
+[w1x1024_b333] .. 3/666 games  17017 evals/s  360s
+[w1x1024_b333] .. 4/666 games  17113 evals/s  391s
+[w1x1024_b333] .. 6/666 games  17161 evals/s  421s
+[w1x1024_b333] .. 7/666 games  17276 evals/s  451s
+[w1x1024_b333] .. 10/666 games  17327 evals/s  481s
+[w1x1024_b333] .. 12/666 games  17365 evals/s  511s
+[w1x1024_b333] .. 14/666 games  17403 evals/s  541s
+[w1x1024_b333] .. 15/666 games  17469 evals/s  571s
+[w1x1024_b333] .. 18/666 games  17552 evals/s  601s
+[w1x1024_b333] .. 21/666 games  17631 evals/s  631s
+[w1x1024_b333] .. 29/666 games  17708 evals/s  661s
+[w1x1024_b333] .. 40/666 games  17791 evals/s  691s
+[w1x1024_b333] .. 49/666 games  17843 evals/s  721s
+[w1x1024_b333] .. 59/666 games  17881 evals/s  751s
+[w1x1024_b333] .. 70/666 games  17953 evals/s  781s
+[w1x1024_b333] .. 82/666 games  18040 evals/s  811s
+[w1x1024_b333] .. 98/666 games  18143 evals/s  841s
+[w1x1024_b333] .. 112/666 games  18278 evals/s  871s
+[w1x1024_b333] .. 138/666 games  18416 evals/s  901s
+[w1x1024_b333] .. 153/666 games  18555 evals/s  931s
+[w1x1024_b333] .. 173/666 games  18669 evals/s  961s
+[w1x1024_b333] .. 201/666 games  18759 evals/s  991s
+[w1x1024_b333] .. 220/666 games  18796 evals/s  1021s
+[w1x1024_b333] .. 264/666 games  18837 evals/s  1051s
+[w1x1024_b333] .. 294/666 games  18747 evals/s  1081s
+[w1x1024_b333] .. 305/666 games  18501 evals/s  1111s
+[w1x1024_b333] .. 312/666 games  18175 evals/s  1141s
+[w1x1024_b333] .. 319/666 games  17814 evals/s  1171s
+[w1x1024_b333] .. 325/666 games  17436 evals/s  1201s
+[w1x1024_b333] .. 329/666 games  17042 evals/s  1231s
+[w1x1024_b333] .. 330/666 games  16656 evals/s  1261s
+[w1x1024_b333] .. 331/666 games  16279 evals/s  1292s
+[w1x1024_b333] .. 332/666 games  15915 evals/s  1322s
+[w1x1024_b333] .. 333/666 games  15594 evals/s  1352s
+[w1x1024_b333] .. 333/666 games  15776 evals/s  1382s
+[w1x1024_b333] .. 333/666 games  15955 evals/s  1412s
+[w1x1024_b333] .. 333/666 games  16117 evals/s  1442s
+[w1x1024_b333] .. 333/666 games  16258 evals/s  1472s
+[w1x1024_b333] .. 333/666 games  16376 evals/s  1502s
+[w1x1024_b333] .. 333/666 games  16489 evals/s  1532s
+[w1x1024_b333] .. 335/666 games  16598 evals/s  1562s
+[w1x1024_b333] .. 335/666 games  16719 evals/s  1592s
+[w1x1024_b333] .. 336/666 games  16836 evals/s  1622s
+[w1x1024_b333] .. 337/666 games  16962 evals/s  1652s
+[w1x1024_b333] .. 340/666 games  17090 evals/s  1682s
+[w1x1024_b333] .. 343/666 games  17212 evals/s  1712s
+[w1x1024_b333] .. 348/666 games  17317 evals/s  1742s
+[w1x1024_b333] .. 353/666 games  17422 evals/s  1772s
+[w1x1024_b333] .. 356/666 games  17531 evals/s  1802s
+[w1x1024_b333] .. 361/666 games  17627 evals/s  1832s
+[w1x1024_b333] .. 370/666 games  17710 evals/s  1862s
+[w1x1024_b333] .. 381/666 games  17790 evals/s  1892s
+[w1x1024_b333] .. 393/666 games  17881 evals/s  1922s
+[w1x1024_b333] .. 410/666 games  17965 evals/s  1952s
+[w1x1024_b333] .. 430/666 games  18049 evals/s  1982s
+[w1x1024_b333] .. 447/666 games  18156 evals/s  2012s
+[w1x1024_b333] .. 469/666 games  18267 evals/s  2042s
+[w1x1024_b333] .. 508/666 games  18346 evals/s  2072s
+[w1x1024_b333] .. 544/666 games  18380 evals/s  2103s
+[w1x1024_b333] .. 566/666 games  18386 evals/s  2133s
+[w1x1024_b333] .. 597/666 games  18393 evals/s  2163s
+[w1x1024_b333] .. 623/666 games  18350 evals/s  2193s
+[w1x1024_b333] .. 642/666 games  18245 evals/s  2223s
+[w1x1024_b333] .. 650/666 games  18077 evals/s  2253s
+[w1x1024_b333] .. 661/666 games  17876 evals/s  2283s
+[w1x1024_b333] .. 664/666 games  17664 evals/s  2313s
+[w1x1024_b333] .. 665/666 games  17449 evals/s  2343s
+[w1x1024_b333] 333/333 pairs  A 296W-338L-32T score=0.468±0.017  1023 games/hr  17444 evals/s  2343s
+[w1x1024_b333] DONE A 296W-338L-32T score=0.468 ci95=[0.434,0.502] elo=-22 seat0=0.593 non_greedy=0.0% turns=33.4 trunc=0 2343.3s

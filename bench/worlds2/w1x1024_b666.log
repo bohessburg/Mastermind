@@ -1,0 +1,93 @@
+[w1x1024_b666] device=cuda backend=torch pairs=334 chunk=334 A=/root/Mastermind/checkpoints/campaign33/gen_0051.pt sims=1024 chance=None worlds=1 zero_v=False | B=/root/Mastermind/checkpoints/campaign33/gen_0051.pt sims=128 chance=None worlds=1 zero_v=False | boards 666..999 determinize=per_decision cross_route=False tree_reuse=False opening_temp=False leaves_in_flight=8 (min sims/leaf 32)
+[W1117 03:58:18.801284491 CUDACachingAllocator.cpp:3934] memory allocation failed with OOM on device 0 while trying to allocate 71303168 bytes (free: 66125824, total: 33670758400).
+[W1117 03:58:21.804182737 CUDACachingAllocator.cpp:3934] memory allocation failed with OOM on device 0 while trying to allocate 104857600 bytes (free: 48627712, total: 33670758400).
+[W1117 03:58:23.477774658 CUDACachingAllocator.cpp:3934] memory allocation failed with OOM on device 0 while trying to allocate 134217728 bytes (free: 113639424, total: 33670758400).
+[W1117 03:58:23.192999253 CUDACachingAllocator.cpp:3934] memory allocation failed with OOM on device 0 while trying to allocate 140509184 bytes (free: 12976128, total: 33670758400).
+[W1117 03:58:23.211376519 CUDACachingAllocator.cpp:3934] memory allocation failed with OOM on device 0 while trying to allocate 140509184 bytes (free: 57016320, total: 33670758400).
+[W1117 03:58:28.681131612 CUDACachingAllocator.cpp:3934] memory allocation failed with OOM on device 0 while trying to allocate 148897792 bytes (free: 107347968, total: 33670758400).
+[w1x1024_b666] .. 0/668 games  10731 evals/s  30s
+[w1x1024_b666] .. 0/668 games  13704 evals/s  60s
+[w1x1024_b666] .. 0/668 games  15050 evals/s  90s
+[w1x1024_b666] .. 0/668 games  15739 evals/s  120s
+[w1x1024_b666] .. 0/668 games  16162 evals/s  150s
+[w1x1024_b666] .. 0/668 games  16555 evals/s  180s
+[w1x1024_b666] .. 0/668 games  16745 evals/s  210s
+[w1x1024_b666] .. 0/668 games  16914 evals/s  240s
+[w1x1024_b666] .. 0/668 games  17078 evals/s  271s
+[w1x1024_b666] .. 0/668 games  17215 evals/s  301s
+[w1x1024_b666] .. 0/668 games  17338 evals/s  331s
+[w1x1024_b666] .. 0/668 games  17443 evals/s  361s
+[w1x1024_b666] .. 1/668 games  17534 evals/s  391s
+[w1x1024_b666] .. 1/668 games  17642 evals/s  421s
+[w1x1024_b666] .. 3/668 games  17756 evals/s  451s
+[w1x1024_b666] .. 6/668 games  17831 evals/s  481s
+[w1x1024_b666] .. 7/668 games  17912 evals/s  511s
+[w1x1024_b666] .. 10/668 games  17961 evals/s  541s
+[w1x1024_b666] .. 15/668 games  18030 evals/s  571s
+[w1x1024_b666] .. 24/668 games  18111 evals/s  601s
+[w1x1024_b666] .. 31/668 games  18175 evals/s  631s
+[w1x1024_b666] .. 36/668 games  18237 evals/s  661s
+[w1x1024_b666] .. 45/668 games  18287 evals/s  691s
+[w1x1024_b666] .. 54/668 games  18327 evals/s  721s
+[w1x1024_b666] .. 67/668 games  18351 evals/s  751s
+[w1x1024_b666] .. 82/668 games  18395 evals/s  781s
+[w1x1024_b666] .. 94/668 games  18433 evals/s  811s
+[w1x1024_b666] .. 113/668 games  18533 evals/s  841s
+[w1x1024_b666] .. 127/668 games  18678 evals/s  871s
+[w1x1024_b666] .. 155/668 games  18793 evals/s  901s
+[w1x1024_b666] .. 176/668 games  18873 evals/s  931s
+[w1x1024_b666] .. 196/668 games  18933 evals/s  961s
+[w1x1024_b666] .. 215/668 games  18960 evals/s  991s
+[w1x1024_b666] .. 239/668 games  18981 evals/s  1021s
+[w1x1024_b666] .. 269/668 games  18994 evals/s  1051s
+[w1x1024_b666] .. 291/668 games  18894 evals/s  1081s
+[w1x1024_b666] .. 307/668 games  18646 evals/s  1111s
+[w1x1024_b666] .. 319/668 games  18288 evals/s  1141s
+[w1x1024_b666] .. 323/668 games  17893 evals/s  1171s
+[w1x1024_b666] .. 327/668 games  17498 evals/s  1201s
+[w1x1024_b666] .. 328/668 games  17111 evals/s  1231s
+[w1x1024_b666] .. 329/668 games  16737 evals/s  1261s
+[w1x1024_b666] .. 333/668 games  16361 evals/s  1291s
+[w1x1024_b666] .. 333/668 games  15993 evals/s  1321s
+[w1x1024_b666] .. 333/668 games  15641 evals/s  1352s
+[w1x1024_b666] .. 333/668 games  15304 evals/s  1382s
+[w1x1024_b666] .. 333/668 games  14981 evals/s  1412s
+[w1x1024_b666] .. 333/668 games  14672 evals/s  1442s
+[w1x1024_b666] .. 333/668 games  14375 evals/s  1472s
+[w1x1024_b666] .. 333/668 games  14089 evals/s  1502s
+[w1x1024_b666] .. 333/668 games  13815 evals/s  1532s
+[w1x1024_b666] .. 333/668 games  13552 evals/s  1562s
+[w1x1024_b666] .. 333/668 games  13298 evals/s  1592s
+[w1x1024_b666] .. 333/668 games  13053 evals/s  1622s
+[w1x1024_b666] .. 333/668 games  12819 evals/s  1652s
+[w1x1024_b666] .. 334/668 games  12748 evals/s  1682s
+[w1x1024_b666] .. 334/668 games  12929 evals/s  1712s
+[w1x1024_b666] .. 334/668 games  13120 evals/s  1742s
+[w1x1024_b666] .. 334/668 games  13309 evals/s  1772s
+[w1x1024_b666] .. 334/668 games  13512 evals/s  1802s
+[w1x1024_b666] .. 334/668 games  13696 evals/s  1832s
+[w1x1024_b666] .. 334/668 games  13867 evals/s  1862s
+[w1x1024_b666] .. 334/668 games  14053 evals/s  1892s
+[w1x1024_b666] .. 334/668 games  14246 evals/s  1922s
+[w1x1024_b666] .. 335/668 games  14448 evals/s  1952s
+[w1x1024_b666] .. 337/668 games  14667 evals/s  1982s
+[w1x1024_b666] .. 339/668 games  14896 evals/s  2012s
+[w1x1024_b666] .. 346/668 games  15130 evals/s  2042s
+[w1x1024_b666] .. 361/668 games  15355 evals/s  2072s
+[w1x1024_b666] .. 370/668 games  15552 evals/s  2102s
+[w1x1024_b666] .. 395/668 games  15727 evals/s  2133s
+[w1x1024_b666] .. 409/668 games  15898 evals/s  2163s
+[w1x1024_b666] .. 434/668 games  16075 evals/s  2193s
+[w1x1024_b666] .. 453/668 games  16260 evals/s  2223s
+[w1x1024_b666] .. 488/668 games  16441 evals/s  2253s
+[w1x1024_b666] .. 521/668 games  16604 evals/s  2283s
+[w1x1024_b666] .. 554/668 games  16734 evals/s  2313s
+[w1x1024_b666] .. 581/668 games  16863 evals/s  2343s
+[w1x1024_b666] .. 615/668 games  16956 evals/s  2373s
+[w1x1024_b666] .. 645/668 games  16959 evals/s  2403s
+[w1x1024_b666] .. 661/668 games  16868 evals/s  2433s
+[w1x1024_b666] .. 666/668 games  16693 evals/s  2463s
+[w1x1024_b666] .. 667/668 games  16509 evals/s  2493s
+[w1x1024_b666] .. 667/668 games  16324 evals/s  2523s
+[w1x1024_b666] 334/334 pairs  A 323W-328L-17T score=0.496±0.016  949 games/hr  16253 evals/s  2534s
+[w1x1024_b666] DONE A 323W-328L-17T score=0.496 ci95=[0.465,0.528] elo=-3 seat0=0.624 non_greedy=0.0% turns=33.3 trunc=0 2534.3s

@@ -1,0 +1,14 @@
+{
+  "tag": "c27v_vhead_vs_zerov",
+  "a": "bench/c27v/c27v_vhead.pt",
+  "b": "bench/c27v/c27v_vhead.pt",
+  "a_zero_value": false,
+  "b_zero_value": true,
+  "sims": 128,
+  "games": 200,
+  "wins": 102,
+  "losses": 95,
+  "ties": 3,
+  "a_win_pct": 0.5177664974619289,
+  "wall_s": 1335
+}

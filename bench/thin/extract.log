@@ -1,0 +1,38 @@
+could not decode game-finished message 14 for game None: game-finished arrived before a known game id
+could not decode game-finished message 14 for game None: game-finished arrived before a known game id
+50/1147 games 1210 positions 5s {'incomplete': 11, 'ok': 39}
+100/1147 games 2896 positions 29s {'incomplete': 11, 'ok': 89}
+150/1147 games 4606 positions 55s {'incomplete': 11, 'ok': 139}
+200/1147 games 6665 positions 73s {'incomplete': 13, 'ok': 187}
+250/1147 games 8666 positions 86s {'incomplete': 14, 'ok': 236}
+could not decode game-finished message 14 for game None: game-finished arrived before a known game id
+could not decode game-finished message 14 for game None: game-finished arrived before a known game id
+could not decode game-finished message 14 for game None: game-finished arrived before a known game id
+could not decode game-finished message 14 for game None: game-finished arrived before a known game id
+could not decode game-finished message 14 for game None: game-finished arrived before a known game id
+could not decode game-finished message 14 for game None: game-finished arrived before a known game id
+could not decode game-finished message 14 for game None: game-finished arrived before a known game id
+could not decode game-finished message 14 for game None: game-finished arrived before a known game id
+could not decode game-finished message 14 for game None: game-finished arrived before a known game id
+could not decode game-finished message 14 for game None: game-finished arrived before a known game id
+could not decode game-finished message 14 for game None: game-finished arrived before a known game id
+could not decode game-finished message 14 for game None: game-finished arrived before a known game id
+could not decode game-finished message 14 for game None: game-finished arrived before a known game id
+300/1147 games 12012 positions 98s {'incomplete': 21, 'ok': 279}
+350/1147 games 15751 positions 112s {'incomplete': 27, 'ok': 323}
+400/1147 games 20206 positions 184s {'incomplete': 28, 'ok': 372}
+450/1147 games 24415 positions 239s {'incomplete': 28, 'ok': 422}
+500/1147 games 28763 positions 280s {'incomplete': 30, 'ok': 470}
+550/1147 games 33381 positions 298s {'incomplete': 30, 'ok': 520}
+600/1147 games 37701 positions 340s {'incomplete': 31, 'ok': 569}
+650/1147 games 42152 positions 393s {'incomplete': 32, 'ok': 618}
+700/1147 games 46294 positions 486s {'incomplete': 32, 'ok': 668}
+750/1147 games 50919 positions 601s {'incomplete': 33, 'ok': 717}
+800/1147 games 55031 positions 636s {'incomplete': 34, 'ok': 766}
+850/1147 games 58873 positions 652s {'incomplete': 34, 'ok': 816}
+900/1147 games 63280 positions 670s {'incomplete': 35, 'ok': 865}
+950/1147 games 67083 positions 695s {'incomplete': 35, 'ok': 915}
+1000/1147 games 70867 positions 716s {'incomplete': 35, 'ok': 965}
+1050/1147 games 74326 positions 735s {'incomplete': 35, 'ok': 1015}
+1100/1147 games 78088 positions 757s {'incomplete': 36, 'ok': 1064}
+DONE 1147 games 81839 positions {'incomplete': 36, 'ok': 1111}

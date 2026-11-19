@@ -1,0 +1,25 @@
+[bca_128] leaves=1 .. 0/32 games  90528 evals  30s
+[bca_128] leaves=1 .. 0/32 games  188352 evals  60s
+[bca_128] leaves=1 .. 2/32 games  283492 evals  90s
+[bca_128] leaves=1 .. 3/32 games  378888 evals  120s
+[bca_128] leaves=1 .. 9/32 games  455270 evals  150s
+[bca_128] leaves=1 .. 11/32 games  519280 evals  180s
+[bca_128] leaves=1 .. 15/32 games  576147 evals  210s
+[bca_128] leaves=1 .. 18/32 games  621982 evals  240s
+[bca_128] leaves=1 .. 23/32 games  662613 evals  270s
+[bca_128] leaves=1 .. 27/32 games  684975 evals  300s
+[bca_128] leaves=1 .. 31/32 games  697379 evals  330s
+[bca_128] leaves=1 done: 32 games  697962 evals  335s
+[bca_128] sequential: {'decisions': 5940, 'entropy': 0.4355107802115188, 'top_share': 0.816929133855922}
+[bca_128] leaves=4 .. 0/32 games  172795 evals  365s
+[bca_128] leaves=4 .. 4/32 games  378960 evals  395s
+[bca_128] leaves=4 .. 19/32 games  563949 evals  425s
+[bca_128] leaves=4 .. 28/32 games  669619 evals  455s
+[bca_128] leaves=4 done: 32 games  688500 evals  484s
+[bca_128] leaves=4: {"matched_decisions": 1228, "identical_games": 3, "same_top_move": 0.9747557003257329, "total_variation": 0.039921516108941776, "sequential_entropy": 0.40532073060284074, "batched_entropy": 0.48476650977873864, "sequential_top_share": 0.8343443023178477, "batched_top_share": 0.8089717615130833, "batched_share_on_sequential_top": 0.806868604260844, "all_decisions": {"decisions": 5880, "entropy": 0.5573064764215038, "top_share": 0.7732002249647147}}
+[bca_128] leaves=8 .. 1/32 games  250509 evals  514s
+[bca_128] leaves=8 .. 14/32 games  541709 evals  544s
+[bca_128] leaves=8 .. 31/32 games  683617 evals  574s
+[bca_128] leaves=8 done: 32 games  684365 evals  575s
+[bca_128] leaves=8: {"matched_decisions": 843, "identical_games": 1, "same_top_move": 0.9608540925266904, "total_variation": 0.08630593759328005, "sequential_entropy": 0.4187207878676218, "batched_entropy": 0.6351629219385846, "sequential_top_share": 0.828116681313433, "batched_top_share": 0.767814610514549, "batched_share_on_sequential_top": 0.7639569967875962, "all_decisions": {"decisions": 5812, "entropy": 0.6539743209309228, "top_share": 0.748374256983124}}
+[bca_128] DONE 575s

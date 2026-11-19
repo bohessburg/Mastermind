@@ -1,0 +1,443 @@
+c29_diagnostics: 12 jobs queued (gates), 2 at a time, pairs=100 chunk=100
+== 01:23 done 5 json
+[gate_campaign28_gen_0001] .. 0/200 games  6755 evals/s  30s
+[gate_campaign28_gen_0002] .. 0/200 games  6563 evals/s  30s
+== 01:24 done 5 json
+[gate_campaign28_gen_0001] .. 0/200 games  7752 evals/s  90s
+[gate_campaign28_gen_0002] .. 0/200 games  7687 evals/s  90s
+== 01:25 done 5 json
+[gate_campaign28_gen_0001] .. 2/200 games  7961 evals/s  150s
+[gate_campaign28_gen_0002] .. 0/200 games  7919 evals/s  150s
+== 01:26 done 5 json
+[gate_campaign28_gen_0001] .. 15/200 games  7978 evals/s  210s
+[gate_campaign28_gen_0002] .. 11/200 games  7967 evals/s  210s
+== 01:27 done 5 json
+[gate_campaign28_gen_0001] .. 35/200 games  7858 evals/s  270s
+[gate_campaign28_gen_0002] .. 31/200 games  7931 evals/s  270s
+== 01:28 done 5 json
+[gate_campaign28_gen_0001] .. 57/200 games  7590 evals/s  330s
+[gate_campaign28_gen_0002] .. 50/200 games  7780 evals/s  330s
+== 01:29 done 5 json
+[gate_campaign28_gen_0001] .. 71/200 games  7349 evals/s  390s
+[gate_campaign28_gen_0002] .. 77/200 games  7414 evals/s  390s
+== 01:30 done 5 json
+[gate_campaign28_gen_0001] .. 90/200 games  6825 evals/s  450s
+[gate_campaign28_gen_0002] .. 92/200 games  6829 evals/s  450s
+== 01:31 done 5 json
+[gate_campaign28_gen_0001] .. 98/200 games  6163 evals/s  510s
+[gate_campaign28_gen_0002] .. 98/200 games  6156 evals/s  510s
+== 01:32 done 5 json
+[gate_campaign28_gen_0001] .. 100/200 games  6098 evals/s  570s
+[gate_campaign28_gen_0002] .. 100/200 games  5975 evals/s  570s
+== 01:33 done 5 json
+[gate_campaign28_gen_0001] .. 101/200 games  6310 evals/s  630s
+[gate_campaign28_gen_0002] .. 100/200 games  6192 evals/s  630s
+== 01:34 done 5 json
+[gate_campaign28_gen_0001] .. 107/200 games  6475 evals/s  690s
+[gate_campaign28_gen_0002] .. 105/200 games  6373 evals/s  690s
+== 01:35 done 5 json
+[gate_campaign28_gen_0001] .. 122/200 games  6594 evals/s  750s
+[gate_campaign28_gen_0002] .. 120/200 games  6509 evals/s  750s
+== 01:36 done 5 json
+[gate_campaign28_gen_0001] .. 139/200 games  6660 evals/s  810s
+[gate_campaign28_gen_0002] .. 135/200 games  6598 evals/s  810s
+== 01:37 done 5 json
+[gate_campaign28_gen_0001] .. 158/200 games  6674 evals/s  871s
+[gate_campaign28_gen_0002] .. 154/200 games  6628 evals/s  870s
+== 01:38 done 5 json
+[gate_campaign28_gen_0001] .. 183/200 games  6566 evals/s  931s
+[gate_campaign28_gen_0002] .. 177/200 games  6564 evals/s  931s
+== 01:39 done 5 json
+[gate_campaign28_gen_0001] .. 190/200 games  6315 evals/s  991s
+[gate_campaign28_gen_0002] .. 191/200 games  6347 evals/s  991s
+== 01:40 done 5 json
+[gate_campaign28_gen_0001] .. 199/200 games  6017 evals/s  1051s
+[gate_campaign28_gen_0002] .. 197/200 games  6047 evals/s  1051s
+== 01:41 done 7 json
+[gate_campaign28_gen_0003] .. 0/200 games  6964 evals/s  30s
+[gate_campaign28_gen_0004] .. 0/200 games  6761 evals/s  30s
+== 01:42 done 7 json
+[gate_campaign28_gen_0003] .. 0/200 games  7807 evals/s  90s
+[gate_campaign28_gen_0004] .. 0/200 games  7741 evals/s  90s
+== 01:43 done 7 json
+[gate_campaign28_gen_0003] .. 2/200 games  8026 evals/s  150s
+[gate_campaign28_gen_0004] .. 2/200 games  7978 evals/s  150s
+== 01:44 done 7 json
+[gate_campaign28_gen_0003] .. 11/200 games  8063 evals/s  210s
+[gate_campaign28_gen_0004] .. 11/200 games  8049 evals/s  210s
+== 01:45 done 7 json
+[gate_campaign28_gen_0003] .. 33/200 games  7976 evals/s  270s
+[gate_campaign28_gen_0004] .. 31/200 games  7998 evals/s  270s
+== 01:46 done 7 json
+[gate_campaign28_gen_0003] .. 48/200 games  7812 evals/s  330s
+[gate_campaign28_gen_0004] .. 49/200 games  7844 evals/s  330s
+== 01:47 done 7 json
+[gate_campaign28_gen_0003] .. 73/200 games  7572 evals/s  390s
+[gate_campaign28_gen_0004] .. 71/200 games  7586 evals/s  390s
+== 01:48 done 7 json
+[gate_campaign28_gen_0003] .. 93/200 games  7043 evals/s  450s
+[gate_campaign28_gen_0004] .. 88/200 games  7075 evals/s  450s
+== 01:49 done 7 json
+[gate_campaign28_gen_0003] .. 96/200 games  6332 evals/s  510s
+[gate_campaign28_gen_0004] .. 100/200 games  6640 evals/s  510s
+== 01:50 done 7 json
+[gate_campaign28_gen_0003] .. 100/200 games  5860 evals/s  570s
+[gate_campaign28_gen_0004] .. 100/200 games  7012 evals/s  570s
+== 01:51 done 7 json
+[gate_campaign28_gen_0003] .. 100/200 games  6083 evals/s  630s
+[gate_campaign28_gen_0004] .. 103/200 games  7125 evals/s  630s
+== 01:52 done 7 json
+[gate_campaign28_gen_0003] .. 101/200 games  6281 evals/s  690s
+[gate_campaign28_gen_0004] .. 115/200 games  7188 evals/s  690s
+== 01:53 done 7 json
+[gate_campaign28_gen_0003] .. 113/200 games  6432 evals/s  751s
+[gate_campaign28_gen_0004] .. 132/200 games  7188 evals/s  750s
+== 01:54 done 7 json
+[gate_campaign28_gen_0003] .. 130/200 games  6543 evals/s  811s
+[gate_campaign28_gen_0004] .. 158/200 games  7112 evals/s  810s
+== 01:55 done 7 json
+[gate_campaign28_gen_0003] .. 150/200 games  6611 evals/s  871s
+[gate_campaign28_gen_0004] .. 175/200 games  6954 evals/s  871s
+== 01:56 done 7 json
+[gate_campaign28_gen_0003] .. 177/200 games  6588 evals/s  931s
+[gate_campaign28_gen_0004] .. 189/200 games  6726 evals/s  931s
+== 01:57 done 7 json
+[gate_campaign28_gen_0003] .. 186/200 games  6401 evals/s  991s
+[gate_campaign28_gen_0004] .. 195/200 games  6417 evals/s  991s
+== 01:58 done 8 json
+[gate_campaign28_gen_0003] .. 193/200 games  6147 evals/s  1051s
+[gate_campaign28_gen_0005] .. 0/200 games  7635 evals/s  30s
+== 01:59 done 9 json
+[gate_campaign28_gen_0005] .. 0/200 games  8857 evals/s  90s
+[gate_campaign28_gen_0006] device=mps pairs=100 chunk=100 A=checkpoints/campaign28/gen_0006.pt sims=128 zero_v=False | B=checkpoints/campaign25/bc_a.pt sims=128 zero_v=False | determinize=off cross_route=False tree_reuse=False opening_temp=False
+== 02:00 done 9 json
+[gate_campaign28_gen_0005] .. 2/200 games  8622 evals/s  150s
+[gate_campaign28_gen_0006] .. 0/200 games  7193 evals/s  60s
+== 02:01 done 9 json
+[gate_campaign28_gen_0005] .. 17/200 games  8384 evals/s  210s
+[gate_campaign28_gen_0006] .. 0/200 games  7776 evals/s  120s
+== 02:02 done 9 json
+[gate_campaign28_gen_0005] .. 35/200 games  8093 evals/s  270s
+[gate_campaign28_gen_0006] .. 8/200 games  7907 evals/s  180s
+== 02:03 done 9 json
+[gate_campaign28_gen_0005] .. 51/200 games  7754 evals/s  330s
+[gate_campaign28_gen_0006] .. 28/200 games  7918 evals/s  240s
+== 02:04 done 9 json
+[gate_campaign28_gen_0005] .. 69/200 games  7394 evals/s  390s
+[gate_campaign28_gen_0006] .. 46/200 games  7822 evals/s  300s
+== 02:05 done 9 json
+[gate_campaign28_gen_0005] .. 85/200 games  6939 evals/s  450s
+[gate_campaign28_gen_0006] .. 72/200 games  7536 evals/s  360s
+== 02:06 done 9 json
+[gate_campaign28_gen_0005] .. 96/200 games  6358 evals/s  510s
+[gate_campaign28_gen_0006] .. 85/200 games  7068 evals/s  420s
+== 02:07 done 9 json
+[gate_campaign28_gen_0005] .. 99/200 games  5765 evals/s  570s
+[gate_campaign28_gen_0006] .. 99/200 games  6385 evals/s  480s
+== 02:08 done 9 json
+[gate_campaign28_gen_0005] .. 100/200 games  5845 evals/s  630s
+[gate_campaign28_gen_0006] .. 100/200 games  6421 evals/s  540s
+== 02:09 done 9 json
+[gate_campaign28_gen_0005] .. 100/200 games  6058 evals/s  690s
+[gate_campaign28_gen_0006] .. 101/200 games  6606 evals/s  600s
+== 02:10 done 9 json
+[gate_campaign28_gen_0005] .. 104/200 games  6238 evals/s  750s
+[gate_campaign28_gen_0006] .. 104/200 games  6753 evals/s  661s
+== 02:11 done 9 json
+[gate_campaign28_gen_0005] .. 118/200 games  6376 evals/s  810s
+[gate_campaign28_gen_0006] .. 119/200 games  6849 evals/s  721s
+== 02:12 done 9 json
+[gate_campaign28_gen_0005] .. 147/200 games  6449 evals/s  870s
+[gate_campaign28_gen_0006] .. 144/200 games  6883 evals/s  781s
+== 02:13 done 9 json
+[gate_campaign28_gen_0005] .. 165/200 games  6452 evals/s  930s
+[gate_campaign28_gen_0006] .. 166/200 games  6842 evals/s  841s
+== 02:14 done 9 json
+[gate_campaign28_gen_0005] .. 177/200 games  6391 evals/s  990s
+[gate_campaign28_gen_0006] .. 188/200 games  6672 evals/s  901s
+== 02:15 done 9 json
+[gate_campaign28_gen_0005] .. 193/200 games  6183 evals/s  1050s
+[gate_campaign28_gen_0006] .. 197/200 games  6368 evals/s  961s
+== 02:16 done 11 json
+[gate_campaign28_gen_0001_honest] .. 0/200 games  7812 evals/s  30s
+[gate_campaign28_gen_0002_honest] device=mps pairs=100 chunk=100 A=checkpoints/campaign28/gen_0002.pt sims=128 zero_v=False | B=checkpoints/campaign25/bc_a.pt sims=128 zero_v=False | determinize=per_decision cross_route=False tree_reuse=False opening_temp=False
+== 02:17 done 11 json
+[gate_campaign28_gen_0001_honest] .. 0/200 games  8394 evals/s  90s
+[gate_campaign28_gen_0002_honest] .. 0/200 games  7237 evals/s  60s
+== 02:18 done 11 json
+[gate_campaign28_gen_0001_honest] .. 2/200 games  8360 evals/s  150s
+[gate_campaign28_gen_0002_honest] .. 0/200 games  7742 evals/s  120s
+== 02:19 done 11 json
+[gate_campaign28_gen_0001_honest] .. 19/200 games  8195 evals/s  210s
+[gate_campaign28_gen_0002_honest] .. 6/200 games  7943 evals/s  180s
+== 02:20 done 11 json
+[gate_campaign28_gen_0001_honest] .. 37/200 games  7913 evals/s  270s
+[gate_campaign28_gen_0002_honest] .. 22/200 games  7972 evals/s  240s
+== 02:21 done 11 json
+[gate_campaign28_gen_0001_honest] .. 57/200 games  7599 evals/s  330s
+[gate_campaign28_gen_0002_honest] .. 38/200 games  7896 evals/s  300s
+== 02:22 done 11 json
+[gate_campaign28_gen_0001_honest] .. 72/200 games  7247 evals/s  390s
+[gate_campaign28_gen_0002_honest] .. 62/200 games  7680 evals/s  360s
+== 02:23 done 11 json
+[gate_campaign28_gen_0001_honest] .. 82/200 games  6833 evals/s  450s
+[gate_campaign28_gen_0002_honest] .. 90/200 games  7205 evals/s  420s
+== 02:24 done 11 json
+[gate_campaign28_gen_0001_honest] .. 93/200 games  6315 evals/s  510s
+[gate_campaign28_gen_0002_honest] .. 94/200 games  6535 evals/s  480s
+== 02:25 done 11 json
+[gate_campaign28_gen_0001_honest] .. 95/200 games  5772 evals/s  570s
+[gate_campaign28_gen_0002_honest] .. 99/200 games  5893 evals/s  540s
+== 02:26 done 11 json
+[gate_campaign28_gen_0001_honest] .. 98/200 games  5328 evals/s  630s
+[gate_campaign28_gen_0002_honest] .. 100/200 games  6300 evals/s  600s
+== 02:27 done 11 json
+[gate_campaign28_gen_0001_honest] .. 99/200 games  4916 evals/s  690s
+[gate_campaign28_gen_0002_honest] .. 104/200 games  6708 evals/s  660s
+== 02:28 done 11 json
+[gate_campaign28_gen_0001_honest] .. 100/200 games  4942 evals/s  750s
+[gate_campaign28_gen_0002_honest] .. 117/200 games  6845 evals/s  720s
+== 02:29 done 11 json
+[gate_campaign28_gen_0001_honest] .. 100/200 games  5197 evals/s  810s
+[gate_campaign28_gen_0002_honest] .. 136/200 games  6849 evals/s  780s
+== 02:30 done 11 json
+[gate_campaign28_gen_0001_honest] .. 102/200 games  5422 evals/s  871s
+[gate_campaign28_gen_0002_honest] .. 149/200 games  6800 evals/s  841s
+== 02:31 done 11 json
+[gate_campaign28_gen_0001_honest] .. 119/200 games  5619 evals/s  931s
+[gate_campaign28_gen_0002_honest] .. 166/200 games  6714 evals/s  901s
+== 02:32 done 11 json
+[gate_campaign28_gen_0001_honest] .. 144/200 games  5769 evals/s  991s
+[gate_campaign28_gen_0002_honest] .. 181/200 games  6574 evals/s  961s
+== 02:33 done 11 json
+[gate_campaign28_gen_0001_honest] .. 172/200 games  5843 evals/s  1051s
+[gate_campaign28_gen_0002_honest] .. 196/200 games  6329 evals/s  1021s
+== 02:34 done 12 json
+[gate_campaign28_gen_0001_honest] .. 184/200 games  5773 evals/s  1111s
+[gate_campaign28_gen_0003_honest] device=mps pairs=100 chunk=100 A=checkpoints/campaign28/gen_0003.pt sims=128 zero_v=False | B=checkpoints/campaign25/bc_a.pt sims=128 zero_v=False | determinize=per_decision cross_route=False tree_reuse=False opening_temp=False
+== 02:35 done 12 json
+[gate_campaign28_gen_0001_honest] .. 195/200 games  5561 evals/s  1171s
+[gate_campaign28_gen_0003_honest] .. 0/200 games  8400 evals/s  60s
+== 02:36 done 12 json
+[gate_campaign28_gen_0001_honest] .. 196/200 games  5324 evals/s  1231s
+[gate_campaign28_gen_0003_honest] .. 0/200 games  8999 evals/s  120s
+== 02:37 done 12 json
+[gate_campaign28_gen_0001_honest] .. 199/200 games  5094 evals/s  1291s
+[gate_campaign28_gen_0003_honest] .. 10/200 games  9254 evals/s  180s
+== 02:38 done 13 json
+[gate_campaign28_gen_0003_honest] .. 31/200 games  9080 evals/s  240s
+[gate_campaign28_gen_0004_honest] device=mps pairs=100 chunk=100 A=checkpoints/campaign28/gen_0004.pt sims=128 zero_v=False | B=checkpoints/campaign25/bc_a.pt sims=128 zero_v=False | determinize=per_decision cross_route=False tree_reuse=False opening_temp=False
+== 02:39 done 13 json
+[gate_campaign28_gen_0003_honest] .. 58/200 games  8483 evals/s  300s
+[gate_campaign28_gen_0004_honest] .. 0/200 games  7520 evals/s  60s
+== 02:40 done 13 json
+[gate_campaign28_gen_0003_honest] .. 74/200 games  7851 evals/s  360s
+[gate_campaign28_gen_0004_honest] .. 0/200 games  8219 evals/s  120s
+== 02:41 done 13 json
+[gate_campaign28_gen_0003_honest] .. 88/200 games  7246 evals/s  420s
+[gate_campaign28_gen_0004_honest] .. 7/200 games  8537 evals/s  180s
+== 02:42 done 13 json
+[gate_campaign28_gen_0003_honest] .. 98/200 games  6535 evals/s  480s
+[gate_campaign28_gen_0004_honest] .. 33/200 games  8724 evals/s  240s
+== 02:43 done 13 json
+[gate_campaign28_gen_0003_honest] .. 100/200 games  6207 evals/s  540s
+[gate_campaign28_gen_0004_honest] .. 60/200 games  8580 evals/s  300s
+== 02:44 done 13 json
+[gate_campaign28_gen_0003_honest] .. 100/200 games  6510 evals/s  600s
+[gate_campaign28_gen_0004_honest] .. 73/200 games  7930 evals/s  360s
+== 02:45 done 13 json
+[gate_campaign28_gen_0003_honest] .. 104/200 games  6824 evals/s  660s
+[gate_campaign28_gen_0004_honest] .. 90/200 games  7244 evals/s  420s
+== 02:46 done 13 json
+[gate_campaign28_gen_0003_honest] .. 125/200 games  7088 evals/s  720s
+[gate_campaign28_gen_0004_honest] .. 95/200 games  6534 evals/s  480s
+== 02:47 done 13 json
+[gate_campaign28_gen_0003_honest] .. 153/200 games  7164 evals/s  780s
+[gate_campaign28_gen_0004_honest] .. 100/200 games  5998 evals/s  540s
+== 02:48 done 13 json
+[gate_campaign28_gen_0003_honest] .. 169/200 games  7013 evals/s  840s
+[gate_campaign28_gen_0004_honest] .. 100/200 games  6266 evals/s  600s
+== 02:49 done 13 json
+[gate_campaign28_gen_0003_honest] .. 180/200 games  6817 evals/s  900s
+[gate_campaign28_gen_0004_honest] .. 102/200 games  6535 evals/s  660s
+== 02:50 done 13 json
+[gate_campaign28_gen_0003_honest] .. 194/200 games  6545 evals/s  960s
+[gate_campaign28_gen_0004_honest] .. 115/200 games  6788 evals/s  720s
+== 02:51 done 14 json
+[gate_campaign28_gen_0004_honest] .. 137/200 games  7004 evals/s  780s
+[gate_campaign28_gen_0005_honest] device=mps pairs=100 chunk=100 A=checkpoints/campaign28/gen_0005.pt sims=128 zero_v=False | B=checkpoints/campaign25/bc_a.pt sims=128 zero_v=False | determinize=per_decision cross_route=False tree_reuse=False opening_temp=False
+== 02:52 done 14 json
+[gate_campaign28_gen_0004_honest] .. 154/200 games  6980 evals/s  840s
+[gate_campaign28_gen_0005_honest] .. 0/200 games  7738 evals/s  60s
+== 02:53 done 14 json
+[gate_campaign28_gen_0004_honest] .. 174/200 games  6839 evals/s  900s
+[gate_campaign28_gen_0005_honest] .. 0/200 games  8401 evals/s  120s
+== 02:54 done 14 json
+[gate_campaign28_gen_0004_honest] .. 185/200 games  6589 evals/s  961s
+[gate_campaign28_gen_0005_honest] .. 4/200 games  7738 evals/s  180s
+== 02:55 done 14 json
+[gate_campaign28_gen_0004_honest] .. 192/200 games  6254 evals/s  1021s
+[gate_campaign28_gen_0005_honest] .. 7/200 games  6573 evals/s  240s
+== 02:56 done 14 json
+[gate_campaign28_gen_0004_honest] .. 196/200 games  5935 evals/s  1081s
+[gate_campaign28_gen_0005_honest] .. 13/200 games  5911 evals/s  300s
+== 02:57 done 14 json
+[gate_campaign28_gen_0004_honest] .. 197/200 games  5641 evals/s  1141s
+[gate_campaign28_gen_0005_honest] .. 18/200 games  5474 evals/s  360s
+== 02:58 done 15 json
+[gate_campaign28_gen_0005_honest] .. 31/200 games  5128 evals/s  421s
+[gate_campaign28_gen_0006_honest] device=mps pairs=100 chunk=100 A=checkpoints/campaign28/gen_0006.pt sims=128 zero_v=False | B=checkpoints/campaign25/bc_a.pt sims=128 zero_v=False | determinize=per_decision cross_route=False tree_reuse=False opening_temp=False
+== 02:59 done 15 json
+[gate_campaign28_gen_0005_honest] .. 35/200 games  4709 evals/s  481s
+[gate_campaign28_gen_0006_honest] .. 0/200 games  1946 evals/s  60s
+== 03:00 done 15 json
+[gate_campaign28_gen_0005_honest] .. 43/200 games  4382 evals/s  541s
+[gate_campaign28_gen_0006_honest] .. 0/200 games  1967 evals/s  120s
+== 03:01 done 15 json
+[gate_campaign28_gen_0005_honest] .. 48/200 games  4113 evals/s  601s
+[gate_campaign28_gen_0006_honest] .. 0/200 games  2039 evals/s  180s
+== 03:02 done 15 json
+[gate_campaign28_gen_0005_honest] .. 56/200 games  3888 evals/s  662s
+[gate_campaign28_gen_0006_honest] .. 0/200 games  2092 evals/s  241s
+== 03:03 done 15 json
+[gate_campaign28_gen_0005_honest] .. 62/200 games  3699 evals/s  722s
+[gate_campaign28_gen_0006_honest] .. 0/200 games  2145 evals/s  301s
+== 03:04 done 15 json
+[gate_campaign28_gen_0005_honest] .. 66/200 games  3522 evals/s  782s
+[gate_campaign28_gen_0006_honest] .. 0/200 games  2161 evals/s  361s
+== 03:05 done 15 json
+[gate_campaign28_gen_0005_honest] .. 68/200 games  3379 evals/s  842s
+[gate_campaign28_gen_0006_honest] .. 0/200 games  2197 evals/s  421s
+== 03:06 done 15 json
+[gate_campaign28_gen_0005_honest] .. 72/200 games  3256 evals/s  902s
+[gate_campaign28_gen_0006_honest] .. 0/200 games  2251 evals/s  481s
+== 03:07 done 15 json
+[gate_campaign28_gen_0005_honest] .. 74/200 games  3144 evals/s  962s
+[gate_campaign28_gen_0006_honest] .. 3/200 games  2298 evals/s  542s
+== 03:08 done 15 json
+[gate_campaign28_gen_0005_honest] .. 85/200 games  3032 evals/s  1022s
+[gate_campaign28_gen_0006_honest] .. 7/200 games  2341 evals/s  602s
+== 03:09 done 15 json
+[gate_campaign28_gen_0005_honest] .. 88/200 games  2917 evals/s  1082s
+[gate_campaign28_gen_0006_honest] .. 11/200 games  2377 evals/s  662s
+== 03:10 done 15 json
+[gate_campaign28_gen_0005_honest] .. 91/200 games  2802 evals/s  1142s
+[gate_campaign28_gen_0006_honest] .. 15/200 games  2413 evals/s  722s
+== 03:11 done 15 json
+[gate_campaign28_gen_0005_honest] .. 93/200 games  2693 evals/s  1202s
+[gate_campaign28_gen_0006_honest] .. 24/200 games  2439 evals/s  782s
+== 03:12 done 15 json
+[gate_campaign28_gen_0005_honest] .. 96/200 games  2587 evals/s  1262s
+[gate_campaign28_gen_0006_honest] .. 30/200 games  2468 evals/s  842s
+== 03:13 done 15 json
+[gate_campaign28_gen_0005_honest] .. 100/200 games  2504 evals/s  1322s
+[gate_campaign28_gen_0006_honest] .. 39/200 games  2489 evals/s  902s
+== 03:14 done 15 json
+[gate_campaign28_gen_0005_honest] .. 100/200 games  2483 evals/s  1383s
+[gate_campaign28_gen_0006_honest] .. 41/200 games  2434 evals/s  962s
+== 03:15 done 15 json
+[gate_campaign28_gen_0005_honest] .. 100/200 games  2458 evals/s  1443s
+[gate_campaign28_gen_0006_honest] .. 50/200 games  2378 evals/s  1022s
+== 03:16 done 15 json
+[gate_campaign28_gen_0005_honest] .. 100/200 games  2440 evals/s  1503s
+[gate_campaign28_gen_0006_honest] .. 56/200 games  2327 evals/s  1082s
+== 03:17 done 15 json
+[gate_campaign28_gen_0005_honest] .. 100/200 games  2432 evals/s  1563s
+[gate_campaign28_gen_0006_honest] .. 61/200 games  2284 evals/s  1143s
+== 03:18 done 15 json
+[gate_campaign28_gen_0005_honest] .. 100/200 games  2438 evals/s  1623s
+[gate_campaign28_gen_0006_honest] .. 68/200 games  2249 evals/s  1203s
+== 03:19 done 15 json
+[gate_campaign28_gen_0005_honest] .. 100/200 games  2441 evals/s  1683s
+[gate_campaign28_gen_0006_honest] .. 72/200 games  2211 evals/s  1263s
+== 03:20 done 15 json
+[gate_campaign28_gen_0005_honest] .. 100/200 games  2447 evals/s  1743s
+[gate_campaign28_gen_0006_honest] .. 74/200 games  2175 evals/s  1323s
+== 03:21 done 15 json
+[gate_campaign28_gen_0005_honest] .. 101/200 games  2458 evals/s  1804s
+[gate_campaign28_gen_0006_honest] .. 80/200 games  2138 evals/s  1383s
+== 03:22 done 15 json
+[gate_campaign28_gen_0005_honest] .. 102/200 games  2468 evals/s  1864s
+[gate_campaign28_gen_0006_honest] .. 85/200 games  2095 evals/s  1443s
+== 03:23 done 15 json
+[gate_campaign28_gen_0005_honest] .. 105/200 games  2480 evals/s  1924s
+[gate_campaign28_gen_0006_honest] .. 91/200 games  2042 evals/s  1503s
+== 03:24 done 15 json
+[gate_campaign28_gen_0005_honest] .. 114/200 games  2495 evals/s  1984s
+[gate_campaign28_gen_0006_honest] .. 94/200 games  1985 evals/s  1563s
+== 03:25 done 15 json
+[gate_campaign28_gen_0005_honest] .. 120/200 games  2510 evals/s  2045s
+[gate_campaign28_gen_0006_honest] .. 97/200 games  1928 evals/s  1623s
+== 03:26 done 15 json
+[gate_campaign28_gen_0005_honest] .. 126/200 games  2524 evals/s  2105s
+[gate_campaign28_gen_0006_honest] .. 99/200 games  1868 evals/s  1683s
+== 03:27 done 15 json
+[gate_campaign28_gen_0005_honest] .. 133/200 games  2505 evals/s  2165s
+[gate_campaign28_gen_0006_honest] .. 100/200 games  1855 evals/s  1744s
+== 03:28 done 15 json
+[gate_campaign28_gen_0005_honest] .. 136/200 games  2481 evals/s  2225s
+[gate_campaign28_gen_0006_honest] .. 100/200 games  1856 evals/s  1804s
+== 03:29 done 15 json
+[gate_campaign28_gen_0005_honest] .. 142/200 games  2458 evals/s  2285s
+[gate_campaign28_gen_0006_honest] .. 100/200 games  1859 evals/s  1864s
+== 03:30 done 15 json
+[gate_campaign28_gen_0005_honest] .. 149/200 games  2435 evals/s  2345s
+[gate_campaign28_gen_0006_honest] .. 100/200 games  1862 evals/s  1924s
+== 03:31 done 15 json
+[gate_campaign28_gen_0005_honest] .. 154/200 games  2416 evals/s  2405s
+[gate_campaign28_gen_0006_honest] .. 100/200 games  1874 evals/s  1984s
+== 03:32 done 15 json
+[gate_campaign28_gen_0005_honest] .. 157/200 games  2394 evals/s  2465s
+[gate_campaign28_gen_0006_honest] .. 100/200 games  1880 evals/s  2045s
+== 03:33 done 15 json
+[gate_campaign28_gen_0005_honest] .. 163/200 games  2373 evals/s  2526s
+[gate_campaign28_gen_0006_honest] .. 100/200 games  1890 evals/s  2105s
+== 03:34 done 15 json
+[gate_campaign28_gen_0005_honest] .. 167/200 games  2356 evals/s  2586s
+[gate_campaign28_gen_0006_honest] .. 101/200 games  1905 evals/s  2165s
+== 03:35 done 15 json
+[gate_campaign28_gen_0005_honest] .. 174/200 games  2339 evals/s  2646s
+[gate_campaign28_gen_0006_honest] .. 104/200 games  1928 evals/s  2225s
+== 03:36 done 15 json
+[gate_campaign28_gen_0005_honest] .. 180/200 games  2318 evals/s  2706s
+[gate_campaign28_gen_0006_honest] .. 105/200 games  1953 evals/s  2285s
+== 03:37 done 15 json
+[gate_campaign28_gen_0005_honest] .. 188/200 games  2293 evals/s  2766s
+[gate_campaign28_gen_0006_honest] .. 109/200 games  1979 evals/s  2345s
+== 03:38 done 15 json
+[gate_campaign28_gen_0005_honest] .. 188/200 games  2264 evals/s  2826s
+[gate_campaign28_gen_0006_honest] .. 111/200 games  2004 evals/s  2406s
+== 03:39 done 15 json
+[gate_campaign28_gen_0005_honest] .. 191/200 games  2234 evals/s  2886s
+[gate_campaign28_gen_0006_honest] .. 119/200 games  2029 evals/s  2466s
+== 03:40 done 15 json
+[gate_campaign28_gen_0005_honest] .. 195/200 games  2203 evals/s  2946s
+[gate_campaign28_gen_0006_honest] .. 128/200 games  2056 evals/s  2526s
+== 03:41 done 15 json
+[gate_campaign28_gen_0005_honest] .. 198/200 games  2168 evals/s  3006s
+[gate_campaign28_gen_0006_honest] .. 138/200 games  2084 evals/s  2586s
+== 03:42 done 16 json
+[gate_campaign28_gen_0006_honest] .. 152/200 games  2115 evals/s  2646s
+== 03:43 done 16 json
+[gate_campaign28_gen_0006_honest] .. 169/200 games  2160 evals/s  2706s
+== 03:44 done 16 json
+[gate_campaign28_gen_0006_honest] .. 188/200 games  2198 evals/s  2766s
+== 03:45 done 17 json
+c29_diagnostics: finished
+[d_g1_crossroute] DONE A 16W-46L-2T score=0.266 ci95=[0.160,0.371] elo=-177 seat0=0.500 non_greedy=0.0% turns=50.6 trunc=1 906.6s
+[d_g1_honest] DONE A 51W-11L-2T score=0.812 ci95=[0.719,0.906] elo=+255 seat0=0.531 non_greedy=0.0% turns=54.7 trunc=0 964.9s
+[d_g1_openingT] DONE A 49W-15L-0T score=0.766 ci95=[0.658,0.873] elo=+206 seat0=0.516 non_greedy=3.6% turns=59.3 trunc=1 856.7s
+[d_self_bca] DONE A 30W-30L-4T score=0.500 ci95=[0.500,0.500] elo=+0 seat0=0.625 non_greedy=0.0% turns=62.6 trunc=8 908.7s
+[d_swap_bca_vs_g1] DONE A 10W-53L-1T score=0.164 ci95=[0.077,0.251] elo=-283 seat0=0.508 non_greedy=0.0% turns=53.3 trunc=1 505.1s
+[gate_campaign28_gen_0001_honest] DONE A 167W-30L-3T score=0.843 ci95=[0.795,0.890] elo=+291 seat0=0.502 non_greedy=0.0% turns=56.1 trunc=7 1335.5s
+[gate_campaign28_gen_0001] DONE A 162W-32L-6T score=0.825 ci95=[0.778,0.872] elo=+269 seat0=0.535 non_greedy=0.0% turns=54.5 trunc=4 1082.7s
+[gate_campaign28_gen_0002_honest] DONE A 176W-23L-1T score=0.882 ci95=[0.840,0.925] elo=+350 seat0=0.512 non_greedy=0.0% turns=56.2 trunc=2 1073.9s
+[gate_campaign28_gen_0002] DONE A 165W-29L-6T score=0.840 ci95=[0.794,0.886] elo=+288 seat0=0.535 non_greedy=0.0% turns=54.4 trunc=6 1081.8s
+[gate_campaign28_gen_0003_honest] DONE A 180W-17L-3T score=0.907 ci95=[0.865,0.950] elo=+397 seat0=0.508 non_greedy=0.0% turns=54.7 trunc=3 1011.2s
+[gate_campaign28_gen_0003] DONE A 179W-20L-1T score=0.897 ci95=[0.851,0.944] elo=+377 seat0=0.477 non_greedy=0.0% turns=56.2 trunc=6 1112.8s
+[gate_campaign28_gen_0004_honest] DONE A 182W-13L-5T score=0.922 ci95=[0.886,0.959] elo=+430 seat0=0.502 non_greedy=0.0% turns=55.2 trunc=3 1201.7s
+[gate_campaign28_gen_0004] DONE A 179W-15L-6T score=0.910 ci95=[0.873,0.947] elo=+402 seat0=0.490 non_greedy=0.0% turns=55.8 trunc=6 1037.4s
+[gate_campaign28_gen_0005_honest] DONE A 176W-20L-4T score=0.890 ci95=[0.847,0.933] elo=+363 seat0=0.475 non_greedy=0.0% turns=56.0 trunc=1 3077.4s
+[gate_campaign28_gen_0005] DONE A 172W-26L-2T score=0.865 ci95=[0.819,0.911] elo=+323 seat0=0.495 non_greedy=0.0% turns=55.2 trunc=4 1115.9s
+[gate_campaign28_gen_0006_honest] DONE A 189W-9L-2T score=0.950 ci95=[0.921,0.979] elo=+512 seat0=0.495 non_greedy=0.0% turns=55.0 trunc=3 2844.5s
+[gate_campaign28_gen_0006] DONE A 186W-11L-3T score=0.938 ci95=[0.906,0.969] elo=+470 seat0=0.522 non_greedy=0.0% turns=54.6 trunc=4 1002.0s

@@ -1,0 +1,1400 @@
+"""Recorded-DOM lobby automation for consecutive supervised arena games."""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import re
+import time
+from dataclasses import dataclass
+from enum import Enum
+from html.parser import HTMLParser
+from typing import Any, Awaitable, Callable
+
+from ..config import LobbyConfig
+
+
+LOGGER = logging.getLogger(__name__)
+
+
+class LobbyError(RuntimeError):
+    """The recorded lobby flow no longer matches the live browser."""
+
+
+class LobbyState(str, Enum):
+    """Explicit states for one automatch session."""
+
+    HOMEPAGE = "homepage"
+    SEARCHING = "searching"
+    TABLE_WAITING = "table_waiting"
+    IN_GAME = "in_game"
+    GAME_OVER = "game_over"
+    LEAVING = "leaving"
+
+
+class LobbyControl(str, Enum):
+    """Controls whose selectors were observed in the reference DOMs."""
+
+    START_SEARCH = "start_search"
+    CANCEL_SEARCH = "cancel_search"
+    START_GAME = "start_game"
+    DISMISS_GAME_ENDED = "dismiss_game_ended"
+    LEAVE_TABLE = "leave_table"
+    RECONNECT_LIMIT_RECONNECT = "reconnect_limit_reconnect"
+    RECONNECT_LIMIT_RETURN_TO_LOBBY = "reconnect_limit_return_to_lobby"
+    NEW_TABLE_TAB = "new_table_tab"
+    MY_TABLE_TAB = "my_table_tab"
+    HOST_READY = "host_ready"
+    HOST_LEAVE_TABLE = "host_leave_table"
+
+
+# Evidence: dom-34066.html/4341034.html have the first selector and its
+# searchNow() handler.  dom-530325.html has the recorded table controls.
+START_SEARCH_SELECTOR = (
+    'button.automatch-button[ng-click="$ctrl.automatch.searchNow()"]'
+)
+# Evidence: the recorded search snapshot
+# ``20260724T234502.180252Z-lobby-searching-wait.html`` replaces Start search
+# with this control and gives the automatch root its ``searching`` class.
+CANCEL_SEARCH_SELECTOR = (
+    'button.automatch-button[ng-click="$ctrl.automatch.cancel()"]'
+)
+START_GAME_SELECTOR = (
+    'score-table-buttons button.lobby-button[ng-click="$ctrl.readyClick()"]'
+)
+LEAVE_TABLE_SELECTOR = (
+    'score-table-buttons button.lobby-button[ng-click="$ctrl.leave()"]'
+)
+DISMISS_GAME_ENDED_SELECTOR = (
+    'game-ended-notification modal-window '
+    'button.lobby-button[ng-click="$ctrl.ok()"]'
+)
+# The reconnect-limit prompt is in the main-window ``reconnecting-failed``
+# component.  ``:has(div.timeout)`` identifies its reconnect-count content,
+# keeping its ``$ctrl.decline()`` separate from the in-game undo modal's
+# identically named handler.  Target the inner ``div.modal-window`` rather
+# than the ``<modal-window>`` custom element: the custom element defaults to
+# ``display: inline`` around fixed-position children, so it has an empty box
+# and never reports visible, which hid this modal from the poll loop live.
+RECONNECT_LIMIT_MODAL_SELECTOR = "reconnecting-failed div.modal-window:has(div.timeout)"
+RECONNECT_LIMIT_RECONNECT_SELECTOR = (
+    f'{RECONNECT_LIMIT_MODAL_SELECTOR} '
+    'button.lobby-button[ng-click="$ctrl.reconnect()"]'
+)
+RECONNECT_LIMIT_RETURN_TO_LOBBY_SELECTOR = (
+    f'{RECONNECT_LIMIT_MODAL_SELECTOR} '
+    'button.lobby-button[ng-click="$ctrl.decline()"]'
+)
+# Evidence: exports/arena/20261111T122844.386627Z/
+# dom-20261111T124345.768671Z-idle-stall.html.  A restart reconnected to a
+# game whose opponent had run out of clock: the board's ticker read
+# "Waiting for <opponent> ." and the client showed its own prompt,
+# "Make <opponent> resign?", with this Yes control.  The claim selector is the
+# in-game actuator's ``TIMEOUT_CLAIM_SELECTOR`` scoped to the inner
+# ``div.modal-window`` (see the visibility note above).
+TIMEOUT_REQUEST_TITLE_SELECTOR = (
+    "timeout-request div.modal-window div.timeout-title"
+)
+TIMEOUT_REQUEST_CLAIM_SELECTOR = (
+    'timeout-request div.modal-window '
+    'button.lobby-button[ng-click="$ctrl.click()"]'
+)
+STATUS_TICKER_SELECTOR = "status-bar-ticker"
+_TIMEOUT_TITLE_PATTERN = re.compile(r"make (?P<name>.+) resign\?", re.IGNORECASE)
+_WAITING_FOR_PATTERN = re.compile(
+    r"waiting for (?P<name>.+?)\s*\.?", re.IGNORECASE
+)
+# dom-3978828.html and dom-2848087.html both contain the in-play board,
+# ``game-area``.  dom-530325.html is a table-waiting snapshot with a
+# message-input placeholder and score-table controls but no game-area, so chat
+# alone is not a game signal.
+IN_GAME_SELECTOR = "game-area"
+GAME_CHAT_SELECTOR = 'input[placeholder="message"]'
+TABLE_CONTAINER_SELECTOR = (
+    'score-table, score-table-buttons, input[placeholder="message"]'
+)
+# Evidence: exports/arena/20261111T083535.064408Z/dom-20261111T083708.949962Z-
+# lobby-failure-homepage-start-search-not-found.html is the logged-out page.
+# The client pre-fills the username and password it remembers and shows this
+# submit control; a live probe on 2026-11-11 confirmed one click on it reaches
+# the lobby. The driver only clicks: it never reads or types credentials.
+# While the page is not ready to submit, the control carries
+# ``disabled-button``.
+LOGIN_FORM_SELECTOR = 'form[name="loginForm"]'
+LOGIN_SUBMIT_SELECTOR = f'{LOGIN_FORM_SELECTOR} input.login-button[type="submit"]'
+LOGIN_USERNAME_SELECTOR = f'{LOGIN_FORM_SELECTOR} input[name="username"]'
+LOGIN_PASSWORD_SELECTOR = f'{LOGIN_FORM_SELECTOR} input[name="password"]'
+LOGIN_DISABLED_CLASS = "disabled-button"
+_LOGIN_SETTLE_SECONDS = 2.0
+_LOGIN_RETRY_SECONDS = 15.0
+_LOGIN_MAX_SUBMITS = 3
+_FIELD_HAS_VALUE_SCRIPT = "element => element.value.length > 0"
+# These main-window component tags are always present in the client DOM, even
+# when Angular has rendered only their empty comment shell.  A component is a
+# blocker only when it is visible and has rendered human-visible content.
+MODAL_WINDOW_SELECTOR = "modal-window"
+RECONNECTING_SELECTOR = "reconnecting"
+RECONNECTING_FAILED_SELECTOR = "reconnecting-failed"
+CONNECTING_TO_GAME_SELECTOR = "connecting-to-game"
+LOADING_GAME_SELECTOR = "loading-game"
+
+_HOMEPAGE_TRANSIENT_BLOCKER_SELECTORS = (
+    MODAL_WINDOW_SELECTOR,
+    RECONNECTING_SELECTOR,
+    CONNECTING_TO_GAME_SELECTOR,
+    LOADING_GAME_SELECTOR,
+)
+
+# Evidence: live probe 2026-11-14 (scratch DOM of the hosted-table page).  The
+# lobby tab "New Table" creates the table on click and is relabelled
+# "My Table" while the account owns one.  The hosted table renders inside
+# ``my-table``; its buttons are ``div.lobby-button`` in ``table-buttons``
+# (not the automatch ``score-table-buttons button``).  Card Pool Level is a
+# host-only number input bound to ``$ctrl.cardPool``.
+_LOBBY_TAB_SELECTOR = 'ul.lobby-tabs li.tab[ng-click="lobby.clickTab(tab)"]'
+NEW_TABLE_TAB_SELECTOR = (
+    f'{_LOBBY_TAB_SELECTOR}:has(button.tab-button:text-is("New Table"))'
+)
+MY_TABLE_TAB_SELECTOR = (
+    f'{_LOBBY_TAB_SELECTOR}:has(button.tab-button:text-is("My Table"))'
+)
+MY_TABLE_SELECTOR = "my-table"
+HOST_READY_SELECTOR = (
+    'my-table table-buttons div.lobby-button[ng-click="$ctrl.readyClick()"]'
+)
+HOST_LEAVE_TABLE_SELECTOR = (
+    'my-table table-buttons div.lobby-button[ng-click="$ctrl.leave()"]'
+)
+HOST_CARD_POOL_INPUT_SELECTOR = (
+    'my-table input.numeric-button[ng-model="$ctrl.cardPool"]'
+)
+# Spectators render as ``table-person-line`` too; only ``is-spec="false"``
+# lines are seated players.  A live smoke run on 2026-11-14 counted every line,
+# readied with one seated player, and the server started a solo game.
+HOST_PLAYER_LINE_SELECTOR = (
+    'my-table participant-list table-person-line[is-spec="false"]'
+)
+HOST_PLAYERS_TITLE_SELECTOR = "my-table participant-list div.fieldset-title"
+HOST_SELF_READY_SELECTOR = (
+    'my-table participant-list table-person-line[is-spec="false"]'
+    ":has(.table-host-indicator) .table-ready-indicator.active"
+)
+_PLAYERS_TITLE_PATTERN = re.compile(r"Players \((?P<seated>\d+)/(?P<seats>\d+)\)")
+_HOST_PLAYERS_NEEDED = 2
+_HOST_HOMEPAGE_RETRY_SECONDS = 60.0
+_HOST_HOMEPAGE_MAX_RETRIES = 3
+
+_RETURN_TO_HOMEPAGE = object()
+
+@dataclass(frozen=True, kw_only=True)
+class _ControlSpec:
+    selector: str
+    label: str
+    handler: str
+    required_class: str
+    ancestor_tag: str | None = None
+    requires_timeout_descendant: bool = False
+
+
+_CONTROL_SPECS = {
+    LobbyControl.START_SEARCH: _ControlSpec(
+        selector=START_SEARCH_SELECTOR,
+        label="Start search",
+        handler="$ctrl.automatch.searchNow()",
+        required_class="automatch-button",
+    ),
+    LobbyControl.CANCEL_SEARCH: _ControlSpec(
+        selector=CANCEL_SEARCH_SELECTOR,
+        label="Cancel search",
+        handler="$ctrl.automatch.cancel()",
+        required_class="automatch-button",
+    ),
+    # The client labels this button "Ready".  It is the only recorded
+    # table-start control, so the FSM calls it the semantic Start game step.
+    LobbyControl.START_GAME: _ControlSpec(
+        selector=START_GAME_SELECTOR,
+        label="Ready",
+        handler="$ctrl.readyClick()",
+        required_class="lobby-button",
+        ancestor_tag="score-table-buttons",
+    ),
+    # Evidence: dom-4326014.html has this button inside the blocking
+    # game-ended-notification modal, with the observed $ctrl.ok() handler.
+    LobbyControl.DISMISS_GAME_ENDED: _ControlSpec(
+        selector=DISMISS_GAME_ENDED_SELECTOR,
+        label="Ok",
+        handler="$ctrl.ok()",
+        required_class="lobby-button",
+        ancestor_tag="game-ended-notification",
+    ),
+    LobbyControl.LEAVE_TABLE: _ControlSpec(
+        selector=LEAVE_TABLE_SELECTOR,
+        label="Leave Table",
+        handler="$ctrl.leave()",
+        required_class="lobby-button",
+        ancestor_tag="score-table-buttons",
+    ),
+    LobbyControl.RECONNECT_LIMIT_RECONNECT: _ControlSpec(
+        selector=RECONNECT_LIMIT_RECONNECT_SELECTOR,
+        label="Reconnect again",
+        handler="$ctrl.reconnect()",
+        required_class="lobby-button",
+        ancestor_tag="reconnecting-failed",
+        requires_timeout_descendant=True,
+    ),
+    LobbyControl.RECONNECT_LIMIT_RETURN_TO_LOBBY: _ControlSpec(
+        selector=RECONNECT_LIMIT_RETURN_TO_LOBBY_SELECTOR,
+        label="Return to lobby",
+        handler="$ctrl.decline()",
+        required_class="lobby-button",
+        ancestor_tag="reconnecting-failed",
+        requires_timeout_descendant=True,
+    ),
+    LobbyControl.NEW_TABLE_TAB: _ControlSpec(
+        selector=NEW_TABLE_TAB_SELECTOR,
+        label="New Table",
+        handler="lobby.clickTab(tab)",
+        required_class="tab",
+    ),
+    LobbyControl.MY_TABLE_TAB: _ControlSpec(
+        selector=MY_TABLE_TAB_SELECTOR,
+        label="My Table",
+        handler="lobby.clickTab(tab)",
+        required_class="tab",
+    ),
+    LobbyControl.HOST_READY: _ControlSpec(
+        selector=HOST_READY_SELECTOR,
+        label="Ready",
+        handler="$ctrl.readyClick()",
+        required_class="lobby-button",
+        ancestor_tag="table-buttons",
+    ),
+    LobbyControl.HOST_LEAVE_TABLE: _ControlSpec(
+        selector=HOST_LEAVE_TABLE_SELECTOR,
+        label="Leave Table",
+        handler="$ctrl.leave()",
+        required_class="lobby-button",
+        ancestor_tag="table-buttons",
+    ),
+}
+
+
+class LobbyFSM:
+    """Drive only controls and state signals seen in the reference capture.
+
+    Automatch enters ``game-area`` directly; its apparent Start game modal is
+    an in-feed game decision handled by the game loop. The recorded hosted-table
+    ``Ready`` control remains supported for the separate table-waiting flow.
+    Every missing-control failure leaves a DOM snapshot when supplied.
+    """
+
+    def __init__(
+        self,
+        page: Any,
+        config: LobbyConfig,
+        *,
+        sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+        clock: Callable[[], float] = time.monotonic,
+        poll_seconds: float = 0.25,
+        snapshot_dom: Callable[[str], Awaitable[Any]] | None = None,
+        keepalive: Callable[[], None] | None = None,
+    ) -> None:
+        if poll_seconds <= 0:
+            raise ValueError("lobby poll interval must be positive")
+        self.page = page
+        self.config = config
+        self.sleep = sleep
+        self.clock = clock
+        self.poll_seconds = poll_seconds
+        self.snapshot_dom = snapshot_dom
+        self.keepalive = keepalive
+        self.state = LobbyState.HOMEPAGE
+        self._login_seen_at: float | None = None
+        self._login_submitted_at: float | None = None
+        self._login_submits = 0
+        self._login_needs_operator_logged = False
+
+    @property
+    def max_games_per_session(self) -> int:
+        """Return zero for an unlimited Ctrl-C-bounded session."""
+        return self.config.max_games_per_session
+
+    def reached_game_limit(self, completed_games: int) -> bool:
+        """Whether normal completion should stop instead of requeueing."""
+        limit = self.max_games_per_session
+        return limit != 0 and completed_games >= limit
+
+    async def queue_next_game(self) -> bool:
+        """Search and start the next table; True if a retained board resumed."""
+        LOGGER.info("lobby requeue requested at %.3f", self.clock())
+        if self.hosting:
+            return await self.host_table_and_wait()
+        return await self.start_or_resume_game()
+
+    @property
+    def hosting(self) -> bool:
+        """Whether this session hosts its own table instead of automatching."""
+        return self.config.mode == "host"
+
+    async def host_table_and_wait(self) -> bool:
+        """Open a My Table, wait for one joiner, Ready up; True if resumed.
+
+        The table is created by the New Table tab itself.  The FSM only clicks
+        Ready while exactly two players are seated and its own ready light is
+        off, because the client's Ready is a toggle.
+        """
+        self._require_state(LobbyState.HOMEPAGE)
+        homepage_failures = 0
+        while True:
+            try:
+                entry = await self._wait_for_homepage_start_search_or_game()
+            except LobbyError as error:
+                # A hosting session runs indefinitely, so a homepage that never
+                # rendered is retried in place instead of exiting the process.
+                # A logged-out page whose Login stays disabled does not recover
+                # by reloading (live 2026-11-15); after a few tries, exit so the
+                # supervisor relaunches a fresh browser.
+                homepage_failures += 1
+                if homepage_failures >= _HOST_HOMEPAGE_MAX_RETRIES:
+                    raise
+                LOGGER.warning("host: %s; retrying in %.0fs", error, _HOST_HOMEPAGE_RETRY_SECONDS)
+                if self.keepalive is not None:
+                    self.keepalive()
+                await self.sleep(_HOST_HOMEPAGE_RETRY_SECONDS)
+                self._login_seen_at = None
+                self._login_submitted_at = None
+                self._login_submits = 0
+                try:
+                    await self._reload_homepage("host homepage retry")
+                except LobbyError as reload_error:
+                    LOGGER.warning("host: %s", reload_error)
+                continue
+            if entry is None:
+                LOGGER.info("host: retained in-play board at %.3f", self.clock())
+                self._transition(LobbyState.IN_GAME)
+                return True
+            if await self._selector_count(MY_TABLE_SELECTOR) == 0:
+                tab = await self._control_if_present(LobbyControl.MY_TABLE_TAB)
+                control = LobbyControl.MY_TABLE_TAB
+                if tab is None:
+                    tab = await self._control_if_present(LobbyControl.NEW_TABLE_TAB)
+                    control = LobbyControl.NEW_TABLE_TAB
+                if tab is None:
+                    await self._snapshot_failure("host-no-table-tab")
+                    raise self._error("neither the New Table nor My Table tab exists")
+                await self._click(tab, control)
+            await self._wait_for_control(
+                LobbyControl.HOST_READY,
+                state=LobbyState.TABLE_WAITING,
+            )
+            await self._ensure_card_pool_level()
+            self._transition(LobbyState.TABLE_WAITING)
+            outcome = await self._wait_for_joiner_and_start()
+            if outcome is _RETURN_TO_HOMEPAGE:
+                self._transition(LobbyState.HOMEPAGE)
+                continue
+            self._transition(LobbyState.IN_GAME)
+            return False
+
+    async def _board_appears_within(self, seconds: float) -> bool:
+        deadline = self.clock() + seconds
+        while self.clock() < deadline:
+            if await self._in_game_board_is_present():
+                return True
+            if await self._selector_count(MY_TABLE_SELECTOR) > 0:
+                return False
+            await self._sleep_poll()
+        return False
+
+    async def _seated_players(self) -> int:
+        """Seated players, or 0 unless the line count and title agree.
+
+        Readying with an open seat lets the server start a solo game, so both
+        the non-spectator lines and the "Players (n/2)" title must say the
+        table is full before this reports two.
+        """
+        lines = await self._selector_count(HOST_PLAYER_LINE_SELECTOR)
+        titles = await self._visible_selector_texts(HOST_PLAYERS_TITLE_SELECTOR)
+        match = (
+            _PLAYERS_TITLE_PATTERN.fullmatch(titles[0]) if len(titles) == 1 else None
+        )
+        if match is None:
+            return 0
+        if int(match["seats"]) != _HOST_PLAYERS_NEEDED:
+            return 0
+        return min(lines, int(match["seated"]))
+
+    async def _ensure_card_pool_level(self) -> None:
+        """Set and verify the hosted table's Card Pool Level."""
+        want = str(self.config.host_card_pool_level)
+        field = self.page.locator(HOST_CARD_POOL_INPUT_SELECTOR)
+        try:
+            if await field.count() != 1:
+                raise self._error(
+                    f"card pool input ({HOST_CARD_POOL_INPUT_SELECTOR}) "
+                    "was not unique"
+                )
+            current = await field.input_value()
+            if current != want:
+                LOGGER.warning("host: card pool level %s -> %s", current, want)
+                await field.fill(want)
+                await field.dispatch_event("change")
+            deadline = self.clock() + self.config.table_waiting_timeout_seconds
+            while (current := await field.input_value()) != want:
+                if self.clock() >= deadline:
+                    await self._snapshot_failure("host-card-pool-level")
+                    raise self._error(
+                        f"card pool level stayed {current!r}, wanted {want}"
+                    )
+                await self._sleep_poll()
+        except LobbyError:
+            raise
+        except Exception as error:
+            raise self._error(f"could not set card pool level: {error}") from error
+        LOGGER.warning("host: table open at card pool level %s", want)
+
+    async def _wait_for_joiner_and_start(self) -> object | None:
+        """Poll the hosted table until play starts; None means in game."""
+        await self._snapshot_waiting(LobbyState.TABLE_WAITING)
+        timeout = self.config.host_wait_timeout_seconds
+        deadline = None if timeout == 0 else self.clock() + timeout
+        last_players = -1
+        while True:
+            if self.keepalive is not None:
+                self.keepalive()
+            if await self._resolve_blocking_modal_if_present():
+                if self.config.reconnect_limit_policy == "return_to_lobby":
+                    return _RETURN_TO_HOMEPAGE
+                continue
+            if await self._in_game_board_is_present():
+                LOGGER.warning("host: game started at %.3f", self.clock())
+                return None
+            if await self._selector_count(MY_TABLE_SELECTOR) == 0:
+                # The table page unmounts a moment before game-area renders
+                # (live 2026-11-14), so give the board a chance first.
+                if await self._board_appears_within(
+                    self.config.table_waiting_timeout_seconds
+                ):
+                    LOGGER.warning("host: game started at %.3f", self.clock())
+                    return None
+                LOGGER.warning("host: the table page disappeared; reopening")
+                return _RETURN_TO_HOMEPAGE
+            players = await self._seated_players()
+            if players != last_players:
+                LOGGER.warning("host: %d/%d players seated", players, _HOST_PLAYERS_NEEDED)
+                last_players = players
+            if (
+                players == _HOST_PLAYERS_NEEDED
+                and await self._selector_count(HOST_SELF_READY_SELECTOR) == 0
+            ):
+                ready = await self._control_if_present(LobbyControl.HOST_READY)
+                if ready is not None:
+                    classes = (await ready.get_attribute("class") or "").split()
+                    if "disabled-button" not in classes:
+                        LOGGER.warning("host: table full; clicking Ready")
+                        await self._click(ready, LobbyControl.HOST_READY)
+                        # Let the ready light catch up before re-checking.
+                        await self.sleep(1.0)
+                        continue
+            if deadline is not None and self.clock() >= deadline:
+                await self._snapshot_failure("host-no-joiner")
+                raise self._error(
+                    f"nobody joined the hosted table within {timeout:.0f}s"
+                )
+            await self._sleep_poll()
+
+    async def start_or_resume_game(self) -> bool:
+        """Poll startup controls until automatch starts or a board resumes.
+
+        A reconnect-limit modal can render after the initial page load, so the
+        homepage, board, and modal signals deliberately share one deadline and
+        are all reconsidered after every poll.
+        """
+        self._require_state(LobbyState.HOMEPAGE)
+        fruitless_attempts = 0
+        total_search_without_match_seconds = 0.0
+        engagement_retry_available = True
+        while True:
+            start_search = await self._wait_for_homepage_start_search_or_game()
+            if start_search is None:
+                LOGGER.info(
+                    "lobby match found: retained in-play board at %.3f",
+                    self.clock(),
+                )
+                self._transition(LobbyState.IN_GAME)
+                return True
+            attempt_started_at = self.clock()
+            LOGGER.info(
+                "lobby start-search attempt %s at %.3f",
+                fruitless_attempts + 1,
+                attempt_started_at,
+            )
+            await self._click(start_search, LobbyControl.START_SEARCH)
+            self._transition(LobbyState.SEARCHING)
+
+            if not await self._wait_for_search_engagement():
+                elapsed_seconds = self.clock() - attempt_started_at
+                LOGGER.critical(
+                    "lobby Start search did not engage after %.1fs; the "
+                    "recorded Cancel search control and Start search "
+                    "disappearance were both absent",
+                    elapsed_seconds,
+                )
+                await self._snapshot_failure("searching-not-engaged")
+                (
+                    fruitless_attempts,
+                    total_search_without_match_seconds,
+                ) = await self._record_fruitless_search_attempt(
+                    fruitless_attempts=fruitless_attempts,
+                    total_search_without_match_seconds=(
+                        total_search_without_match_seconds
+                    ),
+                    elapsed_seconds=elapsed_seconds,
+                    reason="Start search did not engage",
+                )
+                self._transition(LobbyState.HOMEPAGE)
+                if engagement_retry_available:
+                    LOGGER.warning(
+                        "retrying Start search once after the unengaged click"
+                    )
+                    engagement_retry_available = False
+                continue
+
+            engagement_retry_available = True
+
+            match = await self._wait_for_match()
+            if match == "homepage":
+                self._transition(LobbyState.HOMEPAGE)
+                continue
+            if match == "no-match":
+                elapsed_seconds = self.clock() - attempt_started_at
+                await self._cancel_search_before_retry()
+                (
+                    fruitless_attempts,
+                    total_search_without_match_seconds,
+                ) = await self._record_fruitless_search_attempt(
+                    fruitless_attempts=fruitless_attempts,
+                    total_search_without_match_seconds=(
+                        total_search_without_match_seconds
+                    ),
+                    elapsed_seconds=elapsed_seconds,
+                    reason="no match appeared",
+                )
+                self._transition(LobbyState.HOMEPAGE)
+                continue
+            if match == "in-game":
+                LOGGER.info(
+                    "lobby match found: in-play board at %.3f",
+                    self.clock(),
+                )
+                self._transition(LobbyState.IN_GAME)
+                return False
+
+            LOGGER.info(
+                "lobby match found: table waiting at %.3f",
+                self.clock(),
+            )
+            self._transition(LobbyState.TABLE_WAITING)
+            start_game = await self._wait_for_table_start_or_game()
+            if start_game is _RETURN_TO_HOMEPAGE:
+                self._transition(LobbyState.HOMEPAGE)
+                continue
+            if start_game is None:
+                LOGGER.info(
+                    "lobby match found: table entered play at %.3f",
+                    self.clock(),
+                )
+                self._transition(LobbyState.IN_GAME)
+                return False
+            await self._click(start_game, LobbyControl.START_GAME)
+            self._transition(LobbyState.IN_GAME)
+            return False
+
+    async def _record_fruitless_search_attempt(
+        self,
+        *,
+        fruitless_attempts: int,
+        total_search_without_match_seconds: float,
+        elapsed_seconds: float,
+        reason: str,
+    ) -> tuple[int, float]:
+        """Log one failed search and fail closed at the configured session bound."""
+        attempts = fruitless_attempts + 1
+        total_seconds = total_search_without_match_seconds + max(
+            0.0,
+            elapsed_seconds,
+        )
+        LOGGER.warning(
+            "lobby fruitless search attempt %s: %s after %.1fs "
+            "(cumulative search-without-match %.1fs)",
+            attempts,
+            reason,
+            elapsed_seconds,
+            total_seconds,
+        )
+        attempt_limit = self.config.max_fruitless_search_attempts
+        time_limit = self.config.search_without_match_budget_seconds
+        if attempts < attempt_limit and total_seconds < time_limit:
+            return attempts, total_seconds
+
+        await self._snapshot_failure("searching-fruitless-escalation")
+        reasons: list[str] = []
+        if attempts >= attempt_limit:
+            reasons.append(f"{attempts} fruitless attempts (limit {attempt_limit})")
+        if total_seconds >= time_limit:
+            reasons.append(
+                "%.1fs searching without a match (budget %.1fs)"
+                % (total_seconds, time_limit)
+            )
+        detail = " and ".join(reasons)
+        LOGGER.critical(
+            "lobby search escalation after %s; requesting a fresh browser",
+            detail,
+        )
+        error_detail = (
+            "search produced no match after "
+            + detail
+            + "; last failure: "
+            + reason
+        )
+        raise self._error(error_detail)
+
+    async def _wait_for_search_engagement(self) -> bool:
+        """Confirm the recorded client-side state change after Start search.
+
+        The client swaps Start search for Cancel search while its automatch
+        root gets the ``searching`` class.  The latter has no stable click
+        target, so the recorded Cancel search control is preferred; Start
+        search disappearing is the corroborating fallback seen in the saved
+        snapshots when the match/table has rendered immediately.
+        """
+        deadline = self.clock() + self.config.search_engagement_timeout_seconds
+        while True:
+            if await self._control_if_present(LobbyControl.CANCEL_SEARCH) is not None:
+                LOGGER.info(
+                    "lobby search engagement confirmed by Cancel search at %.3f",
+                    self.clock(),
+                )
+                return True
+            if await self._control_if_present(LobbyControl.START_SEARCH) is None:
+                LOGGER.info(
+                    "lobby search engagement confirmed by Start search "
+                    "disappearing at %.3f",
+                    self.clock(),
+                )
+                return True
+            if self.clock() >= deadline:
+                return False
+            await self._sleep_poll()
+
+    async def _cancel_search_before_retry(self) -> None:
+        """Return a timed-out real search to the observed Start search state."""
+        cancel_search = await self._control_if_present(LobbyControl.CANCEL_SEARCH)
+        if cancel_search is None:
+            return
+        LOGGER.warning(
+            "lobby search attempt timed out; cancelling the recorded search "
+            "before requeueing"
+        )
+        await self._click(cancel_search, LobbyControl.CANCEL_SEARCH)
+        timeout_seconds = self.config.search_engagement_timeout_seconds
+        deadline = self.clock() + timeout_seconds
+        while True:
+            if await self._in_game_board_is_present():
+                return
+            if await self._control_if_present(LobbyControl.START_SEARCH) is not None:
+                return
+            if self.clock() >= deadline:
+                await self._snapshot_failure("searching-cancel-not-confirmed")
+                raise self._error(
+                    "Cancel search did not restore the recorded Start search "
+                    f"control after {timeout_seconds:.1f}s"
+                )
+            await self._sleep_poll()
+
+    async def resolve_startup_blocking_modal(self) -> bool:
+        """Handle one known startup modal or report an unknown blocker."""
+        self._require_state(LobbyState.HOMEPAGE)
+        return await self._resolve_blocking_modal_if_present()
+
+    async def _resolve_blocking_modal_if_present(self) -> bool:
+        """Handle a visible modal while any lobby state is polling."""
+        if await self._visible_selector_has_content(RECONNECT_LIMIT_MODAL_SELECTOR):
+            control = (
+                LobbyControl.RECONNECT_LIMIT_RETURN_TO_LOBBY
+                if self.config.reconnect_limit_policy == "return_to_lobby"
+                else LobbyControl.RECONNECT_LIMIT_RECONNECT
+            )
+            locator = await self._control_if_present(control)
+            if locator is None:
+                raise self._error(
+                    "reconnect-limit modal was visible but its recorded "
+                    f"{self._control_description(control)} was not actionable"
+                )
+            LOGGER.warning(
+                "startup reconnect-limit modal: selecting %s",
+                _CONTROL_SPECS[control].label,
+            )
+            await self._click(locator, control)
+            await self._wait_for_control_to_be_gone(
+                control,
+                timeout_seconds=self.config.game_ended_dialog_timeout_seconds,
+            )
+            return True
+
+        modal_texts = await self._visible_selector_texts(MODAL_WINDOW_SELECTOR)
+        if modal_texts:
+            await self._snapshot_failure("startup-unknown-modal")
+            quoted = ", ".join(repr(text) for text in modal_texts)
+            raise self._error(
+                f"unrecognized blocking startup modal with visible text {quoted}"
+            )
+        return False
+
+    async def resume_running_game_if_present(self) -> bool:
+        """Enter the game loop when a reconnect retained an in-play board."""
+        self._require_state(LobbyState.HOMEPAGE)
+        if not await self._in_game_board_is_present():
+            return False
+        LOGGER.warning(
+            "startup found an in-progress game board; waiting for its "
+            "authoritative FullState instead of starting automatch"
+        )
+        self._transition(LobbyState.IN_GAME)
+        return True
+
+    async def recover_resumed_game_and_queue_next(self) -> None:
+        """Leave a resumed game that never seeded a safe tracker state."""
+        self._require_state(LobbyState.IN_GAME)
+        LOGGER.critical(
+            "RESUME RECOVERY: authoritative game state was unavailable or "
+            "rejected; archiving the DOM and leaving the table before requeue"
+        )
+        await self._snapshot_dom("lobby-resume-recovery")
+        if await self._claim_opponent_timeout_if_offered():
+            # The claim ends the game on the server; give its game-ended
+            # notification the full game-over allowance before leaving.
+            await self._wait_for_optional_control(
+                LobbyControl.DISMISS_GAME_ENDED,
+                timeout_seconds=self._timeout_for(LobbyState.GAME_OVER),
+            )
+        # The recorded table exit is the safe path after a terminal game.  A
+        # reconnect that cannot produce a trustworthy FullState is deliberately
+        # abandoned rather than played from an unknown local state.
+        self._transition(LobbyState.GAME_OVER)
+        await self.leave_after_game(requeue=True)
+
+    async def _claim_opponent_timeout_if_offered(self) -> bool:
+        """Answer Yes to the client's prompt to end a timed-out opponent's game.
+
+        A reconnect into a game that is waiting on an opponent whose clock has
+        run out sends no FullState and no further events, and the table has no
+        leave control while the game is live, so the prompt is the only way
+        out.  The click is made only when the prompt names exactly the player
+        the board's own ticker says it is waiting for, which can never be the
+        local player.
+        """
+        titles = await self._visible_selector_texts(TIMEOUT_REQUEST_TITLE_SELECTOR)
+        if not titles:
+            return False
+        tickers = await self._visible_selector_texts(STATUS_TICKER_SELECTOR)
+        named = _TIMEOUT_TITLE_PATTERN.fullmatch(titles[0])
+        waiting = (
+            _WAITING_FOR_PATTERN.fullmatch(tickers[0]) if len(tickers) == 1 else None
+        )
+        if (
+            len(titles) != 1
+            or named is None
+            or waiting is None
+            or named["name"].casefold() != waiting["name"].casefold()
+        ):
+            LOGGER.error(
+                "TIMEOUT CLAIM SKIPPED: prompt %r does not name the one player "
+                "the board is waiting for (ticker %r)",
+                titles,
+                tickers,
+            )
+            return False
+        count = await self._selector_count(TIMEOUT_REQUEST_CLAIM_SELECTOR)
+        if count != 1:
+            LOGGER.error(
+                "TIMEOUT CLAIM SKIPPED: %s matched %d controls",
+                TIMEOUT_REQUEST_CLAIM_SELECTOR,
+                count,
+            )
+            return False
+        LOGGER.warning(
+            "RESUME RECOVERY: the board is waiting for a timed-out opponent; "
+            "answering Yes to the client's prompt %r",
+            titles[0],
+        )
+        try:
+            await self.page.locator(TIMEOUT_REQUEST_CLAIM_SELECTOR).click()
+        except Exception as error:
+            raise self._error(
+                "could not click the recorded timeout-claim control "
+                f"({TIMEOUT_REQUEST_CLAIM_SELECTOR}): {error}"
+            ) from error
+        return True
+
+    def game_ended(self) -> None:
+        """Advance on the decoded ``GameEnd`` feed event."""
+        self._require_state(LobbyState.IN_GAME)
+        self._transition(LobbyState.GAME_OVER)
+
+    async def leave_after_game(self, *, requeue: bool) -> None:
+        """Leave the completed table and optionally start the next search."""
+        self._require_state(LobbyState.GAME_OVER)
+        dismiss_game_ended = await self._wait_for_optional_control(
+            LobbyControl.DISMISS_GAME_ENDED,
+            timeout_seconds=self.config.game_ended_dialog_timeout_seconds,
+        )
+        if dismiss_game_ended is None:
+            leave_table, leave_control = await self._leave_control_if_present()
+            if leave_table is None:
+                spec = _CONTROL_SPECS[LobbyControl.LEAVE_TABLE]
+                raise self._error(
+                    "the game-ended notification was absent after "
+                    f"{self.config.game_ended_dialog_timeout_seconds:.1f}s and "
+                    f"{spec.label!r} ({spec.selector}) was not actionable"
+                )
+            LOGGER.warning(
+                "game-ended notification was absent after %.1fs; recorded "
+                "Leave Table control is actionable, proceeding",
+                self.config.game_ended_dialog_timeout_seconds,
+            )
+        else:
+            await self._click(
+                dismiss_game_ended,
+                LobbyControl.DISMISS_GAME_ENDED,
+            )
+            await self._wait_for_control_to_be_gone(
+                LobbyControl.DISMISS_GAME_ENDED,
+                timeout_seconds=self.config.game_ended_dialog_timeout_seconds,
+            )
+            leave_table, leave_control = await self._wait_for_leave_control()
+        self._transition(LobbyState.LEAVING)
+        await self._click(leave_table, leave_control)
+        if self.hosting:
+            await self._wait_for_host_homepage()
+        else:
+            await self._wait_for_control(
+                LobbyControl.START_SEARCH,
+                state=LobbyState.LEAVING,
+            )
+        self._transition(LobbyState.HOMEPAGE)
+        if requeue:
+            await self.queue_next_game()
+
+    async def _leave_control_if_present(self) -> tuple[Any | None, LobbyControl]:
+        """The post-game Leave Table: automatch score table or hosted table."""
+        for control in (LobbyControl.LEAVE_TABLE, LobbyControl.HOST_LEAVE_TABLE):
+            locator = await self._control_if_present(control)
+            if locator is not None:
+                return locator, control
+        return None, LobbyControl.LEAVE_TABLE
+
+    async def _wait_for_leave_control(self) -> tuple[Any, LobbyControl]:
+        deadline = self.clock() + self._timeout_for(LobbyState.GAME_OVER)
+        while True:
+            if await self._resolve_blocking_modal_if_present():
+                continue
+            locator, control = await self._leave_control_if_present()
+            if locator is not None:
+                return locator, control
+            if self.clock() >= deadline:
+                await self._snapshot_failure("game_over-leave_table-not-found")
+                raise self._timeout_error(
+                    LobbyState.GAME_OVER,
+                    f"{LEAVE_TABLE_SELECTOR} or {HOST_LEAVE_TABLE_SELECTOR}",
+                )
+            await self._sleep_poll()
+
+    async def _wait_for_host_homepage(self) -> None:
+        """After leaving, wait for the lobby's New Table tab to come back."""
+        deadline = self.clock() + self._timeout_for(LobbyState.LEAVING)
+        while True:
+            if await self._resolve_blocking_modal_if_present():
+                continue
+            if await self._control_if_present(LobbyControl.NEW_TABLE_TAB) is not None:
+                return
+            if self.clock() >= deadline:
+                await self._snapshot_failure("leaving-new_table-not-found")
+                raise self._timeout_error(
+                    LobbyState.LEAVING,
+                    self._control_description(LobbyControl.NEW_TABLE_TAB),
+                )
+            await self._sleep_poll()
+
+    async def _wait_for_match(self) -> str:
+        """Wait for a table start control or an actual in-play board."""
+        await self._snapshot_waiting(LobbyState.SEARCHING)
+        deadline = self.clock() + self._timeout_for(LobbyState.SEARCHING)
+        while True:
+            if await self._resolve_blocking_modal_if_present():
+                if self.config.reconnect_limit_policy == "return_to_lobby":
+                    return "homepage"
+                continue
+            # Automatch lands directly in the game. Prefer that authoritative
+            # board signal over any stale score-table controls.
+            if await self._in_game_board_is_present():
+                return "in-game"
+            start_game = await self._control_if_present(LobbyControl.START_GAME)
+            if start_game is not None:
+                return "table"
+            if await self._selector_count(TABLE_CONTAINER_SELECTOR) > 0:
+                # A table has definitely landed, but its start control may be
+                # rendering asynchronously, or automatch may be about to render
+                # game-area. Apply the table-specific timeout to both signals.
+                return "table"
+            if self.clock() >= deadline:
+                return "no-match"
+            await self._sleep_poll()
+
+    async def _wait_for_table_start_or_game(self) -> Any | None:
+        """Return hosted-table Ready, or ``None`` when automatch enters play."""
+        await self._snapshot_waiting(LobbyState.TABLE_WAITING)
+        deadline = self.clock() + self._timeout_for(LobbyState.TABLE_WAITING)
+        while True:
+            if await self._resolve_blocking_modal_if_present():
+                if self.config.reconnect_limit_policy == "return_to_lobby":
+                    return _RETURN_TO_HOMEPAGE
+                continue
+            if await self._in_game_board_is_present():
+                return None
+            locator = await self._control_if_present(LobbyControl.START_GAME)
+            if locator is not None:
+                return locator
+            if self.clock() >= deadline:
+                await self._snapshot_failure(
+                    "table_waiting-start_game-not-found"
+                )
+                raise self._timeout_error(
+                    LobbyState.TABLE_WAITING,
+                    self._control_description(LobbyControl.START_GAME)
+                    + f" or an in-play board ({IN_GAME_SELECTOR})",
+                )
+            await self._sleep_poll()
+
+    async def _wait_for_control(
+        self,
+        control: LobbyControl,
+        *,
+        state: LobbyState,
+    ) -> Any:
+        await self._snapshot_waiting(state)
+        deadline = self.clock() + self._timeout_for(state)
+        while True:
+            if await self._resolve_blocking_modal_if_present():
+                continue
+            locator = await self._control_if_present(control)
+            if locator is not None:
+                return locator
+            if self.clock() >= deadline:
+                await self._snapshot_failure(
+                    f"{state.value}-{control.value}-not-found"
+                )
+                raise self._timeout_error(state, self._control_description(control))
+            await self._sleep_poll()
+
+    async def _wait_for_homepage_start_search_or_game(self) -> Any | None:
+        """Poll the startup modal, board, and homepage before one reload.
+
+        The client retains empty ``reconnecting`` and ``loading-game`` custom
+        elements in a healthy DOM.  Their presence alone must never suppress
+        the bounded reload; only visible, rendered content is a blocker.
+        """
+        timeout_seconds = self._timeout_for(LobbyState.HOMEPAGE)
+        started_at = self.clock()
+        retry_at = started_at + timeout_seconds / 2
+        deadline = started_at + timeout_seconds
+        reloaded = False
+
+        while True:
+            if await self._resolve_blocking_modal_if_present():
+                continue
+            if await self._in_game_board_is_present():
+                return None
+            locator = await self._homepage_ready_control()
+            if locator is not None:
+                return locator
+            if await self._submit_remembered_login_if_ready():
+                continue
+
+            reloaded_now = False
+            if (
+                not reloaded
+                and await self._visible_selector_has_content(
+                    RECONNECTING_FAILED_SELECTOR
+                )
+            ):
+                await self._reload_homepage("reconnecting failed")
+                reloaded = True
+                reloaded_now = True
+            elif (
+                not reloaded
+                and self.clock() >= retry_at
+                and not await self._homepage_has_active_blocker()
+            ):
+                await self._reload_homepage(
+                    f"Start search was absent after {timeout_seconds / 2:.1f}s"
+                )
+                reloaded = True
+                reloaded_now = True
+
+            if self.clock() >= deadline:
+                await self._snapshot_failure("homepage-start_search-not-found")
+                raise self._timeout_error(
+                    LobbyState.HOMEPAGE,
+                    self._control_description(LobbyControl.START_SEARCH),
+                )
+            if reloaded_now:
+                continue
+            await self._sleep_poll()
+
+    async def _homepage_ready_control(self) -> Any | None:
+        """Start search for automatch; a table tab (or open table) for host."""
+        if not self.hosting:
+            return await self._control_if_present(LobbyControl.START_SEARCH)
+        if await self._selector_count(MY_TABLE_SELECTOR) > 0:
+            return self.page.locator(MY_TABLE_SELECTOR)
+        for control in (LobbyControl.MY_TABLE_TAB, LobbyControl.NEW_TABLE_TAB):
+            locator = await self._control_if_present(control)
+            if locator is not None:
+                return locator
+        return None
+
+    async def _submit_remembered_login_if_ready(self) -> bool:
+        """Click Login when the logged-out page shows its pre-filled form.
+
+        The saved browser session expires; the client then shows the login
+        form with the credentials it remembers. Nothing is typed here: with an
+        empty field the page is left for the operator and the homepage wait
+        times out as before.
+        """
+        if await self._selector_count(LOGIN_SUBMIT_SELECTOR) != 1:
+            self._login_seen_at = None
+            return False
+        now = self.clock()
+        if self._login_seen_at is None:
+            self._login_seen_at = now
+        if (
+            self._login_submits >= _LOGIN_MAX_SUBMITS
+            or now < self._login_seen_at + _LOGIN_SETTLE_SECONDS
+            or (
+                self._login_submitted_at is not None
+                and now < self._login_submitted_at + _LOGIN_RETRY_SECONDS
+            )
+        ):
+            return False
+        submit = self.page.locator(LOGIN_SUBMIT_SELECTOR)
+        try:
+            if not await submit.is_visible():
+                return False
+            classes = (await submit.get_attribute("class") or "").split()
+            fields_filled = [
+                bool(await self.page.locator(selector).evaluate(_FIELD_HAS_VALUE_SCRIPT))
+                for selector in (LOGIN_USERNAME_SELECTOR, LOGIN_PASSWORD_SELECTOR)
+            ]
+        except Exception as error:
+            raise self._error(f"could not inspect the login form: {error}") from error
+        if LOGIN_DISABLED_CLASS in classes:
+            return False
+        if not all(fields_filled):
+            if not self._login_needs_operator_logged:
+                LOGGER.warning(
+                    "login page has no remembered credentials; it needs the "
+                    "operator to log in by hand"
+                )
+                self._login_needs_operator_logged = True
+            return False
+        self._login_submits += 1
+        self._login_submitted_at = now
+        LOGGER.warning(
+            "logged out: clicking Login with the client's remembered "
+            "credentials (attempt %d of %d)",
+            self._login_submits,
+            _LOGIN_MAX_SUBMITS,
+        )
+        try:
+            await submit.click()
+        except Exception as error:
+            raise self._error(
+                f"could not click Login ({LOGIN_SUBMIT_SELECTOR}): {error}"
+            ) from error
+        return True
+
+    async def _homepage_has_active_blocker(self) -> bool:
+        """Whether a visible modal or main-window recovery state is active."""
+        for selector in _HOMEPAGE_TRANSIENT_BLOCKER_SELECTORS:
+            if await self._visible_selector_has_content(selector):
+                return True
+        return False
+
+    async def _visible_selector_has_content(self, selector: str) -> bool:
+        """Recognize rendered modal content while ignoring empty Angular shells."""
+        return bool(await self._visible_selector_texts(selector))
+
+    async def _visible_selector_texts(self, selector: str) -> tuple[str, ...]:
+        """Return normalized text from visible rendered selector matches."""
+        count = await self._selector_count(selector)
+        locator = self.page.locator(selector)
+        texts: list[str] = []
+        for index in range(count):
+            candidate = locator.nth(index)
+            try:
+                if not await candidate.is_visible():
+                    continue
+                text = " ".join((await candidate.inner_text()).split())
+                if text:
+                    texts.append(text)
+            except Exception as error:
+                raise self._error(
+                    f"could not inspect visible content for {selector}: {error}"
+                ) from error
+        return tuple(texts)
+
+    async def _reload_homepage(self, reason: str) -> None:
+        """Reload once without resetting the homepage attempt's deadline."""
+        LOGGER.warning("reloading homepage once: %s", reason)
+        try:
+            await self.page.reload(wait_until="domcontentloaded")
+        except Exception as error:
+            raise self._error(f"could not reload homepage: {error}") from error
+
+    async def _wait_for_optional_control(
+        self,
+        control: LobbyControl,
+        *,
+        timeout_seconds: float,
+    ) -> Any | None:
+        deadline = self.clock() + timeout_seconds
+        while True:
+            locator = await self._control_if_present(control)
+            if locator is not None:
+                return locator
+            if self.clock() >= deadline:
+                return None
+            await self._sleep_poll()
+
+    async def _wait_for_control_to_be_gone(
+        self,
+        control: LobbyControl,
+        *,
+        timeout_seconds: float,
+    ) -> None:
+        deadline = self.clock() + timeout_seconds
+        while True:
+            if await self._control_if_present(control) is None:
+                return
+            if self.clock() >= deadline:
+                spec = _CONTROL_SPECS[control]
+                raise self._error(
+                    f"{spec.label!r} ({spec.selector}) did not disappear after "
+                    f"{timeout_seconds:.1f}s"
+                )
+            await self._sleep_poll()
+
+    async def _control_if_present(self, control: LobbyControl) -> Any | None:
+        spec = _CONTROL_SPECS[control]
+        count = await self._selector_count(spec.selector)
+        if count == 0:
+            return None
+        if count != 1:
+            raise self._error(
+                f"ambiguous {spec.label!r} control: selector {spec.selector} "
+                f"matched {count} elements"
+            )
+        return self.page.locator(spec.selector)
+
+    async def _in_game_board_is_present(self) -> bool:
+        """Recognize only the recorded board, never the persistent chat pane."""
+        count = await self._selector_count(IN_GAME_SELECTOR)
+        if count == 0:
+            return False
+        if count != 1:
+            raise self._error(
+                "ambiguous in-game board signal: "
+                f"{IN_GAME_SELECTOR} matched {count} elements"
+            )
+        chat_count = await self._selector_count(GAME_CHAT_SELECTOR)
+        LOGGER.debug(
+            "in-play board is present (%s); game-chat secondary signal count=%s",
+            IN_GAME_SELECTOR,
+            chat_count,
+        )
+        return True
+
+    async def _selector_count(self, selector: str) -> int:
+        try:
+            return int(await self.page.locator(selector).count())
+        except Exception as error:
+            raise self._error(
+                f"could not inspect recorded selector {selector}: {error}"
+            ) from error
+
+    async def _click(self, locator: Any, control: LobbyControl) -> None:
+        spec = _CONTROL_SPECS[control]
+        LOGGER.info("lobby click %s at %.3f", spec.label, self.clock())
+        try:
+            await locator.click()
+        except Exception as error:
+            raise self._error(
+                f"could not click recorded {spec.label!r} control "
+                f"({spec.selector}): {error}"
+            ) from error
+
+    def _control_description(self, control: LobbyControl) -> str:
+        if control is LobbyControl.START_GAME:
+            return (
+                "hosted-table Ready control "
+                f"({START_GAME_SELECTOR})"
+            )
+        spec = _CONTROL_SPECS[control]
+        return f"{spec.label!r} ({spec.selector})"
+
+    async def _snapshot_waiting(self, state: LobbyState) -> None:
+        if state in {LobbyState.SEARCHING, LobbyState.TABLE_WAITING}:
+            await self._snapshot_dom(
+                f"lobby-{state.value.replace('_', '-')}-wait"
+            )
+
+    async def _snapshot_failure(self, label: str) -> None:
+        """Capture a terminal failed resolution without masking its LobbyError."""
+        await self._snapshot_dom(f"lobby-failure-{label}")
+
+    async def _snapshot_dom(self, label: str) -> None:
+        if self.snapshot_dom is None:
+            return
+        try:
+            destination = await self.snapshot_dom(label)
+        except Exception as error:
+            LOGGER.warning("could not archive lobby DOM snapshot %s: %s", label, error)
+        else:
+            LOGGER.debug("archived lobby DOM snapshot %s at %s", label, destination)
+
+    async def _sleep_poll(self) -> None:
+        """Yield through a short cancellation point between lobby observations."""
+        await self.sleep(min(self.poll_seconds, 0.25))
+
+    def _timeout_for(self, state: LobbyState) -> float:
+        return {
+            LobbyState.HOMEPAGE: self.config.homepage_timeout_seconds,
+            LobbyState.SEARCHING: self.config.searching_timeout_seconds,
+            LobbyState.TABLE_WAITING: self.config.table_waiting_timeout_seconds,
+            LobbyState.IN_GAME: self.config.in_game_timeout_seconds,
+            LobbyState.GAME_OVER: self.config.game_over_timeout_seconds,
+            LobbyState.LEAVING: self.config.leaving_timeout_seconds,
+        }[state]
+
+    def _require_state(self, expected: LobbyState) -> None:
+        if self.state is not expected:
+            raise self._error(
+                f"expected state {expected.value}, found {self.state.value}"
+            )
+
+    def _transition(self, target: LobbyState) -> None:
+        LOGGER.info(
+            "lobby state transition %s -> %s at %.3f",
+            self.state.value,
+            target.value,
+            self.clock(),
+        )
+        self.state = target
+
+    def _timeout_error(self, state: LobbyState, target: str) -> LobbyError:
+        return self._error(
+            f"{state.value} timed out after {self._timeout_for(state):.1f}s "
+            f"waiting for {target}"
+        )
+
+    def _error(self, detail: str) -> LobbyError:
+        return LobbyError(
+            f"LOBBY ERROR [{self.state.value}]: {detail}. Browser will close "
+            "for a supervisor restart."
+        )
+
+
+class _RecordedControlParser(HTMLParser):
+    """Tiny HTML reader used only to assert saved-DOM selector evidence."""
+
+    def __init__(self, spec: _ControlSpec) -> None:
+        super().__init__()
+        self.spec = spec
+        self._button_depth: int | None = None
+        self._text: list[str] = []
+        self.labels: list[str] = []
+        self._depth = 0
+        self._tags: list[str] = []
+        self._reconnect_modal_depths: list[int] = []
+        self._timeout_modal_depths: set[int] = set()
+
+    def handle_starttag(
+        self,
+        tag: str,
+        attrs: list[tuple[str, str | None]],
+    ) -> None:
+        attributes = dict(attrs)
+        classes = attributes.get("class", "").split()
+        if tag == "modal-window" and "reconnecting-failed" in self._tags:
+            self._reconnect_modal_depths.append(self._depth)
+        if (
+            tag == "div"
+            and "timeout" in classes
+            and self._reconnect_modal_depths
+        ):
+            self._timeout_modal_depths.add(self._reconnect_modal_depths[-1])
+        if (
+            tag == "button"
+            and attributes.get("ng-click") == self.spec.handler
+            and self.spec.required_class in classes
+            and (
+                self.spec.ancestor_tag is None
+                or self.spec.ancestor_tag in self._tags
+            )
+            and (
+                not self.spec.requires_timeout_descendant
+                or (
+                    bool(self._reconnect_modal_depths)
+                    and self._reconnect_modal_depths[-1]
+                    in self._timeout_modal_depths
+                )
+            )
+        ):
+            self._button_depth = self._depth
+            self._text = []
+        self._tags.append(tag)
+        self._depth += 1
+
+    def handle_data(self, data: str) -> None:
+        if self._button_depth is not None:
+            self._text.append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        self._depth -= 1
+        if tag == "button" and self._button_depth == self._depth:
+            self.labels.append(" ".join("".join(self._text).split()))
+            self._button_depth = None
+            self._text = []
+        if (
+            tag == "modal-window"
+            and self._reconnect_modal_depths
+            and self._reconnect_modal_depths[-1] == self._depth
+        ):
+            modal_depth = self._reconnect_modal_depths.pop()
+            self._timeout_modal_depths.discard(modal_depth)
+        if self._tags:
+            self._tags.pop()
+
+
+def recorded_control_labels(html: str, control: LobbyControl) -> tuple[str, ...]:
+    """Resolve a recorded control from a saved DOM without a browser.
+
+    The live browser uses the exact CSS selector constants above.  This helper
+    checks the matching observed Angular click handler and returns the button
+    label so tests lock the selector evidence to the recording.
+    """
+    parser = _RecordedControlParser(_CONTROL_SPECS[control])
+    parser.feed(html)
+    parser.close()
+    return tuple(parser.labels)

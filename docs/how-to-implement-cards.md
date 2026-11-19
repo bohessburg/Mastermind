@@ -1,597 +1,378 @@
-# How to Implement New Cards in DominionZero
+# How To Implement Cards
 
-This guide explains how to add new Dominion cards to the engine, following the patterns established in `level_1_cards.cpp` and `level_2_cards.cpp`.
+This is the v2 card cookbook. The v2 engine is table-driven: card definitions
+live in `src/v2/cards/base.cpp`, public card metadata lives in
+`src/v2/core/defs.h`, and the interpreter in `src/v2/core/interp.cpp` executes
+small POD instructions. Card code must keep `GameState` memcpy-cloneable and
+must not allocate in core paths.
 
----
+`REFACTOR_PLAN.md` and `IMPLEMENTATION_PLAN.md` remain the architecture source
+of truth. This file is the practical checklist for adding cards.
 
-## Architecture Overview
-
-Cards are defined as `Card` structs and registered into a global `CardRegistry`. Each card is a data object with lambda callbacks for its effects — there are no card subclasses. The system lives in these files:
+## Files To Touch
 
 | File | Purpose |
-|------|---------|
-| `src/game/card.h` | `Card` struct, `CardType` enum, `ChoiceType` enum, `DecisionFn` type, `CardRegistry` namespace |
-| `src/game/cards/level_N_cards.h` | Declares `LevelNCards::register_all()` |
-| `src/game/cards/level_N_cards.cpp` | Card definitions with lambdas |
-| `src/game/card_defs.h/.cpp` | Cached IDs for base cards (Copper, Silver, etc.) |
-| `src/main.cpp` (and other entry points) | Calls `LevelNCards::register_all()` at startup |
+|---|---|
+| `src/v2/core/defs.h` | Def ids, type bits, `Op`, `Filter`, `Then`, `CardDef` |
+| `src/v2/cards/base.cpp` | Static card table, effect programs, filters, score hooks, custom steps |
+| `src/v2/observe/card_text.cpp` | Web/observer card text only, never core logic |
+| `tests/v2/test_specs_base.cpp` | CARD_SPEC coverage for card behavior |
+| `tests/v2/fuzz_harness.cpp` | Add the card to fuzz kingdoms when it is playable |
+| `tests/v2/golden/` | Regenerate only when a deliberate behavior change affects golden games |
 
----
+## Definition Pattern
 
-## Step-by-Step: Adding a New Card
+Every card has a `DefId` in `defs.h` and one `CardDef` entry in
+`kBaseCards`. The table order must match the ids exactly.
 
-### 1. Choose the right level file
-
-Levels correspond to implementation complexity. Pick the level file that matches your card's mechanics, or the level you're currently working on (e.g. `level_3_cards.cpp`).
-
-### 2. Add the card registration
-
-Inside the `register_all()` function of your level file, add a `CardRegistry::register_card({...})` call using designated initializers:
+Use the simple macros for cards with no hooks:
 
 ```cpp
-CardRegistry::register_card({
-    .name = "My Card",          // Unique name, used for lookups
-    .cost = 4,                  // Buy cost in coins
-    .types = CardType::Action,  // Bitmask of types (see below)
-    .text = "+2 Cards",         // Flavor/rules text
-    .victory_points = 0,        // Static VP (0 for non-Victory cards)
-    .coin_value = 0,            // Coin value when played as Treasure (0 for non-Treasures)
-    .tags = {},                 // Optional tags: {"Knight"}, {"Looter"}, etc.
-    .on_play = [](GameState& state, int pid, DecisionFn decide) {
-        // Card effect goes here
-    },
-    // Optional callbacks (omit or set to nullptr if unused):
-    // .on_react = nullptr,
-    // .vp_fn = nullptr,
-    // .on_gain = nullptr,
-    // .on_trash = nullptr,
-    // .on_duration = nullptr,
-});
+DOMINION_V2_DEF(Copper, (Cost{0, 0, 0}), TYPE_TREASURE, 0, 1)
+DOMINION_V2_DEF_EFFECT(Village, (Cost{3, 0, 0}), TYPE_ACTION, 0, 0, SPAN_VILLAGE)
 ```
 
-### 3. Wire up registration (if adding a new level file)
-
-If you created a new `level_N_cards.cpp`, you need to:
-
-1. Create the header `level_N_cards.h`:
-   ```cpp
-   #pragma once
-   namespace LevelNCards {
-       void register_all();
-   }
-   ```
-
-2. Call `LevelNCards::register_all()` in every entry point:
-   - `src/main.cpp`
-   - `src/stress_test.cpp`
-   - `src/interactive.cpp`
-   - `src/local_multiplayer.cpp`
-   - `src/gui/gui_main.cpp`
-   - `tests/test_helpers.cpp`
-
-3. Add the `.cpp` file to your build system (CMakeLists.txt or Makefile).
-
----
-
-## CardType Bitmask
-
-Types are combined with `|` for multi-type cards:
+Use an explicit `CardDef` when the card has a multi-word name, trigger,
+`custom` function, or `score_hook`:
 
 ```cpp
-CardType::Action                         // Smithy, Village
-CardType::Action | CardType::Attack      // Militia, Witch
-CardType::Action | CardType::Reaction    // Moat
-CardType::Victory                        // Gardens
-CardType::Treasure                       // Copper, Silver, Gold
-CardType::Curse                          // Curse
-CardType::Duration                       // Duration cards (next-turn effects)
-CardType::Night                          // Night phase cards
-CardType::Command                        // Command cards
-```
-
-Check types with: `has_type(card->types, CardType::Action)` or `card->is_action()`.
-
----
-
-## The Decision System
-
-When a card needs player input, it calls the `DecisionFn` callback:
-
-```cpp
-auto chosen = decide(
-    pid,                    // Which player decides
-    ChoiceType::DISCARD,    // What kind of choice
-    options,                // Vector of valid option indices
-    min_choices,            // Minimum selections required
-    max_choices             // Maximum selections allowed
-);
-// Returns: vector<int> of indices the player selected from `options`
-```
-
-### ChoiceType Reference
-
-| ChoiceType | When to use | `options` contains |
-|------------|-------------|-------------------|
-| `DISCARD` | Discard cards from hand | Hand indices (0, 1, 2...) |
-| `TRASH` | Trash cards from hand | Hand indices (or card_ids for peek-trash) |
-| `GAIN` | Choose a card to gain from supply | Top card_ids of gainable piles |
-| `TOPDECK` | Put a card on top of deck | Hand indices |
-| `PLAY_CARD` | Choose a card to play (Throne Room) | Hand indices of valid targets |
-| `YES_NO` | Binary choice | `{0, 1}` (0=no, 1=yes) |
-| `REVEAL` | Reveal a card from hand | Hand indices of valid cards |
-| `MULTI_FATE` | Per-card trash/discard/keep (Sentry) | `{0, 1, 2}` (keep/discard/trash) |
-| `ORDER` | Choose ordering for topdeck | card_ids to order |
-| `SELECT_FROM_DISCARD` | Pick from discard pile | Discard pile indices |
-| `EXILE` | Exile a card | Context-dependent |
-
----
-
-## Common GameState & Player Methods
-
-### Modifying Turn Resources
-```cpp
-state.add_actions(2);     // +2 Actions
-state.add_buys(1);        // +1 Buy
-state.add_coins(3);       // +3 Coins
-```
-
-### Drawing Cards
-```cpp
-Player& player = state.get_player(pid);
-player.draw_cards(3);     // Draw 3 cards (reshuffles discard if needed)
-```
-
-### Gaining Cards
-```cpp
-state.gain_card(pid, "Silver");              // Gain to discard pile
-state.gain_card_to_hand(pid, "Gold");        // Gain to hand
-state.gain_card_to_deck_top(pid, "Silver");  // Gain to top of deck
-```
-
-### Trashing Cards
-```cpp
-int card_id = player.trash_from_hand_return(hand_index);  // Remove from hand, get card_id
-state.trash_card(card_id);                                 // Add to trash pile
-```
-
-### Discarding
-```cpp
-player.discard_from_hand(hand_index);  // Move from hand to discard
-player.discard_hand();                 // Discard entire hand
-```
-
-### Deck Manipulation
-```cpp
-player.peek_deck(3);              // Look at top 3 (non-destructive)
-player.remove_deck_top();         // Remove and return top card (-1 if empty)
-player.add_to_deck_top(card_id);  // Put card on top of deck
-player.topdeck_from_hand(idx);    // Move hand card to deck top
-```
-
-### Other Movement
-```cpp
-player.add_to_hand(card_id);                       // Add card to hand
-player.add_to_discard(card_id);                    // Add card to discard
-player.remove_from_discard(card_id);               // Remove by card_id
-player.remove_from_discard_by_index(idx);          // Remove by index
-player.find_in_hand(card_id);                      // Get hand index of card_id
-player.play_from_hand(hand_index);                 // Move to in_play zone
-```
-
-### Card Info Lookups
-```cpp
-state.card_name(card_id);            // "Smithy"
-state.card_def(card_id);             // const Card* pointer
-CardRegistry::get("Smithy");         // const Card* by name
-state.total_cards_owned(pid);        // Total cards across all zones
-```
-
-### Supply Queries
-```cpp
-state.gainable_piles(max_cost);                     // All piles with cost <= max_cost
-state.gainable_piles(max_cost, CardType::Treasure);  // Filtered by type
-state.gainable_piles_exact(cost);                    // Exact cost match
-state.get_supply().top_card("Smithy");               // card_id of top card in pile
-state.get_supply().empty_pile_count();                // Number of empty piles
-```
-
-### Turn Flags (for deferred/tracked effects)
-```cpp
-state.set_turn_flag("merchant_count", 2);   // Set a per-turn counter
-state.get_turn_flag("merchant_count");       // Read it (0 if unset)
-```
-
-### Logging
-```cpp
-state.log("    Vassal reveals " + state.card_name(card_id));
-```
-
----
-
-## Implementation Patterns by Complexity
-
-### Pattern 1: Simple Stat Boost (no decisions)
-
-Cards like **Smithy**, **Village**, **Festival**, **Market**.
-
-```cpp
-// Village: +1 Card, +2 Actions
-.on_play = [](GameState& state, int pid, DecisionFn) {
-    state.get_player(pid).draw_cards(1);
-    state.add_actions(2);
-},
-```
-
-Key points:
-- Use `DecisionFn` (no parameter name) when the callback is unused.
-- Use `int /*pid*/` when pid is unused (e.g., Festival only modifies state-level resources).
-
-### Pattern 2: Discard-from-Hand Choice
-
-Cards like **Cellar**, **Poacher**, **Storeroom**, **Hamlet**.
-
-```cpp
-// Cellar: +1 Action. Discard any number, draw that many.
-.on_play = [](GameState& state, int pid, DecisionFn decide) {
-    state.add_actions(1);
-    Player& player = state.get_player(pid);
-    if (player.hand_size() == 0) return;
-
-    // Build options = [0, 1, 2, ... hand_size-1]
-    std::vector<int> options;
-    for (int i = 0; i < player.hand_size(); i++) options.push_back(i);
-
-    auto chosen = decide(pid, ChoiceType::DISCARD, options, 0, player.hand_size());
-
-    // CRITICAL: Sort indices in descending order before removing
-    std::sort(chosen.begin(), chosen.end(), std::greater<int>());
-    int count = static_cast<int>(chosen.size());
-    for (int idx : chosen) player.discard_from_hand(idx);
-    player.draw_cards(count);
-},
-```
-
-**Critical rule**: When removing multiple cards from hand by index, always sort indices in **descending order** first. Removing index 3 before index 5 would shift index 5, causing wrong removals.
-
-### Pattern 3: Trash-from-Hand
-
-Cards like **Chapel**, **Remodel** (first half), **Trading Post**.
-
-```cpp
-// Chapel: Trash up to 4 cards from your hand.
-auto chosen = decide(pid, ChoiceType::TRASH, options, 0, max_trash);
-std::sort(chosen.begin(), chosen.end(), std::greater<int>());
-for (int idx : chosen) {
-    int cid = player.trash_from_hand_return(idx);
-    state.trash_card(cid);
+CardDef{
+    "Throne Room",
+    Cost{4, 0, 0},
+    TYPE_ACTION,
+    0,
+    0,
+    SPAN_THRONE_ROOM,
+    NO_EFFECT,
+    NO_EFFECT,
+    NO_EFFECT,
+    NO_EFFECT,
+    0U,
+    nullptr,
+    nullptr,
 }
 ```
 
-The two-step trash: `trash_from_hand_return()` removes from hand and returns the card_id, then `trash_card()` adds it to the global trash pile.
+The fields are:
 
-### Pattern 4: Gain from Supply
+| Field | Meaning |
+|---|---|
+| `name` | Stable display/test name |
+| `cost` | `Cost{coins, potion, debt}`; comparisons must use `fits_within` |
+| `types` | Bitmask of `TYPE_ACTION`, `TYPE_TREASURE`, `TYPE_VICTORY`, etc. |
+| `vp` | Static VP for Victory/Curse cards |
+| `coin_value` | Treasure fast path value |
+| `on_play` | Effect span in `kEffectInstrs` |
+| `on_gain`, `on_trash`, `on_discard`, `on_reveal` | Trigger spans |
+| `trigger_mask` | OR of `trigger_mask(TriggerKind::...)` |
+| `custom` | `RunResult (*)(GameState&, EffectFrame&)` for stateful cards |
+| `score_hook` | Per-card scoring hook, e.g. Gardens |
 
-Cards like **Workshop**, **Artisan** (first half), **Armory**.
+## Effect Programs
+
+Effect programs are `constexpr Instr kEffectInstrs[]`. A span is an offset and
+length:
 
 ```cpp
-// Workshop: Gain a card costing up to 4.
-auto piles = state.gainable_piles(4);
-if (piles.empty()) return;
+constexpr EffectSpan SPAN_MARKET{62, 5};
 
-std::vector<int> options;
-for (const auto& p : piles) options.push_back(state.get_supply().top_card(p));
+Instr{Op::PlusCards, 0, 0, 0, 1},
+Instr{Op::PlusActions, 0, 0, 0, 1},
+Instr{Op::PlusBuys, 0, 0, 0, 1},
+Instr{Op::PlusCoins, 0, 0, 0, 1},
+Instr{Op::End, 0, 0, 0, 0},
+```
 
-auto chosen = decide(pid, ChoiceType::GAIN, options, 1, 1);
-if (!chosen.empty()) {
-    state.gain_card(pid, piles[chosen[0]]);
+`Instr` fields are intentionally small:
+
+```cpp
+struct Instr {
+    Op op;
+    uint8_t a;
+    uint8_t b;
+    uint8_t c;
+    int16_t arg;
+};
+```
+
+Prefer the DSL for anything expressible as resources, choices, gains, attacks,
+or small control flow. Add a new op only after the behavior is likely to be
+reused by a second real card. Use `custom_step` for genuinely stateful flows
+such as Library and Sentry.
+
+## Op Reference
+
+Resource ops:
+
+| Op | Args | Semantics |
+|---|---|---|
+| `PlusCards` | `arg=count` | Draw cards for `frame.player`, reshuffling with game RNG |
+| `PlusActions` | `arg=count` | Add actions, saturating uint8 resources |
+| `PlusBuys` | `arg=count` | Add buys |
+| `PlusCoins` | `arg=count` | Add coins |
+| `PlusCoffers` | reserved | Declared for later expansions |
+| `PlusVillagers` | reserved | Declared for later expansions |
+| `PlusFavors` | reserved | Declared for later expansions |
+| `PlusVP` | reserved | Declared for later VP-token cards |
+| `TakeDebt` | reserved | Declared for debt cards |
+| `RepayDebtFree` | reserved | Declared for debt cards |
+| `DrawTo` | reserved | Declared for draw-to-N patterns |
+
+Movement and gain ops:
+
+| Op | Args | Semantics |
+|---|---|---|
+| `GainSpecific` | `a=GainDestination`, `arg=DefId` | Gain a specific supply card if present |
+| `GainCurse` | `a=GainDestination` | Gain Curse if the pile is nonempty |
+| `TrashSelf` | none | Trash the source card from in-play via `do_trash` |
+| `DiscardSelf` | reserved | Declared for later self-discard effects |
+| `TopdeckSelf` | reserved | Declared for later self-topdeck effects |
+| `ExileSelf` | reserved | Declared for later exile effects |
+| `ReturnToPile` | reserved | Declared for later return effects |
+| `DiscardDeckTop` | none | Discard top deck card, recording the revealed def |
+| `PlayLastFromDiscard` | none | Play the def recorded by `DiscardDeckTop` from discard |
+| `PlayChosenRepeated` | `arg=times` | Play the last chosen card from hand repeated `times` |
+| `BanditAttack` | none | Bandit reveal/trash/discard payload |
+
+Choice ops:
+
+| Op | Args | Semantics |
+|---|---|---|
+| `Choose` | `a=FilterId`, `b=min`, `c=max`, `arg=Then` | Suspend for `A_SELECT(def)` or `A_PASS` once the clamped minimum is met |
+| `ChooseGain` | `a=FilterId`, `b=min`, `c=max`, `arg=GainDestination` | Choose matching supply pile top and gain it |
+| `ChooseOption` | `a=count` | Suspend for `A_OPTION(k)` in `[0, count)` |
+| `ChooseOrder` | `a=count` | Repeated options for ordering known cards |
+
+Attack and multi-player ops:
+
+| Op | Args | Semantics |
+|---|---|---|
+| `Attack` | `a=absolute payload offset` | Push one attack frame per opponent in turn order, with reaction windows |
+| `DiscardDownTo` | `arg=target hand size` | Opponent chooses cards to keep; the rest are discarded |
+| `EachOtherPlayer` | `a=absolute payload offset` | Push a non-attack frame per opponent |
+
+Control ops:
+
+| Op | Args | Semantics |
+|---|---|---|
+| `Repeat` | `a=target pc`, `b=count` | Re-run a program range, keeping its counter separate from choice data |
+| `PerChosen` | none | Multiply the next simple resource op by `last selection count` |
+| `IfElse` | `a=PredicateId`, `b=true pc delta`, `c=false pc delta`, `arg=predicate arg` | Branch within the current span |
+| `EmitTrigger` | reserved | Declared for later explicit trigger effects |
+| `CallCustom` | reserved | Declared for later hybrid DSL/custom cards |
+| `End` | none | Complete the current frame |
+
+Predicates currently available: `AlwaysFalse`, `AlwaysTrue`, `ChosenAny`,
+`LastOptionEqualsArg`, `CoinsAtLeastArg`, and `LastChosenIsAction`.
+
+## Filters
+
+Filters are static POD rows in `kFilters`:
+
+```cpp
+Filter{
+    ZoneSelector::Supply,
+    TYPE_TREASURE,
+    CostLimitKind::LastChosenPlus,
+    Cost{},
+    3,
+    ANY_DEF,
+    ANY_DEF,
 }
 ```
 
-The pattern: get gainable pile names -> build options from top cards -> player chooses -> index back into pile names to gain.
+Fields:
 
-### Pattern 5: Trash-then-Gain (Remodel family)
+| Field | Meaning |
+|---|---|
+| `zone` | `Hand`, `Supply`, or `Discard` |
+| `type_mask` | Required card types; zero means any type |
+| `cost_kind` | `None`, `Fixed`, or `LastChosenPlus` |
+| `max_cost` | Fixed componentwise cost limit |
+| `coin_delta` | Coin delta for cost-relative gains |
+| `exact_def` | Match only this def, or `ANY_DEF` |
+| `exclude_def` | Reject this def, or `ANY_DEF` |
 
-Cards like **Remodel**, **Mine**, **Expand**, **Upgrade**, **Altar**.
+Choice availability is clamped to the currently available matching cards. If a
+mandatory choice has no legal selection, the op completes instead of deadlocking.
+
+`Then` executors for `Choose` are:
+
+| Then | Effect |
+|---|---|
+| `Discard` | `do_discard(..., MoveZone::Hand/Discard)` |
+| `Trash` | `do_trash(...)` |
+| `Topdeck` | Move to deck top |
+| `Exile` | Reserved |
+| `Reveal` | Reserved/no-op until a card needs persistent reveal state |
+| `SetAside` | Reserved for future shared set-aside flows |
+| `PutInHand` | Gain/return to hand where supported |
+| `Play` | Used by Throne Room to play a selected Action |
+| `Keep` | Used by keep/reorder flows |
+
+## Examples
+
+Vanilla card:
 
 ```cpp
-// Remodel: Trash a card. Gain one costing up to 2 more.
-// Step 1: Choose and trash
-auto trash_chosen = decide(pid, ChoiceType::TRASH, trash_options, 1, 1);
-int hand_idx = trash_chosen[0];
-int trashed_id = player.trash_from_hand_return(hand_idx);
-const Card* trashed = state.card_def(trashed_id);
-state.trash_card(trashed_id);
+constexpr EffectSpan SPAN_VILLAGE{7, 3};
 
-// Step 2: Gain based on trashed card's cost
-int max_cost = trashed->cost + 2;
-auto piles = state.gainable_piles(max_cost);
-// ... standard gain pattern ...
+Instr{Op::PlusCards, 0, 0, 0, 1},
+Instr{Op::PlusActions, 0, 0, 0, 2},
+Instr{Op::End, 0, 0, 0, 0},
 ```
 
-Variants:
-- **Mine**: Filters hand for Treasures only, gains Treasure to hand: `gainable_piles(max_cost, CardType::Treasure)` + `gain_card_to_hand()`
-- **Upgrade**: Exact cost: `gainable_piles_exact(trashed->cost + 1)`
-- **Altar**: Fixed gain cap: `gainable_piles(5)` regardless of trashed cost
-
-### Pattern 6: Yes/No Optional Effect
-
-Cards like **Moneylender**, **Vassal** (play action from discard).
+Choice card:
 
 ```cpp
-// Moneylender: May trash a Copper for +3 Coins.
-auto chosen = decide(pid, ChoiceType::YES_NO, {0, 1}, 1, 1);
-if (!chosen.empty() && chosen[0] == 1) {
-    // Player said yes — do the thing
-    int cid = player.trash_from_hand_return(copper_idx);
-    state.trash_card(cid);
-    state.add_coins(3);
+// Chapel: trash up to 4 cards from hand.
+Instr{Op::Choose, FILTER_HAND_ANY, 0, 4, static_cast<int16_t>(Then::Trash)},
+Instr{Op::End, 0, 0, 0, 0},
+```
+
+Cost-relative gain:
+
+```cpp
+// Remodel: trash one card, then gain up to +2 coins to discard.
+Instr{Op::Choose, FILTER_HAND_ANY, 1, 1, static_cast<int16_t>(Then::Trash)},
+Instr{Op::IfElse, static_cast<uint8_t>(PredicateId::ChosenAny), 1, 2, 0},
+Instr{Op::ChooseGain, FILTER_SUPPLY_LAST_PLUS_2, 1, 1,
+      static_cast<int16_t>(GainDestination::Discard)},
+Instr{Op::End, 0, 0, 0, 0},
+```
+
+Attack:
+
+```cpp
+// Militia: +2 coins, then each opponent discards down to 3.
+Instr{Op::PlusCoins, 0, 0, 0, 2},
+Instr{Op::Attack, 36, 0, 0, 0},
+Instr{Op::End, 0, 0, 0, 0},
+Instr{Op::DiscardDownTo, 0, 0, 0, 3},
+Instr{Op::End, 0, 0, 0, 0},
+```
+
+Trigger:
+
+```cpp
+CardDef{
+    "Merchant",
+    Cost{3, 0, 0},
+    TYPE_ACTION,
+    0,
+    0,
+    SPAN_MERCHANT,
+    SPAN_MERCHANT_ON_FIRST_PLAY,
+    NO_EFFECT,
+    NO_EFFECT,
+    NO_EFFECT,
+    trigger_mask(TriggerKind::OnFirstPlay),
+    nullptr,
+    nullptr,
 }
 ```
 
-### Pattern 7: Peek-and-Process (Sentry/Lookout family)
+The trigger bus rebuilds subscriptions from in-play cards and enqueues trigger
+frames. It must never call the interpreter recursively.
 
-Cards that look at top N cards and process each one.
+Score hook:
 
 ```cpp
-// General pattern: peek, remove from deck, process, put back
-auto top_cards = player.peek_deck(N);
-int num_peeked = static_cast<int>(top_cards.size());
-for (int i = 0; i < num_peeked; i++) player.remove_deck_top();
+int16_t gardens_score(const GameState& state, PlayerId player, DefId) noexcept;
 
-// Process each card (trash/discard/keep)...
-
-// Put back remaining cards (if >1, ask for order)
-if (keep_cards.size() > 1) {
-    // Use ChoiceType::ORDER to let player pick ordering
-    // Add in reverse order (last picked = deepest, first picked = top)
+CardDef{
+    "Gardens",
+    Cost{4, 0, 0},
+    TYPE_VICTORY,
+    0,
+    0,
+    NO_EFFECT,
+    NO_EFFECT,
+    NO_EFFECT,
+    NO_EFFECT,
+    NO_EFFECT,
+    0U,
+    nullptr,
+    gardens_score,
 }
 ```
 
-**Lookout** variant (trash one, discard one, keep one):
-```cpp
-// Trash one
-auto trash_chosen = decide(pid, ChoiceType::TRASH, top_cards, 1, 1);
-int trashed_id = top_cards[trash_chosen[0]];
-state.trash_card(trashed_id);
-top_cards.erase(std::find(top_cards.begin(), top_cards.end(), trashed_id));
+Score hooks are called by `score()` over all owned zones.
 
-// Discard one (if 2+ remain)
-auto disc_chosen = decide(pid, ChoiceType::DISCARD, top_cards, 1, 1);
-int discarded_id = top_cards[disc_chosen[0]];
-player.add_to_discard(discarded_id);
-top_cards.erase(std::find(top_cards.begin(), top_cards.end(), discarded_id));
+## Custom Step Guide
 
-// Put remaining card back
-player.add_to_deck_top(top_cards[0]);
-```
+Custom steps are for cards with stateful, card-by-card suspension that would
+make the DSL harder to audit than the card text. Current examples are Library
+and Sentry.
 
-### Pattern 8: Attack Cards
+Contract:
 
-Cards that affect other players. Use `state.resolve_attack()` which handles Reaction checks (e.g., Moat) automatically.
+- Signature: `RunResult fn(GameState&, EffectFrame&) noexcept`.
+- Return `NeedDecision` only after filling `state.decision`.
+- Return `Continue` when the interpreter should call the same frame again.
+- Return `FrameDone` when the frame is complete.
+- Store all progress in `EffectFrame` fields or existing POD zones.
+- Do not allocate and do not hold pointers into `effect_stack` across a
+  decision.
+- Any visible temporary cards must be counted by invariants. Prefer
+  `PlayerState::set_aside` for set-aside cards; Bandit-style reveal slots are
+  acceptable only when the invariant helper accounts for them.
+- Trash/discard/gain through `do_trash`, `do_discard`, and `do_gain`.
 
-```cpp
-// Witch: +2 Cards. Each other player gains a Curse.
-.types = CardType::Action | CardType::Attack,
-.on_play = [](GameState& state, int pid, DecisionFn decide) {
-    state.get_player(pid).draw_cards(2);
+Frame data discipline:
 
-    state.resolve_attack(pid, [](GameState& st, int target, DecisionFn) {
-        st.gain_card(target, "Curse");
-    }, decide);
-},
-```
+- Document every `frame.data[]` slot used by a complex helper near the helper.
+- Keep choice-owned slots separate from control-owned slots. `Repeat` has its
+  own counter slot and must not share with active choice bookkeeping.
+- Reset temporary slots before finishing the frame if they represent cards
+  outside normal zones.
 
-The attack lambda receives each non-blocked target. The lambda signature is always:
-```cpp
-[](GameState& st, int target, DecisionFn dec) { ... }
-```
+## Spec Harness
 
-**Important**: When the *attacker* makes choices for the target (e.g., Swindler), use `dec(pid, ...)` not `dec(target, ...)`. Capture `pid` in the lambda:
+Every card needs one or more `CARD_SPEC` tests. The harness drives the real
+legal action and `Game::step` path; helper calls fail loudly if the scripted
+action is illegal.
 
 ```cpp
-state.resolve_attack(pid, [pid](GameState& st, int target, DecisionFn dec) {
-    // Attacker chooses what the target gains
-    auto chosen = dec(pid, ChoiceType::GAIN, gain_opts, 1, 1);
-    st.gain_card(target, piles[chosen[0]]);
-}, decide);
-```
+CARD_SPEC("Remodel trashes then gains up to plus two") {
+    given().hand("Remodel", "Estate");
 
-### Pattern 9: Reaction Cards
+    play("Remodel");
+    choose("Estate");
+    gain("Duchy");
 
-Cards with `on_react` that can block attacks.
-
-```cpp
-.types = CardType::Action | CardType::Reaction,
-.on_play = [](GameState& state, int pid, DecisionFn) {
-    state.get_player(pid).draw_cards(2);
-},
-.on_react = [](GameState& /*state*/, int pid, int /*attacker_id*/, DecisionFn decide) -> bool {
-    auto chosen = decide(pid, ChoiceType::YES_NO, {0, 1}, 1, 1);
-    return !chosen.empty() && chosen[0] == 1;  // true = block the attack
-},
-```
-
-### Pattern 10: Dynamic Victory Points
-
-Cards like **Gardens** where VP depends on game state.
-
-```cpp
-.types = CardType::Victory,
-.on_play = nullptr,
-.on_react = nullptr,
-.vp_fn = [](const GameState& state, int pid) -> int {
-    return state.total_cards_owned(pid) / 10;
-},
-```
-
-When `vp_fn` is set, it overrides `victory_points` during scoring.
-
-### Pattern 11: Card Replay (Throne Room family)
-
-Cards that play another card multiple times.
-
-```cpp
-// Throne Room: Play an Action from hand twice
-.on_play = [](GameState& state, int pid, DecisionFn decide) {
-    Player& player = state.get_player(pid);
-
-    // Find Actions in hand
-    std::vector<int> action_indices;
-    for (int i = 0; i < player.hand_size(); i++) {
-        const Card* card = state.card_def(player.get_hand()[i]);
-        if (card && card->is_action()) action_indices.push_back(i);
-    }
-    if (action_indices.empty()) return;
-
-    auto chosen = decide(pid, ChoiceType::PLAY_CARD, action_indices, 0, 1);
-    if (chosen.empty()) return;
-
-    int hand_idx = action_indices[chosen[0]];
-    int card_id = player.get_hand()[hand_idx];
-    player.play_from_hand(hand_idx);
-
-    // Play effect twice (card is already in play zone, not in hand)
-    state.play_card_effect(card_id, pid, decide);
-    state.play_card_effect(card_id, pid, decide);
-},
-```
-
-### Pattern 12: Select from Discard
-
-Cards like **Harbinger**, **Mountain Village**, **Scavenger**.
-
-```cpp
-// Harbinger: Put a card from discard on top of deck
-const auto& discard = player.get_discard();
-if (discard.empty()) return;
-
-std::vector<int> options;
-for (int i = 0; i < static_cast<int>(discard.size()); i++) options.push_back(i);
-
-auto chosen = decide(pid, ChoiceType::SELECT_FROM_DISCARD, options, 0, 1);
-if (!chosen.empty()) {
-    int discard_idx = chosen[0];
-    int card_id = discard[discard_idx];
-    player.remove_from_discard_by_index(discard_idx);
-    player.add_to_deck_top(card_id);
+    expect().trash_has("Estate").discard_has("Duchy");
+    expect_conservation();
 }
 ```
 
-### Pattern 13: Turn Flags (Deferred/Tracked Bonuses)
+Useful helpers:
 
-Cards like **Merchant** that set up a conditional bonus for later in the turn.
+| Helper | Purpose |
+|---|---|
+| `given().hand(...)`, `.deck(...)`, `.discard(...)` | Set player 0 zones |
+| `given().player_hand(p, ...)` | Set another player's zone |
+| `play(name)` | Sends `A_PLAY(def)` |
+| `choose(name)` / `gain(name)` | Sends `A_SELECT(def)` |
+| `option(k)` | Sends `A_OPTION(k)` |
+| `pass()` | Sends `A_PASS` |
+| `empty_supply(name)` | Empty one pile for edge cases |
+| `expect().hand_has(name)` etc. | Assert zone/resource results |
+| `expect_conservation()` | Assert total card count baseline |
 
-```cpp
-// Merchant: First Silver played this turn gives +1 Coin
-.on_play = [](GameState& state, int pid, DecisionFn) {
-    state.get_player(pid).draw_cards(1);
-    state.add_actions(1);
-    state.set_turn_flag("merchant_count",
-        state.get_turn_flag("merchant_count") + 1);
-},
-```
+Add edge cases for empty filters, exact/min/max choices, gain destination, clone
+equivalence at suspensions, and card conservation whenever a card sets aside or
+reveals cards.
 
-The actual bonus application happens in the game engine's treasure-playing logic, not in the card itself.
+## Porting Checklist
 
-### Pattern 14: Reveal-and-Check Hand
+1. Read the rules text and add/confirm observer text.
+2. Write the CARD_SPEC first, including conservation.
+3. Decide whether the card is DSL, DSL plus hook, or custom.
+4. Add the `DefId`, span/filter rows, and `CardDef`.
+5. Route all gains, trashes, and discards through move choke points.
+6. Add trigger masks or score hooks when required.
+7. Add the card to fuzz/conservation kingdom lists.
+8. Run Release `v2_tests`.
+9. Regenerate goldens only when the behavior change is intended and reviewed.
 
-Cards like **Shanty Town**, **Magnate** that check hand composition.
-
-```cpp
-// Shanty Town: +2 Actions. If no Actions in hand, +2 Cards.
-.on_play = [](GameState& state, int pid, DecisionFn) {
-    state.add_actions(2);
-    Player& player = state.get_player(pid);
-    bool has_action = false;
-    for (int i = 0; i < player.hand_size(); i++) {
-        const Card* c = state.card_def(player.get_hand()[i]);
-        if (c && c->is_action()) { has_action = true; break; }
-    }
-    if (!has_action) player.draw_cards(2);
-},
-```
-
-### Pattern 15: Reveal-from-Deck Loop
-
-Cards like **Sage**, **Hunting Party** that reveal cards one at a time until a condition is met.
-
-```cpp
-// Sage: Reveal until you find a card costing >= 3, put it in hand, discard the rest.
-.on_play = [](GameState& state, int pid, DecisionFn) {
-    state.add_actions(1);
-    Player& player = state.get_player(pid);
-    std::vector<int> revealed;
-    while (true) {
-        int card_id = player.remove_deck_top();
-        if (card_id == -1) break;
-        const Card* c = state.card_def(card_id);
-        if (c && c->cost >= 3) {
-            player.add_to_hand(card_id);
-            break;
-        }
-        revealed.push_back(card_id);
-    }
-    for (int cid : revealed) player.add_to_discard(cid);
-},
-```
-
-### Pattern 16: Self-Trashing from Play
-
-Cards like **Treasure Map**, **Tragic Hero** that trash themselves as part of their effect.
-
-```cpp
-// Treasure Map: Trash this and a Treasure Map from hand. If both trashed, gain 4 Golds to deck.
-.on_play = [](GameState& state, int pid, DecisionFn) {
-    Player& player = state.get_player(pid);
-
-    // Find this card in in_play and remove it
-    // Find a copy in hand and trash it
-    // If both trashed successfully, gain 4 Golds to deck top
-    for (int i = 0; i < 4; i++) state.gain_card_to_deck_top(pid, "Gold");
-},
-```
-
----
-
-## Filtering Hand by Type
-
-A recurring need is building options from only certain card types in hand:
-
-```cpp
-std::vector<int> treasure_indices;
-for (int i = 0; i < player.hand_size(); i++) {
-    const Card* c = state.card_def(player.get_hand()[i]);
-    if (c && c->is_treasure()) treasure_indices.push_back(i);
-}
-```
-
-This same pattern works with `is_action()`, `is_victory()`, etc.
-
----
-
-## Non-Attack Multi-Player Effects
-
-For positive effects on other players (like Council Room's "+1 Card to each other player"), just loop manually — don't use `resolve_attack()`:
-
-```cpp
-for (int i = 0; i < state.num_players(); i++) {
-    if (i != pid) {
-        state.get_player(i).draw_cards(1);
-    }
-}
-```
-
----
-
-## Checklist for New Cards
-
-1. Pick the right level file (or create a new one)
-2. Add `CardRegistry::register_card({...})` inside `register_all()`
-3. Set all required fields: `name`, `cost`, `types`, `text`, `victory_points`, `coin_value`, `tags`
-4. Implement `on_play` lambda (and optionally `on_react`, `vp_fn`, `on_gain`, `on_trash`, `on_duration`)
-5. If new level file: create header, wire up `register_all()` in all entry points, add to build system
-6. Always sort hand indices in descending order before multi-removal
-7. Always check for empty hand / empty piles before presenting choices
-8. Use `resolve_attack()` for Attack cards (handles Moat/Reaction checks)
-9. Use `CardType::Action | CardType::Attack` for Attack types (never just `CardType::Attack`)
-10. Test with the stress test runner to catch crashes

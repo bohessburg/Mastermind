@@ -1,0 +1,26 @@
+[meas_campaign28_gen_0001_legacy] device=mps pairs=50 chunk=100 A=checkpoints/campaign28/gen_0001.pt sims=128 zero_v=False | B=checkpoints/campaign25/bc_a.pt sims=128 zero_v=False | determinize=off cross_route=True tree_reuse=True opening_temp=True leaves_in_flight=8 (min sims/leaf 32)
+[meas_campaign28_gen_0001_legacy] .. 0/100 games  3724 evals/s  30s
+[meas_campaign28_gen_0001_legacy] .. 0/100 games  4209 evals/s  60s
+[meas_campaign28_gen_0001_legacy] .. 2/100 games  4335 evals/s  90s
+[meas_campaign28_gen_0001_legacy] .. 8/100 games  4302 evals/s  120s
+[meas_campaign28_gen_0001_legacy] .. 18/100 games  4208 evals/s  150s
+[meas_campaign28_gen_0001_legacy] .. 28/100 games  4008 evals/s  180s
+[meas_campaign28_gen_0001_legacy] .. 37/100 games  3718 evals/s  210s
+[meas_campaign28_gen_0001_legacy] .. 45/100 games  3379 evals/s  240s
+[meas_campaign28_gen_0001_legacy] .. 49/100 games  3055 evals/s  270s
+[meas_campaign28_gen_0001_legacy] .. 49/100 games  2768 evals/s  300s
+[meas_campaign28_gen_0001_legacy] .. 50/100 games  2645 evals/s  330s
+[meas_campaign28_gen_0001_legacy] .. 50/100 games  2906 evals/s  360s
+[meas_campaign28_gen_0001_legacy] .. 50/100 games  3069 evals/s  390s
+[meas_campaign28_gen_0001_legacy] .. 55/100 games  3171 evals/s  420s
+[meas_campaign28_gen_0001_legacy] .. 63/100 games  3227 evals/s  450s
+[meas_campaign28_gen_0001_legacy] .. 73/100 games  3243 evals/s  480s
+[meas_campaign28_gen_0001_legacy] .. 85/100 games  3202 evals/s  510s
+[meas_campaign28_gen_0001_legacy] .. 91/100 games  3105 evals/s  540s
+[meas_campaign28_gen_0001_legacy] .. 95/100 games  2987 evals/s  570s
+[meas_campaign28_gen_0001_legacy] .. 98/100 games  2859 evals/s  600s
+[meas_campaign28_gen_0001_legacy] .. 99/100 games  2736 evals/s  630s
+[meas_campaign28_gen_0001_legacy] .. 99/100 games  2621 evals/s  660s
+[meas_campaign28_gen_0001_legacy] .. 99/100 games  2516 evals/s  690s
+[meas_campaign28_gen_0001_legacy] 50/50 pairs  A 36W-64L-0T score=0.360±0.052  515 games/hr  2487 evals/s  699s
+[meas_campaign28_gen_0001_legacy] DONE A 36W-64L-0T score=0.360 ci95=[0.259,0.461] elo=-100 seat0=0.500 non_greedy=2.5% turns=40.6 trunc=1 699.1s

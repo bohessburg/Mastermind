@@ -1,0 +1,44 @@
+[bc_128zerov_vs_raw_honest] device=mps pairs=100 chunk=100 A=checkpoints/campaign25/bc_a.pt sims=128 zero_v=True | B=checkpoints/campaign25/bc_a.pt sims=2 zero_v=False | determinize=per_decision cross_route=False tree_reuse=False opening_temp=False
+[bc_128zerov_vs_raw_honest] .. 0/200 games  6324 evals/s  30s
+[bc_128zerov_vs_raw_honest] .. 1/200 games  5530 evals/s  60s
+[bc_128zerov_vs_raw_honest] .. 1/200 games  4251 evals/s  90s
+[bc_128zerov_vs_raw_honest] .. 1/200 games  3693 evals/s  120s
+[bc_128zerov_vs_raw_honest] .. 5/200 games  3364 evals/s  150s
+[bc_128zerov_vs_raw_honest] .. 8/200 games  3142 evals/s  180s
+[bc_128zerov_vs_raw_honest] .. 10/200 games  2985 evals/s  210s
+[bc_128zerov_vs_raw_honest] .. 18/200 games  2853 evals/s  240s
+[bc_128zerov_vs_raw_honest] .. 27/200 games  2754 evals/s  271s
+[bc_128zerov_vs_raw_honest] .. 34/200 games  2649 evals/s  301s
+[bc_128zerov_vs_raw_honest] .. 45/200 games  2560 evals/s  331s
+[bc_128zerov_vs_raw_honest] .. 57/200 games  2474 evals/s  361s
+[bc_128zerov_vs_raw_honest] .. 69/200 games  2391 evals/s  391s
+[bc_128zerov_vs_raw_honest] .. 77/200 games  2311 evals/s  421s
+[bc_128zerov_vs_raw_honest] .. 84/200 games  2239 evals/s  451s
+[bc_128zerov_vs_raw_honest] .. 92/200 games  2153 evals/s  481s
+[bc_128zerov_vs_raw_honest] .. 95/200 games  2067 evals/s  511s
+[bc_128zerov_vs_raw_honest] .. 99/200 games  1977 evals/s  541s
+[bc_128zerov_vs_raw_honest] .. 99/200 games  1888 evals/s  571s
+[bc_128zerov_vs_raw_honest] .. 100/200 games  1814 evals/s  601s
+[bc_128zerov_vs_raw_honest] .. 100/200 games  1821 evals/s  631s
+[bc_128zerov_vs_raw_honest] .. 100/200 games  1871 evals/s  661s
+[bc_128zerov_vs_raw_honest] .. 100/200 games  1922 evals/s  692s
+[bc_128zerov_vs_raw_honest] .. 100/200 games  1913 evals/s  722s
+[bc_128zerov_vs_raw_honest] .. 101/200 games  1900 evals/s  752s
+[bc_128zerov_vs_raw_honest] .. 103/200 games  1888 evals/s  782s
+[bc_128zerov_vs_raw_honest] .. 103/200 games  1876 evals/s  812s
+[bc_128zerov_vs_raw_honest] .. 104/200 games  1865 evals/s  843s
+[bc_128zerov_vs_raw_honest] .. 106/200 games  1856 evals/s  873s
+[bc_128zerov_vs_raw_honest] .. 110/200 games  1847 evals/s  903s
+[bc_128zerov_vs_raw_honest] .. 114/200 games  1837 evals/s  933s
+[bc_128zerov_vs_raw_honest] .. 120/200 games  1827 evals/s  963s
+[bc_128zerov_vs_raw_honest] .. 131/200 games  1817 evals/s  993s
+[bc_128zerov_vs_raw_honest] .. 140/200 games  1805 evals/s  1023s
+[bc_128zerov_vs_raw_honest] .. 153/200 games  1794 evals/s  1053s
+[bc_128zerov_vs_raw_honest] .. 161/200 games  1779 evals/s  1083s
+[bc_128zerov_vs_raw_honest] .. 171/200 games  1765 evals/s  1113s
+[bc_128zerov_vs_raw_honest] .. 180/200 games  1750 evals/s  1144s
+[bc_128zerov_vs_raw_honest] .. 188/200 games  1734 evals/s  1174s
+[bc_128zerov_vs_raw_honest] .. 196/200 games  1716 evals/s  1204s
+[bc_128zerov_vs_raw_honest] 100/100 pairs  A 24W-176L-0T score=0.120±0.024  584 games/hr  1688 evals/s  1232s
+[bc_128zerov_vs_raw_honest] DONE A 24W-176L-0T score=0.120 ci95=[0.074,0.166] elo=-346 seat0=0.500 non_greedy=0.0% turns=51.1 trunc=11 1232.3s
+[bc_128zerov_vs_raw_honest] raw-policy check side B: 100.00% of moves = prior argmax

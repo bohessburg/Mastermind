@@ -57,6 +57,11 @@ constexpr std::uint8_t kKingdomSupply = 10;
 
 void add_uniform_pile(GameState& state, DefId def, std::uint8_t count) noexcept {
     assert(state.num_piles < MAX_PILES);
+    // MAX_KINGDOM_DEFS keeps a Setup within MAX_PILES; this also holds in
+    // Release, where the assert is compiled out.
+    if (state.num_piles >= MAX_PILES) {
+        return;
+    }
     Pile& pile = state.piles[state.num_piles];
     pile.base = add_slot(state, def);
     pile.count = count;
@@ -112,7 +117,21 @@ GameState new_game(const Setup& setup, std::uint64_t seed) noexcept {
     std::memset(&state, 0, sizeof(state));
     state.num_players = sanitize_player_count(setup.num_players);
     state.rng = Xoshiro256pp::seeded(seed);
+    state.trigger_table.dirty = 0U;
 
+    for (std::uint8_t i = 0U; i < MAX_LANDSCAPES; ++i) {
+        state.events[i] = NO_LANDSCAPE;
+        state.ways[i] = NO_LANDSCAPE;
+        state.landmarks[i] = NO_LANDSCAPE;
+        state.projects[i] = NO_LANDSCAPE;
+    }
+    state.prophecy = NO_LANDSCAPE;
+    for (Pile& pile : state.piles) {
+        pile.trait = NO_LANDSCAPE;
+    }
+    for (Pile& pile : state.nonsupply) {
+        pile.trait = NO_LANDSCAPE;
+    }
     for (int i = 0; i < NUM_ARTIFACTS; ++i) {
         state.artifact_holder[i] = NONE;
     }

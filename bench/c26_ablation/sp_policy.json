@@ -1,0 +1,11 @@
+{
+  "arm": "sp_policy",
+  "steps": 240,
+  "wins": 82,
+  "losses": 113,
+  "ties": 5,
+  "win_pct": 0.4205128205128205,
+  "gate_s": 600,
+  "gate_games": 200,
+  "gate_sims": 128
+}

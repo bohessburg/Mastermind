@@ -1,0 +1,11 @@
+{
+  "arm": "sp_value",
+  "steps": 240,
+  "wins": 92,
+  "losses": 102,
+  "ties": 6,
+  "win_pct": 0.4742268041237113,
+  "gate_s": 551,
+  "gate_games": 200,
+  "gate_sims": 128
+}

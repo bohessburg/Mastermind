@@ -1,0 +1,25 @@
+[meas_campaign28_gen_0001_crossroute] device=mps pairs=50 chunk=100 A=checkpoints/campaign28/gen_0001.pt sims=128 zero_v=False | B=checkpoints/campaign25/bc_a.pt sims=128 zero_v=False | determinize=off cross_route=True tree_reuse=False opening_temp=False leaves_in_flight=8 (min sims/leaf 32)
+[meas_campaign28_gen_0001_crossroute] .. 0/100 games  2375 evals/s  30s
+[meas_campaign28_gen_0001_crossroute] .. 0/100 games  4280 evals/s  60s
+[meas_campaign28_gen_0001_crossroute] .. 0/100 games  5162 evals/s  90s
+[meas_campaign28_gen_0001_crossroute] .. 6/100 games  5589 evals/s  120s
+[meas_campaign28_gen_0001_crossroute] .. 15/100 games  5734 evals/s  150s
+[meas_campaign28_gen_0001_crossroute] .. 26/100 games  5689 evals/s  180s
+[meas_campaign28_gen_0001_crossroute] .. 34/100 games  5446 evals/s  210s
+[meas_campaign28_gen_0001_crossroute] .. 38/100 games  5086 evals/s  240s
+[meas_campaign28_gen_0001_crossroute] .. 44/100 games  4721 evals/s  270s
+[meas_campaign28_gen_0001_crossroute] .. 47/100 games  4339 evals/s  300s
+[meas_campaign28_gen_0001_crossroute] .. 48/100 games  3993 evals/s  330s
+[meas_campaign28_gen_0001_crossroute] .. 48/100 games  3705 evals/s  360s
+[meas_campaign28_gen_0001_crossroute] .. 49/100 games  3448 evals/s  390s
+[meas_campaign28_gen_0001_crossroute] .. 50/100 games  3623 evals/s  420s
+[meas_campaign28_gen_0001_crossroute] .. 50/100 games  3857 evals/s  450s
+[meas_campaign28_gen_0001_crossroute] .. 52/100 games  4068 evals/s  480s
+[meas_campaign28_gen_0001_crossroute] .. 61/100 games  4248 evals/s  510s
+[meas_campaign28_gen_0001_crossroute] .. 70/100 games  4351 evals/s  540s
+[meas_campaign28_gen_0001_crossroute] .. 77/100 games  4377 evals/s  570s
+[meas_campaign28_gen_0001_crossroute] .. 85/100 games  4336 evals/s  600s
+[meas_campaign28_gen_0001_crossroute] .. 94/100 games  4229 evals/s  630s
+[meas_campaign28_gen_0001_crossroute] .. 97/100 games  4080 evals/s  660s
+[meas_campaign28_gen_0001_crossroute] 50/50 pairs  A 61W-36L-3T score=0.625±0.049  527 games/hr  3958 evals/s  683s
+[meas_campaign28_gen_0001_crossroute] DONE A 61W-36L-3T score=0.625 ci95=[0.529,0.721] elo=+89 seat0=0.535 non_greedy=0.0% turns=39.1 trunc=2 683.2s

@@ -6,9 +6,12 @@ using DefId = std::uint16_t;
 using Slot = std::uint8_t;
 using PlayerId = std::uint8_t;
 
-constexpr int MAX_PLAYERS = 4;
+// The engine targets 2-player Dominion. Per-player arrays dominate GameState
+// size (and so MCTS tree memory), so they are sized for two seats. A real
+// supply needs at most ~23 piles; see MAX_KINGDOM_DEFS in setup.h.
+constexpr int MAX_PLAYERS = 2;
 constexpr int MAX_SLOTS = 64;
-constexpr int MAX_PILES = 24;
+constexpr int MAX_PILES = 32;
 constexpr int MAX_NONSUPPLY = 8;
 constexpr int MAX_DECK_CARDS = 160;
 constexpr int MAX_EFFECT_DEPTH = 24;

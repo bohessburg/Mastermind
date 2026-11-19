@@ -1,6 +1,11 @@
 #include "v2/drivers/bots.h"
 
+#include "v2/core/determinize.h"
+#include "v2/encode/encoder.h"
+#include "v2/mcts/tree.h"
+
 #include <catch2/catch_test_macros.hpp>
+#include <array>
 #include <cstddef>
 #include <cstdlib>
 #include <new>
@@ -77,10 +82,56 @@ TEST_CASE("v2 new_game and BigMoney loops allocate nothing", "[v2][alloc]") {
             if (result.truncated) {
                 ++truncated;
             }
+
+            GameState state = Game::new_game(Setup{}, 0xD373'C000ULL + seed);
+            determinize(state, 0U, 0xD373'D000ULL + seed);
         }
         allocations = scope.count();
     }
 
     REQUIRE(truncated == 0);
+    REQUIRE(allocations == 0U);
+}
+
+TEST_CASE("v2 MCTS search allocates nothing after construction", "[v2][alloc][mcts]") {
+    MctsConfig config{};
+    config.sims_per_move = 16U;
+    config.c_puct_schedule = MctsCPuctSchedule::VisitScaled;
+    config.c_puct_base = 500.0F;
+    config.determinizations = 1U;
+    config.max_tree_nodes = 512U;
+    config.rollout_seed = 0xA110'C8EEULL;
+
+    Mcts search(config);
+    std::uint64_t allocations = 0;
+    {
+        AllocationScope scope;
+        for (std::uint64_t seed = 0; seed < 10U; ++seed) {
+            GameState state = Game::new_game(Setup{}, 0xC0DE'5000ULL + seed);
+            const Action action = search.choose(state, 0U);
+            ActionMask legal{};
+            (void)Game::legal_actions(state, legal);
+            REQUIRE(legal.test(action));
+        }
+        allocations = scope.count();
+    }
+
+    REQUIRE(allocations == 0U);
+}
+
+TEST_CASE("v2 observation encoders allocate nothing in the hot path", "[v2][alloc][encode]") {
+    const GameState state = Game::new_game(Setup{}, 0xA110'C900ULL);
+    std::array<float, OBS_SIZE_V1> v1{};
+    std::array<float, OBS_SIZE_V2> v2{};
+    std::uint64_t allocations = 0;
+    {
+        AllocationScope scope;
+        for (int iteration = 0; iteration < 1000; ++iteration) {
+            encode_v1(state, 0U, v1.data());
+            encode_v2(state, 0U, v2.data());
+        }
+        allocations = scope.count();
+    }
+
     REQUIRE(allocations == 0U);
 }

@@ -1,0 +1,28 @@
+{
+  "seed": 20260730,
+  "generations": 4,
+  "device": "auto",
+  "parallel_workers": 2,
+  "gate_games": 0,
+  "checkpoint_dir": "bench/regime_ab/CKPT_DIR",
+  "metrics_csv": "bench/regime_ab/CKPT_DIR/metrics.csv",
+  "league_pool_size": 0,
+  "league_seed_checkpoints": [],
+  "league_schedule": [],
+  "scripted_opponents": {},
+  "kingdom_curriculum": [],
+  "model": {"arch": "card_transformer", "obs_version": 3, "d_model": 128, "n_layers": 2, "n_heads": 4, "ffn_multiplier": 4, "dropout": 0.0},
+  "selfplay": {
+    "n_games": 32, "sims_per_move": 128, "games_per_generation": 128,
+    "max_batch": 2048, "c_puct": 1.25, "dirichlet_alpha": 0.3, "dirichlet_frac": 0.25,
+    "temp_moves": 20, "kingdom_mode": "random", "max_recorded_moves": 512,
+    "max_tree_nodes": 4096, "auto_play_treasures": true, "prune_treasure_plays": true,
+    "value_target": "margin_blend", "margin_scale": 20.0, "margin_blend_alpha": 0.6,
+    "obs_version": 3, "tree_reuse": false, "expand_top_k": 8,
+    "determinize": "DETERMINIZE_MODE",
+    "opening_templates_enabled": false
+  },
+  "optim": {"lr": 0.0002, "lr_schedule": "cosine", "min_lr": 5e-05, "batch_size": 512, "train_steps_per_generation": 200, "weight_decay": 0.0001},
+  "replay": {"capacity": 300000},
+  "eval": {"eval_every_n_generations": 99, "eval_games": 0, "eval_sims": 100, "eval_opponent": "engine3", "eval_sentinels": []}
+}

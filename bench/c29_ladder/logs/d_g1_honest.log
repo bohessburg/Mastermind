@@ -1,0 +1,3 @@
+[d_g1_honest] device=mps pairs=32 chunk=32 A=checkpoints/campaign28/gen_0001.pt sims=128 zero_v=False | B=checkpoints/campaign25/bc_a.pt sims=128 zero_v=False | determinize=per_decision cross_route=False tree_reuse=False opening_temp=False
+[d_g1_honest] 32/32 pairs  A 51W-11L-2T score=0.812±0.048  239 games/hr  2011 evals/s  965s
+[d_g1_honest] DONE A 51W-11L-2T score=0.812 ci95=[0.719,0.906] elo=+255 seat0=0.531 non_greedy=0.0% turns=54.7 trunc=0 964.9s

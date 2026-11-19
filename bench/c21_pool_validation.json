@@ -1,0 +1,36 @@
+{
+  "sentry_engine_wide": {
+    "overall_win_pct": 86.75,
+    "worst_kingdom_pct": 40.0,
+    "worst_kingdom": [
+      10,
+      12,
+      27,
+      28,
+      29,
+      31,
+      32,
+      34,
+      35,
+      40
+    ],
+    "passed": true
+  },
+  "thin_engine_wide": {
+    "overall_win_pct": 84.41666666666667,
+    "worst_kingdom_pct": 47.5,
+    "worst_kingdom": [
+      11,
+      12,
+      13,
+      21,
+      27,
+      29,
+      31,
+      34,
+      35,
+      40
+    ],
+    "passed": false
+  }
+}

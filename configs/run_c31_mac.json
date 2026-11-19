@@ -1,0 +1,171 @@
+{
+  "_comment": "Campaign 31 on the Mac (2026-11-13, Jack: 'try training on the mac ... see how long a generation takes'). configs/run_c31.json continued from c31's best (gen 27) with an empty replay buffer while the box was down. Launch: PYTHONPATH=build:. python -m src.v2.train.train --config configs/run_c31_mac.json --init-weights checkpoints/remote/campaign31/gen_0027.pt. A worker would otherwise run all of its assigned games at once (selfplay.n_games is ignored when a slot manifest is used) and the 1024 games of a generation would hold about 88 GB of search trees whatever parallel_workers is, so selfplay.max_concurrent_games 64 plays each worker's 128 games in waves (at most 512 games, about 44 GB, at once) to fit a 64 GB Mac. Two attempts without the cap on the M1 Max were stopped in self-play (45k server evals/s, GPU-bound, no game finished); see docs/benchmarks.md. 2026-11-14 (Jack): cap removed (0) after the 2-player/32-pile engine cut tree memory ~37%; measured 512 concurrent games ~22 GB of workers, so all 1024 at once should be ~50 GB. Differences from run_c31.json, all hardware: self-play served by MLX fp16 on Metal (server_device mps, server_backend mlx, server_fp16) instead of the compiled bf16 CUDA graph (server_compile, server_autocast_bf16, server_trim_piles, server_batch_buckets off; eager paths trim tokens per batch); 8 workers instead of 64; one server shard; 8 eval workers. Two schedule differences because generation numbering restarts at 1: the human anchor is held at 0.1 (where c31 had it from gen 20), and the cosine learning rate restarts from 1.4e-4. League seeds point at the local copies of c29 gen 10/25/35. Gate (2026-11-15): gate_backend mlx fp32 (identical games to PyTorch over 50,861 decisions, ~1.4x faster; fp16 bought no gate speed) and gate_chunk 400 (the gate was 90% evaluation at 333-row batches).",
+  "seed": 20261113,
+  "generations": 60,
+  "init_weights": "",
+  "device": "auto",
+  "parallel_workers": 8,
+  "server_selfplay": true,
+  "checkpoint_dir": "checkpoints/campaign31_mac",
+  "metrics_csv": "checkpoints/campaign31_mac/metrics.csv",
+  "league_pool_size": 16,
+  "league_seed_checkpoints": [
+    "checkpoints/remote/campaign29/gen_0010.pt",
+    "checkpoints/remote/campaign29/gen_0025.pt",
+    "checkpoints/remote/campaign29/gen_0035.pt"
+  ],
+  "league_self_every": 10,
+  "league_schedule": [
+    [
+      1,
+      0.1
+    ]
+  ],
+  "league_opponents_per_gen": 3,
+  "scripted_opponents": {
+    "bigmoney": 0.05,
+    "engine": 0.05
+  },
+  "scripted_opponent_schedule": {},
+  "kingdom_curriculum": [],
+  "model": {
+    "arch": "card_transformer",
+    "obs_version": 3,
+    "d_model": 192,
+    "n_layers": 4,
+    "n_heads": 6,
+    "ffn_multiplier": 4,
+    "dropout": 0.0,
+    "aux_margin_buckets": 21,
+    "derived_features": true,
+    "final_norm": true,
+    "embedding_init_std": 0.02
+  },
+  "aux_margin_weight": 0.3,
+  "imitation": {
+    "human_tuples": "exports/tuples_all_40plus/train",
+    "skill_weighting": true,
+    "pretrain_steps": 0,
+    "pretrain_batch_size": 512,
+    "anchor_weight": 0.5,
+    "anchor_weight_schedule": [
+      [
+        1,
+        0.5
+      ],
+      [
+        20,
+        0.1
+      ]
+    ],
+    "anchor_batch_size": 512,
+    "anchor_awr_beta": 0.0,
+    "anchor_value_weight": 1.0
+  },
+  "server_compile": false,
+  "server_autocast_bf16": false,
+  "server_trim_piles": null,
+  "server_batch_buckets": null,
+  "selfplay": {
+    "n_games": 16,
+    "max_concurrent_games": 0,
+    "sims_per_move": 1024,
+    "games_per_generation": 1024,
+    "max_batch": 4096,
+    "c_puct": 1.25,
+    "dirichlet_alpha": 0.3,
+    "dirichlet_frac": 0.25,
+    "determinize": "off",
+    "tree_reuse": true,
+    "forced_playouts": true,
+    "forced_playouts_k": 2.0,
+    "expand_top_k": 8,
+    "temp_mode": "per_seat_buy",
+    "temp_buy_turns": 6,
+    "temp_action_plies": 10,
+    "temp_effect_plies": 6,
+    "kingdom_mode": "random",
+    "max_recorded_moves": 512,
+    "max_tree_nodes": 8192,
+    "auto_play_treasures": true,
+    "prune_treasure_plays": true,
+    "value_target": "margin",
+    "margin_scale": 20.0,
+    "obs_version": 3,
+    "opening_templates_enabled": false,
+    "max_turns": 100,
+    "deep_slice_fraction": 0.1,
+    "deep_slice_sims": 4096,
+    "adjudicate_truncation": true,
+    "leaves_in_flight": 8,
+    "deep_leaves_in_flight": 32,
+    "leaves_min_sims_per_leaf": 32,
+    "tail_games_threshold": 2,
+    "tail_leaves_in_flight": 8,
+    "generation_cutoff_fraction": 0.99,
+    "root_value_blend": 0.25,
+    "fpu_reduction": 0.2,
+    "scaled_terminal_values": true,
+    "dirichlet_alpha_total": 10.0,
+    "sample_from_pruned_policy": true,
+    "adaptive_sims_per_legal": 128,
+    "adaptive_sims_floor": 128,
+    "deep_max_tree_nodes": 32768
+  },
+  "replay": {
+    "capacity": 1000000,
+    "sil_weight": 0.0
+  },
+  "optim": {
+    "optimizer": "adamw",
+    "lr": 0.00014,
+    "lr_schedule": "cosine",
+    "min_lr": 5e-05,
+    "weight_decay": 0.03,
+    "batch_size": 2048,
+    "train_steps_per_generation": 80,
+    "value_loss_weight": 0.25
+  },
+  "eval": {
+    "eval_every_n_generations": 0,
+    "eval_on_accept": true,
+    "eval_games": 100,
+    "eval_sims": 400,
+    "eval_opponent": "engine3",
+    "eval_honest": true,
+    "eval_kingdoms": "random",
+    "eval_n_games": 128,
+    "eval_max_batch": 4096,
+    "eval_sentinels": [
+      {
+        "opponent": "engine3",
+        "games": 100
+      }
+    ],
+    "eval_workers": 8,
+    "eval_async": true
+  },
+  "server_response_timeout_s": 900.0,
+  "server_shards": 1,
+  "server_gpu_ids": [],
+  "gate_mode": "paired",
+  "gate_games": 800,
+  "gate_sims": 128,
+  "gate_threshold": 0.5,
+  "gate_ci_z": 1.0,
+  "gate_determinize": "per_decision",
+  "gate_chunk": 400,
+  "gate_backend": "mlx",
+  "gate_fp16": false,
+  "gate_third_party_opponent": "",
+  "gate_third_party_games": 200,
+  "gate_third_party_sims": 400,
+  "gate_third_party_margin": 0.05,
+  "gate_third_party_background": true,
+  "gate_force_accept_every": 0,
+  "gate_warmup_generations": 0,
+  "stop_after_rejections": 10,
+  "server_device": "mps",
+  "server_backend": "mlx",
+  "server_fp16": true
+}

@@ -6,6 +6,63 @@ An AlphaZero-style AI for the card game [Dominion](https://wiki.dominionstrategy
 
 Train a self-play reinforcement learning agent that learns to play Dominion at a high level, using techniques inspired by [AlphaZero](https://arxiv.org/abs/1712.01815). This requires a fast, correct, and modular game engine as the foundation. 
 
+## Build And Run
+
+The active engine is the v2 engine under `src/v2/`. The normal Release build
+creates the core library, drivers, tests, benchmark, fuzz driver, TUI, and card
+definition dumper:
+
+```sh
+cmake -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build
+ctest --test-dir build --output-on-failure
+```
+
+Main CMake targets:
+
+- `dominion_v2` - core static library
+- `dominion_v2_drivers` - bot and game-driver library
+- `v2_tests` - Catch2 test suite
+- `v2_bench` - performance benchmark JSON emitter
+- `v2_fuzz` - seeded fuzz-game driver
+- `dominion_v2_play` - terminal play UI
+- `dominion_v2_py` - Python extension module when `BUILD_PYTHON=ON`
+- `v2_dump_defs` - web/client card-definition JSON exporter
+
+Python bindings:
+
+```sh
+PYBIND11_DIR="$(./.venv/bin/python -m pybind11 --cmakedir)"
+cmake -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_PYTHON=ON -Dpybind11_DIR="$PYBIND11_DIR"
+cmake --build build --target dominion_v2_py
+PYTHONPATH=build ./.venv/bin/python src/v2/py/test_smoke.py
+```
+
+Web harness quickstart:
+
+```sh
+PYTHONPATH=build ./.venv/bin/python -m uvicorn src.v2.web.server.main:app --reload
+cd src/v2/web/client
+npm ci
+npm run dev
+```
+
+The Vite dev server proxies `/api` and `/ws` to the FastAPI server. Production
+builds are served by the FastAPI app after `npm run build`.
+
+Terminal play:
+
+```sh
+./build/dominion_v2_play --bot engine
+```
+
+Benchmark and fuzz:
+
+```sh
+./build/v2_bench
+./build/v2_fuzz --seeds 1000 --steps-budget 100000 --players 2
+```
+
 ## Why Dominion is hard
 
 AlphaZero was designed for perfect-information, fixed-action-space games like Chess and Go. Dominion breaks those assumptions in almost every way:

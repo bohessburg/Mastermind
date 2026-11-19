@@ -1,0 +1,9 @@
+[full] replay rows 1000000, steps 240
+[full] step 0 {'policy_loss': 2.272, 'value_loss': 0.2157, 'entropy': 0.5299, 'aux_margin_loss': 4.7497, 'anchor_policy_loss': 0.5824, 'anchor_value_loss': 0.2577} 1s
+[full] step 40 {'policy_loss': 1.2547, 'value_loss': 0.1588, 'entropy': 1.1255, 'aux_margin_loss': 3.6321, 'anchor_policy_loss': 0.6807, 'anchor_value_loss': 0.2992} 13s
+[full] step 80 {'policy_loss': 1.2388, 'value_loss': 0.1581, 'entropy': 1.1511, 'aux_margin_loss': 3.4062, 'anchor_policy_loss': 0.5987, 'anchor_value_loss': 0.2937} 25s
+[full] step 120 {'policy_loss': 1.2126, 'value_loss': 0.148, 'entropy': 1.1511, 'aux_margin_loss': 3.3013, 'anchor_policy_loss': 0.6035, 'anchor_value_loss': 0.2427} 36s
+[full] step 160 {'policy_loss': 1.2184, 'value_loss': 0.1579, 'entropy': 1.1555, 'aux_margin_loss': 3.3227, 'anchor_policy_loss': 0.5166, 'anchor_value_loss': 0.2512} 47s
+[full] step 200 {'policy_loss': 1.2276, 'value_loss': 0.1421, 'entropy': 1.1955, 'aux_margin_loss': 3.2346, 'anchor_policy_loss': 0.6042, 'anchor_value_loss': 0.2696} 52s
+[full] step 239 {'policy_loss': 1.2362, 'value_loss': 0.1501, 'entropy': 1.2031, 'aux_margin_loss': 3.3452, 'anchor_policy_loss': 0.4621, 'anchor_value_loss': 0.2705} 58s
+[full] GATE 71W-128L-1T win_pct=0.357

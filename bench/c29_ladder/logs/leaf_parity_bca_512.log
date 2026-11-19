@@ -1,0 +1,34 @@
+[bca_512] leaves=1 .. 0/32 games  100992 evals  30s
+[bca_512] leaves=1 .. 0/32 games  204064 evals  60s
+[bca_512] leaves=1 .. 0/32 games  303968 evals  90s
+[bca_512] leaves=1 .. 0/32 games  382880 evals  120s
+[bca_512] leaves=1 .. 2/32 games  441975 evals  150s
+[bca_512] leaves=1 .. 2/32 games  500055 evals  180s
+[bca_512] leaves=1 .. 5/32 games  554097 evals  210s
+[bca_512] leaves=1 .. 6/32 games  605740 evals  240s
+[bca_512] leaves=1 .. 8/32 games  656952 evals  270s
+[bca_512] leaves=1 .. 11/32 games  705952 evals  300s
+[bca_512] leaves=1 .. 14/32 games  749845 evals  330s
+[bca_512] leaves=1 .. 17/32 games  792392 evals  360s
+[bca_512] leaves=1 .. 19/32 games  830865 evals  390s
+[bca_512] leaves=1 .. 23/32 games  864893 evals  420s
+[bca_512] leaves=1 .. 26/32 games  894580 evals  450s
+[bca_512] leaves=1 .. 30/32 games  908769 evals  480s
+[bca_512] leaves=1 .. 31/32 games  915140 evals  510s
+[bca_512] leaves=1 .. 31/32 games  919081 evals  540s
+[bca_512] leaves=1 done: 32 games  920293 evals  550s
+[bca_512] sequential: {'decisions': 3893, 'entropy': 0.42301936629935133, 'top_share': 0.8259208164489549}
+[bca_512] leaves=8 .. 0/32 games  174045 evals  580s
+[bca_512] leaves=8 .. 0/32 games  361501 evals  610s
+[bca_512] leaves=8 .. 5/32 games  546495 evals  640s
+[bca_512] leaves=8 .. 14/32 games  709038 evals  670s
+[bca_512] leaves=8 .. 26/32 games  813478 evals  700s
+[bca_512] leaves=8 done: 32 games  843275 evals  725s
+[bca_512] leaves=8: {"matched_decisions": 497, "identical_games": 1, "same_top_move": 0.937625754527163, "total_variation": 0.06361213415739553, "sequential_entropy": 0.4193200350809516, "batched_entropy": 0.5286387164829897, "sequential_top_share": 0.8317479479834692, "batched_top_share": 0.8060377184193258, "batched_share_on_sequential_top": 0.7947960932366561, "all_decisions": {"decisions": 3469, "entropy": 0.5620082554437955, "top_share": 0.7844859236560408}}
+[bca_512] leaves=16 .. 0/32 games  174267 evals  755s
+[bca_512] leaves=16 .. 1/32 games  403416 evals  785s
+[bca_512] leaves=16 .. 9/32 games  652346 evals  815s
+[bca_512] leaves=16 .. 29/32 games  852693 evals  845s
+[bca_512] leaves=16 done: 32 games  871441 evals  859s
+[bca_512] leaves=16: {"matched_decisions": 320, "identical_games": 0, "same_top_move": 0.9, "total_variation": 0.10013788241165408, "sequential_entropy": 0.4856769787701662, "batched_entropy": 0.6876757307137298, "sequential_top_share": 0.8037227461758283, "batched_top_share": 0.7520432077570461, "batched_share_on_sequential_top": 0.7354457468913407, "all_decisions": {"decisions": 3563, "entropy": 0.6732729755391167, "top_share": 0.7499352107791741}}
+[bca_512] DONE 859s

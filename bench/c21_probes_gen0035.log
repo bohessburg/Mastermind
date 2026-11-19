@@ -1,0 +1,7 @@
+run_all checkpoint=checkpoints/campaign21/gen_0035.pt
+value_probe money=+0.618 engine=-0.327 junk=-0.978 acceptance=n/a
+chapel_probe attack-present=0.288 no-attack=0.289
+militia_probe raw=inversion_present search=inversion_present raw_mismatch_cases=copper_copper_estate_silver,two_copper_three_silver,two_estates_gold_two_silver_control
+duchy_probe P(Duchy) delta=-0.083pts value delta=-0.0475
+human_record_probe[v1] won(mass=0.183,default=0.418,n=361) lost(mass=0.172,default=0.580,n=50)
+json=bench/c21_probes_gen0035.json

@@ -1,0 +1,62 @@
+# syntax=docker/dockerfile:1
+
+ARG CUDA_TAG=12.6.3
+
+FROM nvidia/cuda:${CUDA_TAG}-cudnn-devel-ubuntu24.04 AS build
+
+ENV DEBIAN_FRONTEND=noninteractive
+WORKDIR /src
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    ca-certificates \
+    cmake \
+    git \
+    ninja-build \
+    python3 \
+    python3-dev \
+    python3-pip \
+    python3-venv \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN python3 -m venv /opt/venv \
+    && /opt/venv/bin/python -m pip install --upgrade pip numpy pybind11
+
+COPY . /src
+
+RUN PYBIND11_DIR="$('/opt/venv/bin/python' -m pybind11 --cmakedir)" \
+    && cmake -B /src/build \
+        -G Ninja \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DBUILD_TESTS=OFF \
+        -DBUILD_PYTHON=ON \
+        -DPython3_EXECUTABLE=/opt/venv/bin/python \
+        -Dpybind11_DIR="${PYBIND11_DIR}" \
+    && cmake --build /src/build --target dominion_v2_py
+
+FROM nvidia/cuda:${CUDA_TAG}-cudnn-runtime-ubuntu24.04 AS runtime
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app/build:/app
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    python3 \
+    python3-pip \
+    python3-venv \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN python3 -m venv /opt/venv \
+    && /opt/venv/bin/python -m pip install --upgrade pip \
+    && /opt/venv/bin/python -m pip install numpy pybind11 \
+    && /opt/venv/bin/python -m pip install torch --index-url https://download.pytorch.org/whl/cu126
+
+COPY --from=build /src/build/dominion_v2_py*.so /app/build/
+COPY src /app/src
+COPY IMPLEMENTATION_PLAN.md REFACTOR_PLAN.md README.md /app/
+
+RUN mkdir -p /workspace/checkpoints
+
+ENTRYPOINT ["/opt/venv/bin/python", "-m", "src.v2.train.train", "--config", "/workspace/config.json"]

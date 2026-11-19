@@ -1,0 +1,1673 @@
+{
+ "checkpoint": "checkpoints/c21_ablation/bc_a_973k.pt",
+ "export_a": "exports/tuples_dgames",
+ "export_b": "exports/tuples_dgames_saltB",
+ "val_rows_evaluated": 50047,
+ "block_diff_sample_rows": 150000,
+ "label_or_mask_mismatch_by_type": {
+  "buy": {
+   "rows": 18186,
+   "label_or_mask_differs_pct": 23.05
+  },
+  "buy_pass": {
+   "rows": 3857,
+   "label_or_mask_differs_pct": 27.59
+  },
+  "action_play": {
+   "rows": 11746,
+   "label_or_mask_differs_pct": 0.0
+  },
+  "treasure_play": {
+   "rows": 5723,
+   "label_or_mask_differs_pct": 0.0
+  },
+  "action_pass": {
+   "rows": 2183,
+   "label_or_mask_differs_pct": 0.0
+  },
+  "militia_keep": {
+   "rows": 1236,
+   "label_or_mask_differs_pct": 0.0
+  },
+  "cellar_discard": {
+   "rows": 1691,
+   "label_or_mask_differs_pct": 1.48
+  },
+  "chapel_trash": {
+   "rows": 240,
+   "label_or_mask_differs_pct": 0.0
+  },
+  "poacher_discard": {
+   "rows": 228,
+   "label_or_mask_differs_pct": 0.0
+  },
+  "harbinger_topdeck": {
+   "rows": 381,
+   "label_or_mask_differs_pct": 47.51
+  },
+  "sentry_option": {
+   "rows": 1631,
+   "label_or_mask_differs_pct": 0.0
+  },
+  "sentry_order": {
+   "rows": 261,
+   "label_or_mask_differs_pct": 0.0
+  },
+  "throne_room_target": {
+   "rows": 1128,
+   "label_or_mask_differs_pct": 0.0
+  },
+  "remodel_trash": {
+   "rows": 174,
+   "label_or_mask_differs_pct": 0.0
+  },
+  "remodel_gain": {
+   "rows": 174,
+   "label_or_mask_differs_pct": 0.0
+  },
+  "mine_trash": {
+   "rows": 48,
+   "label_or_mask_differs_pct": 0.0
+  },
+  "mine_gain": {
+   "rows": 48,
+   "label_or_mask_differs_pct": 0.0
+  },
+  "artisan_gain": {
+   "rows": 274,
+   "label_or_mask_differs_pct": 0.0
+  },
+  "artisan_topdeck": {
+   "rows": 274,
+   "label_or_mask_differs_pct": 0.0
+  },
+  "vassal_option": {
+   "rows": 476,
+   "label_or_mask_differs_pct": 0.0
+  },
+  "library_option": {
+   "rows": 85,
+   "label_or_mask_differs_pct": 0.0
+  },
+  "bandit_trash": {
+   "rows": 3,
+   "label_or_mask_differs_pct": 0.0
+  }
+ },
+ "block_diff": {
+  "all": {
+   "own_hand": {
+    "rows_differing_pct": 20.06,
+    "mean_cards_moved": 0.281
+   },
+   "own_deck": {
+    "rows_differing_pct": 47.0,
+    "mean_cards_moved": 0.79
+   },
+   "own_discard": {
+    "rows_differing_pct": 26.98,
+    "mean_cards_moved": 0.51
+   },
+   "own_inplay": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "own_setaside": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "opp_prefix": {
+    "rows_differing_pct": 6.81,
+    "mean_cards_moved": 0.259
+   },
+   "opp_collection": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "opp_discard": {
+    "rows_differing_pct": 31.62,
+    "mean_cards_moved": 0.598
+   },
+   "opp_setaside": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "everything_else": {
+    "rows_differing_pct": 0.0013
+   }
+  },
+  "partially_inferred": {
+   "own_hand": {
+    "rows_differing_pct": 57.1,
+    "mean_cards_moved": 0.8
+   },
+   "own_deck": {
+    "rows_differing_pct": 58.42,
+    "mean_cards_moved": 0.828
+   },
+   "own_discard": {
+    "rows_differing_pct": 1.31,
+    "mean_cards_moved": 0.028
+   },
+   "own_inplay": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "own_setaside": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "opp_prefix": {
+    "rows_differing_pct": 0.14,
+    "mean_cards_moved": 0.003
+   },
+   "opp_collection": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "opp_discard": {
+    "rows_differing_pct": 0.86,
+    "mean_cards_moved": 0.019
+   },
+   "opp_setaside": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   }
+  },
+  "fully_observed": {
+   "own_hand": {
+    "rows_differing_pct": 0.06,
+    "mean_cards_moved": 0.001
+   },
+   "own_deck": {
+    "rows_differing_pct": 40.84,
+    "mean_cards_moved": 0.769
+   },
+   "own_discard": {
+    "rows_differing_pct": 40.84,
+    "mean_cards_moved": 0.77
+   },
+   "own_inplay": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "own_setaside": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "opp_prefix": {
+    "rows_differing_pct": 10.41,
+    "mean_cards_moved": 0.398
+   },
+   "opp_collection": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "opp_discard": {
+    "rows_differing_pct": 48.22,
+    "mean_cards_moved": 0.911
+   },
+   "opp_setaside": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   }
+  },
+  "type:buy": {
+   "own_hand": {
+    "rows_differing_pct": 43.19,
+    "mean_cards_moved": 0.579
+   },
+   "own_deck": {
+    "rows_differing_pct": 52.29,
+    "mean_cards_moved": 0.756
+   },
+   "own_discard": {
+    "rows_differing_pct": 9.09,
+    "mean_cards_moved": 0.177
+   },
+   "own_inplay": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "own_setaside": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "opp_prefix": {
+    "rows_differing_pct": 3.1,
+    "mean_cards_moved": 0.131
+   },
+   "opp_collection": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "opp_discard": {
+    "rows_differing_pct": 12.84,
+    "mean_cards_moved": 0.245
+   },
+   "opp_setaside": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   }
+  },
+  "type:buy_pass": {
+   "own_hand": {
+    "rows_differing_pct": 63.96,
+    "mean_cards_moved": 1.019
+   },
+   "own_deck": {
+    "rows_differing_pct": 63.96,
+    "mean_cards_moved": 1.019
+   },
+   "own_discard": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "own_inplay": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "own_setaside": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "opp_prefix": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "opp_collection": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "opp_discard": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "opp_setaside": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   }
+  },
+  "type:action_play": {
+   "own_hand": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "own_deck": {
+    "rows_differing_pct": 42.15,
+    "mean_cards_moved": 0.791
+   },
+   "own_discard": {
+    "rows_differing_pct": 42.15,
+    "mean_cards_moved": 0.791
+   },
+   "own_inplay": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "own_setaside": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "opp_prefix": {
+    "rows_differing_pct": 8.27,
+    "mean_cards_moved": 0.264
+   },
+   "opp_collection": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "opp_discard": {
+    "rows_differing_pct": 44.95,
+    "mean_cards_moved": 0.845
+   },
+   "opp_setaside": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   }
+  },
+  "type:treasure_play": {
+   "own_hand": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "own_deck": {
+    "rows_differing_pct": 40.27,
+    "mean_cards_moved": 0.769
+   },
+   "own_discard": {
+    "rows_differing_pct": 40.27,
+    "mean_cards_moved": 0.769
+   },
+   "own_inplay": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "own_setaside": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "opp_prefix": {
+    "rows_differing_pct": 12.48,
+    "mean_cards_moved": 0.512
+   },
+   "opp_collection": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "opp_discard": {
+    "rows_differing_pct": 51.68,
+    "mean_cards_moved": 0.977
+   },
+   "opp_setaside": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   }
+  },
+  "type:action_pass": {
+   "own_hand": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "own_deck": {
+    "rows_differing_pct": 44.28,
+    "mean_cards_moved": 0.847
+   },
+   "own_discard": {
+    "rows_differing_pct": 44.28,
+    "mean_cards_moved": 0.847
+   },
+   "own_inplay": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "own_setaside": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "opp_prefix": {
+    "rows_differing_pct": 12.73,
+    "mean_cards_moved": 0.534
+   },
+   "opp_collection": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "opp_discard": {
+    "rows_differing_pct": 53.69,
+    "mean_cards_moved": 1.034
+   },
+   "opp_setaside": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   }
+  },
+  "type:militia_keep": {
+   "own_hand": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "own_deck": {
+    "rows_differing_pct": 44.22,
+    "mean_cards_moved": 0.817
+   },
+   "own_discard": {
+    "rows_differing_pct": 44.22,
+    "mean_cards_moved": 0.817
+   },
+   "own_inplay": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "own_setaside": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "opp_prefix": {
+    "rows_differing_pct": 14.27,
+    "mean_cards_moved": 0.735
+   },
+   "opp_collection": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "opp_discard": {
+    "rows_differing_pct": 41.52,
+    "mean_cards_moved": 0.755
+   },
+   "opp_setaside": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   }
+  },
+  "type:cellar_discard": {
+   "own_hand": {
+    "rows_differing_pct": 1.41,
+    "mean_cards_moved": 0.02
+   },
+   "own_deck": {
+    "rows_differing_pct": 47.52,
+    "mean_cards_moved": 0.933
+   },
+   "own_discard": {
+    "rows_differing_pct": 47.55,
+    "mean_cards_moved": 0.942
+   },
+   "own_inplay": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "own_setaside": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "opp_prefix": {
+    "rows_differing_pct": 9.99,
+    "mean_cards_moved": 0.349
+   },
+   "opp_collection": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "opp_discard": {
+    "rows_differing_pct": 52.03,
+    "mean_cards_moved": 1.033
+   },
+   "opp_setaside": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   }
+  },
+  "type:chapel_trash": {
+   "own_hand": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "own_deck": {
+    "rows_differing_pct": 25.48,
+    "mean_cards_moved": 0.416
+   },
+   "own_discard": {
+    "rows_differing_pct": 25.48,
+    "mean_cards_moved": 0.416
+   },
+   "own_inplay": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "own_setaside": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "opp_prefix": {
+    "rows_differing_pct": 7.2,
+    "mean_cards_moved": 0.303
+   },
+   "opp_collection": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "opp_discard": {
+    "rows_differing_pct": 31.02,
+    "mean_cards_moved": 0.578
+   },
+   "opp_setaside": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   }
+  },
+  "type:poacher_discard": {
+   "own_hand": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "own_deck": {
+    "rows_differing_pct": 47.02,
+    "mean_cards_moved": 0.96
+   },
+   "own_discard": {
+    "rows_differing_pct": 47.02,
+    "mean_cards_moved": 0.96
+   },
+   "own_inplay": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "own_setaside": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "opp_prefix": {
+    "rows_differing_pct": 9.27,
+    "mean_cards_moved": 0.283
+   },
+   "opp_collection": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "opp_discard": {
+    "rows_differing_pct": 50.73,
+    "mean_cards_moved": 1.034
+   },
+   "opp_setaside": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   }
+  },
+  "type:harbinger_topdeck": {
+   "own_hand": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "own_deck": {
+    "rows_differing_pct": 50.36,
+    "mean_cards_moved": 1.065
+   },
+   "own_discard": {
+    "rows_differing_pct": 50.36,
+    "mean_cards_moved": 1.065
+   },
+   "own_inplay": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "own_setaside": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "opp_prefix": {
+    "rows_differing_pct": 9.11,
+    "mean_cards_moved": 0.224
+   },
+   "opp_collection": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "opp_discard": {
+    "rows_differing_pct": 50.8,
+    "mean_cards_moved": 1.071
+   },
+   "opp_setaside": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   }
+  },
+  "type:sentry_option": {
+   "own_hand": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "own_deck": {
+    "rows_differing_pct": 32.93,
+    "mean_cards_moved": 0.498
+   },
+   "own_discard": {
+    "rows_differing_pct": 32.93,
+    "mean_cards_moved": 0.498
+   },
+   "own_inplay": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "own_setaside": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "opp_prefix": {
+    "rows_differing_pct": 6.39,
+    "mean_cards_moved": 0.216
+   },
+   "opp_collection": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "opp_discard": {
+    "rows_differing_pct": 40.03,
+    "mean_cards_moved": 0.689
+   },
+   "opp_setaside": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   }
+  },
+  "type:sentry_order": {
+   "own_hand": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "own_deck": {
+    "rows_differing_pct": 31.88,
+    "mean_cards_moved": 0.466
+   },
+   "own_discard": {
+    "rows_differing_pct": 31.88,
+    "mean_cards_moved": 0.466
+   },
+   "own_inplay": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "own_setaside": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "opp_prefix": {
+    "rows_differing_pct": 4.53,
+    "mean_cards_moved": 0.181
+   },
+   "opp_collection": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "opp_discard": {
+    "rows_differing_pct": 35.51,
+    "mean_cards_moved": 0.601
+   },
+   "opp_setaside": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   }
+  },
+  "type:throne_room_target": {
+   "own_hand": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "own_deck": {
+    "rows_differing_pct": 44.16,
+    "mean_cards_moved": 0.86
+   },
+   "own_discard": {
+    "rows_differing_pct": 44.16,
+    "mean_cards_moved": 0.86
+   },
+   "own_inplay": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "own_setaside": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "opp_prefix": {
+    "rows_differing_pct": 8.61,
+    "mean_cards_moved": 0.257
+   },
+   "opp_collection": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "opp_discard": {
+    "rows_differing_pct": 42.45,
+    "mean_cards_moved": 0.817
+   },
+   "opp_setaside": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   }
+  },
+  "type:remodel_trash": {
+   "own_hand": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "own_deck": {
+    "rows_differing_pct": 39.09,
+    "mean_cards_moved": 0.72
+   },
+   "own_discard": {
+    "rows_differing_pct": 39.09,
+    "mean_cards_moved": 0.72
+   },
+   "own_inplay": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "own_setaside": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "opp_prefix": {
+    "rows_differing_pct": 10.32,
+    "mean_cards_moved": 0.392
+   },
+   "opp_collection": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "opp_discard": {
+    "rows_differing_pct": 47.79,
+    "mean_cards_moved": 0.901
+   },
+   "opp_setaside": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   }
+  },
+  "type:remodel_gain": {
+   "own_hand": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "own_deck": {
+    "rows_differing_pct": 35.26,
+    "mean_cards_moved": 0.667
+   },
+   "own_discard": {
+    "rows_differing_pct": 35.26,
+    "mean_cards_moved": 0.667
+   },
+   "own_inplay": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "own_setaside": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "opp_prefix": {
+    "rows_differing_pct": 9.33,
+    "mean_cards_moved": 0.339
+   },
+   "opp_collection": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "opp_discard": {
+    "rows_differing_pct": 45.78,
+    "mean_cards_moved": 0.852
+   },
+   "opp_setaside": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   }
+  },
+  "type:mine_trash": {
+   "own_hand": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "own_deck": {
+    "rows_differing_pct": 35.29,
+    "mean_cards_moved": 0.668
+   },
+   "own_discard": {
+    "rows_differing_pct": 35.29,
+    "mean_cards_moved": 0.668
+   },
+   "own_inplay": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "own_setaside": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "opp_prefix": {
+    "rows_differing_pct": 10.7,
+    "mean_cards_moved": 0.599
+   },
+   "opp_collection": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "opp_discard": {
+    "rows_differing_pct": 47.59,
+    "mean_cards_moved": 0.856
+   },
+   "opp_setaside": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   }
+  },
+  "type:mine_gain": {
+   "own_hand": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "own_deck": {
+    "rows_differing_pct": 40.72,
+    "mean_cards_moved": 0.856
+   },
+   "own_discard": {
+    "rows_differing_pct": 40.72,
+    "mean_cards_moved": 0.856
+   },
+   "own_inplay": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "own_setaside": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "opp_prefix": {
+    "rows_differing_pct": 12.37,
+    "mean_cards_moved": 0.549
+   },
+   "opp_collection": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "opp_discard": {
+    "rows_differing_pct": 51.03,
+    "mean_cards_moved": 1.01
+   },
+   "opp_setaside": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   }
+  },
+  "type:artisan_gain": {
+   "own_hand": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "own_deck": {
+    "rows_differing_pct": 38.59,
+    "mean_cards_moved": 0.785
+   },
+   "own_discard": {
+    "rows_differing_pct": 38.59,
+    "mean_cards_moved": 0.785
+   },
+   "own_inplay": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "own_setaside": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "opp_prefix": {
+    "rows_differing_pct": 10.87,
+    "mean_cards_moved": 0.351
+   },
+   "opp_collection": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "opp_discard": {
+    "rows_differing_pct": 49.94,
+    "mean_cards_moved": 0.978
+   },
+   "opp_setaside": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   }
+  },
+  "type:artisan_topdeck": {
+   "own_hand": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "own_deck": {
+    "rows_differing_pct": 38.84,
+    "mean_cards_moved": 0.711
+   },
+   "own_discard": {
+    "rows_differing_pct": 38.84,
+    "mean_cards_moved": 0.711
+   },
+   "own_inplay": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "own_setaside": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "opp_prefix": {
+    "rows_differing_pct": 10.36,
+    "mean_cards_moved": 0.398
+   },
+   "opp_collection": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "opp_discard": {
+    "rows_differing_pct": 47.35,
+    "mean_cards_moved": 0.888
+   },
+   "opp_setaside": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   }
+  },
+  "type:vassal_option": {
+   "own_hand": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "own_deck": {
+    "rows_differing_pct": 37.56,
+    "mean_cards_moved": 0.599
+   },
+   "own_discard": {
+    "rows_differing_pct": 37.56,
+    "mean_cards_moved": 0.599
+   },
+   "own_inplay": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "own_setaside": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "opp_prefix": {
+    "rows_differing_pct": 5.8,
+    "mean_cards_moved": 0.156
+   },
+   "opp_collection": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "opp_discard": {
+    "rows_differing_pct": 38.57,
+    "mean_cards_moved": 0.694
+   },
+   "opp_setaside": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   }
+  },
+  "type:library_option": {
+   "own_hand": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "own_deck": {
+    "rows_differing_pct": 35.76,
+    "mean_cards_moved": 0.596
+   },
+   "own_discard": {
+    "rows_differing_pct": 35.76,
+    "mean_cards_moved": 0.596
+   },
+   "own_inplay": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "own_setaside": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "opp_prefix": {
+    "rows_differing_pct": 8.61,
+    "mean_cards_moved": 0.265
+   },
+   "opp_collection": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "opp_discard": {
+    "rows_differing_pct": 47.02,
+    "mean_cards_moved": 0.748
+   },
+   "opp_setaside": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   }
+  },
+  "type:bandit_trash": {
+   "own_hand": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "own_deck": {
+    "rows_differing_pct": 8.33,
+    "mean_cards_moved": 0.333
+   },
+   "own_discard": {
+    "rows_differing_pct": 8.33,
+    "mean_cards_moved": 0.333
+   },
+   "own_inplay": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "own_setaside": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "opp_prefix": {
+    "rows_differing_pct": 16.67,
+    "mean_cards_moved": 1.458
+   },
+   "opp_collection": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   },
+   "opp_discard": {
+    "rows_differing_pct": 25.0,
+    "mean_cards_moved": 0.333
+   },
+   "opp_setaside": {
+    "rows_differing_pct": 0.0,
+    "mean_cards_moved": 0.0
+   }
+  }
+ },
+ "eval": {
+  "overall": {
+   "A_as_trained": {
+    "acc": 75.54,
+    "nll": 0.6666,
+    "argmax_agree_with_first_pct": 100.0,
+    "mean_tv_vs_first": 0.0,
+    "mean_abs_value_diff": 0.0
+   },
+   "B_resampled": {
+    "acc": 75.55,
+    "nll": 0.6668,
+    "argmax_agree_with_first_pct": 99.01,
+    "mean_tv_vs_first": 0.008,
+    "mean_abs_value_diff": 0.0159
+   },
+   "A_zero_deck_discard": {
+    "acc": 72.4,
+    "nll": 0.7629,
+    "argmax_agree_with_first_pct": 87.99,
+    "mean_tv_vs_first": 0.1047,
+    "mean_abs_value_diff": 0.3397
+   },
+   "A_zero_hand_deck_discard": {
+    "acc": 69.4,
+    "nll": 0.8394,
+    "argmax_agree_with_first_pct": 82.51,
+    "mean_tv_vs_first": 0.1547,
+    "mean_abs_value_diff": 0.425
+   }
+  },
+  "paired_rows_only_same_label_and_mask": {
+   "rows": 44586,
+   "A_as_trained": {
+    "acc": 76.37,
+    "nll": 0.6428,
+    "argmax_agree_with_first_pct": 100.0,
+    "mean_tv_vs_first": 0.0,
+    "mean_abs_value_diff": 0.0
+   },
+   "B_resampled": {
+    "acc": 76.39,
+    "nll": 0.6427,
+    "argmax_agree_with_first_pct": 99.27,
+    "mean_tv_vs_first": 0.0058,
+    "mean_abs_value_diff": 0.0144
+   },
+   "A_zero_deck_discard": {
+    "acc": 73.49,
+    "nll": 0.7281,
+    "argmax_agree_with_first_pct": 88.97,
+    "mean_tv_vs_first": 0.0974,
+    "mean_abs_value_diff": 0.3532
+   },
+   "A_zero_hand_deck_discard": {
+    "acc": 70.25,
+    "nll": 0.809,
+    "argmax_agree_with_first_pct": 83.14,
+    "mean_tv_vs_first": 0.1506,
+    "mean_abs_value_diff": 0.445
+   }
+  },
+  "partially_inferred": {
+   "rows": 18538,
+   "A_as_trained": {
+    "acc": 67.67,
+    "nll": 0.9002,
+    "argmax_agree_with_first_pct": 100.0,
+    "mean_tv_vs_first": 0.0,
+    "mean_abs_value_diff": 0.0
+   },
+   "B_resampled": {
+    "acc": 67.69,
+    "nll": 0.9005,
+    "argmax_agree_with_first_pct": 98.59,
+    "mean_tv_vs_first": 0.0115,
+    "mean_abs_value_diff": 0.0148
+   },
+   "A_zero_deck_discard": {
+    "acc": 63.44,
+    "nll": 1.0599,
+    "argmax_agree_with_first_pct": 82.32,
+    "mean_tv_vs_first": 0.1448,
+    "mean_abs_value_diff": 0.1964
+   },
+   "A_zero_hand_deck_discard": {
+    "acc": 62.46,
+    "nll": 1.0986,
+    "argmax_agree_with_first_pct": 79.87,
+    "mean_tv_vs_first": 0.1674,
+    "mean_abs_value_diff": 0.225
+   }
+  },
+  "fully_observed": {
+   "rows": 31509,
+   "A_as_trained": {
+    "acc": 80.18,
+    "nll": 0.5292,
+    "argmax_agree_with_first_pct": 100.0,
+    "mean_tv_vs_first": 0.0,
+    "mean_abs_value_diff": 0.0
+   },
+   "B_resampled": {
+    "acc": 80.18,
+    "nll": 0.5293,
+    "argmax_agree_with_first_pct": 99.26,
+    "mean_tv_vs_first": 0.006,
+    "mean_abs_value_diff": 0.0166
+   },
+   "A_zero_deck_discard": {
+    "acc": 77.67,
+    "nll": 0.5882,
+    "argmax_agree_with_first_pct": 91.33,
+    "mean_tv_vs_first": 0.0811,
+    "mean_abs_value_diff": 0.424
+   },
+   "A_zero_hand_deck_discard": {
+    "acc": 73.48,
+    "nll": 0.6869,
+    "argmax_agree_with_first_pct": 84.06,
+    "mean_tv_vs_first": 0.1472,
+    "mean_abs_value_diff": 0.5426
+   }
+  },
+  "type:buy": {
+   "rows": 18186,
+   "A_as_trained": {
+    "acc": 61.63,
+    "nll": 1.0833,
+    "argmax_agree_with_first_pct": 100.0,
+    "mean_tv_vs_first": 0.0,
+    "mean_abs_value_diff": 0.0
+   },
+   "B_resampled": {
+    "acc": 61.61,
+    "nll": 1.0838,
+    "argmax_agree_with_first_pct": 98.31,
+    "mean_tv_vs_first": 0.0133,
+    "mean_abs_value_diff": 0.0144
+   },
+   "A_zero_deck_discard": {
+    "acc": 55.5,
+    "nll": 1.302,
+    "argmax_agree_with_first_pct": 77.73,
+    "mean_tv_vs_first": 0.1857,
+    "mean_abs_value_diff": 0.2351
+   },
+   "A_zero_hand_deck_discard": {
+    "acc": 53.75,
+    "nll": 1.3654,
+    "argmax_agree_with_first_pct": 73.88,
+    "mean_tv_vs_first": 0.2222,
+    "mean_abs_value_diff": 0.2746
+   }
+  },
+  "type:buy_pass": {
+   "rows": 3857,
+   "A_as_trained": {
+    "acc": 95.13,
+    "nll": 0.1376,
+    "argmax_agree_with_first_pct": 100.0,
+    "mean_tv_vs_first": 0.0,
+    "mean_abs_value_diff": 0.0
+   },
+   "B_resampled": {
+    "acc": 95.2,
+    "nll": 0.1364,
+    "argmax_agree_with_first_pct": 99.59,
+    "mean_tv_vs_first": 0.0051,
+    "mean_abs_value_diff": 0.0163
+   },
+   "A_zero_deck_discard": {
+    "acc": 96.09,
+    "nll": 0.1141,
+    "argmax_agree_with_first_pct": 97.77,
+    "mean_tv_vs_first": 0.0262,
+    "mean_abs_value_diff": 0.2219
+   },
+   "A_zero_hand_deck_discard": {
+    "acc": 96.16,
+    "nll": 0.1181,
+    "argmax_agree_with_first_pct": 97.56,
+    "mean_tv_vs_first": 0.0292,
+    "mean_abs_value_diff": 0.2512
+   }
+  },
+  "type:action_play": {
+   "rows": 11746,
+   "A_as_trained": {
+    "acc": 81.26,
+    "nll": 0.4548,
+    "argmax_agree_with_first_pct": 100.0,
+    "mean_tv_vs_first": 0.0,
+    "mean_abs_value_diff": 0.0
+   },
+   "B_resampled": {
+    "acc": 81.29,
+    "nll": 0.4548,
+    "argmax_agree_with_first_pct": 99.38,
+    "mean_tv_vs_first": 0.0047,
+    "mean_abs_value_diff": 0.0175
+   },
+   "A_zero_deck_discard": {
+    "acc": 79.25,
+    "nll": 0.5093,
+    "argmax_agree_with_first_pct": 91.96,
+    "mean_tv_vs_first": 0.0776,
+    "mean_abs_value_diff": 0.4339
+   },
+   "A_zero_hand_deck_discard": {
+    "acc": 75.46,
+    "nll": 0.576,
+    "argmax_agree_with_first_pct": 85.02,
+    "mean_tv_vs_first": 0.1284,
+    "mean_abs_value_diff": 0.5688
+   }
+  },
+  "type:treasure_play": {
+   "rows": 5723,
+   "A_as_trained": {
+    "acc": 99.07,
+    "nll": 0.0669,
+    "argmax_agree_with_first_pct": 100.0,
+    "mean_tv_vs_first": 0.0,
+    "mean_abs_value_diff": 0.0
+   },
+   "B_resampled": {
+    "acc": 99.11,
+    "nll": 0.0664,
+    "argmax_agree_with_first_pct": 99.97,
+    "mean_tv_vs_first": 0.0027,
+    "mean_abs_value_diff": 0.0161
+   },
+   "A_zero_deck_discard": {
+    "acc": 96.47,
+    "nll": 0.1433,
+    "argmax_agree_with_first_pct": 97.15,
+    "mean_tv_vs_first": 0.0487,
+    "mean_abs_value_diff": 0.384
+   },
+   "A_zero_hand_deck_discard": {
+    "acc": 86.98,
+    "nll": 0.3929,
+    "argmax_agree_with_first_pct": 87.37,
+    "mean_tv_vs_first": 0.1658,
+    "mean_abs_value_diff": 0.4912
+   }
+  },
+  "type:action_pass": {
+   "rows": 2183,
+   "A_as_trained": {
+    "acc": 89.83,
+    "nll": 0.3252,
+    "argmax_agree_with_first_pct": 100.0,
+    "mean_tv_vs_first": 0.0,
+    "mean_abs_value_diff": 0.0
+   },
+   "B_resampled": {
+    "acc": 89.65,
+    "nll": 0.3262,
+    "argmax_agree_with_first_pct": 99.82,
+    "mean_tv_vs_first": 0.0005,
+    "mean_abs_value_diff": 0.0182
+   },
+   "A_zero_deck_discard": {
+    "acc": 89.78,
+    "nll": 0.2601,
+    "argmax_agree_with_first_pct": 99.18,
+    "mean_tv_vs_first": 0.0063,
+    "mean_abs_value_diff": 0.4233
+   },
+   "A_zero_hand_deck_discard": {
+    "acc": 90.33,
+    "nll": 0.2243,
+    "argmax_agree_with_first_pct": 98.31,
+    "mean_tv_vs_first": 0.0127,
+    "mean_abs_value_diff": 0.5225
+   }
+  },
+  "type:militia_keep": {
+   "rows": 1236,
+   "A_as_trained": {
+    "acc": 56.96,
+    "nll": 0.9508,
+    "argmax_agree_with_first_pct": 100.0,
+    "mean_tv_vs_first": 0.0,
+    "mean_abs_value_diff": 0.0
+   },
+   "B_resampled": {
+    "acc": 56.63,
+    "nll": 0.952,
+    "argmax_agree_with_first_pct": 98.79,
+    "mean_tv_vs_first": 0.0077,
+    "mean_abs_value_diff": 0.0169
+   },
+   "A_zero_deck_discard": {
+    "acc": 57.85,
+    "nll": 0.9767,
+    "argmax_agree_with_first_pct": 90.29,
+    "mean_tv_vs_first": 0.0741,
+    "mean_abs_value_diff": 0.4018
+   },
+   "A_zero_hand_deck_discard": {
+    "acc": 55.5,
+    "nll": 1.0889,
+    "argmax_agree_with_first_pct": 83.01,
+    "mean_tv_vs_first": 0.1462,
+    "mean_abs_value_diff": 0.4691
+   }
+  },
+  "type:cellar_discard": {
+   "rows": 1691,
+   "A_as_trained": {
+    "acc": 65.76,
+    "nll": 0.9554,
+    "argmax_agree_with_first_pct": 100.0,
+    "mean_tv_vs_first": 0.0,
+    "mean_abs_value_diff": 0.0
+   },
+   "B_resampled": {
+    "acc": 65.88,
+    "nll": 0.9599,
+    "argmax_agree_with_first_pct": 97.69,
+    "mean_tv_vs_first": 0.0172,
+    "mean_abs_value_diff": 0.0232
+   },
+   "A_zero_deck_discard": {
+    "acc": 63.22,
+    "nll": 0.9116,
+    "argmax_agree_with_first_pct": 83.74,
+    "mean_tv_vs_first": 0.1063,
+    "mean_abs_value_diff": 0.5323
+   },
+   "A_zero_hand_deck_discard": {
+    "acc": 56.48,
+    "nll": 1.0401,
+    "argmax_agree_with_first_pct": 65.82,
+    "mean_tv_vs_first": 0.251,
+    "mean_abs_value_diff": 0.6182
+   }
+  },
+  "type:chapel_trash": {
+   "rows": 240,
+   "A_as_trained": {
+    "acc": 84.17,
+    "nll": 0.6487,
+    "argmax_agree_with_first_pct": 100.0,
+    "mean_tv_vs_first": 0.0,
+    "mean_abs_value_diff": 0.0
+   },
+   "B_resampled": {
+    "acc": 84.17,
+    "nll": 0.6473,
+    "argmax_agree_with_first_pct": 100.0,
+    "mean_tv_vs_first": 0.0027,
+    "mean_abs_value_diff": 0.0041
+   },
+   "A_zero_deck_discard": {
+    "acc": 81.67,
+    "nll": 0.6272,
+    "argmax_agree_with_first_pct": 95.83,
+    "mean_tv_vs_first": 0.0459,
+    "mean_abs_value_diff": 0.1552
+   },
+   "A_zero_hand_deck_discard": {
+    "acc": 84.17,
+    "nll": 0.5855,
+    "argmax_agree_with_first_pct": 93.33,
+    "mean_tv_vs_first": 0.1719,
+    "mean_abs_value_diff": 0.2289
+   }
+  },
+  "type:poacher_discard": {
+   "rows": 228,
+   "A_as_trained": {
+    "acc": 68.42,
+    "nll": 0.7104,
+    "argmax_agree_with_first_pct": 100.0,
+    "mean_tv_vs_first": 0.0,
+    "mean_abs_value_diff": 0.0
+   },
+   "B_resampled": {
+    "acc": 68.42,
+    "nll": 0.7067,
+    "argmax_agree_with_first_pct": 97.81,
+    "mean_tv_vs_first": 0.0096,
+    "mean_abs_value_diff": 0.0272
+   },
+   "A_zero_deck_discard": {
+    "acc": 67.98,
+    "nll": 0.7381,
+    "argmax_agree_with_first_pct": 93.42,
+    "mean_tv_vs_first": 0.0771,
+    "mean_abs_value_diff": 0.6152
+   },
+   "A_zero_hand_deck_discard": {
+    "acc": 62.28,
+    "nll": 0.9237,
+    "argmax_agree_with_first_pct": 84.65,
+    "mean_tv_vs_first": 0.1528,
+    "mean_abs_value_diff": 0.7161
+   }
+  },
+  "type:harbinger_topdeck": {
+   "rows": 381,
+   "A_as_trained": {
+    "acc": 76.12,
+    "nll": 0.9084,
+    "argmax_agree_with_first_pct": 100.0,
+    "mean_tv_vs_first": 0.0,
+    "mean_abs_value_diff": 0.0
+   },
+   "B_resampled": {
+    "acc": 76.12,
+    "nll": 0.9086,
+    "argmax_agree_with_first_pct": 100.0,
+    "mean_tv_vs_first": 0.003,
+    "mean_abs_value_diff": 0.0239
+   },
+   "A_zero_deck_discard": {
+    "acc": 76.12,
+    "nll": 0.8557,
+    "argmax_agree_with_first_pct": 98.43,
+    "mean_tv_vs_first": 0.0255,
+    "mean_abs_value_diff": 0.481
+   },
+   "A_zero_hand_deck_discard": {
+    "acc": 77.43,
+    "nll": 0.7197,
+    "argmax_agree_with_first_pct": 95.54,
+    "mean_tv_vs_first": 0.043,
+    "mean_abs_value_diff": 0.5862
+   }
+  },
+  "type:sentry_option": {
+   "rows": 1631,
+   "A_as_trained": {
+    "acc": 76.03,
+    "nll": 0.6258,
+    "argmax_agree_with_first_pct": 100.0,
+    "mean_tv_vs_first": 0.0,
+    "mean_abs_value_diff": 0.0
+   },
+   "B_resampled": {
+    "acc": 76.15,
+    "nll": 0.6242,
+    "argmax_agree_with_first_pct": 99.63,
+    "mean_tv_vs_first": 0.0069,
+    "mean_abs_value_diff": 0.0093
+   },
+   "A_zero_deck_discard": {
+    "acc": 74.19,
+    "nll": 0.6292,
+    "argmax_agree_with_first_pct": 92.83,
+    "mean_tv_vs_first": 0.0658,
+    "mean_abs_value_diff": 0.425
+   },
+   "A_zero_hand_deck_discard": {
+    "acc": 72.41,
+    "nll": 0.6504,
+    "argmax_agree_with_first_pct": 87.37,
+    "mean_tv_vs_first": 0.0985,
+    "mean_abs_value_diff": 0.6094
+   }
+  },
+  "type:sentry_order": {
+   "rows": 261,
+   "A_as_trained": {
+    "acc": 64.75,
+    "nll": 0.6581,
+    "argmax_agree_with_first_pct": 100.0,
+    "mean_tv_vs_first": 0.0,
+    "mean_abs_value_diff": 0.0
+   },
+   "B_resampled": {
+    "acc": 65.52,
+    "nll": 0.6582,
+    "argmax_agree_with_first_pct": 96.93,
+    "mean_tv_vs_first": 0.0077,
+    "mean_abs_value_diff": 0.0096
+   },
+   "A_zero_deck_discard": {
+    "acc": 58.62,
+    "nll": 0.6816,
+    "argmax_agree_with_first_pct": 86.97,
+    "mean_tv_vs_first": 0.0654,
+    "mean_abs_value_diff": 0.4064
+   },
+   "A_zero_hand_deck_discard": {
+    "acc": 55.56,
+    "nll": 0.6795,
+    "argmax_agree_with_first_pct": 78.54,
+    "mean_tv_vs_first": 0.1142,
+    "mean_abs_value_diff": 0.596
+   }
+  },
+  "type:throne_room_target": {
+   "rows": 1128,
+   "A_as_trained": {
+    "acc": 75.53,
+    "nll": 0.5254,
+    "argmax_agree_with_first_pct": 100.0,
+    "mean_tv_vs_first": 0.0,
+    "mean_abs_value_diff": 0.0
+   },
+   "B_resampled": {
+    "acc": 75.53,
+    "nll": 0.525,
+    "argmax_agree_with_first_pct": 99.11,
+    "mean_tv_vs_first": 0.0033,
+    "mean_abs_value_diff": 0.0149
+   },
+   "A_zero_deck_discard": {
+    "acc": 74.2,
+    "nll": 0.5311,
+    "argmax_agree_with_first_pct": 94.5,
+    "mean_tv_vs_first": 0.0387,
+    "mean_abs_value_diff": 0.4185
+   },
+   "A_zero_hand_deck_discard": {
+    "acc": 73.23,
+    "nll": 0.551,
+    "argmax_agree_with_first_pct": 91.31,
+    "mean_tv_vs_first": 0.0663,
+    "mean_abs_value_diff": 0.5559
+   }
+  },
+  "type:artisan_gain": {
+   "rows": 274,
+   "A_as_trained": {
+    "acc": 39.78,
+    "nll": 1.7351,
+    "argmax_agree_with_first_pct": 100.0,
+    "mean_tv_vs_first": 0.0,
+    "mean_abs_value_diff": 0.0
+   },
+   "B_resampled": {
+    "acc": 39.42,
+    "nll": 1.7332,
+    "argmax_agree_with_first_pct": 97.81,
+    "mean_tv_vs_first": 0.0088,
+    "mean_abs_value_diff": 0.0128
+   },
+   "A_zero_deck_discard": {
+    "acc": 40.88,
+    "nll": 1.7176,
+    "argmax_agree_with_first_pct": 78.83,
+    "mean_tv_vs_first": 0.0961,
+    "mean_abs_value_diff": 0.3355
+   },
+   "A_zero_hand_deck_discard": {
+    "acc": 41.61,
+    "nll": 1.7128,
+    "argmax_agree_with_first_pct": 76.64,
+    "mean_tv_vs_first": 0.1315,
+    "mean_abs_value_diff": 0.4591
+   }
+  },
+  "type:artisan_topdeck": {
+   "rows": 274,
+   "A_as_trained": {
+    "acc": 35.77,
+    "nll": 1.6013,
+    "argmax_agree_with_first_pct": 100.0,
+    "mean_tv_vs_first": 0.0,
+    "mean_abs_value_diff": 0.0
+   },
+   "B_resampled": {
+    "acc": 35.77,
+    "nll": 1.6005,
+    "argmax_agree_with_first_pct": 99.64,
+    "mean_tv_vs_first": 0.0073,
+    "mean_abs_value_diff": 0.0125
+   },
+   "A_zero_deck_discard": {
+    "acc": 33.58,
+    "nll": 1.6822,
+    "argmax_agree_with_first_pct": 93.43,
+    "mean_tv_vs_first": 0.0719,
+    "mean_abs_value_diff": 0.3502
+   },
+   "A_zero_hand_deck_discard": {
+    "acc": 31.39,
+    "nll": 1.9762,
+    "argmax_agree_with_first_pct": 84.31,
+    "mean_tv_vs_first": 0.1738,
+    "mean_abs_value_diff": 0.5213
+   }
+  },
+  "type:vassal_option": {
+   "rows": 476,
+   "A_as_trained": {
+    "acc": 98.32,
+    "nll": 0.1028,
+    "argmax_agree_with_first_pct": 100.0,
+    "mean_tv_vs_first": 0.0,
+    "mean_abs_value_diff": 0.0
+   },
+   "B_resampled": {
+    "acc": 98.32,
+    "nll": 0.1026,
+    "argmax_agree_with_first_pct": 100.0,
+    "mean_tv_vs_first": 0.001,
+    "mean_abs_value_diff": 0.0156
+   },
+   "A_zero_deck_discard": {
+    "acc": 98.32,
+    "nll": 0.1019,
+    "argmax_agree_with_first_pct": 100.0,
+    "mean_tv_vs_first": 0.0079,
+    "mean_abs_value_diff": 0.432
+   },
+   "A_zero_hand_deck_discard": {
+    "acc": 98.32,
+    "nll": 0.0963,
+    "argmax_agree_with_first_pct": 100.0,
+    "mean_tv_vs_first": 0.0109,
+    "mean_abs_value_diff": 0.5499
+   }
+  }
+ }
+}

@@ -1,0 +1,19 @@
+[d_swap_bca_vs_g1] device=mps pairs=32 chunk=32 A=checkpoints/campaign25/bc_a.pt sims=128 zero_v=False | B=checkpoints/campaign28/gen_0001.pt sims=128 zero_v=False | determinize=off cross_route=False tree_reuse=False opening_temp=False
+[d_swap_bca_vs_g1] .. 0/64 games  3258 evals/s  30s
+[d_swap_bca_vs_g1] .. 0/64 games  3463 evals/s  60s
+[d_swap_bca_vs_g1] .. 0/64 games  3604 evals/s  90s
+[d_swap_bca_vs_g1] .. 1/64 games  3770 evals/s  120s
+[d_swap_bca_vs_g1] .. 7/64 games  3861 evals/s  150s
+[d_swap_bca_vs_g1] .. 13/64 games  3833 evals/s  180s
+[d_swap_bca_vs_g1] .. 17/64 games  3696 evals/s  210s
+[d_swap_bca_vs_g1] .. 20/64 games  3518 evals/s  240s
+[d_swap_bca_vs_g1] .. 27/64 games  3396 evals/s  270s
+[d_swap_bca_vs_g1] .. 31/64 games  3165 evals/s  300s
+[d_swap_bca_vs_g1] .. 32/64 games  3445 evals/s  330s
+[d_swap_bca_vs_g1] .. 32/64 games  3698 evals/s  360s
+[d_swap_bca_vs_g1] .. 41/64 games  3885 evals/s  390s
+[d_swap_bca_vs_g1] .. 51/64 games  3946 evals/s  420s
+[d_swap_bca_vs_g1] .. 56/64 games  3886 evals/s  450s
+[d_swap_bca_vs_g1] .. 59/64 games  3784 evals/s  480s
+[d_swap_bca_vs_g1] 32/32 pairs  A 10W-53L-1T score=0.164±0.044  456 games/hr  3652 evals/s  505s
+[d_swap_bca_vs_g1] DONE A 10W-53L-1T score=0.164 ci95=[0.077,0.251] elo=-283 seat0=0.508 non_greedy=0.0% turns=53.3 trunc=1 505.1s

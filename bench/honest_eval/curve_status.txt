@@ -1,0 +1,6 @@
+curve start Tue Jul 28 23:57:54 MDT 2026
+c15 sims=200 exit 0 Wed Jul 29 00:04:23 MDT 2026
+c15 sims=800 exit 0 Wed Jul 29 00:30:50 MDT 2026
+c15 sims=1600 exit 0 Wed Jul 29 01:25:20 MDT 2026
+c19 sims=1600 exit 0 Wed Jul 29 04:27:52 MDT 2026
+curve done Wed Jul 29 04:27:52 MDT 2026

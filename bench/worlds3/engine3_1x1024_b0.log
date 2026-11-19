@@ -1,0 +1,23 @@
+[engine3_w1x1024_b0] worlds=1 sims=1024 games=400 first=0 adaptive_per_legal=128
+[engine3_w1x1024_b0] 0/400 games 672518 evals
+[engine3_w1x1024_b0] 0/400 games 1400786 evals
+[engine3_w1x1024_b0] 0/400 games 2179739 evals
+[engine3_w1x1024_b0] 2/400 games 2971126 evals
+[engine3_w1x1024_b0] 13/400 games 3759248 evals
+[engine3_w1x1024_b0] 21/400 games 4590500 evals
+[engine3_w1x1024_b0] 39/400 games 5433749 evals
+[engine3_w1x1024_b0] 59/400 games 6277771 evals
+[engine3_w1x1024_b0] 76/400 games 7185685 evals
+[engine3_w1x1024_b0] 95/400 games 8147453 evals
+[engine3_w1x1024_b0] 126/400 games 9207146 evals
+[engine3_w1x1024_b0] 158/400 games 10278594 evals
+[engine3_w1x1024_b0] 186/400 games 11365832 evals
+[engine3_w1x1024_b0] 223/400 games 12455787 evals
+[engine3_w1x1024_b0] 258/400 games 13582352 evals
+[engine3_w1x1024_b0] 296/400 games 14517005 evals
+[engine3_w1x1024_b0] 330/400 games 15349770 evals
+[engine3_w1x1024_b0] 358/400 games 16104489 evals
+[engine3_w1x1024_b0] 379/400 games 16552566 evals
+[engine3_w1x1024_b0] 389/400 games 16797082 evals
+[engine3_w1x1024_b0] 396/400 games 16982983 evals
+[engine3_w1x1024_b0] DONE 310W-87L-3T score=0.779+-0.021 evals/game=42601 1314.1s

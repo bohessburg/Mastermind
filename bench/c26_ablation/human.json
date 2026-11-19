@@ -1,0 +1,11 @@
+{
+  "arm": "human",
+  "steps": 240,
+  "wins": 92,
+  "losses": 101,
+  "ties": 7,
+  "win_pct": 0.47668393782383417,
+  "gate_s": 632,
+  "gate_games": 200,
+  "gate_sims": 128
+}

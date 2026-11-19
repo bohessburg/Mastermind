@@ -1,0 +1,164 @@
+positions: 10/64 games, 698 positions, 5s
+positions: 20/64 games, 1417 positions, 10s
+positions: 30/64 games, 2245 positions, 16s
+positions: 40/64 games, 2925 positions, 31s
+positions: 50/64 games, 3504 positions, 66s
+positions: 60/64 games, 4123 positions, 99s
+positions: 64/64 games, 4316 positions, 105s
+value >= 0.0: 2279 of 4316 positions
+2279 positions, 724032 playouts
+playouts 2908/724032 33008 evals/s 20s
+playouts 6741/724032 29941 evals/s 40s
+playouts 12412/724032 28505 evals/s 60s
+playouts 15546/724032 27812 evals/s 80s
+playouts 18317/724032 27409 evals/s 100s
+playouts 21931/724032 27154 evals/s 120s
+playouts 26649/724032 26982 evals/s 140s
+playouts 30726/724032 26859 evals/s 160s
+playouts 32881/724032 26779 evals/s 180s
+playouts 36194/724032 26729 evals/s 200s
+playouts 42146/724032 26662 evals/s 220s
+playouts 49088/724032 26571 evals/s 240s
+playouts 56055/724032 26481 evals/s 260s
+playouts 60387/724032 26456 evals/s 281s
+playouts 64199/724032 27124 evals/s 301s
+playouts 68176/724032 27928 evals/s 321s
+playouts 72738/724032 28649 evals/s 341s
+playouts 77938/724032 29269 evals/s 361s
+playouts 84071/724032 29812 evals/s 381s
+playouts 93599/724032 30321 evals/s 401s
+playouts 98979/724032 30790 evals/s 421s
+playouts 106611/724032 31212 evals/s 441s
+playouts 113830/724032 31592 evals/s 461s
+playouts 116377/724032 31945 evals/s 481s
+playouts 120223/724032 32262 evals/s 501s
+playouts 124271/724032 32556 evals/s 521s
+playouts 129263/724032 32827 evals/s 541s
+playouts 136896/724032 33082 evals/s 561s
+playouts 140148/724032 33308 evals/s 581s
+playouts 143378/724032 33524 evals/s 601s
+playouts 149071/724032 33713 evals/s 621s
+playouts 153057/724032 33903 evals/s 641s
+playouts 156321/724032 34082 evals/s 661s
+playouts 161242/724032 34251 evals/s 681s
+playouts 167866/724032 34420 evals/s 701s
+playouts 171089/724032 34555 evals/s 721s
+playouts 175097/724032 34691 evals/s 741s
+playouts 183445/724032 34814 evals/s 761s
+playouts 192823/724032 34929 evals/s 781s
+playouts 198705/724032 35048 evals/s 801s
+playouts 202706/724032 35175 evals/s 821s
+playouts 206831/724032 35276 evals/s 841s
+playouts 211226/724032 35374 evals/s 861s
+playouts 218113/724032 35476 evals/s 881s
+playouts 226018/724032 35574 evals/s 901s
+playouts 231770/724032 35674 evals/s 921s
+playouts 240654/724032 35760 evals/s 941s
+playouts 246557/724032 35850 evals/s 962s
+playouts 251613/724032 35935 evals/s 982s
+playouts 256796/724032 36009 evals/s 1002s
+playouts 260413/724032 36079 evals/s 1022s
+playouts 265171/724032 36147 evals/s 1042s
+playouts 270939/724032 36212 evals/s 1062s
+playouts 277697/724032 36274 evals/s 1082s
+playouts 284671/724032 36334 evals/s 1102s
+playouts 288802/724032 36392 evals/s 1122s
+playouts 293272/724032 36461 evals/s 1142s
+playouts 299216/724032 36514 evals/s 1162s
+playouts 307358/724032 36568 evals/s 1182s
+playouts 311436/724032 36619 evals/s 1202s
+playouts 316148/724032 36669 evals/s 1222s
+playouts 322377/724032 36718 evals/s 1242s
+playouts 331407/724032 36761 evals/s 1262s
+playouts 339366/724032 36805 evals/s 1282s
+playouts 342902/724032 36851 evals/s 1302s
+playouts 346639/724032 36895 evals/s 1322s
+playouts 351198/724032 36933 evals/s 1342s
+playouts 356822/724032 36983 evals/s 1362s
+playouts 363961/724032 37033 evals/s 1382s
+playouts 375164/724032 37079 evals/s 1402s
+playouts 378008/724032 37110 evals/s 1422s
+playouts 382437/724032 37141 evals/s 1442s
+playouts 388344/724032 37172 evals/s 1462s
+playouts 392988/724032 37206 evals/s 1482s
+playouts 395732/724032 37239 evals/s 1502s
+playouts 399346/724032 37272 evals/s 1522s
+playouts 402894/724032 37304 evals/s 1542s
+playouts 407212/724032 37336 evals/s 1562s
+playouts 413029/724032 37366 evals/s 1582s
+playouts 416929/724032 37397 evals/s 1602s
+playouts 420586/724032 37425 evals/s 1622s
+playouts 424317/724032 37452 evals/s 1642s
+playouts 428104/724032 37481 evals/s 1662s
+playouts 432966/724032 37505 evals/s 1683s
+playouts 439632/724032 37531 evals/s 1703s
+playouts 448610/724032 37556 evals/s 1723s
+playouts 454281/724032 37574 evals/s 1743s
+playouts 463728/724032 37597 evals/s 1763s
+playouts 467059/724032 37622 evals/s 1783s
+playouts 470706/724032 37644 evals/s 1803s
+playouts 474446/724032 37666 evals/s 1823s
+playouts 478920/724032 37689 evals/s 1843s
+playouts 483985/724032 37710 evals/s 1863s
+playouts 490653/724032 37726 evals/s 1883s
+playouts 498837/724032 37746 evals/s 1903s
+playouts 505801/724032 37765 evals/s 1923s
+playouts 510617/724032 37787 evals/s 1943s
+playouts 513994/724032 37807 evals/s 1963s
+playouts 518463/724032 37827 evals/s 1983s
+playouts 524250/724032 37848 evals/s 2003s
+playouts 531268/724032 37867 evals/s 2023s
+playouts 537259/724032 37883 evals/s 2043s
+playouts 542376/724032 37899 evals/s 2063s
+playouts 548404/724032 37916 evals/s 2083s
+playouts 556166/724032 37930 evals/s 2103s
+playouts 566254/724032 37945 evals/s 2123s
+playouts 571528/724032 37963 evals/s 2143s
+playouts 577004/724032 37977 evals/s 2163s
+playouts 588421/724032 37991 evals/s 2183s
+playouts 593528/724032 38005 evals/s 2203s
+playouts 601950/724032 38024 evals/s 2223s
+playouts 607399/724032 38037 evals/s 2243s
+playouts 613512/724032 38054 evals/s 2263s
+playouts 617380/724032 38059 evals/s 2283s
+playouts 622101/724032 38073 evals/s 2303s
+playouts 628562/724032 38085 evals/s 2323s
+playouts 638093/724032 38096 evals/s 2343s
+playouts 645781/724032 38109 evals/s 2363s
+playouts 647803/724032 38122 evals/s 2383s
+playouts 650084/724032 38134 evals/s 2404s
+playouts 653728/724032 38147 evals/s 2424s
+playouts 658425/724032 38159 evals/s 2444s
+playouts 663681/724032 38172 evals/s 2464s
+playouts 668661/724032 38184 evals/s 2484s
+playouts 677783/724032 38199 evals/s 2504s
+playouts 680401/724032 38215 evals/s 2524s
+playouts 687257/724032 38229 evals/s 2544s
+playouts 702618/724032 38237 evals/s 2564s
+playouts 707282/724032 38249 evals/s 2584s
+playouts 712523/724032 38269 evals/s 2604s
+playouts 716180/724032 38280 evals/s 2624s
+playouts 719156/724032 38291 evals/s 2644s
+playouts 723358/724032 38264 evals/s 2664s
+DONE 2279 positions from 64 games, 724032 playouts, 2775s -> bench/arena_blunders/g51_losses.json
+mean regret +0.76 pts; positions with regret > 10 pts: 163
+  game 186064701 t14    play Festival: q 0.00 -> best 0.73 (regret +73) {'play Festival': 0.0, 'play Council Room': 0.0, 'play Moneylender': 0.0, 'pass': 0.729}
+  game 186064701 t14     play Poacher: q 0.04 -> best 0.76 (regret +71) {'play Poacher': 0.042, 'play Council Room': 0.0, 'play Moneylender': 0.031, 'pass': 0.755}
+  game 186064701 t14 play Council Room: q 0.00 -> best 0.68 (regret +68) {'play Council Room': 0.0, 'play Moneylender': 0.0, 'pass': 0.677}
+  game 186064701 t14 play Throne Room: q 0.00 -> best 0.62 (regret +62) {'play Throne Room': 0.0, 'play Remodel': 0.083, 'play Moneylender': 0.0, 'pass': 0.625}
+  game 186036297 t10       buy Market: q 0.28 -> best 0.80 (regret +52) {'buy Market': 0.281, 'buy Province': 0.458, 'buy Gold': 0.802, 'buy Bandit': 0.547}
+  game 186064701 t14 play Throne Room: q 0.21 -> best 0.67 (regret +45) {'play Throne Room': 0.214, 'play Poacher': 0.635, 'play Moneylender': 0.688, 'pass': 0.703}
+  game 186036297 t10     buy Merchant: q 0.29 -> best 0.72 (regret +43) {'buy Merchant': 0.292, 'buy Market': 0.391, 'buy Province': 0.531, 'buy Gold': 0.719}
+  game 186036297 t10      play Market: q 0.30 -> best 0.69 (regret +40) {'play Market': 0.297, 'pass': 0.693}
+  game 186056537 t5       buy Silver: q 0.16 -> best 0.55 (regret +39) {'buy Silver': 0.161, 'buy Workshop': 0.552, 'buy Merchant': 0.234, 'pass': 0.193}
+  game 186036297 t10      buy Remodel: q 0.20 -> best 0.54 (regret +33) {'buy Remodel': 0.203, 'buy Silver': 0.536, 'buy Workshop': 0.349, 'buy Moat': 0.208}
+  game 186040473 t14     buy Merchant: q 0.27 -> best 0.59 (regret +33) {'buy Merchant': 0.266, 'buy Silver': 0.594, 'buy Moat': 0.224, 'buy Estate': 0.219}
+  game 186040473 t14     buy Merchant: q 0.17 -> best 0.49 (regret +32) {'buy Merchant': 0.172, 'buy Market': 0.318, 'buy Smithy': 0.271, 'buy Gold': 0.495}
+  game 186075615 t9         buy Gold: q 0.13 -> best 0.45 (regret +32) {'buy Gold': 0.13, 'buy Festival': 0.354, 'buy Witch': 0.448, 'buy Sentry': 0.156}
+  game 186036297 t9       buy Market: q 0.38 -> best 0.69 (regret +31) {'buy Market': 0.38, 'buy Sentry': 0.354, 'buy Merchant': 0.422, 'buy Bandit': 0.693}
+  game 186041592 t16      play Cellar: q 0.43 -> best 0.73 (regret +30) {'play Cellar': 0.427, 'play Militia': 0.729, 'pass': 0.073}
+  game 186044944 t14             pass: q 0.33 -> best 0.62 (regret +30) {'pass': 0.328, 'play Militia': 0.625, 'play Bandit': 0.318, 'play Smithy': 0.401}
+  game 186041592 t11      play Market: q 0.39 -> best 0.68 (regret +29) {'play Market': 0.391, 'play Militia': 0.453, 'play Chapel': 0.682, 'pass': 0.448}
+  game 186040473 t10    play Festival: q 0.36 -> best 0.64 (regret +28) {'play Festival': 0.365, 'play Merchant': 0.359, 'play Moat': 0.365, 'pass': 0.641}
+  game 186073374 t8     buy Festival: q 0.59 -> best 0.85 (regret +26) {'buy Festival': 0.589, 'buy Vassal': 0.51, 'buy Witch': 0.849, 'buy Throne Room': 0.589}
+  game 186073587 t12      buy Village: q 0.08 -> best 0.33 (regret +26) {'buy Village': 0.078, 'buy Province': 0.333, 'buy Gold': 0.094, 'buy Council Room': 0.099}

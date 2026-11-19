@@ -1,0 +1,31 @@
+[meas_campaign28_gen_0001_openingT] device=mps pairs=50 chunk=100 A=checkpoints/campaign28/gen_0001.pt sims=128 zero_v=False | B=checkpoints/campaign25/bc_a.pt sims=128 zero_v=False | determinize=off cross_route=False tree_reuse=False opening_temp=True leaves_in_flight=8 (min sims/leaf 32)
+[meas_campaign28_gen_0001_openingT] .. 0/100 games  5734 evals/s  30s
+[meas_campaign28_gen_0001_openingT] .. 0/100 games  6300 evals/s  60s
+[meas_campaign28_gen_0001_openingT] .. 1/100 games  6503 evals/s  90s
+[meas_campaign28_gen_0001_openingT] .. 7/100 games  6619 evals/s  120s
+[meas_campaign28_gen_0001_openingT] .. 19/100 games  6541 evals/s  150s
+[meas_campaign28_gen_0001_openingT] .. 28/100 games  6276 evals/s  180s
+[meas_campaign28_gen_0001_openingT] .. 36/100 games  5865 evals/s  210s
+[meas_campaign28_gen_0001_openingT] .. 42/100 games  5440 evals/s  240s
+[meas_campaign28_gen_0001_openingT] .. 44/100 games  5007 evals/s  270s
+[meas_campaign28_gen_0001_openingT] .. 47/100 games  4603 evals/s  300s
+[meas_campaign28_gen_0001_openingT] .. 49/100 games  4242 evals/s  330s
+[meas_campaign28_gen_0001_openingT] .. 49/100 games  3929 evals/s  360s
+[meas_campaign28_gen_0001_openingT] .. 50/100 games  3733 evals/s  390s
+[meas_campaign28_gen_0001_openingT] .. 50/100 games  3990 evals/s  420s
+[meas_campaign28_gen_0001_openingT] .. 50/100 games  4186 evals/s  450s
+[meas_campaign28_gen_0001_openingT] .. 53/100 games  4359 evals/s  480s
+[meas_campaign28_gen_0001_openingT] .. 57/100 games  4492 evals/s  510s
+[meas_campaign28_gen_0001_openingT] .. 67/100 games  4580 evals/s  540s
+[meas_campaign28_gen_0001_openingT] .. 75/100 games  4615 evals/s  570s
+[meas_campaign28_gen_0001_openingT] .. 82/100 games  4578 evals/s  600s
+[meas_campaign28_gen_0001_openingT] .. 90/100 games  4481 evals/s  630s
+[meas_campaign28_gen_0001_openingT] .. 92/100 games  4359 evals/s  660s
+[meas_campaign28_gen_0001_openingT] .. 95/100 games  4230 evals/s  690s
+[meas_campaign28_gen_0001_openingT] .. 96/100 games  4099 evals/s  720s
+[meas_campaign28_gen_0001_openingT] .. 96/100 games  3980 evals/s  750s
+[meas_campaign28_gen_0001_openingT] .. 97/100 games  3870 evals/s  780s
+[meas_campaign28_gen_0001_openingT] .. 98/100 games  3754 evals/s  810s
+[meas_campaign28_gen_0001_openingT] .. 99/100 games  3644 evals/s  840s
+[meas_campaign28_gen_0001_openingT] 50/50 pairs  A 51W-45L-4T score=0.530±0.054  426 games/hr  3624 evals/s  846s
+[meas_campaign28_gen_0001_openingT] DONE A 51W-45L-4T score=0.530 ci95=[0.424,0.636] elo=+21 seat0=0.630 non_greedy=2.5% turns=45.1 trunc=2 845.7s

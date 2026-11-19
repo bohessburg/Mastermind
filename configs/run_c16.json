@@ -1,0 +1,76 @@
+{
+  "_comment": "Campaign 16: c13-era simplified recipe with real engine pressure. Transformer warm-started from c15's best; EngineBotV3 as direct scripted training opponent (40%); random kingdoms; no curriculum, no deep slice, no league. Honest engine3 sentinel is the metric of record. init_weights finalized at c15 cut.",
+  "seed": 20260714,
+  "generations": 100,
+  "init_weights": "checkpoints/campaign15/BEST_PLACEHOLDER.pt",
+  "device": "auto",
+  "parallel_workers": 8,
+  "worker_device": "cuda",
+  "gate_games": 0,
+  "checkpoint_dir": "checkpoints/campaign16",
+  "metrics_csv": "checkpoints/campaign16/metrics.csv",
+  "league_pool_size": 0,
+  "league_seed_checkpoints": [],
+  "league_schedule": [],
+  "scripted_opponent_schedule": {
+    "engine3": [[1, 0.40]]
+  },
+  "kingdom_curriculum": [],
+  "model": {
+    "arch": "card_transformer",
+    "d_model": 192,
+    "n_layers": 3,
+    "n_heads": 4,
+    "ffn_multiplier": 4,
+    "dropout": 0.0
+  },
+  "server_compile": true,
+  "server_autocast_bf16": true,
+  "server_batch_buckets": [128, 256, 512, 1024, 2048, 4096],
+  "selfplay": {
+    "n_games": 128,
+    "sims_per_move": 512,
+    "games_per_generation": 1024,
+    "deep_slice_fraction": 0.0,
+    "max_batch": 4096,
+    "c_puct": 1.25,
+    "dirichlet_alpha": 0.3,
+    "dirichlet_frac": 0.25,
+    "temp_moves": 20,
+    "kingdom_mode": "random",
+    "max_recorded_moves": 512,
+    "max_tree_nodes": 4096,
+    "auto_play_treasures": true,
+    "prune_treasure_plays": true,
+    "value_target": "margin",
+    "margin_scale": 20.0,
+    "obs_version": 2,
+    "scripted_threads": 2,
+    "tree_reuse": true,
+    "expand_top_k": 8
+  },
+  "optim": {
+    "lr": 0.0002,
+    "lr_schedule": "cosine",
+    "min_lr": 5e-05,
+    "weight_decay": 0.0001,
+    "batch_size": 2048,
+    "train_steps_per_generation": 750
+  },
+  "replay": {
+    "capacity": 2000000
+  },
+  "eval": {
+    "eval_every_n_generations": 5,
+    "eval_games": 200,
+    "eval_sims": 400,
+    "eval_opponent": "engine",
+    "eval_kingdoms": "random",
+    "eval_n_games": 128,
+    "eval_max_batch": 4096,
+    "eval_sentinels": [
+      {"opponent": "bigmoney", "games": 100},
+      {"opponent": "engine3", "games": 200}
+    ]
+  }
+}

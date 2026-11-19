@@ -1,0 +1,27 @@
+[meas_campaign28_gen_0001_reuse] device=mps pairs=50 chunk=100 A=checkpoints/campaign28/gen_0001.pt sims=128 zero_v=False | B=checkpoints/campaign25/bc_a.pt sims=128 zero_v=False | determinize=off cross_route=True tree_reuse=True opening_temp=False leaves_in_flight=8 (min sims/leaf 32)
+[meas_campaign28_gen_0001_reuse] .. 0/100 games  4496 evals/s  30s
+[meas_campaign28_gen_0001_reuse] .. 0/100 games  4623 evals/s  60s
+[meas_campaign28_gen_0001_reuse] .. 4/100 games  4592 evals/s  90s
+[meas_campaign28_gen_0001_reuse] .. 13/100 games  4479 evals/s  120s
+[meas_campaign28_gen_0001_reuse] .. 20/100 games  4281 evals/s  150s
+[meas_campaign28_gen_0001_reuse] .. 31/100 games  4053 evals/s  180s
+[meas_campaign28_gen_0001_reuse] .. 39/100 games  3712 evals/s  210s
+[meas_campaign28_gen_0001_reuse] .. 45/100 games  3380 evals/s  240s
+[meas_campaign28_gen_0001_reuse] .. 47/100 games  3059 evals/s  270s
+[meas_campaign28_gen_0001_reuse] .. 48/100 games  2789 evals/s  300s
+[meas_campaign28_gen_0001_reuse] .. 48/100 games  2563 evals/s  330s
+[meas_campaign28_gen_0001_reuse] .. 49/100 games  2371 evals/s  360s
+[meas_campaign28_gen_0001_reuse] .. 49/100 games  2202 evals/s  390s
+[meas_campaign28_gen_0001_reuse] .. 49/100 games  2059 evals/s  420s
+[meas_campaign28_gen_0001_reuse] .. 50/100 games  2230 evals/s  450s
+[meas_campaign28_gen_0001_reuse] .. 50/100 games  2383 evals/s  480s
+[meas_campaign28_gen_0001_reuse] .. 52/100 games  2515 evals/s  510s
+[meas_campaign28_gen_0001_reuse] .. 61/100 games  2612 evals/s  540s
+[meas_campaign28_gen_0001_reuse] .. 73/100 games  2665 evals/s  570s
+[meas_campaign28_gen_0001_reuse] .. 80/100 games  2665 evals/s  600s
+[meas_campaign28_gen_0001_reuse] .. 88/100 games  2629 evals/s  630s
+[meas_campaign28_gen_0001_reuse] .. 89/100 games  2566 evals/s  660s
+[meas_campaign28_gen_0001_reuse] .. 95/100 games  2496 evals/s  690s
+[meas_campaign28_gen_0001_reuse] .. 99/100 games  2407 evals/s  720s
+[meas_campaign28_gen_0001_reuse] 50/50 pairs  A 52W-42L-6T score=0.550±0.043  500 games/hr  2406 evals/s  720s
+[meas_campaign28_gen_0001_reuse] DONE A 52W-42L-6T score=0.550 ci95=[0.466,0.634] elo=+35 seat0=0.480 non_greedy=0.0% turns=39.2 trunc=2 720.4s

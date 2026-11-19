@@ -1,0 +1,14 @@
+{
+  "arm": "sp_value",
+  "tag": "c28_sp_value",
+  "run": "/root/c28snap",
+  "lr": 0.0002,
+  "steps": 240,
+  "wins": 91,
+  "losses": 103,
+  "ties": 6,
+  "win_pct": 0.4690721649484536,
+  "gate_s": 2705,
+  "gate_games": 200,
+  "gate_sims": 128
+}

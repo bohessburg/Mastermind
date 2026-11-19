@@ -1,0 +1,25 @@
+[c31g27_400_vs_100_honest_s3] device=mps backend=torch pairs=50 chunk=50 A=checkpoints/remote/campaign31/gen_0027.pt sims=400 zero_v=False | B=checkpoints/remote/campaign31/gen_0027.pt sims=100 zero_v=False | determinize=per_decision cross_route=False tree_reuse=False opening_temp=False leaves_in_flight=8 (min sims/leaf 32)
+[c31g27_400_vs_100_honest_s3] .. 0/100 games  7314 evals/s  30s
+[c31g27_400_vs_100_honest_s3] .. 0/100 games  8898 evals/s  60s
+[c31g27_400_vs_100_honest_s3] .. 0/100 games  9267 evals/s  90s
+[c31g27_400_vs_100_honest_s3] .. 0/100 games  9515 evals/s  120s
+[c31g27_400_vs_100_honest_s3] .. 2/100 games  9695 evals/s  150s
+[c31g27_400_vs_100_honest_s3] .. 8/100 games  9742 evals/s  180s
+[c31g27_400_vs_100_honest_s3] .. 26/100 games  9514 evals/s  210s
+[c31g27_400_vs_100_honest_s3] .. 37/100 games  9019 evals/s  240s
+[c31g27_400_vs_100_honest_s3] .. 42/100 games  8551 evals/s  270s
+[c31g27_400_vs_100_honest_s3] .. 45/100 games  8020 evals/s  300s
+[c31g27_400_vs_100_honest_s3] .. 49/100 games  7409 evals/s  330s
+[c31g27_400_vs_100_honest_s3] .. 50/100 games  7368 evals/s  360s
+[c31g27_400_vs_100_honest_s3] .. 50/100 games  7549 evals/s  390s
+[c31g27_400_vs_100_honest_s3] .. 50/100 games  7729 evals/s  420s
+[c31g27_400_vs_100_honest_s3] .. 50/100 games  7887 evals/s  450s
+[c31g27_400_vs_100_honest_s3] .. 53/100 games  8019 evals/s  480s
+[c31g27_400_vs_100_honest_s3] .. 60/100 games  8120 evals/s  510s
+[c31g27_400_vs_100_honest_s3] .. 74/100 games  8147 evals/s  540s
+[c31g27_400_vs_100_honest_s3] .. 87/100 games  8079 evals/s  570s
+[c31g27_400_vs_100_honest_s3] .. 92/100 games  7876 evals/s  600s
+[c31g27_400_vs_100_honest_s3] .. 97/100 games  7592 evals/s  630s
+[c31g27_400_vs_100_honest_s3] .. 99/100 games  7298 evals/s  660s
+[c31g27_400_vs_100_honest_s3] 50/50 pairs  A 46W-50L-4T score=0.480±0.040  537 games/hr  7201 evals/s  670s
+[c31g27_400_vs_100_honest_s3] DONE A 46W-50L-4T score=0.480 ci95=[0.401,0.559] elo=-14 seat0=0.620 non_greedy=0.0% turns=34.8 trunc=2 670.1s

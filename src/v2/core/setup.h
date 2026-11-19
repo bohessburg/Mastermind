@@ -5,7 +5,11 @@
 
 #include <cstdint>
 
-constexpr int MAX_KINGDOM_DEFS = 10;
+// Basic piles a setup can add besides the kingdom: Copper, Silver, Gold,
+// Estate, Duchy, Province, Curse, plus Platinum, Colony and Potion.
+constexpr int MAX_BASIC_PILES = 10;
+constexpr int MAX_KINGDOM_DEFS = MAX_PILES - MAX_BASIC_PILES;
+static_assert(MAX_KINGDOM_DEFS >= 11, "room for 10 kingdom piles plus a bane");
 
 struct Setup {
     PlayerId num_players = 2;

@@ -1,0 +1,21 @@
+Traceback (most recent call last):
+  File "/Users/paisho/Projects/Mastermind/scripts/probes/run_all.py", line 96, in <module>
+    main()
+  File "/Users/paisho/Projects/Mastermind/scripts/probes/run_all.py", line 84, in main
+    result = run(
+             ^^^^
+  File "/Users/paisho/Projects/Mastermind/scripts/probes/run_all.py", line 37, in run
+    probes[name] = {"skipped": True} if name in skipped else runner()
+                                                             ^^^^^^^^
+  File "/Users/paisho/Projects/Mastermind/scripts/probes/run_all.py", line 27, in <lambda>
+    ("value", lambda: value_probe.run(checkpoint, legacy_shim=legacy_shim)),
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/paisho/Projects/Mastermind/scripts/probes/value_probe.py", line 169, in run
+    policy = load_checkpoint(checkpoint, legacy_shim=legacy_shim)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/paisho/Projects/Mastermind/scripts/probes/_common.py", line 63, in load_checkpoint
+    return load_policy(Path(path), device="cpu", legacy_shim=legacy_shim)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/paisho/Projects/Mastermind/src/v2/arena/bot/policy.py", line 96, in load_policy
+    raise NNCheckpointError("neural-network checkpoint is unavailable")
+src.v2.arena.bot.policy.NNCheckpointError: neural-network checkpoint is unavailable

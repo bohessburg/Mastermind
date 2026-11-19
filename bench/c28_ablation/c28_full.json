@@ -1,0 +1,14 @@
+{
+  "arm": "full",
+  "tag": "c28_full",
+  "run": "/root/c28snap",
+  "lr": 0.0002,
+  "steps": 240,
+  "wins": 75,
+  "losses": 122,
+  "ties": 3,
+  "win_pct": 0.38071065989847713,
+  "gate_s": 2972,
+  "gate_games": 200,
+  "gate_sims": 128
+}

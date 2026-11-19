@@ -1,0 +1,24 @@
+[meas_bc_self] device=mps pairs=50 chunk=100 A=checkpoints/campaign25/bc_a.pt sims=128 zero_v=False | B=checkpoints/campaign25/bc_a.pt sims=128 zero_v=False | determinize=off cross_route=False tree_reuse=False opening_temp=False leaves_in_flight=8 (min sims/leaf 32)
+[meas_bc_self] .. 0/100 games  5859 evals/s  30s
+[meas_bc_self] .. 0/100 games  6823 evals/s  60s
+[meas_bc_self] .. 1/100 games  7100 evals/s  90s
+[meas_bc_self] .. 8/100 games  7132 evals/s  120s
+[meas_bc_self] .. 18/100 games  6945 evals/s  150s
+[meas_bc_self] .. 30/100 games  6718 evals/s  180s
+[meas_bc_self] .. 37/100 games  6275 evals/s  210s
+[meas_bc_self] .. 43/100 games  5832 evals/s  240s
+[meas_bc_self] .. 48/100 games  5327 evals/s  270s
+[meas_bc_self] .. 49/100 games  4866 evals/s  300s
+[meas_bc_self] .. 50/100 games  4606 evals/s  330s
+[meas_bc_self] .. 50/100 games  4902 evals/s  360s
+[meas_bc_self] .. 51/100 games  5161 evals/s  390s
+[meas_bc_self] .. 56/100 games  5365 evals/s  420s
+[meas_bc_self] .. 65/100 games  5495 evals/s  450s
+[meas_bc_self] .. 77/100 games  5527 evals/s  480s
+[meas_bc_self] .. 87/100 games  5436 evals/s  510s
+[meas_bc_self] .. 91/100 games  5299 evals/s  540s
+[meas_bc_self] .. 98/100 games  5107 evals/s  570s
+[meas_bc_self] .. 99/100 games  4889 evals/s  600s
+[meas_bc_self] .. 99/100 games  4690 evals/s  630s
+[meas_bc_self] 50/50 pairs  A 48W-48L-4T score=0.500±0.000  569 games/hr  4677 evals/s  632s
+[meas_bc_self] DONE A 48W-48L-4T score=0.500 ci95=[0.500,0.500] elo=+0 seat0=0.640 non_greedy=0.0% turns=41.5 trunc=4 632.2s
