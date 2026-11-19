@@ -1745,6 +1745,13 @@ def _run_gate_slices_on_server(
 
     server_config = copy.deepcopy(config)
     server_config.server_shards = max(1, min(int(config.server_shards), len(slices)))
+    # The gate's precision follows the gate settings, not self-play serving:
+    # full precision unless gate_bf16 (CUDA) or gate_fp16, and the gate
+    # backend on Apple devices.
+    server_config.server_autocast_bf16 = bool(config.gate_bf16)
+    server_config.server_fp16 = bool(config.gate_fp16)
+    if str(server_config.server_device).lower().startswith("mps"):
+        server_config.server_backend = str(config.gate_backend)
     context = mp.get_context("spawn")
     result_queue = context.Queue()
     progress_queue = context.Queue()

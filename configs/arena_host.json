@@ -1,11 +1,11 @@
 {
-  "checkpoint_path": "checkpoints/remote/campaign31/gen_0027.pt",
+  "checkpoint_path": "checkpoints/remote/campaign33/gen_0051.pt",
   "stall_watchdog_seconds": 120,
   "idle_watchdog_seconds": 600,
   "actuation_mode": "protocol",
   "search": {
     "obs_version": 3,
-    "sims": 400,
+    "sims": 1024,
     "determinizations": 2,
     "wall_clock_cap_seconds": 30.0
   },
@@ -14,7 +14,9 @@
     "max_seconds": 0.0
   },
   "undo": {
-    "auto_deny": true
+    "auto_deny": true,
+    "grant_safe": true,
+    "reply_delay_seconds": 1.0
   },
   "timeout": {
     "claim_grace_seconds": 30

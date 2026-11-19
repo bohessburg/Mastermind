@@ -3690,7 +3690,43 @@ Jack: rerun all three arms from scratch from BC R40B (not gen 51), long enough t
 
 Control (03:34-05:44 UTC, about 22 min a generation: self-play + training 11-12 min, gate 9-10 min): gates 0.627 acc, 0.552 acc, 0.499 rej, 0.539 acc, 0.521 acc, 0.514 rej (best gen 5; Jack: use gen 6 for the head-to-head). c33 at the same generations: 0.605, 0.518, 0.499, 0.491, 0.543, 0.483.
 
-Truncate (05:44-06:11 UTC, about 4 min a generation): gates 0.511 rej, 0.525 acc, 0.555 acc, 0.532 acc, 0.522 acc, 0.508 rej (best gen 5). The gate inherits `selfplay.chance_mode`, so each arm's gate is played under its own search mode: truncate gates measure strength under truncate search and are not comparable with control's. Truncate search is nearly one ply (each simulation stops at the first draw, which in Dominion comes at end of turn), so self-play takes 1-2 min and the gate 2-3 min. Gen 1 had 71/1014 games at the 100-turn cap (control 9/1014), falling to 5/1024 by gen 5. **Head to head under normal search (Mac, 400 boards x 2 seats, 128 sims, honest, greedy): truncate gen 6 vs control gen 6 0.329 (258-532-10), about -124 Elo** (95% 0.297-0.360; checkpoint md5 982b0006 verified against the box). Truncate's gate gains are gains at the shallow game only; a long truncate run (Jack: 60 gens or plateau) is not worth box time on this result.
+Truncate (05:44-06:11 UTC, about 4 min a generation): gates 0.511 rej, 0.525 acc, 0.555 acc, 0.532 acc, 0.522 acc, 0.508 rej (best gen 5). The gate inherits `selfplay.chance_mode`, so each arm's gate is played under its own search mode: truncate gates measure strength under truncate search and are not comparable with control's. Truncate search is nearly one ply (each simulation stops at the first draw, which in Dominion comes at end of turn), so self-play takes 1-2 min and the gate 2-3 min. Gen 1 had 71/1014 games at the 100-turn cap (control 9/1014), falling to 5/1024 by gen 5. **Head to head under normal search (Mac, 400 boards x 2 seats, 128 sims, honest, greedy): truncate gen 6 vs control gen 6 0.329 (258-532-10), about -124 Elo** (95% 0.297-0.360; checkpoint md5 982b0006 verified against the box). Truncate's gate gains are gains at the shallow game only; a long truncate run (Jack: 60 gens or plateau) is not worth box time on this result. **Resample gen 6 vs control gen 6, same protocol (box, 554 s): 0.384 (294-479-27), about -82 Elo** (95% 0.351-0.417; md5 1f3d0e65 / 197a2663). Both chance-node modes trained into nets that lose to control under normal search after 6 generations from BC. Caveat: normal search is control's own search; each net under its own search mode against control was not measured. Jack then asked to continue the truncate arm to completion anyway (`configs/run_c35_truncate_long.json`, up to gen 60 or 10 rejections in a row, constant lr 7e-5 because a resume keeps the checkpoint optimizer).
+
+**Head-to-heads with each search mode (2026-11-18 10:42-11:05 UTC, box, `bench/c35_h2h/`, `scripts/c29_search_ladder.py --a-chance/--b-chance`, gen 6 nets, 400 boards x 2 seats, 128 sims, honest, greedy; resample matches in 4 board shards):**
+
+| match | W-L-T | score | Elo |
+|---|---|---|---|
+| control w/ resample search vs control w/ normal | 348-429-23 | 0.449 +- 0.015 | -35 |
+| control w/ truncate search vs control w/ normal | 355-426-19 | 0.456 +- 0.015 | -31 |
+| resample net w/ resample vs control w/ normal | 241-535-24 | 0.316 +- 0.016 | -134 |
+| truncate net w/ truncate vs control w/ normal | 233-545-22 | 0.305 +- 0.015 | -143 |
+| resample net vs control, both resample search | 285-491-24 | 0.371 +- 0.016 | -92 |
+| truncate net vs control, both truncate search | 290-486-24 | 0.378 +- 0.017 | -87 |
+| resample net vs control, both normal search | 294-479-27 | 0.384 | -82 |
+| truncate net vs control, both normal search | 258-532-10 | 0.329 | -124 |
+
+The search change alone costs the control net 31-35 Elo (as in the search-only tests before c35). Training under either chance-node mode made the net weaker under every search, its own included (about -90 against the control net with the same search); deployed as trained (own search vs control's normal search) about -135 to -145. After 6 generations from BC, normal search with normal training wins on every measure. The truncate continuation (launched 11:07 UTC, supervisor `dominion-c35t`, log `supervisor-c35t.log`) tests whether a long run closes the gap.
+
+Truncate continuation progress vs control gen 6 (box, same protocol, `bench/c35_progress/`):
+
+| truncate gen | its search | score | Elo |
+|---|---|---|---|
+| 6 | normal | 0.329 | -124 |
+| 6 | truncate | 0.305 | -143 |
+| 10 | normal | 0.366 (281-495-24) | -95 |
+| 10 | truncate | 0.328 (251-527-22) | -125 |
+| 20 | normal | 0.369 (284-493-23) | -93 |
+| 20 | truncate | 0.325 (252-532-16) | -127 |
+
+Gates gen 7-13: 0.504 rej, 0.516 acc, 0.522 acc, 0.502 rej, 0.514 acc, 0.486 rej, 0.514 acc. Gen 14-23: 0.501 rej, 0.506 rej, 0.543 acc, 0.522 acc, 0.540 acc, 0.481 rej, 0.496 rej, 0.516 acc, 0.497 rej, 0.493 rej. Flat against control from gen 10 to gen 20 despite five accepts: the truncate gates measure gains at the shallow game that do not carry to normal search. Gen 24-28: 0.502 rej, 0.497 rej, 0.518 acc, 0.519 acc, 0.487 rej. **Stopped by hand after gen 28 (Jack), best gen 27.**
+
+### c35 control continued from gen 6 (2026-11-18)
+
+Jack: stop the truncate run and continue control from gen 6. `configs/run_c35_control_long.json` = `run_c35_control.json` resumed in place from `campaign35_control/gen_0006.pt` for up to 54 more generations (to gen 60), ending at 10 rejections in a row. lr stays constant at 7e-5 (a resume keeps the checkpoint optimizer; c33 decayed by cosine to 2.5e-5). Throughput only: `gate_server` true, `gate_workers` 32. The gate-server precision fix (gate server follows `gate_fp16` / `gate_backend`, so fp32 here, not self-play's bf16) deployed with it (`gating.py` md5 a7b30929, 48 gate tests passed on the box). Supervisor `dominion-c35c`, log `supervisor-c35c.log`; Hetzner pull extended.
+
+Control gates gen 7-11: 0.491 rej, 0.527 acc, 0.514 acc, 0.494 rej, (gen 11 pending at the switch). Server gate on normal search in fp32: 6-8 min (old 8-worker path 9-10). Gen 8 gate breakdown: about 60 s server compile, about 4 min main body (peak about 72k evals/s, server batches 150-260), 2-3 min tail of long games (batches 10-25, about 18k evals/s); 19.3M evals. During gen 9's gate the GPU was 99% busy, gate workers about 12% CPU, box 80% idle: GPU-bound in fp32. New `gate_bf16` option (gate server bf16 autocast on CUDA, as self-play serving; test for the flag types), enabled from control gen 12 (Jack: "switch the gate and fix it"); deployed at the gen 11/12 boundary. Expected gate about 3-4 min. Remaining fixed costs: the 60 s compile per gate and the long-game tail. Correction: `generations` is the total generation count on resume too (`generations = config.generations - start_generation`), not extra generations; the running c35c trainer computed its budget from 54 and will stop at gen 54. `run_c35_control_long.json` is now 60 (box copy updated); a restart is needed before gen 54 to reach 60. (The truncate continuation's 54 would have stopped it at gen 54 too.) Progress check (box, 400 boards x 2 seats, 128 sims, honest): **control gen 9 vs c33 gen 51 0.393 (303-475-22), about -76 Elo** (95% 0.360-0.425; md5 c42591b4 / d01b399a). With gen 51 at +206 over BC R40B, control gen 9 is roughly +130 over BC, about what c33's gate chain implied at gens 5-9. **Control best at gen 20 (= gen 17) vs c33 gen 51: 0.464 (357-415-28), about -25 Elo** (95% 0.434-0.494; md5 a8a73018). Up about 50 Elo from gen 9 in 8 generations; c33 needed until gen 51 for this level. 
+
+**c35 control generation on the M1 Max (2026-11-18 17:00-17:54 UTC, Jack: "one test generation of this on the mac with all optimizations for max hardware").** `configs/run_c35_control_mac.json` (c35 control + MLX fp16 serving on Metal, 8 workers, one server shard, all 1024 games at once, no deep slice, server gate on MLX fp16 with 4 workers), resumed from a copy of the box's control gen 19 state (md5 checked), so it played the box's gen 20 conditions; trainer at nice 10 beside the live arena. **54.0 min**: self-play 40.6 min (about 50k evals/s GPU-bound for most of it, mean server batch about 1,420, CPU about 70% idle; dropping to 39k mid-run), training 1.4 min (including the human-dataset load, which takes 6-16 min on the box), gate 11.5 min (800 games, about 21M evals, about 32k evals/s; rejected 0.4975), checkpoint under 1 min. Against the c33 Mac trial (83.8 min: self-play 65.8, gate 15.6) and the box (about 17-18 min). Memory pressure stayed at 84-85% free; battery fell 77% -> 41% on the charger. Note: `generations` is the total count, so a resume from gen 19 needs `generations` 20 for one generation (the first launch with 1 exited at once). Gates gen 12-20: 0.482 rej, 0.507 rej, 0.504 rej, 0.529 acc, 0.483 rej, 0.523 acc, 0.497 rej, 0.499 rej, 0.508 rej. **Control gen 30 vs c33 gen 51: 0.488 (372-391-37), about -8 Elo** (95% 0.458-0.518, level within noise; md5 b81bcb6f). Gates gen 21-30: 0.521 acc, 0.523 acc, 0.488 rej, 0.484 rej, 0.488 rej, 0.525 acc, 0.496 rej, 0.503 rej, 0.497 rej, 0.537 acc. Gen 31 rejected 0.506. **Box 85.165.238.33:40973 went down about 20:30 UTC 2026-11-18 during gen 32's gate (port refused; still down at 22:00).** The Mac mirror has the full control state through gen 31 (`checkpoints/remote/campaign35_control`: gen 1-31, best = gen 30, replay buffer, metrics); resume from `gen_0031.pt` with `configs/run_c35_control_long.json` (generations 60). The Hetzner pull had silently failed for control since 14:09 UTC (stops at gen 10; `c35_pull.sh` sends rsync errors to /dev/null and stamps `last_pull` regardless) - to fix when a box is reachable.
 
 Resample restarted 06:22:51 UTC for throughput (Jack): the first start (06:11) was bound by its 2 inference servers (about 390% CPU each, about 3,300 requests/s of 140-185 rows) while the 64 workers sat at about 18% CPU, the GPU at about 51% and the box about 87% idle. `server_shards` 2 -> 4 and `gate_workers` 8 -> 32 in `run_c35_resample.json` (throughput only; search and training unchanged). The aborted 11-minute partial gen 1 is in `/root/campaign35_resample_aborted_0625` on the box (folder name says 0625); the arm restarted fresh from BC R40B.
 
@@ -3699,6 +3735,64 @@ Server-backed gate (2026-11-18, Jack: "box time is expensive"). The local paired
 Resample gen 1 (old gate path, 32 local workers): self-play 27 min (06:22:57-06:50), training 2 min, gate **47 min** (06:51-07:38), rejected 0.502 (392-389-19). Server gate deployed at the gen 1/2 boundary: trainer stopped 07:38:48 after the gen 1 checkpoint, `config.py`, `train.py`, `gating.py`, `diagnostics.py`, `test_gate_workers.py` and the config copied (md5 checked), 55 gate/diagnostics tests passed on the box, restarted 07:41:20 resuming `gen_0001.pt`. Gen 2 self-play about 23 min. Estimates (unmeasured until the first server gate): resample generation about 35 min (self-play about 25, gate about 5-8); a normal-search generation about 15 min (self-play + training 11-12, gate about 3-4 instead of 9-10); truncate gains little (its gate is already 2-3 min).
 
 Side measurements (Mac, `scripts/c29_search_ladder.py`, 400 boards x 2 seats, 128 sims, honest, greedy): c33 gen 51 vs BC R40B **0.766 (603-177-20), +206 Elo** (95% 0.738-0.795; the c33 gate chain summed to +326, so chain sums overstate by about 120 Elo at 51 generations). engine3 (`scripts/worlds_scripted.py`, 800 games, 400 sims, same games): c33 gen 51 0.787 (624-165-11), gen 34 0.751 (598-196-6); paired gen 34 - gen 51 = -0.036 +- 0.018 (z -2.0). Gen 34's 85.5% in training was 200-game noise (`bench/e3_34v51/`).
+
+### c35: what we learned (2026-11-18, summary at the box outage after control gen 31)
+
+**Search mode (the c34/c35 question).**
+- Training under a chance-node mode (truncate or resample) made a weaker net under every search, its own included. After 6 generations from BC it was about -90 Elo against the control net with both on the same search, and -82 to -143 overall.
+- The search change alone costs about 31-35 Elo on the control net.
+- More truncate generations did not close the gap: about -93 to -95 against control gen 6 at both gen 10 and gen 20, despite 5 accepted gates in between. A chance-mode arm's gate is played under its own search (the gate inherits `selfplay.chance_mode`), so those accepts measure gains at the shallow game that do not carry over to normal search.
+- Conclusion: normal search with normal training is the recipe. Reveal truncation (planning past hidden draws in one fixed world) is a real flaw, but neither training-time fix helps. It is no longer the top priority; any further work there would have to be search-time only.
+
+**Recipe: no deep slice, constant lr 7e-5, from BC R40B.**
+- Control gen 30 is level with c33 gen 51: 0.488, -8 Elo, 95% 0.458-0.518. Progress checks against c33 gen 51 were gen 9 -76, gen 17 -25, gen 30 -8.
+- That took 30 generations and about 9.4 h of box time (gens 1-30 sum of `wall_time`; about 17.5 min a generation from gen 12 with the bf16 gate). c33 took 51 generations at about 28 min, roughly 24 h.
+- Dropping the deep slice cost nothing measurable and saved about 40% per generation. It may also have sped up learning, but this is confounded: c33 decayed its lr by cosine, while c35 control held 7e-5 because a resume keeps the checkpoint optimizer. Jack's question "were the deep slices holding c33 back" is consistent with the data but not isolated.
+- Signs of a plateau: gates 11-31 accepted 8 of 21, all between 0.519 and 0.539. Gate 31 was 0.506 (+4 Elo, inside the noise). Losses are flat: policy loss about 0.79 throughout; value loss fell from 0.167 to 0.137. If it stalls, the next lever is an lr decay, which needs a code change because a resume cannot change the lr schedule.
+
+**Gate chains overstate strength.**
+- c33: chain sum +326, measured gen 51 vs BC +206.
+- c35 control: the accepted gates through gen 30 sum to +331. The measured value is about +198 (gen 30 is -8 against gen 51, which is +206 over BC).
+- Both overstate by about 120-130 Elo, so chain sums should not be used as ratings. Use head-to-heads against a fixed reference.
+
+**engine3 is too coarse for picking checkpoints at 200 games.** Gen 34's 85.5% in training was noise. Over 800 games, gen 34 scored 75.1% and gen 51 78.7%, a paired gap of -0.036 +- 0.018.
+
+**Throughput (box, single GPU).**
+- The local paired gate gives every worker its own model copy, so more workers means smaller batches. At 32 workers the gate ran at 9-10k evals/s and took 47 min. `gate_server` routes the gate through one inference server instead: 6-8 min in fp32, which made it GPU-bound (GPU 99%, workers about 12% CPU).
+- `gate_bf16` brought the gate to about 3-4 min. A normal-search generation is now about 17-18 min: self-play plus training 11-12, gate 3-4, plus fixed costs.
+- Remaining fixed costs per generation:
+  - about 60 s of gate server compile;
+  - a 2-3 min tail of long games at batch 10-25;
+  - the human anchor dataset reload after any restart, 6-16 min on the box against 1.4 min on the Mac.
+- Resample self-play was first bound by its 2 inference servers (each about 390% CPU, GPU at 51%). 4 shards fixed that. A resample generation is still about 27-35 min against 17-18 for normal search.
+- Truncate generations take about 4 min, because truncate search is nearly one ply.
+
+**Mac (M1 Max).** A c35 control generation takes 54.0 min: self-play 40.6, training 1.4, gate 11.5. That is about 3x the box. It is GPU-bound at about 50k evals/s with the CPU 70% idle, so a faster GPU (M5 Max) should scale roughly with its GPU throughput. All 1024 games fit in memory without a deep slice (memory pressure stayed at 84-85% free).
+
+**Ops lessons.**
+- `generations` is the total generation count on resume as well (`generations = config.generations - start_generation`), not extra generations. A resume keeps the checkpoint optimizer, so lr and its schedule carry over.
+- The box's `resume.sh` kills `multiprocessing.spawn` processes.
+- `pkill -f` patterns can match the ssh command that runs them.
+- The Hetzner backup failed silently for control from 14:09 UTC: rsync errors go to /dev/null and `last_pull` is stamped anyway. The Mac mirror, checked by md5, is what saved the run when the box died. Backups need a check that fails loudly.
+- Monitors must be tested end to end. A Python f-string error made one fail silently. On the Mac, memory alerts should use `memory_pressure`, not free pages.
+
+**State at the outage.**
+- Control best is gen 30. Gen 31 is done (rejected); gen 32 was lost mid-gate.
+- To resume: Mac `checkpoints/remote/campaign35_control/gen_0031.pt` with `configs/run_c35_control_long.json` (generations 60).
+- Truncate stopped at gen 28 (best 27). Resample finished at gen 6.
+- New-box resume recipe and the c35 box scripts are in `scripts/ops/c35/` (README). The Mac mirror goes to `checkpoints/campaign35_control/` on the box, not `remote/`.
+
+**Open items (as of 2026-11-18 evening):**
+- Gen 31 has not been tested against c33 gen 51. The estimate from gen 30 (-8) plus its gate (+4) is about -4 Elo.
+- Human anchor question (Jack: "time to drop the human anchor?"). At 0.1 the anchor is a weak pull: anchor policy loss rose from 0.51 to 0.52 after gen 19, and in c32's steps test 0.1 and 0.374 gated alike. Reasons it has earned its place before:
+  - Empty-buffer starts need it (Mac test 4).
+  - In c21, a weaker anchor let the Militia discard frames regress, and the anchor healed them.
+  - Its value targets teach engine pricing.
+
+  The config docstring's "never anneal to zero" rule dates from the clairvoyant era. Proposed A/B from the gen 31 state with the full buffer: anchor 0.1 against 0, about 8 generations each (about 4.7 h of box time). Judge on 800-game head-to-heads against gen 30 and c33 gen 51, plus engine3 and the Militia and engine probes. Not approved yet.
+- Prerequisite for both the anchor test and an lr decay: resume overrides for the anchor schedule and the lr schedule. Resume restores both from the checkpoint today. Not written yet.
+- Hetzner `/opt/dz/c35_pull.sh`: log rsync errors, stamp `last_pull` only on success, and find why the control pull broke at 14:09 UTC.
+- Gate fixed costs, offered but not approved: skip or cache the 60 s gate server compile, and speed up the long-game tail.
 
 ### Skill-weight curve made continuous (2026-11-15, c19e5ba)
 

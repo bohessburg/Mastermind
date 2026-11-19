@@ -1302,6 +1302,7 @@ def run_training(config: TrainConfig, resume: str | None = None, profile: bool =
         # precision unless gate_fp16 is asked for): follow the requested config.
         config.gate_workers = requested.gate_workers
         config.gate_server = requested.gate_server
+        config.gate_bf16 = requested.gate_bf16
         config.gate_backend = requested.gate_backend
         config.gate_fp16 = requested.gate_fp16
         config.gate_third_party_opponent = requested.gate_third_party_opponent

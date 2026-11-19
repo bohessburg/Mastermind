@@ -131,3 +131,11 @@ def test_server_gate_plays_the_same_games_as_the_serial_loop(tmp_path: Path) -> 
     assert served.a_as_seat1 == serial.a_as_seat1
     assert served.turns and sorted(served.turns) == sorted(serial.turns)
     assert served.nn_evals > 0 and ticks
+
+
+@pytest.mark.parametrize("field", ["gate_server", "gate_bf16"])
+def test_gate_server_flags_must_be_boolean(tmp_path: Path, field: str) -> None:
+    cfg = _paired_gate_config(tmp_path)
+    setattr(cfg, field, 1)
+    with pytest.raises(ValueError, match=field):
+        validate_gate_config(cfg)

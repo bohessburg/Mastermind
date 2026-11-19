@@ -413,6 +413,9 @@ class TrainConfig:
     # model 1) instead of each running both models on its own small batches.
     # Same games and the same decisions up to batch-composition rounding.
     gate_server: bool = False
+    # gate_server on CUDA: evaluate the gate in bf16 autocast, as self-play
+    # serving does (much faster on recent GPUs). Off = full precision.
+    gate_bf16: bool = False
     gate_backend: str = "torch"
     gate_fp16: bool = False
     # Paired mode: a candidate that passes the head-to-head must also not
@@ -903,6 +906,8 @@ def validate_gate_config(config: TrainConfig) -> None:
         raise ValueError("gate_workers must be an integer between 1 and 64")
     if not isinstance(config.gate_server, bool):
         raise ValueError("gate_server must be a boolean")
+    if not isinstance(config.gate_bf16, bool):
+        raise ValueError("gate_bf16 must be a boolean")
     if config.gate_backend not in ("torch", "mlx"):
         raise ValueError(f"gate_backend must be 'torch' or 'mlx', got {config.gate_backend!r}")
     if not isinstance(config.gate_fp16, bool):
